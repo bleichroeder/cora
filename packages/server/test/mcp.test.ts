@@ -17,6 +17,20 @@ async function call(body: object, headers: Record<string, string> = H) {
 }
 
 describe('MCP tools', () => {
+  it('a live explain: its folder and files for a session; none without one, nor with HTML explains off', async () => {
+    const dataDir = mkdtempSync(join(tmpdir(), 'ab-mcp-'));
+    srv = await startServer(loadConfig({ dataDir, dbPath: ':memory:', hookToken: 'hooktok', uiToken: 'u' }), { tail: false, listen: false });
+    await call(rpc('initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 't', version: '1' } }));
+    const r = await call(rpc('tools/call', { name: 'live_explain', arguments: { title: 'Release 2.4' } }, 2), { ...H, 'x-cora-session': 'sess-live-1' });
+    const text = r.json.result.content[0].text as string;
+    expect(text).toContain(join(dataDir, 'explains', 'sess-live-1', 'release-24', 'page.html'));
+    expect(text).toContain(join(dataDir, 'explains', 'sess-live-1', 'release-24', 'data.json'));
+    expect(text).toMatch(/cora\.onData/);
+    const listed = async (headers: Record<string, string>) => ((await call(rpc('tools/list', {}, 3), headers)).json.result.tools as Array<{ name: string }>).map((t) => t.name);
+    expect(await listed({ ...H, 'x-cora-session': 'sess-live-1' })).toContain('live_explain');
+    expect(await listed(H)).not.toContain('live_explain');
+  });
+
   it("sessions read the user's notes and add to them (marked, never editing)", async () => {
     srv = await startServer(loadConfig({ dataDir: mkdtempSync(join(tmpdir(), 'ab-mcp-')), dbPath: ':memory:', hookToken: 'hooktok', uiToken: 'u' }), { tail: false, listen: false });
     await call(rpc('initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 't', version: '1' } }));

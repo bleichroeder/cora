@@ -2,6 +2,16 @@
 
 What changed in each release. Cora updates itself; each update's notes are on its release page too.
 
+## Unreleased
+
+- **Live explains.** For work that runs for minutes, Claude keeps a dashboard that updates in place as it works: tests
+  passing, a build's stages, a deploy. Every HTML explain also gets Cora's colours, so it looks like part of Cora.
+- **Explains have versions.** Written again under the same title, an explain gets a new version instead of a copy;
+  step back through them in the viewer.
+- **Quieter Slack.** Slack's own notifications only while you're away from Cora, not for every message while you're
+  in it.
+- **Cora is pink**, its default colour, icon and installer.
+
 ## 0.1.3
 
 The first public release. Cora now updates from this repository's releases.

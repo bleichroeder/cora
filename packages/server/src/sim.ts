@@ -319,6 +319,84 @@ class SimSession {
 }
 
 /**
+ * A live explain, as a session keeps one: the release
+ * session writes its dashboard once, then rewrites the data at each step, round and round.
+ */
+const RELEASE_PAGE = `<!doctype html><html><head><meta charset="utf-8"><title>Release 2.4</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+  body { margin: 0; padding: 22px; background: var(--bg); color: var(--ink); font: 14px/1.5 system-ui, sans-serif; }
+  h1 { margin: 0 0 4px; font-size: 20px; } .sub { color: var(--ink3); font-size: 12.5px; margin-bottom: 18px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px; margin-bottom: 14px; }
+  .card { background: var(--panel); border: 1px solid var(--hair); border-radius: 12px; padding: 14px 16px; }
+  .k { color: var(--ink3); font-size: 11.5px; text-transform: uppercase; letter-spacing: .08em; }
+  .v { font-size: 28px; font-weight: 650; margin-top: 4px; } .v small { font-size: 13px; color: var(--ink3); font-weight: 400; }
+  .stages { display: flex; flex-direction: column; gap: 8px; }
+  .st { display: grid; grid-template-columns: 18px 1fr auto; gap: 10px; align-items: center; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--hair); justify-self: center; }
+  .st.done .dot { background: var(--ok); } .st.run .dot { background: var(--cora); box-shadow: 0 0 0 4px color-mix(in srgb, var(--cora) 25%, transparent); }
+  .st.wait .dot { background: var(--warn); } .st .t { color: var(--ink3); font-size: 12px; } .st.todo { color: var(--ink3); }
+  .bar { height: 6px; border-radius: 3px; background: var(--panel2); overflow: hidden; margin-top: 10px; } .bar i { display: block; height: 100%; background: var(--cora); transition: width .4s; }
+</style></head><body>
+<h1>Release 2.4</h1><div class="sub" id="sub">aurora-web · starting…</div>
+<div class="grid">
+  <div class="card"><div class="k">Tests</div><div class="v" id="tests">–</div><div class="bar"><i id="tbar" style="width:0"></i></div></div>
+  <div class="card"><div class="k">Image</div><div class="v" id="image">–</div></div>
+  <div class="card"><div class="k">Elapsed</div><div class="v" id="elapsed">–</div></div>
+</div>
+<div class="grid" style="grid-template-columns: minmax(240px, 1fr) minmax(240px, 1.4fr)">
+  <div class="card"><div class="k" style="margin-bottom:10px">Stages</div><div class="stages" id="stages"></div></div>
+  <div class="card"><div class="k" style="margin-bottom:10px">Image size by release (MB)</div><canvas id="chart" height="160"></canvas></div>
+</div>
+<script>
+  var css = getComputedStyle(document.documentElement), c = (n) => css.getPropertyValue(n).trim();
+  var chart = window.Chart ? new Chart(document.getElementById('chart'), {
+    type: 'bar',
+    data: { labels: ['2.1', '2.2', '2.3', '2.4'], datasets: [{ data: [271, 266, 260, 0], backgroundColor: [c('--panel2'), c('--panel2'), c('--panel2'), c('--cora')], borderRadius: 6 }] },
+    options: { animation: false, plugins: { legend: { display: false } }, scales: { x: { ticks: { color: c('--ink3') }, grid: { display: false } }, y: { ticks: { color: c('--ink3') }, grid: { color: c('--hair') } } } }
+  }) : null;
+  cora.onData(function (d) {
+    document.getElementById('sub').textContent = 'aurora-web · ' + d.status;
+    document.getElementById('tests').innerHTML = d.tests.passed + ' <small>/ ' + d.tests.total + '</small>';
+    document.getElementById('tbar').style.width = (100 * d.tests.passed / d.tests.total) + '%';
+    document.getElementById('image').innerHTML = d.image ? d.image + ' <small>MB</small>' : '–';
+    document.getElementById('elapsed').textContent = d.elapsed;
+    document.getElementById('stages').innerHTML = d.stages.map(function (s) {
+      return '<div class="st ' + s.state + '"><span class="dot"></span><span>' + s.name + '</span><span class="t">' + (s.note || '') + '</span></div>';
+    }).join('');
+    if (chart) { chart.data.datasets[0].data[3] = d.image || 0; chart.update('none'); }
+  });
+</script></body></html>
+`;
+type Stage = { name: string; state: 'done' | 'run' | 'wait' | 'todo'; note?: string };
+function releaseSteps(): Array<{ status: string; tests: { passed: number; total: number }; image: number | null; stages: Stage[] }> {
+  const names = ['Bump version and changelog', 'Run the tests', 'Build the image', 'Push the image', 'Deploy to staging'];
+  const at = (i: number, notes: Record<number, string> = {}, wait = -1): Stage[] => names.map((name, n) => ({ name, state: n < i ? 'done' : n === wait ? 'wait' : n === i ? 'run' : 'todo', ...(notes[n] ? { note: notes[n] } : {}) }));
+  const out: ReturnType<typeof releaseSteps> = [{ status: 'bumping the version', tests: { passed: 0, total: 412 }, image: null, stages: at(0) }];
+  for (const passed of [96, 188, 251, 330, 412]) out.push({ status: 'running the tests', tests: { passed, total: 412 }, image: null, stages: at(1, { 0: '2.4.0' }) });
+  out.push({ status: 'building the image', tests: { passed: 412, total: 412 }, image: null, stages: at(2, { 0: '2.4.0', 1: '412 passed' }) });
+  out.push({ status: 'waiting for your OK to push', tests: { passed: 412, total: 412 }, image: 212, stages: at(3, { 0: '2.4.0', 1: '412 passed', 2: '212 MB' }, 3) });
+  out.push({ status: 'deploying to staging', tests: { passed: 412, total: 412 }, image: 212, stages: at(4, { 0: '2.4.0', 1: '412 passed', 2: '212 MB', 3: 'pushed' }) });
+  out.push({ status: 'live on staging', tests: { passed: 412, total: 412 }, image: 212, stages: at(5, { 0: '2.4.0', 1: '412 passed', 2: '212 MB', 3: 'pushed', 4: '3/3 pods ready' }) });
+  return out;
+}
+async function releaseDashboard(live: { start(sid: string, title: string): { page: string; data: string } }, sid: string, stopped: () => boolean): Promise<void> {
+  await sleep(4000);
+  const f = live.start(sid, 'Release 2.4');
+  writeFileSync(f.page, RELEASE_PAGE);
+  const began = Date.now();
+  while (!stopped()) {
+    for (const step of releaseSteps()) {
+      if (stopped()) return;
+      const s = Math.round((Date.now() - began) / 1000);
+      writeFileSync(f.data, JSON.stringify({ ...step, elapsed: `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, '0')}s` }));
+      await sleep(2600);
+    }
+    await sleep(6000);
+  }
+}
+
+/**
  * Cora's agent in a simulation (no real agent is started): on, with a goal under way and a short conversation in its
  * console, so it can be seen and shown. Its session is hidden from the list, as the real one is.
  */
@@ -359,7 +437,7 @@ function simCora(p: Pipeline, show: (st: OrchestratorStatus) => void, stopped: (
  * looking at the default branch's pipeline, as `glab ci status --branch main` would. `name`: gives the sessions their
  * names (as you'd rename one); `cora`: shows Cora's agent as on, with a goal and a conversation.
  */
-export function startSim(pipeline: Pipeline, pending?: PendingManager, o: { repo?: string; name?: (sessionId: string, name: string) => void; cora?: (st: OrchestratorStatus) => void } = {}): () => void {
+export function startSim(pipeline: Pipeline, pending?: PendingManager, o: { repo?: string; name?: (sessionId: string, name: string) => void; cora?: (st: OrchestratorStatus) => void; live?: { start(sid: string, title: string): { page: string; data: string } } } = {}): () => void {
   let stopped = false;
   const look: Call = { tool: 'Bash', input: { command: 'glab ci status --branch main' }, response: { stdout: '', stderr: '' } };
   const sessions: Array<[string, SimSession, Topic]> = [
@@ -377,6 +455,8 @@ export function startSim(pipeline: Pipeline, pending?: PendingManager, o: { repo
     }, i * 1500),
   );
   if (o.cora) simCora(pipeline, o.cora, () => stopped);
+  // the release session keeps a live dashboard
+  if (o.live) void releaseDashboard(o.live, 'sim-web-0002', () => stopped);
   return () => {
     stopped = true;
   };

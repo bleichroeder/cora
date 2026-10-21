@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_SETTINGS, DEFAULT_VOICE, WAKE_THRESHOLDS } from '@cora/shared';
 import { applyPatch, Prefs } from '../src/prefs';
-import { hostedArgs, nudgeFor, speakNudge } from '../src/hosted';
+import { hostedArgs, nudgeFor, ruleFor, speakNudge } from '../src/hosted';
 import { loadConfig } from '../src/config';
 
 describe('settings', () => {
@@ -74,7 +74,14 @@ describe('settings', () => {
     expect(off[off.indexOf('--allowedTools') + 1]).toBe('mcp__cora__open_tab,mcp__cora__environment,mcp__cora__deploys,mcp__cora__notes_list,mcp__cora__notes_search,mcp__cora__notes_read,mcp__cora__notes_add,mcp__cora__slack_find,mcp__cora__slack_read,mcp__cora__slack_send');
     expect(readFileSync(off[off.indexOf('--append-system-prompt-file') + 1], 'utf8')).not.toMatch(/cora:explain/);
     const args = hostedArgs(cfg, DEFAULT_SETTINGS);
-    expect(args[args.indexOf('--allowedTools') + 1]).toBe('mcp__cora__open_tab,mcp__cora__environment,mcp__cora__deploys,mcp__cora__notes_list,mcp__cora__notes_search,mcp__cora__notes_read,mcp__cora__notes_add,mcp__cora__slack_find,mcp__cora__slack_read,mcp__cora__slack_send');
+    // with HTML explains on: live explains too, and editing in their folder (only there in Cora's) with no prompt
+    expect(args[args.indexOf('--allowedTools') + 1]).toBe(`mcp__cora__open_tab,mcp__cora__environment,mcp__cora__deploys,mcp__cora__notes_list,mcp__cora__notes_search,mcp__cora__notes_read,mcp__cora__notes_add,mcp__cora__slack_find,mcp__cora__slack_read,mcp__cora__slack_send,mcp__cora__live_explain,Edit(${ruleFor(join(cfg.dataDir, 'explains'))}/**)`);
+    expect(args.slice(args.indexOf('--add-dir') + 1, args.indexOf('--add-dir') + 3)).toEqual([join(cfg.dataDir, 'attachments'), join(cfg.dataDir, 'explains')]);
+    expect(off.slice(off.indexOf('--add-dir') + 1, off.indexOf('--add-dir') + 3)).toEqual([join(cfg.dataDir, 'attachments'), '--mcp-config']);
+    const guide = readFileSync(args[args.indexOf('--append-system-prompt-file') + 1], 'utf8');
+    expect(guide).toMatch(/--bg \(the page\), --panel and --panel2 \(cards\), --ink/);
+    expect(guide).toMatch(/call the live_explain tool once/);
+    expect(nudgeFor({ ...DEFAULT_SETTINGS.explains, mode: 'markdown' })).not.toMatch(/live_explain|--panel/);
     expect(readFileSync(args[args.indexOf('--append-system-prompt-file') + 1], 'utf8')).toMatch(/<!-- cora:explain title=/);
     expect(JSON.parse(readFileSync(args[args.indexOf('--mcp-config') + 1], 'utf8')).mcpServers.cora.alwaysLoad).toBe(true);
     // a session's own config says which session it is (its Slack drafts show whose they are)
@@ -85,6 +92,13 @@ describe('settings', () => {
     // the composer's attachments folder is readable without a permission prompt
     expect(args[args.indexOf('--add-dir') + 1]).toBe(join(cfg.dataDir, 'attachments'));
     expect(readFileSync(args[args.indexOf('--append-system-prompt-file') + 1], 'utf8')).toMatch(/open_tab/);
+  });
+});
+
+describe('permission rules for a folder', () => {
+  it("writes an absolute path the way Claude Code matches it (Windows: //c/Users/…)", () => {
+    expect(ruleFor(String.raw`C:\Users\you\.cora\explains`)).toBe('//c/Users/you/.cora/explains');
+    expect(ruleFor('/home/you/.cora/explains')).toBe('//home/you/.cora/explains');
   });
 });
 
@@ -189,7 +203,7 @@ describe('voice settings', () => {
       const args = hostedArgs(cfg, { ...DEFAULT_SETTINGS, voice });
       return { tools: args[args.indexOf('--allowedTools') + 1], prompt: readFileSync(args[args.indexOf('--append-system-prompt-file') + 1], 'utf8') };
     };
-    expect(allowed(on).tools).toBe('mcp__cora__open_tab,mcp__cora__environment,mcp__cora__deploys,mcp__cora__notes_list,mcp__cora__notes_search,mcp__cora__notes_read,mcp__cora__notes_add,mcp__cora__slack_find,mcp__cora__slack_read,mcp__cora__slack_send,mcp__cora__speak');
+    expect(allowed(on).tools.split(',')).toContain('mcp__cora__speak');
     expect(allowed(on).prompt).toMatch(/<!-- say:/);
     expect(allowed(DEFAULT_VOICE).tools).not.toMatch(/speak/);
     expect(allowed({ ...on, read: 'full' }).tools).not.toMatch(/speak/);

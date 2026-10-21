@@ -142,7 +142,8 @@ interactive pages as HTML. Claude's reply in the terminal then points to it.
 A new explain in the session you're looking at opens by itself a couple of seconds after Claude writes it. You'll
 find the rest:
 
-- On the **Explains** tab, grouped by day. Switch between **This session** and **All sessions**.
+- On the **Explains** tab, grouped by day. Switch between **This session** and **All sessions**. An explain Claude
+  writes again under the same title is a new version of it, not another explain: it has one row, its newest.
 - As pills on the scene's shelf, and as pink markers on the timeline.
 - In the command palette (`Ctrl+K`), by title.
 
@@ -156,11 +157,28 @@ An explain opens in the middle of the session, in place of the scene. Its bar ha
 - **Pop out**: opens it in a window of its own, which you can keep open beside Cora.
 - **Use the whole window**: spreads it over the whole session view; click again to go back.
 - **Close**, or press `Esc`.
+- **Versions** (`‹ 2/5 ›`), when the explain has more than one: step back through earlier versions. While you're on
+  an older one it stays put; back on the newest, the viewer follows new versions as they come.
 
 **Save** and **Pop out** are part of the desktop app.
 
 HTML explains run in a sealed-off frame: they can draw and animate, but they can't reach Cora or your files, and the
 only things they can load from the internet are images, fonts, and scripts from two public code libraries.
+
+### Live explains
+
+For work that runs for minutes (a test run, a build, a deploy, a migration), Claude can keep a **live explain**: a
+dashboard it updates as it works. It writes the page once, then rewrites a small data file at each step. The page in
+the viewer redraws in place, with no reload and no jump, so you can watch the numbers move.
+
+- A live explain's row on the Explains tab has a pulsing dot while its session is working, and says when it was last
+  updated.
+- Its files live in `%USERPROFILE%\.cora\explains`. Sessions started from Cora may write there without asking you,
+  and nowhere else in Cora's folder. Old ones are cleared with the rest of Cora's history.
+- Live explains need HTML explains on (**Markdown + HTML**).
+
+Every HTML explain gets Cora's colours to use (yours included, if you've picked another in Settings), so what Claude
+draws looks like part of Cora.
 
 ### Choosing how much Claude uses them
 

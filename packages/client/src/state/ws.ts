@@ -9,6 +9,7 @@ import { useNotes } from './notes';
 import { applySlack } from './slack';
 import { applySecurity } from './security';
 import { applyOrch, runUi } from './orchestrator';
+import { applyExplainData } from './liveExplains';
 
 let ws: WebSocket | null = null;
 let delay = 500;
@@ -88,6 +89,9 @@ function open() {
         break;
       case 'ui':
         runUi(msg.cmd);
+        break;
+      case 'explain-data':
+        applyExplainData(msg);
         break;
     }
   };

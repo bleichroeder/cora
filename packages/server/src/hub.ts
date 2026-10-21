@@ -1,4 +1,4 @@
-import { MAX_REPLAY, type AgentInfo, type BrainEvent, type CiMsg, type ClientMsg, type DeploysMsg, type InboxMsg, type NotesMsg, type JiraMsg, type OrchMsg, type PendingRequest, type SecurityMsg, type ServerMsg, type SessionInfo, type SlackMsg, type TerminalInfo, type UiCommandMsg } from '@cora/shared';
+import { MAX_REPLAY, type AgentInfo, type BrainEvent, type CiMsg, type ClientMsg, type DeploysMsg, type ExplainDataMsg, type InboxMsg, type NotesMsg, type JiraMsg, type OrchMsg, type PendingRequest, type SecurityMsg, type ServerMsg, type SessionInfo, type SlackMsg, type TerminalInfo, type UiCommandMsg } from '@cora/shared';
 import type { Store } from './store';
 
 type Sock = { send(data: string): void; on(ev: 'message' | 'close', fn: (d?: any) => void): void; readyState: number };
@@ -116,6 +116,11 @@ export class Hub {
   }
 
   publishOrchestrator(m: OrchMsg): void {
+    this.broadcast(m);
+  }
+
+  /** A live explain's new data: the open pages redraw. */
+  publishExplainData(m: ExplainDataMsg): void {
     this.broadcast(m);
   }
 

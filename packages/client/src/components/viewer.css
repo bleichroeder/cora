@@ -93,3 +93,7 @@
 .dbar i { width: 4px; background: var(--raise2); }
 .dbar i.a { background: var(--work); }
 .dbar i.d { background: var(--need); }
+
+/* a live explain's versions: back, which one, forward */
+.vw-ver { display: inline-flex; align-items: center; gap: 2px; margin-right: 4px; color: var(--ink3); font: 500 11px var(--code); }
+.vw-ver .vw-i:disabled { opacity: .35; cursor: default; }

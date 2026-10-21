@@ -17,7 +17,7 @@
   --work: #3ddc97;
   --need: #ff6b6b;
   --think: #f5c451;
-  --cora: #2dd4bf;
+  --cora: #f472b6;
   /* Cora's colour (Settings > Cora: yours to pick), and its shades: light for words, dim for edges, deep for fills */
   --cora-hi: color-mix(in srgb, var(--cora) 45%, #fff);
   --cora-dim: color-mix(in srgb, var(--cora) 42%, #0b0e14);

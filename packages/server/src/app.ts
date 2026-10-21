@@ -63,6 +63,8 @@ import { join as joinPath } from 'node:path';
 const LAUNCH_ANSWER_MS = 40_000;
 
 export type AppDeps = {
+  /** live explains: a session's page and data files */
+  live?: import('./liveExplains').LiveExplains;
   /** your Chrome / Edge bookmarks and history (tests: a fake) */
   chrome?: ChromeData;
   /** runs `claude -p` (tests: a fake) for Resume's Ask Claude */
@@ -370,7 +372,7 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
         throw new Error('nothing to do');
     }
   });
-  registerMcp(app, config.hookToken, () => prefs.get(), d.slack, d.orchestrator ? { isAgent: (sid) => d.orchestrator!.isAgent(sid), deps: orchDeps, userTurn: () => d.orchestrator!.userTurn() } : undefined, d.environments, d.deploys, d.notes ? { notes: d.notes, nameOf: (sid) => { const s = store.getSession(sid); return s ? nameOf(s) : 'a session'; } } : undefined, d.gmail ? { gmail: d.gmail, ...(d.mailWatches ? { watches: d.mailWatches } : {}), nameOf: (sid) => { const s = store.getSession(sid); return s ? nameOf(s) : 'a session'; } } : undefined, config.agentToken, (cmd) => hub.publishUi({ t: 'ui', cmd }));
+  registerMcp(app, config.hookToken, () => prefs.get(), d.slack, d.orchestrator ? { isAgent: (sid) => d.orchestrator!.isAgent(sid), deps: orchDeps, userTurn: () => d.orchestrator!.userTurn() } : undefined, d.environments, d.deploys, d.notes ? { notes: d.notes, nameOf: (sid) => { const s = store.getSession(sid); return s ? nameOf(s) : 'a session'; } } : undefined, d.gmail ? { gmail: d.gmail, ...(d.mailWatches ? { watches: d.mailWatches } : {}), nameOf: (sid) => { const s = store.getSession(sid); return s ? nameOf(s) : 'a session'; } } : undefined, config.agentToken, (cmd) => hub.publishUi({ t: 'ui', cmd }), d.live);
   // starting work from Jira launches the way the agent's start_session does
   d.orchestrator?.setLauncher((x) => orchDeps().launch(x));
 
@@ -1159,6 +1161,12 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
     const ids = store.listSessions().filter((s) => s.state === 'ended' && !s.dismissedAt && !ptys?.shellsFor(s.id).length).map((s) => s.id);
     ids.forEach(dismiss);
     return { dismissed: ids.length };
+  });
+  // a live explain's newest data (the viewer asks when it opens one; after that it comes over the WebSocket)
+  app.get<{ Params: { sid: string; slug: string } }>('/api/explains/live/:sid/:slug/data', { preHandler: requireUi }, async (req, reply) => {
+    if (!d.live) return reply.code(501).send({ error: 'not supported' });
+    if (!/^[\w-]{8,80}$/.test(req.params.sid) || !/^[\w-]{1,60}$/.test(req.params.slug)) return reply.code(400).send({ error: 'bad explain' });
+    return { data: d.live.latestData(req.params.sid, req.params.slug) ?? null };
   });
   app.get<{ Querystring: { sessionId?: string; limit?: string } }>('/api/explains', { preHandler: requireUi }, async (req) => ({
     explains: store.listExplains(req.query.sessionId, Math.min(Number(req.query.limit ?? 200), 1000)),

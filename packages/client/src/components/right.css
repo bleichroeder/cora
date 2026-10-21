@@ -254,3 +254,7 @@
 .act-read { display: grid; place-items: center; width: 22px; height: 20px; padding: 0; border: 0; border-radius: 6px; background: none; color: var(--ink4); cursor: pointer; }
 .act-read:hover { background: var(--raise); color: var(--ink2); }
 .act-read.on { color: var(--cora); }
+
+/* a live explain whose session is working: a pulsing dot by its title */
+.ex-live { display: inline-block; width: 6px; height: 6px; margin-left: 7px; border-radius: 50%; vertical-align: 2px; background: var(--cora); animation: ex-live 1.6s ease-in-out infinite; }
+@keyframes ex-live { 0%, 100% { opacity: 1; box-shadow: 0 0 0 0 color-mix(in srgb, var(--cora) 55%, transparent); } 50% { opacity: .55; box-shadow: 0 0 0 4px transparent; } }

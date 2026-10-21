@@ -21,7 +21,10 @@ export function setupBrowser(win: BrowserWindow, base: string) {
   // notifications, mic and camera, screen sharing only for the Tools' sites (Slack: messages, huddles); other pages get
   // clipboard writes and fullscreen, nothing else
   ses.setPermissionRequestHandler((wc, perm, cb, details) => cb(perm === 'clipboard-sanitized-write' || perm === 'fullscreen' || (TOOL_PERMS.has(perm) && isToolPage(wc, details?.requestingUrl))));
-  ses.setPermissionCheckHandler((wc, perm, origin) => (TOOL_PERMS.has(perm) ? isToolPage(wc, origin) : true));
+  // a Tool's notifications (Slack's) only while you're away from Cora: in Cora you see what's new already (its Inbox,
+  // the Tool's count), and Slack, its page out of sight in the drawer, would otherwise pop one up for every message.
+  // Chromium asks this each time a page shows one: denied, it doesn't show.
+  ses.setPermissionCheckHandler((wc, perm, origin) => (perm === 'notifications' ? isToolPage(wc, origin) && !BrowserWindow.getFocusedWindow() : TOOL_PERMS.has(perm) ? isToolPage(wc, origin) : true));
   // sharing a screen (a huddle): you pick which one, every time
   ses.setDisplayMediaRequestHandler((req, cb) => void pickScreen(req.securityOrigin, cb));
   keepLogins(ses);

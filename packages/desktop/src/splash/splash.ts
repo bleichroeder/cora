@@ -144,7 +144,7 @@ class Orb {
 
 // Cora's colour (yours to pick; the app passes it): the orb, and Cora's own row
 const CORA_Q = new URLSearchParams(location.search).get('cora') ?? '';
-const CORA = /^#[0-9a-f]{6}$/i.test(CORA_Q) ? CORA_Q : '#2dd4bf';
+const CORA = /^#[0-9a-f]{6}$/i.test(CORA_Q) ? CORA_Q : '#f472b6';
 
 // ---------------------------------------------------------------- startup stages
 const STAGES = [

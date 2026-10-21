@@ -1,4 +1,5 @@
-import { isShell, SLACK_SEND_TOOL, type JiraMsg, type OrchestratorStatus } from '@cora/shared';
+import { EVENT_ICON, PRESENT_TOOL, iconFor, isShell, summarizeTool, SLACK_SEND_TOOL, type JiraMsg, type OrchestratorStatus } from '@cora/shared';
+import { LiveExplains } from './liveExplains';
 import { Environments, envLine } from './environments';
 import { homedir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
@@ -56,6 +57,8 @@ export type Running = {
   tailer?: Tailer;
   /** Cora's Inbox */
   inbox: Inbox;
+  /** live explains (the simulator keeps one, as a session would) */
+  live: LiveExplains;
   /** for the simulator (--sim): name a session as you would; show a stand-in Cora (no real agent starts) */
   sim: { name(sessionId: string, name: string): void; cora(status: OrchestratorStatus): void };
   /** stop; terminals in the terminal host keep running unless `endTerminals` */
@@ -410,6 +413,25 @@ export async function startServer(config: Config, opts: { tail?: boolean; listen
   // where GitLab is
   const kubeDir = opts.kubeDir ?? join(homedir(), '.kube');
   setGitlabHost(prefs.get().gitlab.host);
+  // live explains: a session's page and data files (its new page is a version of the explain; its data goes to the open page)
+  const liveExplains = new LiveExplains({
+    root: join(config.dataDir, 'explains'),
+    onVersion: (v) => {
+      const id = `live-${v.slug}-${Date.now().toString(36)}`;
+      const input = { title: v.title, format: 'html', content: v.html, live: v.slug };
+      const s = summarizeTool(PRESENT_TOOL, input);
+      const tool = { name: PRESENT_TOOL, input, summary: s.summary, resource: s.resource };
+      const base = { sessionId: v.sessionId, agentId: 'main', ts: Date.now(), icon: iconFor(PRESENT_TOOL, input), source: 'transcript' as const };
+      pipeline.ingestEvents([
+        { ...base, id: `tool:${id}:start`, kind: 'tool', phase: 'start', toolUseId: id, tool },
+        { ...base, id: `tool:${id}:end`, kind: 'tool', phase: 'end', toolUseId: id, durationMs: 0, tool: { ...tool, resultSummary: 'shown in Cora' } },
+      ]);
+    },
+    onData: (d) => hub?.publishExplainData({ t: 'explain-data', ...d }),
+    log: (m) => console.log(`  ${m}`),
+  });
+  // watched in real runs and simulations (not tests, which don't listen)
+  if (opts.listen !== false) liveExplains.watch();
   const environments = new Environments({
     kubeDir,
     ...(opts.envProbe ? { probe: opts.envProbe } : {}),
@@ -454,7 +476,7 @@ export async function startServer(config: Config, opts: { tail?: boolean; listen
     ...(opts.draftRun ? { run: opts.draftRun } : {}),
   });
   if (config.dbPath !== ':memory:' && opts.ci) deploys.start();
-  const app = await buildApp({ config, store, hub, pipeline, pending, ptys, registry, prefs, voice, voiceFront, gmail, mailWatches, namer, tickets, jira, environments, deploys, notes, drafts, bot, inbox, ...(opts.claudeSettingsFile ? { claudeSettingsFile: opts.claudeSettingsFile } : {}), ...(opts.setupChecks ? { setupChecks: opts.setupChecks } : {}), onShutdown: opts.onShutdown, ci: () => ci, slack: { slack, outbox, live, cwdOf: (sid) => store.getSession(sid)?.cwd }, security: security ?? undefined, orchestrator: o });
+  const app = await buildApp({ config, store, hub, pipeline, pending, ptys, live: liveExplains, registry, prefs, voice, voiceFront, gmail, mailWatches, namer, tickets, jira, environments, deploys, notes, drafts, bot, inbox, ...(opts.claudeSettingsFile ? { claudeSettingsFile: opts.claudeSettingsFile } : {}), ...(opts.setupChecks ? { setupChecks: opts.setupChecks } : {}), onShutdown: opts.onShutdown, ci: () => ci, slack: { slack, outbox, live, cwdOf: (sid) => store.getSession(sid)?.cwd }, security: security ?? undefined, orchestrator: o });
 
   let tailer: Tailer | undefined;
   if (opts.tail !== false) {
@@ -475,6 +497,7 @@ export async function startServer(config: Config, opts: { tail?: boolean; listen
   const prune = () => {
     store.prune(Date.now() - prefs.get().retentionDays * 86400_000);
     pruneAttachments(config.dataDir);
+    liveExplains.prune(Date.now() - prefs.get().retentionDays * 86400_000);
   };
   const pruner = setInterval(prune, 3600_000);
   prune();
@@ -533,6 +556,7 @@ export async function startServer(config: Config, opts: { tail?: boolean; listen
     ptys,
     tailer,
     inbox,
+    live: liveExplains,
     sim: {
       name(sessionId, name) {
         if (store.getSession(sessionId)) hub?.publishSession(store.upsertSession({ id: sessionId, alias: name }));
@@ -545,6 +569,7 @@ export async function startServer(config: Config, opts: { tail?: boolean; listen
     async close(o) {
       await ptys.disposeAll(o?.endTerminals ?? false);
       clearInterval(ticker);
+      liveExplains.stop();
       ci?.stop();
       deploys.stop();
       bot?.stop();

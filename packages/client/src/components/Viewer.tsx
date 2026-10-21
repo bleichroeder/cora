@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { BrainEvent } from '@cora/shared';
 import { sessionEvents, useBrain } from '../state/store';
@@ -8,6 +8,9 @@ import { fetchToolDetail } from '../state/ws';
 import { desktop } from '../lib/desktop';
 import { Markdown } from './Markdown';
 import { Icon } from './Icon';
+import { explainShim, themeVars } from '../lib/explainShim';
+import { versionsOf } from '../lib/explainVersions';
+import { liveKey, loadLiveData, useLiveData } from '../state/liveExplains';
 
 export { PRESENT_TOOL } from '@cora/shared';
 import { isPresentTool } from '@cora/shared';
@@ -19,6 +22,10 @@ export type Explain = {
   content?: string;
   /** opened from another session's list: shown over whatever session is focused, closed when focus changes */
   pinned?: boolean;
+  /** a live explain's folder name: its data comes in as the session writes it */
+  live?: string;
+  /** you stepped back to an older version: a new one doesn't replace it on screen */
+  held?: boolean;
 };
 
 /** Content-Security-Policy for model-written HTML: no network except fonts and two script CDNs. */
@@ -28,9 +35,9 @@ const CSP =
 
 const BASE_STYLE = `<style>html{color-scheme:dark}body{margin:0;padding:24px;background:#0b0f17;color:#e2e8f0;font:14px/1.55 system-ui,-apple-system,Segoe UI,sans-serif}</style>`;
 
-/** Wrap HTML (fragment or full document) with the CSP; it is only ever rendered sandboxed. */
-export function sandboxedHtml(html: string): string {
-  const meta = `<meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${CSP}">`;
+/** Wrap HTML (fragment or full document) with the CSP; it is only ever rendered sandboxed. `extra`: Cora's shim. */
+export function sandboxedHtml(html: string, extra = ''): string {
+  const meta = `<meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${CSP}">${extra}`;
   if (/<head[^>]*>/i.test(html)) return html.replace(/<head[^>]*>/i, (m) => `${m}${meta}`);
   if (/<html[^>]*>/i.test(html)) return html.replace(/<html[^>]*>/i, (m) => `${m}<head>${meta}${BASE_STYLE}</head>`);
   return `<!doctype html><html><head>${meta}${BASE_STYLE}</head><body>${html}</body></html>`;
@@ -48,7 +55,7 @@ export const looksLikeHtmlDoc = (s: string) => /^\s*(<!doctype html|<html[\s>])/
 
 export function explainFrom(e: BrainEvent): Explain | null {
   if (!isPresentTool(e.tool?.name) || !e.toolUseId) return null;
-  const inp = (e.tool.input ?? {}) as { title?: string; format?: string; content?: unknown; _truncated?: boolean; preview?: string };
+  const inp = (e.tool.input ?? {}) as { title?: string; format?: string; content?: unknown; _truncated?: boolean; preview?: string; live?: unknown };
   // Explains stored before inputs were kept whole are truncated to a JSON preview: title and format are near the
   // start of it, and the content is fetched from the transcript when the viewer opens.
   const preview = inp._truncated && typeof inp.preview === 'string' ? inp.preview : '';
@@ -62,11 +69,47 @@ export function explainFrom(e: BrainEvent): Explain | null {
     title: String(title ?? 'Document'),
     format: format === 'html' || (content != null && looksLikeHtmlDoc(content)) ? 'html' : 'markdown',
     content,
+    ...(typeof inp.live === 'string' && /^[\w-]{1,60}$/.test(inp.live) ? { live: inp.live } : {}),
   };
 }
 
 export function Viewer({ p }: { p: Explain }) {
   const close = () => useBrain.getState().setViewer(null);
+  // a live explain: its newest data (posted into the page as it comes, no reload), and where you'd scrolled to
+  const key = p.live ? liveKey(p.sessionId, p.live) : '';
+  const liveData = useLiveData((s) => (key ? s[key] : undefined));
+  const frame = useRef<HTMLIFrameElement>(null);
+  const scroll = useRef(0);
+  const dataNow = useRef<unknown>(undefined);
+  dataNow.current = liveData;
+  useEffect(() => {
+    if (p.live) void loadLiveData(p.sessionId, p.live);
+  }, [p.sessionId, p.live]);
+  useEffect(() => {
+    if (p.live && liveData !== undefined) frame.current?.contentWindow?.postMessage({ cora: 'data', data: liveData }, '*');
+  }, [liveData, p.live]);
+  useEffect(() => {
+    const m = (e: MessageEvent) => {
+      if (e.source === frame.current?.contentWindow && e.data?.cora === 'scroll' && typeof e.data.y === 'number') scroll.current = e.data.y;
+    };
+    window.addEventListener('message', m);
+    return () => window.removeEventListener('message', m);
+  }, []);
+  // its versions (the same title in that session), oldest first
+  const sessionVersion = useBrain((s) => s.versions[p.sessionId]);
+  const versions = useMemo(
+    () => versionsOf(sessionEvents(p.sessionId).flatMap((e) => (e.kind === 'tool' && e.phase === 'start' ? (explainFrom(e) ? [{ ...explainFrom(e)!, ts: e.ts }] : []) : [])), { sessionId: p.sessionId, title: p.title, ts: 0 }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [p.sessionId, p.title, sessionVersion],
+  );
+  const at = versions.findIndex((v) => v.toolUseId === p.toolUseId);
+  const step = (d: -1 | 1) => {
+    const v = versions[at + d];
+    if (!v) return;
+    const { ts: _ts, ...next } = v;
+    // stepping back holds this version on screen; back at the newest, it follows again
+    useBrain.getState().setViewer({ ...next, pinned: p.pinned, held: at + d < versions.length - 1 });
+  };
   const wide = useBrain((s) => s.viewerWide);
   const [content, setContent] = useState<string | null>(p.content ?? null);
   const [err, setErr] = useState<string | null>(null);
@@ -104,6 +147,13 @@ export function Viewer({ p }: { p: Explain }) {
   const when = ev ? `${ago(ev.ts)} ago` : '';
   const owner = useBrain((s) => (s.sessions[p.sessionId] ? sessionName(s.sessions[p.sessionId]) : ''));
 
+  // the page as it's shown: Cora's theme in every HTML explain; a live one's data and scroll as they were when it (re)loads
+  const page = useMemo(
+    () => (content != null && html ? sandboxedHtml(content, explainShim({ vars: themeVars((n) => getComputedStyle(document.documentElement).getPropertyValue(n)), live: !!p.live, data: dataNow.current, scroll: scroll.current })) : ''),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [content, html, p.live],
+  );
+
   const standalone = () =>
     html
       ? sandboxedHtml(content ?? '')
@@ -121,6 +171,19 @@ export function Viewer({ p }: { p: Explain }) {
           <span>{[html ? 'HTML' : 'markdown', when, owner].filter(Boolean).join(' · ')}</span>
         </span>
         <span className="spacer" />
+        {versions.length > 1 && at >= 0 ? (
+          <span className="vw-ver" title="Earlier versions of this explain">
+            <button className="vw-i" disabled={at === 0} onClick={() => step(-1)} title="An earlier version">
+              <Icon name="ChevronLeft" size={14} />
+            </button>
+            <span>
+              {at + 1}/{versions.length}
+            </span>
+            <button className="vw-i" disabled={at === versions.length - 1} onClick={() => step(1)} title="A later version">
+              <Icon name="ChevronRight" size={14} />
+            </button>
+          </span>
+        ) : null}
         {content ? (
           <button
             className={`vw-b${done?.what === 'copy' ? ' done' : ''}`}
@@ -170,7 +233,7 @@ export function Viewer({ p }: { p: Explain }) {
         ) : null}
         {content != null && html ? (
           // allow-scripts WITHOUT allow-same-origin: an opaque origin with no access to the dashboard, its cookie or its APIs.
-          <iframe className="html-frame" title={p.title} sandbox="allow-scripts" srcDoc={sandboxedHtml(content)} />
+          <iframe ref={frame} className="html-frame" title={p.title} sandbox="allow-scripts" srcDoc={page} />
         ) : null}
       </div>
     </div>

@@ -362,6 +362,9 @@ export type CiMsg = { t: 'ci'; full?: boolean; pipelines?: CiPipeline[]; links?:
 /** A dashboard that comes back is sent what it missed, up to this many events; past that it fetches sessions again. */
 export const MAX_REPLAY = 5000;
 
+/** A live explain's data changed: the open page redraws. */
+export type ExplainDataMsg = { t: 'explain-data'; sessionId: string; slug: string; data: unknown };
+
 export type ServerMsg =
   | CiMsg
   | import('./deploys').DeploysMsg
@@ -372,6 +375,7 @@ export type ServerMsg =
   | import('./security').SecurityMsg
   | import('./orchestrator').OrchMsg
   | import('./orchestrator').UiCommandMsg
+  | ExplainDataMsg
   | { t: 'snapshot'; sessions: SessionInfo[]; agents: AgentInfo[]; pending: PendingRequest[]; terminals: TerminalInfo[]; lastSeq: number; recent: Record<string, BrainEvent[]> }
   | { t: 'terminals'; terminals: TerminalInfo[] }
   | { t: 'events'; events: BrainEvent[] }

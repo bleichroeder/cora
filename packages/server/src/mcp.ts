@@ -41,7 +41,10 @@ const knownHosts = (settings: Settings) => ['github.com', settings.gitlab?.host,
 /** Cora's tools here that act, reach out, or let it act later (slack_allow: only stopping is let through). */
 const OTHERS_LOCKED = new Set(['open_tab', 'notes_add', 'gmail_watch', 'gmail_unwatch', 'slack_allow']);
 
-function buildServer(settings: Settings, sessionId: string | null, s?: McpSlack, orch?: McpOrchestrator, env?: Environments, deploys?: Deploys, notes?: McpNotes, mail?: McpGmail, /** the caller proved it's Cora's agent */ proven = false, /** drives the dashboards (open_tab) */ ui?: (cmd: UiCommand) => void): McpServer {
+/** Live explains, as the MCP server needs them. */
+export type McpLive = { start(sessionId: string, title: string): { slug: string; dir: string; page: string; data: string } };
+
+function buildServer(settings: Settings, sessionId: string | null, s?: McpSlack, orch?: McpOrchestrator, env?: Environments, deploys?: Deploys, notes?: McpNotes, mail?: McpGmail, /** the caller proved it's Cora's agent */ proven = false, /** drives the dashboards (open_tab) */ ui?: (cmd: UiCommand) => void, live?: McpLive): McpServer {
   // a session id alone says nothing: only Cora's own agent (with its own key) is Cora (docs/audit-2026-10-20.md S3)
   const asCora = (sid: string | null): sid is string => !!(proven && orch && sid && orch.isAgent(sid));
   const mode = settings.explains.mode;
@@ -80,6 +83,37 @@ function buildServer(settings: Settings, sessionId: string | null, s?: McpSlack,
       return { content: [{ type: 'text', text: known ? `Opened ${url} for the user in Cora's browser.` : `Asked the user whether to open ${host} (a site Cora doesn't know yet): it opens if they say so.` }] };
     },
   );
+  // A live explain: a page the session writes once and data it keeps current while it works (not Cora's agent: it
+  // doesn't write files). Writing in its folder needs no OK (hosted.ts); Cora watches it and updates the open page.
+  if (live && sessionId && settings.explains.mode === 'markdown+html' && !asCora(sessionId))
+    server.registerTool(
+      'live_explain',
+      {
+        title: 'Start a live explain',
+        description: [
+          'Make an explain that stays live while you work: a dashboard of something that runs for minutes (tests, a build, a deploy, a migration, a long search) that the user watches update in Cora.',
+          'Returns two file paths. Write page.html once (a whole HTML page: layout, labels, charts) and then rewrite data.json (small JSON) at each real step: the open page redraws with no reload.',
+          'In the page, register `cora.onData((data) => { … })`: it is called with the latest data when the page loads and on every change. Use the CSS variables Cora gives the page (see the explain guidance).',
+          'Calling it again with the same title gives the same files (to change the page, write page.html again: that becomes a new version).',
+        ].join(' '),
+        inputSchema: { title: z.string().min(1).max(120).describe('What it shows, e.g. "Release 2.4" or "Test run"') },
+      },
+      async ({ title }) => {
+        try {
+          const f = live.start(sessionId, title);
+          return {
+            content: [
+              {
+                type: 'text',
+                text: `Live explain "${title}" is ready. Write the page to ${f.page} and keep the data in ${f.data}. The page reads it with cora.onData((data) => …) (called at load and on each change); write data.json whole each time (valid JSON, under 256 KB). Writing in that folder needs no permission.`,
+              },
+            ],
+          };
+        } catch (e) {
+          return { isError: true, content: [{ type: 'text', text: (e as Error).message }] };
+        }
+      },
+    );
   // Which environments (the user's VPNs) are reachable now: Cora checks; nothing here can change the network.
   server.registerTool(
     'environment',
@@ -625,13 +659,13 @@ function registerSlack(server: McpServer, sessionId: string | null, { slack, out
  * Streamable-HTTP MCP endpoint (stateless: a fresh server per request). The tool itself has no side effects:
  * the document travels in the tool call, which lands in the transcript, and the UI renders it from there.
  */
-export function registerMcp(app: FastifyInstance, token: string, getSettings: () => Settings, slack?: McpSlack, orch?: McpOrchestrator, env?: Environments, deploys?: Deploys, notes?: McpNotes, mail?: McpGmail, /** Cora's agent's own key (Cora passes its own; tests use the hook token) */ agentToken: string = token, /** drives the dashboards (open_tab) */ ui?: (cmd: UiCommand) => void): void {
+export function registerMcp(app: FastifyInstance, token: string, getSettings: () => Settings, slack?: McpSlack, orch?: McpOrchestrator, env?: Environments, deploys?: Deploys, notes?: McpNotes, mail?: McpGmail, /** Cora's agent's own key (Cora passes its own; tests use the hook token) */ agentToken: string = token, /** drives the dashboards (open_tab) */ ui?: (cmd: UiCommand) => void, /** live explains */ live?: McpLive): void {
   app.post('/mcp', async (req, reply) => {
     if (!sameSecret(hookToken(req), token)) return reply.code(401).send({ error: 'bad token' });
     // sessions launched here say who they are (older ones don't: their drafts are matched to them by their events)
     const sid = req.headers[SESSION_HEADER];
     const proven = !!agentToken && sameSecret(req.headers[AGENT_HEADER], agentToken);
-    const server = buildServer(getSettings(), typeof sid === 'string' && /^[\w-]{8,80}$/.test(sid) ? sid : null, slack, orch, env, deploys, notes, mail, proven, ui);
+    const server = buildServer(getSettings(), typeof sid === 'string' && /^[\w-]{8,80}$/.test(sid) ? sid : null, slack, orch, env, deploys, notes, mail, proven, ui, live);
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
     reply.hijack();
     reply.raw.on('close', () => {

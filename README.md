@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/bleichroeder/cora/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/bleichroeder/cora?label=release&color=2dd4bf&labelColor=0b1220"></a>
+  <a href="https://github.com/bleichroeder/cora/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/bleichroeder/cora?label=release&color=f472b6&labelColor=0b1220"></a>
   <img alt="Windows 10 and 11" src="https://img.shields.io/badge/Windows-10%20%7C%2011-38bdf8?labelColor=0b1220&logo=windows11&logoColor=white">
   <img alt="For Claude Code" src="https://img.shields.io/badge/for-Claude%20Code-d97757?labelColor=0b1220">
   <a href="LICENSE"><img alt="MIT license" src="https://img.shields.io/badge/license-MIT-a78bfa?labelColor=0b1220"></a>

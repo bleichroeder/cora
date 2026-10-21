@@ -1,6 +1,6 @@
 import { mkdirSync, readdirSync, rmSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import { DEPLOYS_TOOL, ENV_TOOL, NOTES_TOOLS, MCP_SERVER, OPEN_TAB_TOOL, SESSION_HEADER, SLACK_FIND_TOOL, SLACK_READ_TOOL, SLACK_SEND_TOOL, SPEAK_TOOL, TOKEN_HEADER, speaksSummaries, type Settings, type VoiceSettings, takesTags } from '@cora/shared';
+import { DEPLOYS_TOOL, ENV_TOOL, LIVE_EXPLAIN_TOOL, NOTES_TOOLS, MCP_SERVER, OPEN_TAB_TOOL, SESSION_HEADER, SLACK_FIND_TOOL, SLACK_READ_TOOL, SLACK_SEND_TOOL, SPEAK_TOOL, TOKEN_HEADER, speaksSummaries, type Settings, type VoiceSettings, takesTags } from '@cora/shared';
 import type { Config } from './config';
 import { attachmentsDir } from './attachments';
 import { writeFileAtomic } from './fsx';
@@ -38,6 +38,21 @@ export function speakNudge(voice: VoiceSettings | undefined): string | null {
   ].join(' ');
 }
 
+/** How an HTML explain should look: as good as a polished dashboard, in Cora's colours (the viewer gives every page these). */
+const DESIGN = [
+  'Make HTML explains look as good as a polished dashboard. Cora gives every HTML page these CSS variables, use them instead of fixed colours so the page follows the theme:',
+  '--bg (the page), --panel and --panel2 (cards), --ink (text), --ink2 and --ink3 (quieter text), --hair (borders), --cora (the accent: the user\'s own Cora colour), --ok, --warn and --bad (status).',
+  'Layout: full width (the viewer can be narrow or wide), cards in a responsive grid (grid-template-columns: repeat(auto-fill, minmax(220px, 1fr))), generous spacing, font-family: system-ui.',
+  'Lead with what matters: big numbers with short labels; one accent colour, and the status colours only for status. Charts: Chart.js from cdn.jsdelivr.net, sized to their card. No external fonts or images.',
+].join(' ');
+
+/** When and how a session keeps a live explain. */
+const LIVE = [
+  'For work that runs for minutes with progress worth watching (tests, a build, a deploy, a migration, a long search), keep a live explain instead of reporting progress in text:',
+  'call the live_explain tool once with a title, write page.html (the layout; it reads its data with cora.onData((data) => { … }), called at load and on every change),',
+  'then rewrite data.json whole at each real step (not every second). Keep the page fixed and put what changes in the data. Leave a final state that reads well afterwards.',
+].join(' ');
+
 /** The system-prompt addendum for hosted sessions, built from the explain settings (and voice, for spoken summaries). */
 export function nudgeFor(s: Settings['explains'], voice?: VoiceSettings): string {
   const speak = speakNudge(voice);
@@ -58,6 +73,7 @@ export function nudgeFor(s: Settings['explains'], voice?: VoiceSettings): string
           '<!-- /cora:explain -->',
           'with the whole document between them. Cora takes it out of your reply and shows it in a viewer beside this terminal.',
           formats,
+          ...(s.mode === 'markdown+html' ? [DESIGN, LIVE] : []),
           REPLY[s.reply],
           'Do not use explains for short answers, confirmations, or routine progress updates.',
         ]),
@@ -90,11 +106,15 @@ export function hostedArgs(config: Config, settings: Settings, sessionId?: strin
 ${OTHERS}`);
   // opening a tab is harmless; so are the Slack tools (looking up and reading; a message is only sent once you
   // confirm it in Cora); speaking only when voice reads summaries (explains are written in the reply)
-  const allowed = [OPEN_TAB_TOOL, ENV_TOOL, DEPLOYS_TOOL, ...NOTES_TOOLS.map((t) => `mcp__${MCP_SERVER}__${t}`), SLACK_FIND_TOOL, SLACK_READ_TOOL, SLACK_SEND_TOOL, ...(speaksSummaries(settings.voice) ? [SPEAK_TOOL] : [])].join(',');
+  // live explains (with HTML explains on): the tool, and editing in their folder (only there in Cora's folder) with no prompt
+  const explains = join(config.dataDir, 'explains');
+  const live = settings.explains.mode === 'markdown+html';
+  if (live) mkdirSync(explains, { recursive: true });
+  const allowed = [OPEN_TAB_TOOL, ENV_TOOL, DEPLOYS_TOOL, ...NOTES_TOOLS.map((t) => `mcp__${MCP_SERVER}__${t}`), SLACK_FIND_TOOL, SLACK_READ_TOOL, SLACK_SEND_TOOL, ...(speaksSummaries(settings.voice) ? [SPEAK_TOOL] : []), ...(live ? [LIVE_EXPLAIN_TOOL, `Edit(${ruleFor(explains)}/**)`] : [])].join(',');
   const attachments = attachmentsDir(config.dataDir);
   mkdirSync(attachments, { recursive: true });
   // --add-dir takes several folders: an option must follow it
-  return ['--add-dir', attachments, '--mcp-config', mcpPath, '--allowedTools', allowed, '--append-system-prompt-file', promptPath];
+  return ['--add-dir', attachments, ...(live ? [explains] : []), '--mcp-config', mcpPath, '--allowedTools', allowed, '--append-system-prompt-file', promptPath];
 }
 
 /** Every session: other people's words that reach it (Slack replies, what it reads) are never instructions. */
@@ -111,4 +131,13 @@ function pruneOld(dir: string): void {
   } catch {
     /* best effort */
   }
+}
+
+/**
+ * A folder as Claude Code's permission rules write an absolute path: `//` and the path in POSIX form (on Windows,
+ * `C:\Users\you` is matched as `/c/Users/you`). An `Edit(…)` rule covers Write too, and reading.
+ */
+export function ruleFor(dir: string): string {
+  const p = dir.replace(/\\/g, '/').replace(/^([A-Za-z]):/, (_m, d: string) => `/${d.toLowerCase()}`);
+  return `//${p.replace(/^\/+/, '')}`;
 }

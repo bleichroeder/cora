@@ -32,6 +32,7 @@ import { BANG_MS, COLLAPSE_MS, Cosmos, comeBack, type CosmicPhase } from './cosm
 import { ago, dur } from '../lib/format';
 import { replayAt } from '../lib/replay';
 import { Golf, type GolfApi } from './golf/Golf';
+import { latestByTitle } from '../lib/explainVersions';
 import { CiLogPanel } from '../components/CiStrip';
 
 const MAIN_V = new THREE.Vector3(MAIN_POS.x, MAIN_POS.y, 0);
@@ -233,10 +234,13 @@ export function Scene({ sessionId }: { sessionId: string }) {
   const pending = allPending.filter((p) => p.sessionId === sessionId);
   const alerted = new Set(pending.map((p) => (d.agents.some((a) => a.a.agentId === p.agentId) ? p.agentId : 'main')));
   if (session?.state === 'needs-you' && !alerted.size) alerted.add('main');
-  const shelf: ShelfItem[] = d.explains.flatMap((x) => {
-    const p = explainFrom(x.event);
-    return p ? [{ id: x.toolUseId, title: p.title, format: p.format, ts: x.ts }] : [];
-  });
+  // one pill per explain: a title written again is a new version of it
+  const shelf: ShelfItem[] = latestByTitle(
+    d.explains.flatMap((x) => {
+      const p = explainFrom(x.event);
+      return p ? [{ id: x.toolUseId, sessionId, title: p.title, format: p.format, ts: x.ts }] : [];
+    }),
+  );
 
   const agentPos = (id: string): PosFn => worldPosFn(world, `agent:${id}`);
   const dirBetween = (fromKey: string, toKey: string): THREE.Vector3 | null => {

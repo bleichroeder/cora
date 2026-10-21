@@ -433,6 +433,14 @@ export function App() {
         const p = explainFrom(e);
         if (!p) continue;
         seen.add(e.toolUseId);
+        // a title written again is a new version: on screen it replaces the one shown (in place, no focus change),
+        // unless you stepped back to an older one; it never opens on its own
+        const again = evs.some((x) => x !== e && x.ts <= e.ts && x.kind === 'tool' && x.phase === 'start' && explainFrom(x)?.title.trim().toLowerCase() === p.title.trim().toLowerCase());
+        if (again) {
+          const v = useBrain.getState().viewer;
+          if (v && v.sessionId === p.sessionId && v.title.trim().toLowerCase() === p.title.trim().toLowerCase() && !v.held && v.toolUseId !== p.toolUseId) useBrain.getState().setViewer({ ...p, pinned: v.pinned });
+          continue;
+        }
         // let the scene show the card rising out of main before the viewer covers it
         const sid = st.focus;
         setTimeout(() => {

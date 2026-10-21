@@ -3,6 +3,7 @@ import type { BrainEvent } from '@cora/shared';
 import { useBrain } from '../state/store';
 import { ago, clock, sessionColor, sessionName } from '../lib/format';
 import { explainFrom } from './Viewer';
+import { latestByTitle } from '../lib/explainVersions';
 import { Icon } from './Icon';
 
 /** A day's label: Today, Yesterday, or the date. */
@@ -38,11 +39,12 @@ export function ExplainsList({ sessionId }: { sessionId: string }) {
     };
   }, [scope, sessionId, version]);
 
-  // grouped by day, newest first
+  // grouped by day, newest first; one row per explain (a title written again is a new version of it)
   const groups = useMemo(() => {
     const out: Array<[string, BrainEvent[]]> = [];
+    const newest = new Set(latestByTitle((items ?? []).flatMap((e) => (explainFrom(e) ? [{ id: e.id, sessionId: e.sessionId, title: explainFrom(e)!.title, ts: e.ts }] : []))).map((x) => x.id));
     for (const e of items ?? []) {
-      if (!explainFrom(e)) continue;
+      if (!explainFrom(e) || !newest.has(e.id)) continue;
       const d = dayOf(e.ts);
       const g = out.find((x) => x[0] === d);
       if (g) g[1].push(e);
@@ -88,7 +90,11 @@ export function ExplainsList({ sessionId }: { sessionId: string }) {
                     <Icon name={html ? 'Monitor' : 'FileText'} size={14} />
                   </span>
                   <span className="ex-main">
-                    <span className="ex-t">{p.title}</span>
+                    <span className="ex-t">
+                      {p.title}
+                      {/* live: its session is still working on it */}
+                      {p.live && s && s.state !== 'ended' && s.state !== 'idle' ? <i className="ex-live" title="Live: updating as its session works" /> : null}
+                    </span>
                     <span className="ex-l2">
                       {scope === 'all' && s ? (
                         <span className="ex-s">
@@ -96,7 +102,7 @@ export function ExplainsList({ sessionId }: { sessionId: string }) {
                           {sessionName(s)}
                         </span>
                       ) : null}
-                      <span>{html ? 'HTML' : 'markdown'} · {dayOf(e.ts) === 'Today' ? `${ago(e.ts)} ago` : clock(e.ts)}</span>
+                      <span>{p.live ? 'live' : html ? 'HTML' : 'markdown'} · {dayOf(e.ts) === 'Today' ? `${p.live ? 'updated ' : ''}${ago(e.ts)} ago` : clock(e.ts)}</span>
                     </span>
                   </span>
                 </button>
