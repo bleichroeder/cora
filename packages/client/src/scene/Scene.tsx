@@ -613,7 +613,6 @@ export function Scene({ sessionId }: { sessionId: string }) {
                 busy={x.busy}
                 targetKey={x.targetKey}
                 api={orbApi}
-                context={x.isMain ? d.context : null}
                 lowFx={lowFx}
                 reg={reg}
                 world={world}

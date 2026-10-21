@@ -8,7 +8,7 @@ const H = { 'x-cora-token': 'tok', 'x-cora-session': 'sess-open-1', accept: 'app
 function setup(o: { othersTurn?: boolean } = {}) {
   const sent: UiCommand[] = [];
   const app = Fastify();
-  const settings = { ...DEFAULT_SETTINGS, gitlab: { host: 'gitlab.acme.io' } };
+  const settings = { ...DEFAULT_SETTINGS, gitlab: { host: 'gitlab.acme.io', todos: true } };
   const orch = o.othersTurn ? { isAgent: (sid: string) => sid === 'sess-open-1', deps: () => ({ othersTurn: () => true }) as any } : undefined;
   registerMcp(app, 'tok', () => settings, undefined, orch, undefined, undefined, undefined, undefined, 'tok', (cmd) => sent.push(cmd));
   const call = async (url: string, headers: Record<string, string> = H) => {

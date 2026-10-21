@@ -1,4 +1,4 @@
-import { EVENT_ICON, PRESENT_TOOL, iconFor, isShell, summarizeTool, SLACK_SEND_TOOL, type JiraMsg, type OrchestratorStatus } from '@cora/shared';
+import { EVENT_ICON, PRESENT_TOOL, iconFor, isShell, summarizeTool, SLACK_SEND_TOOL, TODO_PINGS, todoWhy, type JiraMsg, type OrchestratorStatus } from '@cora/shared';
 import { LiveExplains } from './liveExplains';
 import { Environments, envLine } from './environments';
 import { homedir } from 'node:os';
@@ -46,7 +46,8 @@ import { CoraBot } from './slackBot';
 import { ciRef, ciRepoName } from '@cora/shared';
 import { Tickets } from './tickets';
 import { Inbox } from './inbox';
-import { fromBump, fromCora, fromJira, fromMail, fromPipeline, fromWatch } from './inboxFeeds';
+import { fromBump, fromCora, fromGitlabTodo, fromJira, fromMail, fromPipeline, fromWatch } from './inboxFeeds';
+import { GitlabTodos } from './gitlabTodos';
 
 export type Running = {
   app: FastifyInstance;
@@ -420,6 +421,20 @@ export async function startServer(config: Config, opts: { tail?: boolean; listen
   hub.jiraSnapshot = () => ({ ...jiraMsg(), recent: jira.recent(KEEP_MS).slice(0, 50) });
   // the Inbox's first start: what the Jira watch already kept (14 days) comes in, as read
   if (inbox.fresh) for (const e of jira.recent(KEEP_MS).reverse()) inbox.add({ ...fromJira(e), read: true });
+  // your GitLab to-dos (assigned, review requested, mentions…), read-only: the Inbox, Cora, and your phone while away.
+  // Only the real app reads them (never a simulation)
+  const todos = new GitlabTodos({
+    file: config.dbPath === ':memory:' ? undefined : join(config.dataDir, 'gitlab-todos.json'),
+    on: () => prefs.get().gitlab.todos !== false,
+    onFirst: (list) => list.forEach((t) => inbox.add({ ...fromGitlabTodo(t), read: true })),
+    onFresh: (list) => {
+      for (const t of list) inbox.add(fromGitlabTodo(t));
+      for (const t of list) if (TODO_PINGS.has(t.action)) bot?.alert({ kind: 'ticket', key: `gl:${t.id}`, text: `${t.who}: ${todoWhy(t.action)} · ${ciRepoName(t.project)} ${t.ref} ${t.title} ${t.link}` });
+      orch?.gitlabNotes(list);
+    },
+    log: (m) => console.log(`  gitlab to-dos: ${m}`),
+  });
+  if (opts.listen !== false && config.dbPath !== ':memory:') todos.start();
   // which environments (VPNs) are reachable: checked every 30 s; Cora hears changes, held for its next turn
   // where GitLab is
   const kubeDir = opts.kubeDir ?? join(homedir(), '.kube');
@@ -586,6 +601,7 @@ export async function startServer(config: Config, opts: { tail?: boolean; listen
       bot?.stop();
       voiceFront?.stop();
       gmail?.stop();
+      todos.stop();
       orch?.dispose();
       live.stop();
       security?.stop();

@@ -3,7 +3,7 @@ import type { CoraTold } from '../inboxFeeds';
 import { appendFileSync, existsSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { AWAY_MS, bareWords, choiceOpen, isShell, type BriefKind, type BrainEvent, type SessionInfo, type CiMsg, type GoalState, type OrchestratorStatus, type PendingDecision, type PendingRequest, type Settings, type TerminalInfo, type UiCommand, takesTags, jiraLine, type JiraEvent, type MailHit } from '@cora/shared';
+import { AWAY_MS, bareWords, choiceOpen, isShell, type BriefKind, type BrainEvent, type SessionInfo, type CiMsg, type GoalState, type OrchestratorStatus, type PendingDecision, type PendingRequest, type Settings, type TerminalInfo, type UiCommand, takesTags, jiraLine, type JiraEvent, type MailHit, type GitlabTodo, todoWhy } from '@cora/shared';
 import { terminalInput } from '../input';
 import type { PtyManager } from '../pty';
 import { Approvals, type ApprovalOutcome } from './approvals';
@@ -460,6 +460,14 @@ export class OrchestratorManager {
     const addr = (s: string) => (/<([^<>\s]+@[^<>\s]+)>/.exec(s)?.[1] ?? s).replace(/[^\w.@+-]/g, '').slice(0, 80);
     for (const h of hits.slice(0, 5)) this.feed.hold(`[Gmail] A new email the user watches for${h.why ? ` (${clean(h.why)})` : ''} from ${addr(h.from)} (gmail_read ${h.id})`);
     if (hits.length > 5) this.feed.hold(`[Gmail] ${hits.length - 5} more emails the user watches for (gmail_inbox has them)`);
+  }
+
+  /** New GitLab to-dos (already told to the user): Cora knows, without a turn of its own. */
+  gitlabNotes(todos: GitlabTodo[]): void {
+    // which MR or issue and why, never its text (someone else's words: the Inbox quotes them as theirs)
+    const name = (s: string) => s.replace(/[^\p{L}\p{N} .'-]/gu, '').slice(0, 40);
+    for (const t of todos.slice(0, 5)) this.feed.hold(`[GitLab] ${t.project}${t.ref}: ${todoWhy(t.action)}, by ${name(t.who)} (in the Inbox; ${t.link})`);
+    if (todos.length > 5) this.feed.hold(`[GitLab] ${todos.length - 5} more GitLab to-dos (in the Inbox)`);
   }
 
   /** New in Jira (already told to the user): Cora knows, without a turn of its own. */

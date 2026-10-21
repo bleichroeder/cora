@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { Settings } from '@cora/shared';
 import { ago } from '../lib/format';
-import { Choice, Group, Row, Section, Switch } from './settingsUi';
+import { Choice, Group, Row, Section, Switch, Toggle } from './settingsUi';
 import { Icon } from './Icon';
 
 type Label = 'dev' | 'staging' | 'prod' | 'local' | 'other';
@@ -122,6 +122,12 @@ function DeploysRows({ server, save }: { server: Settings; save(p: object): Prom
       <Row label="GitLab" hint="Where pipelines and Deploys read from. glab must be signed in to it (glab auth login).">
         <input className="set-input code" style={{ width: 220 }} value={host} spellCheck={false} placeholder="gitlab.com" onChange={(e) => setHost(e.target.value)} onBlur={() => void saveHost()} onKeyDown={(e) => e.key === 'Enter' && void saveHost()} />
       </Row>
+      <Toggle
+        label="Your GitLab to-dos"
+        hint="MRs and issues assigned to you, review requests, mentions, approvals needed: into the Inbox and to Cora, and to your phone while you're away (Cora's bot, Tickets assigned to me). Read from your GitLab To-Do list every minute; Cora never marks one done."
+        checked={server.gitlab?.todos !== false}
+        onChange={(on) => void save({ gitlab: { todos: on } })}
+      />
       {err ? <div className="ny-err">{err}</div> : null}
     </>
   );

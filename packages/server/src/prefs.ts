@@ -32,7 +32,7 @@ export function browserProfiles(raw: unknown, cur: BrowserProfile[] | undefined,
   return out;
 }
 
-type Patch = { explains?: Partial<Settings['explains']>; retentionDays?: number; presets?: unknown; voice?: Partial<VoiceSettings>; autoName?: boolean; orchestrator?: Partial<Omit<OrchestratorSettings, 'mandate'>> & { mandate?: Partial<OrchestratorSettings['mandate']> }; jira?: { watch?: Partial<Omit<JiraWatchSettings, 'kinds'>> & { kinds?: Partial<JiraWatchSettings['kinds']> }; ticket?: Partial<TicketStart> }; gitlab?: { host?: string }; slackBot?: Partial<Omit<SlackBotSettings, 'ping' | 'quiet'>> & { ping?: Partial<SlackBotSettings['ping']>; quiet?: Partial<SlackBotSettings['quiet']> }; slack?: { follow?: unknown; sign?: unknown }; browser?: { chrome?: unknown; profiles?: unknown; sessions?: unknown }; onepassword?: { on?: unknown; otp?: unknown; tools?: unknown; suggest?: unknown }; setup?: { skipped?: unknown; seen?: unknown } };
+type Patch = { explains?: Partial<Settings['explains']>; retentionDays?: number; presets?: unknown; voice?: Partial<VoiceSettings>; autoName?: boolean; orchestrator?: Partial<Omit<OrchestratorSettings, 'mandate'>> & { mandate?: Partial<OrchestratorSettings['mandate']> }; jira?: { watch?: Partial<Omit<JiraWatchSettings, 'kinds'>> & { kinds?: Partial<JiraWatchSettings['kinds']> }; ticket?: Partial<TicketStart> }; gitlab?: { host?: string; todos?: unknown }; slackBot?: Partial<Omit<SlackBotSettings, 'ping' | 'quiet'>> & { ping?: Partial<SlackBotSettings['ping']>; quiet?: Partial<SlackBotSettings['quiet']> }; slack?: { follow?: unknown; sign?: unknown }; browser?: { chrome?: unknown; profiles?: unknown; sessions?: unknown }; onepassword?: { on?: unknown; otp?: unknown; tools?: unknown; suggest?: unknown }; setup?: { skipped?: unknown; seen?: unknown } };
 
 const num = (v: unknown, name: string, lo: number, hi: number) => {
   const n = Number(v);
@@ -127,7 +127,7 @@ export function migrateVoice(saved: Partial<VoiceSettings> | undefined): Partial
 
 /** Validates a settings patch; throws with a user-facing message on bad values. */
 export function applyPatch(cur: Settings, patch: Patch): Settings {
-  const next: Settings = { explains: { ...cur.explains }, retentionDays: cur.retentionDays, presets: cur.presets ?? [], voice: { ...DEFAULT_VOICE, ...cur.voice }, autoName: cur.autoName ?? false, orchestrator: { ...DEFAULT_ORCHESTRATOR, ...cur.orchestrator, mandate: { ...DEFAULT_MANDATE, ...cur.orchestrator?.mandate } }, jira: { watch: { ...DEFAULT_JIRA_WATCH, ...cur.jira?.watch, kinds: { ...DEFAULT_JIRA_WATCH.kinds, ...cur.jira?.watch?.kinds } }, ticket: { ...DEFAULT_TICKET_START, ...cur.jira?.ticket } }, gitlab: { host: cur.gitlab?.host || DEFAULT_GITLAB_HOST }, slackBot: { ...DEFAULT_SLACK_BOT, ...cur.slackBot, ping: { ...DEFAULT_SLACK_BOT.ping, ...cur.slackBot?.ping }, quiet: { ...DEFAULT_SLACK_BOT.quiet, ...cur.slackBot?.quiet } }, slack: { follow: cur.slack?.follow ?? [], sign: cur.slack?.sign ?? ':cora:' }, browser: { chrome: cur.browser?.chrome ?? true, ...(cur.browser?.profiles?.length ? { profiles: cur.browser.profiles } : {}), ...(cur.browser?.sessions ? { sessions: cur.browser.sessions } : {}) }, onepassword: { on: cur.onepassword?.on ?? true, otp: cur.onepassword?.otp ?? true, tools: cur.onepassword?.tools ?? true, suggest: cur.onepassword?.suggest ?? true }, setup: { skipped: cur.setup?.skipped ?? [], seen: cur.setup?.seen ?? false } };
+  const next: Settings = { explains: { ...cur.explains }, retentionDays: cur.retentionDays, presets: cur.presets ?? [], voice: { ...DEFAULT_VOICE, ...cur.voice }, autoName: cur.autoName ?? false, orchestrator: { ...DEFAULT_ORCHESTRATOR, ...cur.orchestrator, mandate: { ...DEFAULT_MANDATE, ...cur.orchestrator?.mandate } }, jira: { watch: { ...DEFAULT_JIRA_WATCH, ...cur.jira?.watch, kinds: { ...DEFAULT_JIRA_WATCH.kinds, ...cur.jira?.watch?.kinds } }, ticket: { ...DEFAULT_TICKET_START, ...cur.jira?.ticket } }, gitlab: { host: cur.gitlab?.host || DEFAULT_GITLAB_HOST, todos: cur.gitlab?.todos ?? true }, slackBot: { ...DEFAULT_SLACK_BOT, ...cur.slackBot, ping: { ...DEFAULT_SLACK_BOT.ping, ...cur.slackBot?.ping }, quiet: { ...DEFAULT_SLACK_BOT.quiet, ...cur.slackBot?.quiet } }, slack: { follow: cur.slack?.follow ?? [], sign: cur.slack?.sign ?? ':cora:' }, browser: { chrome: cur.browser?.chrome ?? true, ...(cur.browser?.profiles?.length ? { profiles: cur.browser.profiles } : {}), ...(cur.browser?.sessions ? { sessions: cur.browser.sessions } : {}) }, onepassword: { on: cur.onepassword?.on ?? true, otp: cur.onepassword?.otp ?? true, tools: cur.onepassword?.tools ?? true, suggest: cur.onepassword?.suggest ?? true }, setup: { skipped: cur.setup?.skipped ?? [], seen: cur.setup?.seen ?? false } };
   const e = patch.explains ?? {};
   if (e.mode !== undefined) {
     if (!MODES.includes(e.mode as any)) throw new Error(`explains.mode must be one of ${MODES.join(', ')}`);
@@ -210,6 +210,10 @@ export function applyPatch(cur: Settings, patch: Patch): Settings {
     const h = typeof patch.gitlab.host === 'string' ? patch.gitlab.host.trim().toLowerCase() : '';
     if (!isGitlabHost(h)) throw new Error('gitlab.host must be a host name, like gitlab.com or gitlab.example.com');
     next.gitlab.host = h;
+  }
+  if (patch.gitlab?.todos !== undefined) {
+    if (typeof patch.gitlab.todos !== 'boolean') throw new Error('gitlab.todos must be true or false');
+    next.gitlab.todos = patch.gitlab.todos;
   }
   // how ticket sessions start: the user's own /jira (auto, when they have one), Cora's prompt, or a command of theirs
   const tk = patch.jira?.ticket;

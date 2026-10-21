@@ -17,6 +17,8 @@ What changed in each release. Cora updates itself; each update's notes are on it
 - **Browser profiles.** Bring in your Chrome and Edge profiles (Settings › Tools): each has its own sign-ins, bookmarks
   bar and tabs, and Cora's Browser switches between them like Chrome. Sessions use the one you pick.
 - **Home** in a Tool's header takes it back to its page.
+- **Your GitLab to-dos.** MRs and issues assigned to you, review requests, mentions and approvals needed come into
+  the Inbox and to Cora, and to your phone while you're away, as Jira tickets do.
 - **Messages you send while Claude works** show as **queued** under the transcript until Claude takes them, then where
   it did. (One sent mid-turn used to replace the turn's own prompt in the transcript.)
 - **Open in Jira from the Inbox** lands on the ticket, even when the Jira Tool wasn't open yet.

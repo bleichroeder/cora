@@ -222,7 +222,8 @@ export type Settings = {
   /** Jira: watching it for you (off by default) */
   jira: { watch: import('./jiraWatch').JiraWatchSettings; /** how ticket sessions start */ ticket: import('./jira').TicketStart };
   /** where pipelines and deploys are read from (glab's host) */
-  gitlab: { host: string };
+  /** `todos`: your GitLab to-dos (assigned, review requested, mentions…) come into the Inbox */
+  gitlab: { host: string; todos: boolean };
   /** Cora's own Slack bot: messages while you're away, approvals, instructions */
   slackBot: import('./slackBot').SlackBotSettings;
   /** Slack in Cora's Inbox: the channels you follow (only what touches you there) */
@@ -246,7 +247,7 @@ export const DEFAULT_SETTINGS: Settings = {
   autoName: false,
   orchestrator: { enabled: false, model: 'opus', speak: true, mandate: { repos: [], deploy: false, slack: [] }, budget: 5_000_000, events: 'important', briefs: 'welcome' },
   jira: { watch: DEFAULT_JIRA_WATCH, ticket: DEFAULT_TICKET_START },
-  gitlab: { host: 'gitlab.com' },
+  gitlab: { host: 'gitlab.com', todos: true },
   slackBot: DEFAULT_SLACK_BOT,
   slack: { follow: [], sign: ':cora:' },
   browser: { chrome: true },

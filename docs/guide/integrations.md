@@ -13,7 +13,7 @@ what each one does.
 | [Jira](#jira) | Ticket chips, a ticket card per session, watching your tickets, sessions started from a ticket | The desktop app, and a Jira sign-in in Cora's browser |
 | [Slack](#slack) | Sessions and Cora find, read, search and send as you; thread watches; Cora's bot on your phone | Your own Slack app (Cora fills it in for you) |
 | [Gmail](#gmail) | Mail rules, drafts, email watches | Your own Google app |
-| [GitLab pipelines](#gitlab-pipelines) | Each session's pipeline, its jobs and logs | `glab`, signed in |
+| [GitLab pipelines](#gitlab-pipelines) | Each session's pipeline, its jobs and logs; your GitLab to-dos in the Inbox | `glab`, signed in |
 | [Deploys](#deploys) | What runs where, a ticket's journey, dev bumps | `kubectl`, your kubeconfigs, `glab` |
 | [Environments](#environments) | Which clusters this PC can reach right now | Your kubeconfigs |
 | [Cora's Inbox](#coras-inbox) | Everything Cora told you, in one place | Any of the above |
@@ -233,6 +233,20 @@ it.
   and, while you're away, a ping from Cora's bot if it failed.
 
 Pipelines are read only while a Cora window is open.
+
+### Your GitLab to-dos
+
+What GitLab puts on your To-Do list comes to Cora too: an MR or issue assigned to you, a review requested or
+submitted, a mention, an approval needed, your MR's pipeline failing. (GitLab's notices about your account are left
+out.) Cora reads the list every minute and never marks anything done.
+
+- **The Inbox** gets one item per MR or issue, saying why it's yours, with **Open in GitLab** and **Start a session**.
+- **Cora's agent** hears which MR or issue and why, so it can tell you or act within its rules.
+- **Your phone**, while you're away: assignments, reviews, mentions and approvals, through Cora's bot (its
+  **Tickets assigned to me** setting).
+
+What's already on the list the first time comes in as read. Turn it off with **Settings › Environments › Pipelines
+and Deploys › Your GitLab to-dos**.
 
 ## Deploys
 

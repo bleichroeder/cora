@@ -114,20 +114,6 @@ void main(){
   gl_Position=projectionMatrix*mv;
 }`;
 
-export const RING_VS = /* glsl */ `varying vec3 vP; void main(){ vP=position; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }`;
-
-/** A ring filled clockwise from 12 o'clock up to uPct, with faint ticks every 5%. */
-export const GAUGE_FS = /* glsl */ `
-uniform float uPct, uFlash, uVis; uniform vec3 uCol; varying vec3 vP;
-void main(){
-  float a=atan(vP.x,vP.y); float u=(a<0.0?a+6.2831853:a)/6.2831853;
-  float on=step(u,uPct); float tick=step(0.975,fract(u*20.0));
-  vec3 track=vec3(0.10,0.14,0.20)+tick*0.10;
-  float edge=smoothstep(uPct-0.012,uPct,u)*on;
-  vec3 col=mix(track,uCol*0.75,on)+uCol*edge*1.6+vec3(1.0)*uFlash;
-  gl_FragColor=vec4(col*uVis,mix(0.6,1.0,on)*uVis);
-}`;
-
 export const MOTE_VS = /* glsl */ `
 attribute float seed; uniform float uTime, uBusy; varying float vS;
 void main(){ vS=seed; float t=uTime*(0.08+uBusy*0.1);

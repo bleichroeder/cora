@@ -9,11 +9,11 @@ import * as THREE from 'three';
 import { bez, glowTexture, hot } from './fx';
 import { anchorRef, type LabelRegistry } from './labels';
 import type { PosFn, WorldRegistry } from './effects';
-import type { ContextView, FileOp, FileTouch } from './derive';
+import type { FileOp, FileTouch } from './derive';
 import type { CamState } from './camera';
 import { ORB_R, tagDrop } from './layout';
 import { voiceLevels } from '../lib/voice';
-import { FLUID_VS, GAUGE_FS, GEM_FS, GEM_VS, MOTE_FS, MOTE_VS, ORB_FS, RING_VS, TUBE_FS, TUBE_VS } from './shaders';
+import { FLUID_VS, GEM_FS, GEM_VS, MOTE_FS, MOTE_VS, ORB_FS, TUBE_FS, TUBE_VS } from './shaders';
 
 export type PickTarget = { kind: 'agent'; id: string } | { kind: 'res'; id: string } | { kind: 'file'; res: string; name: string } | { kind: 'explain'; id: string };
 /** `quiet`: mark it hovered (it lifts) without the scene tooltip, e.g. from its chip, which has its own card */
@@ -141,33 +141,6 @@ export function Backdrop({ busy, system, lowFx, space }: { busy: React.MutableRe
   );
 }
 
-// ---------------------------------------------------------------------------- context gauge
-const GREEN = new THREE.Color('#34d399'), AMBER = new THREE.Color('#fbbf24');
-function Gauge({ r, context, vis }: { r: number; context: ContextView; vis: React.MutableRefObject<number> }) {
-  const uniforms = useMemo(() => ({ uPct: { value: 0 }, uFlash: { value: 0 }, uVis: { value: 1 }, uCol: { value: GREEN.clone() } }), []);
-  const mat = useMemo(() => new THREE.ShaderMaterial({ vertexShader: RING_VS, fragmentShader: GAUGE_FS, uniforms, transparent: true, depthWrite: false, toneMapped: false }), [uniforms]);
-  useEffect(() => () => mat.dispose(), [mat]);
-  const k = useRef({ shown: -1, seenCompact: context.compactedAt });
-  useFrame((_, dt) => {
-    const pct = Math.min(1, context.used / context.max);
-    const s = k.current;
-    s.shown = s.shown < 0 ? pct : s.shown + (pct - s.shown) * Math.min(1, dt * 3);
-    if (context.compactedAt !== s.seenCompact) {
-      s.seenCompact = context.compactedAt;
-      if (context.compactedAt && Date.now() - context.compactedAt < 10_000) uniforms.uFlash.value = 1.2;
-    }
-    uniforms.uFlash.value *= Math.pow(0.1, dt);
-    uniforms.uPct.value = s.shown;
-    uniforms.uVis.value = vis.current;
-    uniforms.uCol.value.copy(s.shown < 0.6 ? GREEN : s.shown < 0.8 ? AMBER : RED);
-  });
-  return (
-    <mesh renderOrder={-1} material={mat}>
-      <ringGeometry args={[r * 2.0, r * 2.06, 180, 1]} />
-    </mesh>
-  );
-}
-
 // ---------------------------------------------------------------------------- agent orb
 export type OrbProps = {
   id: string;
@@ -184,7 +157,6 @@ export type OrbProps = {
   diedAt: number | null;
   /** fly out from here when born recently (subagents bud off main) */
   spawnFrom: THREE.Vector3 | null;
-  context: ContextView | null;
   lowFx: boolean;
   reg: LabelRegistry;
   world: WorldRegistry;
@@ -379,12 +351,11 @@ export function Orb(p: OrbProps) {
           {/* dense enough for the spikes and ripples to read */}
           <sphereGeometry args={[r, p.isMain ? 128 : 96, p.isMain ? 80 : 60]} />
         </mesh>
-        {p.isMain && p.context ? <Gauge r={r} context={p.context} vis={vis} /> : null}
         {p.isMain && !p.lowFx ? <ThoughtMotes r={r} thinking={p.thinking} color={c} /> : null}
       </group>
       <group ref={anchorRef(p.reg, `${p.id}:tag`)} position={[0, -tagDrop(r, p.isMain), 0]} />
-      <group ref={anchorRef(p.reg, `${p.id}:bubble`)} position={p.isMain ? [0, (p.context ? r * 2.06 : r) + 0.45, 0] : [-(r + 0.45), 0.15, 0]} />
-      <group ref={anchorRef(p.reg, `${p.id}:side`)} position={[r + (p.context ? r * 1.2 : 0) + 0.5, 0, 0]} />
+      <group ref={anchorRef(p.reg, `${p.id}:bubble`)} position={p.isMain ? [0, r + 0.45, 0] : [-(r + 0.45), 0.15, 0]} />
+      <group ref={anchorRef(p.reg, `${p.id}:side`)} position={[r + 0.5, 0, 0]} />
     </group>
   );
 }

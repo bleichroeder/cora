@@ -41,7 +41,7 @@ const REPLAY_MS = 60 * 60_000;
 
 export type Exec = (file: string, args: string[], o: { cwd?: string; timeout: number; maxBuffer?: number; env?: NodeJS.ProcessEnv }) => Promise<{ stdout: string; stderr: string }>;
 
-const nodeExec: Exec = (file, args, o) =>
+export const nodeExec: Exec = (file, args, o) =>
   new Promise((res, rej) => {
     execFile(file, args, { ...o, windowsHide: true, encoding: 'utf8' }, (err, stdout, stderr) => {
       if (err) rej(Object.assign(err, { stdout, stderr }));

@@ -1,4 +1,4 @@
-import { ciRef, ciRepoName, type CiPipeline, type DeployBump, type JiraEvent, type MailHit, type MailWatch } from '@cora/shared';
+import { ciRef, ciRepoName, todoWhy, type CiPipeline, type DeployBump, type GitlabTodo, type JiraEvent, type MailHit, type MailWatch } from '@cora/shared';
 import type { InboxAdd } from './inbox';
 
 /** What Cora did or asked, as the orchestrator tells it. */
@@ -44,6 +44,19 @@ export function fromPipeline(p: CiPipeline, follower?: { id: string; name: strin
     replace: true,
     ...(follower ? { sessionId: follower.id } : {}),
     entry: { id: `${p.key}:${p.status}`, text: `Pipeline #${p.id} ${ok ? 'passed' : 'failed'}`, at: p.finishedAt ?? p.createdAt },
+  };
+}
+
+/** One of your GitLab to-dos: one Inbox item per MR or issue, each to-do an entry on it. */
+export function fromGitlabTodo(t: GitlabTodo): InboxAdd {
+  const kind = t.type === 'MergeRequest' ? 'MR' : t.type === 'Issue' ? 'issue' : t.type;
+  return {
+    source: 'gitlab',
+    key: `gl:${t.project}${t.ref || `:${t.id}`}`,
+    title: `${ciRepoName(t.project)} ${t.ref ? `${t.ref} ` : ''}· ${t.title}`,
+    why: `${todoWhy(t.action)}${kind ? ` (${kind})` : ''}`,
+    link: t.link,
+    entry: { id: `todo:${t.id}`, who: t.who, text: t.text, at: t.at },
   };
 }
 
