@@ -19,6 +19,7 @@ const RES = join(REL, 'resources');
 /** The terminal host's Node: the version Electron's own Node is (any Node with N-API would do) */
 const NODE_VERSION = '24.22.0';
 const has = (f) => process.argv.includes(`--${f}`);
+const arg = (f) => (process.argv.includes(`--${f}`) ? process.argv[process.argv.indexOf(`--${f}`) + 1] : undefined);
 const read = (f) => JSON.parse(readFileSync(join(ROOT, f), 'utf8'));
 const run = (file, args, o = {}) => execFileSync(file, args, { stdio: 'inherit', cwd: ROOT, shell: process.platform === 'win32', ...o });
 
@@ -52,12 +53,8 @@ writeFileSync(
 );
 // its runtime dependencies (production only; @lydell/node-pty's prebuilt binary comes with its platform package)
 run('npm', ['install', '--omit=dev', '--no-audit', '--no-fund', '--no-package-lock', '--workspaces=false'], { cwd: APP });
-// installed copies read the private releases repo with a read-only token (none: no updates)
-// (from CORA_UPDATE_TOKEN, or packaging/update-token: kept on this machine, never in git)
-const tokenFile = join(ROOT, 'packaging', 'update-token');
-const updateToken = process.env.CORA_UPDATE_TOKEN || (existsSync(tokenFile) ? readFileSync(tokenFile, 'utf8').trim() : '');
-if (updateToken) writeFileSync(join(APP, 'update.json'), JSON.stringify({ token: updateToken }));
-else console.warn('\nNo update token (CORA_UPDATE_TOKEN or packaging/update-token): this build will never update itself.\n');
+// updates come from the public repo's releases: nothing secret goes in the build (an older build's token file goes)
+rmSync(join(APP, 'update.json'), { force: true });
 
 // --- the terminal host's Node (outside the install folder at run time: see packages/server/src/ptyhost/runtime.ts)
 mkdirSync(CACHE, { recursive: true });
@@ -82,11 +79,26 @@ cpSync(nodeExe, join(RES, 'node', 'node.exe'));
 const builder = join(ROOT, 'packaging', 'node_modules', '.bin', process.platform === 'win32' ? 'electron-builder.cmd' : 'electron-builder');
 if (!existsSync(builder)) run('npm', ['install', '--no-audit', '--no-fund'], { cwd: join(ROOT, 'packaging') });
 run(builder, ['--win', '--config', 'packaging/electron-builder.yml', `-c.electronVersion=${electron}`, '--publish', 'never']);
-// --- published: a release in the private releases repo with what the updater reads (latest.yml) and downloads
-// (with gh, not electron-builder's publisher: two of its uploaders race to create the same release)
+// --- published: a release on the public repo with what the updater reads (latest.yml) and downloads, its notes from
+// CHANGELOG.md (with gh, not electron-builder's publisher: two of its uploaders race to create the same release).
+// `--also <owner/repo>` publishes the same files there too (0.1.3 went to the old private releases repo as well, so
+// installs from before found it).
 if (has('publish')) {
   const dist = join(REL, 'dist');
   const exe = `Cora-Setup-${desktop.version}.exe`;
-  run('gh', ['release', 'create', `v${desktop.version}`, '--repo', 'bleichroeder/cora-releases', '--title', `Cora ${desktop.version}`, '--notes', `Cora ${desktop.version}`, join(dist, exe), join(dist, `${exe}.blockmap`), join(dist, 'latest.yml')], { shell: false });
+  const notes = releaseNotes(readFileSync(join(ROOT, 'CHANGELOG.md'), 'utf8'), desktop.version) || `Cora ${desktop.version}`;
+  const files = [join(dist, exe), join(dist, `${exe}.blockmap`), join(dist, 'latest.yml')];
+  for (const repo of ['bleichroeder/cora', ...(arg('also') ? [arg('also')] : [])])
+    run('gh', ['release', 'create', `v${desktop.version}`, '--repo', repo, '--title', `Cora ${desktop.version}`, '--notes', notes, ...files], { shell: false });
 }
 console.log(`\nCora ${desktop.version}: ${join(REL, 'dist')}`);
+
+/** A version's notes from CHANGELOG.md: the lines under its "## x.y.z" heading, up to the next heading. */
+function releaseNotes(log, version) {
+  const lines = log.split(/\r?\n/);
+  const at = lines.findIndex((l) => l.trim() === `## ${version}`);
+  if (at < 0) return '';
+  const rest = lines.slice(at + 1);
+  const end = rest.findIndex((l) => l.startsWith('## '));
+  return (end < 0 ? rest : rest.slice(0, end)).join('\n').trim();
+}

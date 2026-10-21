@@ -2,12 +2,21 @@
 
 What changed in each release. Cora updates itself; each update's notes are on its release page too.
 
-## Unreleased
+## 0.1.3
+
+The first public release. Cora now updates from this repository's releases.
 
 - **Find in Tools.** Ctrl+F works in the Tools drawer and in Tool windows. Esc in the page closes find, and its
   highlights always clear.
 - **Your own work tools.** In Settings › Cora › Work tools you tell Cora about your MCP servers and which of their tools
   only read.
+- **Clearer views.**
+  - In the 3D scene, a subagent's helpers keep clear of each other, and the "waiting for you" ring no longer covers the
+    text under it.
+  - The galaxy groups sessions by folder.
+  - An explain's card in the transcript reads as plain text.
+  - Checklists show one box per item.
+  - The Changes tab counts each file once.
 
 ## 0.1.2
 
