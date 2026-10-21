@@ -88,6 +88,19 @@
 .journal .spawn .ss { color: var(--run); }
 .journal .spawn.done .ss { color: var(--work); }
 .journal .spawn .go { color: var(--ink3); }
+/* a background agent's work after main's turn ended, folded into one row (lib/steps) */
+.journal .step.fold { margin: 4px 0 6px 4px; }
+.journal .fold-h { display: flex; align-items: center; gap: 7px; width: 100%; min-width: 0; overflow: hidden; padding: 4px 0; border: 0; background: none; color: var(--ink4); font: 500 11px var(--code); text-align: left; cursor: pointer; }
+.journal .fold-h > i { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--c); }
+.journal .fold-h b { flex: none; color: var(--ink2); font: 600 11.5px var(--ui); }
+.journal .fold-h svg { flex: none; }
+.journal .fold-h .fold-s { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.journal .fold-h .fold-last { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink3); }
+.journal .fold-h .ts { flex: none; margin-left: auto; }
+.journal .fold-h:hover b { color: var(--ink); }
+.journal .fold-body { padding: 2px 0 4px; }
+.journal .fold-tab { padding: 2px 0 6px; border: 0; background: none; color: var(--ink4); font: 500 10.5px var(--code); cursor: pointer; }
+.journal .fold-tab:hover { color: var(--ink2); }
 .journal .report { margin-top: 6px; padding: 10px 12px; border: 0; border-radius: 10px; background: color-mix(in srgb, var(--work) 5%, var(--raise)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--work) 20%, transparent); color: var(--ink); font: 400 12.5px/1.55 var(--ui); }
 .journal .explain-card { margin: 8px 0; padding: 10px 12px; border: 0; border-radius: 10px; background: var(--raise); box-shadow: inset 0 0 0 1px var(--hair2); }
 .journal .explain-card:hover, .journal .explain-card.on { box-shadow: inset 0 0 0 1px rgba(148, 163, 184, .26); }

@@ -77,4 +77,44 @@ describe('buildSteps', () => {
     const b = E({ kind: 'say', text: 'first', ts: 40 });
     expect(buildSteps([a, b], 'all').map((s) => s.text)).toEqual(['first', 'second']);
   });
+
+  it("after main's turn ends, a background agent's work folds into one row per stretch, so the reply isn't buried", () => {
+    const steps = buildSteps([
+      tool('main', 'tA', 'Agent'),
+      E({ kind: 'spawn', toolUseId: 'tA', text: 'Retake screenshots' }),
+      tool('main', 'tA', 'Agent', 'end'), // returns at once: it runs in the background
+      E({ kind: 'prompt', agentId: 'a1', text: 'Retake them' }),
+      tool('a1', 'r1'),
+      E({ kind: 'say', agentId: 'a1', text: 'Two left' }),
+      tool('a1', 'r2', 'Bash'),
+      E({ kind: 'say', text: 'Still waiting on the retakes.' }),
+      E({ kind: 'turn_end' }),
+      tool('a1', 'r3', 'Grep'),
+      E({ kind: 'say', agentId: 'a1', text: 'One left' }),
+      tool('a1', 'r4', 'Bash'),
+      tool('a1', 'r2', 'Bash', 'end'),
+      E({ kind: 'report', agentId: 'a1', text: 'All seven retaken' }),
+      E({ kind: 'prompt', text: 'thanks' }),
+      tool('a1', 'r5'),
+    ], 'all', new Map([['tA', 'a1']]));
+    const label = (s: (typeof steps)[number]) => (s.fold ? `fold:${s.agentId}:${s.items.map((i) => i.kind).join('+')}` : s.prompt ?? s.text ?? s.items[0]?.kind);
+    // while main works: inline, as before; after its turn: one folded row; the report as usual; main busy again: inline
+    expect(steps.map(label)).toEqual(['spawn', 'Retake them', 'Two left', 'Still waiting on the retakes.', 'fold:a1:tool+note+tool', 'report', 'thanks', 'tool']);
+    const r2 = steps[2].items[0];
+    expect(r2.kind === 'tool' && r2.end).toBeTruthy(); // its end still lands on its row
+    // on its own tab, everything as usual
+    expect(buildSteps([tool('main', 'tA', 'Agent'), tool('main', 'tA', 'Agent', 'end'), E({ kind: 'turn_end' }), tool('a1', 'r1')], 'a1', new Map([['tA', 'a1']]))[0].fold).toBeUndefined();
+  });
+
+  it("a foreground agent stays inline; a background agent's helpers fold with it", () => {
+    const fg = buildSteps([tool('main', 'tF', 'Agent'), E({ kind: 'turn_end' }), tool('a2', 'x1'), tool('main', 'tF', 'Agent', 'end')], 'all', new Map([['tF', 'a2']]));
+    expect(fg.some((s) => s.fold)).toBe(false);
+    const bg = buildSteps([
+      tool('main', 'tA', 'Agent'), tool('main', 'tA', 'Agent', 'end'),
+      E({ kind: 'say', text: 'reply' }), E({ kind: 'turn_end' }),
+      tool('a1', 'tH', 'Agent'), E({ kind: 'spawn', agentId: 'a1', toolUseId: 'tH', text: 'helper' }),
+      tool('a3', 'h1'), tool('a1', 'z1'), tool('a3', 'h2'),
+    ], 'all', new Map([['tA', 'a1'], ['tH', 'a3']]));
+    expect(bg.map((s) => (s.fold ? `fold:${s.agentId}:${s.items.length}` : s.text))).toEqual(['reply', 'fold:a1:2', 'fold:a3:2']);
+  });
 });

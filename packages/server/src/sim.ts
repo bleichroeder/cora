@@ -147,6 +147,9 @@ const TASKS = [
   ['Verify hook facts', 'Explore'], ['Scan transcripts', 'Explore'], ['Map tool payloads', 'general-purpose'],
   ['Audit settings.json', 'Explore'], ['Read prior art', 'general-purpose'], ['Trace SubagentStart', 'Explore'],
 ] as const;
+/** CORA_SIM_WILD=1: sessions fan out wide and deep (screenshots of a busy scene); off, the simulation is as usual */
+const WILD = process.env.CORA_SIM_WILD === '1';
+const HELPERS = ['Dig into the parser', 'Check the hook payloads', 'Trace the sink', 'Read the call sites', ...(WILD ? ['Diff the schemas', 'Probe the retry path', 'Grep the fixtures', 'Replay the failing run'] : [])];
 const REPORTS = [
   'SubagentStart/Stop exist in the CLI; agent_id + agent_type ride on every hook fired inside a subagent.',
   'Subagent transcripts live at <session>/subagents/agent-<id>.jsonl; thinking blocks are present but empty.',
@@ -243,12 +246,12 @@ class SimSession {
       await this.think(agentId, rnd(500, 2200));
       if (Math.random() < 0.4) this.narrate(agentId, pick(LINES));
       // now and then a subagent hands part of its job to one of its own
-      if (i === 1 && depth < 3 && Math.random() < (depth === 1 ? 0.5 : 0.3)) {
-        const name = ['Dig into the parser', 'Check the hook payloads', 'Trace the sink', 'Read the call sites'].find((n) => !this.helpers.has(n));
+      if ((i === 1 || (WILD && i === 2)) && depth < 3 && Math.random() < (WILD ? (depth === 1 ? 0.9 : 0.6) : depth === 1 ? 0.5 : 0.3)) {
+        const name = HELPERS.find((n) => !this.helpers.has(n));
         if (name) {
           this.helpers.add(name);
           this.narrate(agentId, 'Handing part of this to a helper.');
-          await this.spawn(agentId, name, 'Explore', 2 + Math.floor(Math.random() * 3), depth + 1);
+          await this.spawn(agentId, name, 'Explore', (WILD ? 4 : 2) + Math.floor(Math.random() * 3), depth + 1);
           this.helpers.delete(name);
         }
       }
@@ -282,13 +285,15 @@ class SimSession {
       await this.tool('main', calls(this.cwd)[1], rnd(600, 1200));
       await task(0, 'completed');
       await task(1, 'in_progress');
-      if (Math.random() < 0.8) {
-        const k = Math.random() < 0.5 ? 2 : 3;
+      // now and then a helper left working in the background, past the end of the turn (as Claude Code's agents can be)
+      if (Math.random() < (process.env.CORA_SIM_BACKGROUND === '1' ? 1 : 0.25)) void this.spawn('main', 'Watch the pipeline', 'general-purpose', 10 + Math.floor(Math.random() * 6), 1);
+      if (WILD || Math.random() < 0.8) {
+        const k = WILD ? 5 + Math.floor(Math.random() * 2) : Math.random() < 0.5 ? 2 : 3;
         this.narrate('main', k === 3 ? 'Splitting this three ways. Explorers, go.' : 'Two explorers out. Waiting on both.');
         const picked = [...TASKS].sort(() => Math.random() - 0.5).slice(0, k);
         const runs = picked.map(async ([description, type], i) => {
           await sleep(i * 250);
-          await this.spawn('main', description, type, 3 + Math.floor(Math.random() * 4), 1);
+          await this.spawn('main', description, type, (WILD ? 6 : 3) + Math.floor(Math.random() * 4), 1);
         });
         await Promise.all(runs);
         this.narrate('main', 'All reports in. Synthesizing.');

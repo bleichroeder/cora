@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { FAM } from '@cora/shared';
 import { agentKey, sessionEvents, useBrain } from '../state/store';
-import { buildSteps, type Step } from '../lib/steps';
+import { buildSteps, type Item, type Step } from '../lib/steps';
 import { agentColor, clock, dur } from '../lib/format';
 import { Icon, Tile } from './Icon';
 import { SaidLine, ToolRow } from './ToolRow';
@@ -76,13 +76,52 @@ function Say({ text, clamp }: { text: string; clamp: boolean }) {
   );
 }
 
-function StepView({ step, sessionId, hosted }: { step: Step; sessionId: string; hosted: boolean }) {
+/** A stretch of a background agent's work as one row (lib/steps): what it's on now; open it for every step. */
+function FoldView({ step, sessionId, hosted }: { step: Step; sessionId: string; hosted: boolean }) {
+  const [open, setOpen] = useState(false);
+  const a = useBrain((s) => s.agents[agentKey(sessionId, step.agentId)]);
+  const setFilter = useBrain((s) => s.setAgentFilter);
+  const tools = step.items.filter((i): i is Extract<Item, { kind: 'tool' }> => i.kind === 'tool');
+  const last = tools.at(-1);
+  const t = (last?.end ?? last?.start)?.tool;
+  const working = a ? a.state !== 'done' && a.state !== 'idle' : false;
+  return (
+    <div className={`step sub fold${step.cont ? ' cont' : ''}`} style={{ ['--c' as any]: agentColor(a) }}>
+      <button className="fold-h" onClick={() => setOpen(!open)} title={open ? 'Fold it again' : 'Show every step of this stretch'}>
+        <Icon name={open ? 'ChevronDown' : 'ChevronRight'} size={12} />
+        <i />
+        <b>{a?.label ?? step.agentId.slice(0, 7)}</b>
+        <span className="fold-s">
+          background · {working ? 'working' : 'done'} · {tools.length} step{tools.length === 1 ? '' : 's'}
+        </span>
+        {t ? (
+          <span className="fold-last">
+            {t.name} {t.summary}
+          </span>
+        ) : null}
+        <span className="ts">{clock((last?.end ?? last?.start)?.ts ?? step.ts)}</span>
+      </button>
+      {open ? (
+        <>
+          <StepView step={step} sessionId={sessionId} hosted={hosted} bare />
+          <button className="fold-tab" onClick={() => setFilter(step.agentId)}>
+            all of its work on its own tab ›
+          </button>
+        </>
+      ) : null}
+    </div>
+  );
+}
+
+/** One step: who, when, what it said, then what it did. `bare`: only what it did (inside a folded row). */
+function StepView({ step, sessionId, hosted, bare }: { step: Step; sessionId: string; hosted: boolean; bare?: boolean }) {
   const agents = useBrain((s) => s.agents);
   const setFilter = useBrain((s) => s.setAgentFilter);
   const a = agents[agentKey(sessionId, step.agentId)];
   const color = agentColor(a);
   const name = step.agentId === 'main' ? 'main' : a?.label ?? step.agentId.slice(0, 7);
 
+  if (bare) return <div className="fold-body">{body()}</div>;
   return (
     <div className={`step${step.agentId === 'main' ? '' : ' sub'}${step.cont ? ' cont' : ''}`} style={{ ['--c' as any]: color }}>
       {step.prompt ? (
@@ -104,8 +143,12 @@ function StepView({ step, sessionId, hosted }: { step: Step; sessionId: string; 
       {step.text ? <Say text={step.text} clamp={hosted && step.agentId === 'main'} /> : null}
       {step.text ? <ReadingLine id={step.key} /> : null}
       {step.said ? <SaidLine id={step.said.id} text={step.said.text} /> : null}
-      <div className="body">
-        {step.items.map((it) => {
+      <div className="body">{body()}</div>
+    </div>
+  );
+
+  function body() {
+    return step.items.map((it) => {
           switch (it.kind) {
             case 'tool':
               return <ToolRow key={it.key} item={it} sessionId={sessionId} />;
@@ -127,6 +170,15 @@ function StepView({ step, sessionId, hosted }: { step: Step; sessionId: string; 
                 </div>
               );
             }
+            case 'note':
+              return it.e.kind === 'prompt' ? (
+                <div key={it.key} className="task">
+                  <span className="pl">its task</span>
+                  <Linkify text={it.e.text ?? ''} jira sessionId={sessionId} />
+                </div>
+              ) : (
+                <Say key={it.key} text={it.e.text ?? ''} clamp={false} />
+              );
             case 'report':
               return (
                 <div key={it.key} className="report">
@@ -154,10 +206,8 @@ function StepView({ step, sessionId, hosted }: { step: Step; sessionId: string; 
                 </div>
               );
           }
-        })}
-      </div>
-    </div>
-  );
+        });
+  }
 }
 
 export function Transcript({ sessionId }: { sessionId: string }) {
@@ -274,7 +324,7 @@ export function Transcript({ sessionId }: { sessionId: string }) {
         <div ref={sizer} style={{ height: virt.getTotalSize(), position: 'relative' }}>
           {virt.getVirtualItems().map((vi) => (
             <div key={steps[vi.index].key} data-index={vi.index} ref={virt.measureElement} className={steps[vi.index].key === atCursor ? 'at-cursor' : undefined} style={{ position: 'absolute', top: 0, left: 0, right: 0, transform: `translateY(${vi.start}px)` }}>
-              <StepView step={steps[vi.index]} sessionId={sessionId} hosted={hosted} />
+              {steps[vi.index].fold ? <FoldView step={steps[vi.index]} sessionId={sessionId} hosted={hosted} /> : <StepView step={steps[vi.index]} sessionId={sessionId} hosted={hosted} />}
             </div>
           ))}
         </div>

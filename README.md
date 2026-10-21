@@ -56,6 +56,18 @@ already have.
   </tr>
 </table>
 
+## Watch them work
+
+<p align="center">
+  <img src="docs/images/agents.png" alt="Cora's scene for a release session in full swing: the main agent at the centre, a dozen subagents and their helpers fanned out around it, each labelled with what it's doing, sparks running to the files, web and shell they touch, and the model as a star at the edge with the agents waiting on it" width="100%">
+</p>
+
+Every session is a small star system, drawn live from its hooks and transcript. The main agent sits at the centre,
+and each subagent it starts (and each helper those start) gets its own orbit, labelled with what it's doing right now.
+Tool calls fly as sparks to what they touch: files and folders, the web, the shell, a browser. The model burns at the
+edge with a count of the agents waiting on it, and a timeline underneath lets you scrub back through every agent's
+steps. Zoom out and every session on your PC is a star in one galaxy.
+
 ## Your tools, beside your sessions
 
 <p align="center">
