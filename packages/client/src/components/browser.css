@@ -72,3 +72,19 @@
 .web-sugg .ws-s.on { background: var(--raise2); color: var(--ink); }
 .web-sugg .ws-s .t { overflow: hidden; color: var(--ink); font: 500 12.5px var(--ui); text-overflow: ellipsis; white-space: nowrap; max-width: 320px; }
 .web-sugg .ws-s .u { overflow: hidden; color: var(--ink4); font: 400 11px var(--code); text-overflow: ellipsis; white-space: nowrap; }
+
+/* the bookmarks bar: your Chrome bookmarks bar, one quiet row under the address bar */
+.web-pane .web-marks { display: flex; align-items: center; gap: 2px; flex: none; height: 30px; padding: 0 8px; border-bottom: 1px solid var(--hair); overflow-x: auto; scrollbar-width: none; }
+.web-pane .web-marks button { display: inline-flex; align-items: center; gap: 6px; flex: none; max-width: 180px; height: 24px; padding: 0 8px; border: 0; border-radius: 6px; background: none; color: var(--ink3); font: 500 11.5px var(--ui); white-space: nowrap; }
+.web-pane .web-marks button:hover { background: var(--raise); color: var(--ink); }
+.web-pane .web-marks button img { flex: none; width: 13px; height: 13px; border-radius: 3px; }
+.web-pane .web-marks button span { overflow: hidden; text-overflow: ellipsis; }
+.web-pane .web-marks + .web-progress { top: 112px; }
+.web-bar .ib.on { color: var(--ink2); }
+/* a tab being dragged to a new place */
+.web-pane .web-tab[draggable] { cursor: default; }
+.web-pane .web-tab.dragging { opacity: .55; }
+
+/* Cora's Browser, in the Tools drawer: the same browser, filling the drawer */
+.web-pane.browser-tool { position: absolute; inset: 0; z-index: auto; box-shadow: none; }
+.web-pane.browser-tool.off { visibility: hidden; pointer-events: none; }

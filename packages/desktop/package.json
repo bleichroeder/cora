@@ -10,7 +10,7 @@
     "start": "npm run build && electron ."
   },
   "devDependencies": {
-    "electron": "^44.9.0",
+    "electron": "^44.9.3",
     "tsup": "^9.0.0"
   }
 }

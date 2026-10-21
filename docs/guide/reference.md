@@ -23,6 +23,7 @@ Shortcuts, settings, files and the command line in one place, and what to do whe
 | `Ctrl+Space` (hold) | Talk to Cora |
 | `Ctrl+Shift+Enter` | Cora's command mode |
 | `Ctrl+Shift+N` | Notes |
+| `Ctrl+Shift+B` | Browser (Cora's own, not tied to a session) |
 | `Ctrl+1` … `Ctrl+9` | Open or close your Tools, in order |
 | `` Ctrl+Shift+` `` | A new shell tab beside the session |
 | `Ctrl+F` | Find a setting (in Settings), or find in the page (in the browser) |

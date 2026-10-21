@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { useBrain } from '../state/store';
 import { useTools } from '../state/tools';
+import { useWeb } from '../state/web';
 import { NOTES_ID, notesUnseen, useNotes } from '../state/notes';
 import { NotesPane } from './Notes';
 import { desktop } from '../lib/desktop';
 import { toolEntries, toolHost, toolSite, unreadOf, type ToolDef, type ToolEntry } from '../lib/tools';
-import { WEB_PARTITION } from './WebPane';
+import { BrowserTool, WEB_PARTITION, openFind } from './WebPane';
+import { BROWSER_ID } from '../state/browser';
 import { openSettings } from './SettingsModal';
 import { Icon } from './Icon';
 import { FindBar } from './FindBar';
@@ -119,6 +121,7 @@ export function ToolsDock() {
           <div className="rt-sub left">Cora</div>
           <div className="rt-card">
             <NotesRow on={open === NOTES_ID} />
+            {desktop?.browser ? <BrowserRow on={open === BROWSER_ID} /> : null}
           </div>
         </>
       ) : null}
@@ -155,6 +158,7 @@ export function ToolsDock() {
           <div className="rt-sub">Cora</div>
           <div className="rt-row">
             <NotesButton on={open === NOTES_ID} />
+            {desktop?.browser ? <BrowserButton on={open === BROWSER_ID} /> : null}
           </div>
         </>
       )}
@@ -163,6 +167,35 @@ export function ToolsDock() {
 }
 
 const openNotes = () => useTools.getState().toggle(NOTES_ID);
+const openBrowser = () => (useBrain.getState().setInbox(false), useTools.getState().toggle(BROWSER_ID));
+
+/** Cora's Browser in the icon row. */
+function BrowserButton({ on }: { on: boolean }) {
+  return (
+    <button className={`rt-b rt-cora${on ? ' on' : ''}`} title="Browser (Ctrl+Shift+B): Cora's own, not tied to a session" onClick={openBrowser}>
+      <Icon name="Globe" size={18} />
+    </button>
+  );
+}
+
+/** Cora's Browser as a named row: how many tabs it has open. */
+function BrowserRow({ on }: { on: boolean }) {
+  const n = useWeb((w) => w.sessions[BROWSER_ID]?.tabs.filter((id) => w.tabs[id]?.url).length ?? 0);
+  return (
+    <button className={`rt-r${on ? ' on' : ''}`} title="Browser (Ctrl+Shift+B): Cora's own, not tied to a session" onClick={openBrowser}>
+      <span className="rt-cora-ico">
+        <Icon name="Globe" size={14} />
+      </span>
+      <span className="rt-nm">
+        <b>Browser</b>
+        <i>{n ? `${n} tab${n === 1 ? '' : 's'}` : 'Not tied to a session'}</i>
+      </span>
+      <span className="rt-rr">
+        <span className="rt-k">^⇧B</span>
+      </span>
+    </button>
+  );
+}
 
 /** Cora's Notes in the icon row: Cora's colour, a dot while a session's addition is unseen. */
 function NotesButton({ on }: { on: boolean }) {
@@ -306,7 +339,8 @@ function ToolPage({ t, visible }: { t: ToolDef; visible: boolean }) {
   const first = useRef(t.url);
   const ready = useRef(false);
   const go = useTools((s) => s.go[t.id]);
-  const seen = useRef(go?.n ?? 0);
+  // 0, not the ask it was opened with: a tool first opened at a page (an Inbox link) starts there, not at its home
+  const seen = useRef(0);
   // opened at a page: start there
   if (go && !ready.current && seen.current !== go.n) {
     first.current = go.url;
@@ -368,7 +402,8 @@ export function ToolDrawer() {
   const mounted = useTools((s) => s.mounted);
   const box = useRef<HTMLDivElement>(null);
   const tool = tools.find((t) => t.id === open);
-  const builtin = open === NOTES_ID;
+  const builtin = open === NOTES_ID || open === BROWSER_ID;
+  const browser = open === BROWSER_ID;
   const at = useTools((s) => (open ? s.page[open] : undefined));
   const [dragging, setDragging] = useState(false);
   // find in the tool's page (Ctrl+F): open, and each press focuses it again; another tool closes it
@@ -385,7 +420,8 @@ export function ToolDrawer() {
       if (!e.ctrlKey || e.altKey || e.shiftKey || e.key.toLowerCase() !== 'f' || !box.current?.contains(e.target as Node)) return;
       e.preventDefault();
       e.stopPropagation();
-      openToolFind();
+      if (useTools.getState().open === BROWSER_ID) openFind(BROWSER_ID);
+      else openToolFind();
     };
     window.addEventListener('keydown', k, true);
     return () => window.removeEventListener('keydown', k, true);
@@ -468,10 +504,10 @@ export function ToolDrawer() {
       {builtin ? (
         <div className="td-h" style={headPad}>
           <span className="td-tile cora">
-            <Icon name="NotebookPen" size={13} />
+            <Icon name={browser ? 'Globe' : 'NotebookPen'} size={13} />
           </span>
-          <b>Notes</b>
-          <span className="td-host">~/.cora/notes</span>
+          <b>{browser ? 'Browser' : 'Notes'}</b>
+          <span className="td-host">{browser ? 'not tied to a session' : '~/.cora/notes'}</span>
           <span className="spacer" />
           <button className="icon-btn" title="Close (Esc)" onClick={() => useTools.getState().close()}>
             <Icon name="X" size={15} />
@@ -513,7 +549,8 @@ export function ToolDrawer() {
       <div className="td-body">
         {at?.loading && !builtin ? <div className="td-progress" /> : null}
         {finding && open && !builtin && pages.get(open) ? <FindBar press={finding} page={pages.get(open) as never} onClose={() => setFinding(0)} /> : null}
-        {mounted[NOTES_ID] ? <NotesPane visible={builtin} /> : null}
+        {mounted[NOTES_ID] ? <NotesPane visible={open === NOTES_ID} /> : null}
+        {mounted[BROWSER_ID] && desktop?.browser ? <BrowserTool visible={browser} /> : null}
         {tools
           .filter((t) => desktop?.browser && mounted[t.id])
           .map((t) => (
@@ -534,6 +571,12 @@ export function useToolKeys(): void {
         e.preventDefault();
         e.stopPropagation();
         return openNotes();
+      }
+      // Ctrl+Shift+B: Cora's Browser
+      if (e.ctrlKey && e.shiftKey && !e.altKey && !e.metaKey && e.code === 'KeyB' && desktop?.browser) {
+        e.preventDefault();
+        e.stopPropagation();
+        return openBrowser();
       }
       if (!e.ctrlKey || e.shiftKey || e.altKey || e.metaKey || !/^Digit[1-9]$/.test(e.code)) return;
       const t = useBrain.getState().prefs.tools[Number(e.code.slice(5)) - 1];

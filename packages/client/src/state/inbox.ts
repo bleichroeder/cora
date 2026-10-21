@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { isUnread, type InboxItem, type InboxMsg, type InboxSource } from '@cora/shared';
 import { useBrain } from './store';
 import { useTools } from './tools';
+import { openInBrowser } from './browser';
 import { slackAppLink } from './slack';
 import { desktop } from '../lib/desktop';
 import { toolHost } from '../lib/tools';
@@ -89,7 +90,8 @@ export function openFromInbox(url: string): void {
     useBrain.getState().setInbox(false);
     return useTools.getState().show(t.id, /app\.slack\.com/.test(t.url) ? slackAppLink(url) : url);
   }
-  if (desktop?.toolWindow) return desktop.toolWindow(url, host.replace(/^www\./, ''));
+  // no Tool for its site: Cora's Browser
+  if (desktop?.browser) return openInBrowser(url);
   window.open(url, '_blank', 'noopener');
 }
 

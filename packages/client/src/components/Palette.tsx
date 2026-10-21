@@ -10,6 +10,7 @@ import { useSlack } from '../state/slack';
 import { openTool } from './Tools';
 import { useTools } from '../state/tools';
 import { NOTES_ID, askNotes, useNotes } from '../state/notes';
+import { showBrowser } from '../state/browser';
 import { fetchHistory, launchTerminal } from '../state/ws';
 import { ago, isDismissed, sessionColor, sessionName, shortCwd } from '../lib/format';
 import { sortedSessions } from '../lib/sessionOrder';
@@ -296,6 +297,7 @@ function useEntries(): PEntry[] {
     cmd('grid', 'Overview as a grid', 'LayoutGrid', () => (st().setPrefs({ overviewStyle: 'grid' }), st().toggleOverview(true)), { keywords: 'cards' });
     cmd('galaxy', 'Overview as a galaxy', 'Orbit', () => (st().setPrefs({ overviewStyle: 'galaxy' }), st().toggleOverview(true)), { keywords: 'stars space' });
     cmd('notes', 'Notes', 'NotebookPen', () => useTools.getState().show(NOTES_ID), { keywords: 'notepad scratch named notes write Ctrl+Shift+N' });
+    if (desktop?.browser) cmd('browser', 'Browser', 'Globe', () => showBrowser(), { keywords: "web browse tabs not tied to a session Cora's own Ctrl+Shift+B" });
     cmd('jot', 'Jot a note', 'NotebookPen', () => (useTools.getState().show(NOTES_ID), useNotes.setState({ focusJot: Date.now() })), { keywords: 'notepad scratch write down remember Ctrl+Alt+N' });
     cmd('deploys', 'Deploys: what each environment runs', 'Rocket', () => (st().setPrefs({ overviewStyle: 'deploys' }), st().toggleOverview(true)), { keywords: 'dev staging prod kubectl tags images bump rollout environments' });
     if (cur && !overview) {

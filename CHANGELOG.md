@@ -11,6 +11,10 @@ What changed in each release. Cora updates itself; each update's notes are on it
 - **Messages to yourself go at once.** A session that DMs you (a follow-up while you're away) doesn't wait for your OK.
 - **Background agents don't bury replies.** After a turn ends, a background agent's work folds into one row in the
   transcript's **All** view.
+- **Cora's Browser.** A browser of its own in Tools (`Ctrl+Shift+B`), not tied to any session, with tabs, find,
+  1Password and your bookmarks. Inbox links with no Tool for their site open there instead of a separate window.
+- **Every browser in Cora:** drag tabs to reorder them, and a bookmarks bar under the address bar.
+- **Open in Jira from the Inbox** lands on the ticket, even when the Jira Tool wasn't open yet.
 - **The README** shows Cora's scene in full swing, and every screenshot in Cora's pink.
 
 ## 0.1.4

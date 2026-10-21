@@ -47,7 +47,9 @@ export const useTools = create<ToolsUi>((set, get) => ({
   close: () => set({ open: null }),
   forget: (id) => {
     const { [id]: _m, ...mounted } = get().mounted;
-    set({ mounted, open: get().open === id ? null : get().open });
+    // and the page it was last asked to go to: opened again later, it starts at home
+    const { [id]: _g, ...go } = get().go;
+    set({ mounted, go, open: get().open === id ? null : get().open });
   },
   setUnread: (id, v) => {
     if ((get().unread[id] ?? null) === v) return;

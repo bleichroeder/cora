@@ -18,7 +18,7 @@ what each one does.
 | [Environments](#environments) | Which clusters this PC can reach right now | Your kubeconfigs |
 | [Cora's Inbox](#coras-inbox) | Everything Cora told you, in one place | Any of the above |
 | [Notes](#notes) | Scratch, notes, templates, quick capture | Nothing |
-| [The built-in browser](#the-built-in-browser) | A browser per session, signed in to your sites | The desktop app |
+| [The built-in browser](#the-built-in-browser) | A browser per session, and Cora's own Browser, signed in to your sites | The desktop app |
 | [Tools](#the-tools-drawer-and-tool-windows) | Web apps kept open beside your sessions | The desktop app |
 | [1Password](#1password) | Your logins filled into Cora's browser | The 1Password app and its command line |
 
@@ -342,14 +342,27 @@ to the work, instead of scattering tabs across your usual browser.
 
 - **Open it** with **Browser** in the session's header. The count shows its tabs. **Hide** keeps the tabs loaded.
 - **Tabs per session.** Each session keeps its own tabs. Sign in to a site once, and every session's tabs share it.
+  Drag a tab to put it somewhere else in the strip.
 - **The address bar** suggests as you type: pages you've visited in Cora first, then your Chrome and Edge bookmarks
   and history.
+- **The bookmarks bar** under the address bar is your Chrome bookmarks bar. Click one to go there, or middle-click to
+  open it in a new tab. The bookmark button beside the address bar hides or shows it (in every browser in Cora).
 - **A new tab** shows your Chrome bookmarks bar under **Your bookmarks**, and **Recent** pages.
+- **Find in the page** with `Ctrl+F`.
 - **Your usual browser** is a click away: **Open in your browser**, or `Ctrl+click` any link.
 
 Cora reads bookmarks and history from Chrome's and Edge's profiles on this PC, and never sends them anywhere. Your
 sign-ins can't come over: those browsers keep them encrypted for themselves. Turn this off with **Settings › Tools ›
 Cora's browser › Your Chrome bookmarks and history**.
+
+### Cora's Browser
+
+**Browser**, under **Cora** in Tools (or `Ctrl+Shift+B`), is a browser that belongs to no session: for anything you
+want to look at without tying it to a piece of work. It opens in the Tools drawer and has everything a session's
+browser has: tabs you can drag, the address bar's suggestions, the bookmarks bar, `Ctrl+F`, and 1Password.
+
+Links with nowhere better to go open here: an Inbox item whose site has no Tool of yours (one that does opens in that
+Tool, at that page), and a link you click with no session open. Closing its last tab closes the drawer.
 
 ### Pages sessions open
 

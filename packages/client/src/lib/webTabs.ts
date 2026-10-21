@@ -71,6 +71,19 @@ export function closeTab(st: WebState, id: string): WebState {
   return { ...st, tabs: rest, order: st.order.filter((x) => x !== id), sessions: { ...st.sessions, [t.sessionId]: { tabs, active, shown: s.shown && tabs.length > 0 } } };
 }
 
+/** Move a tab to another place in its strip (dragged there); its page isn't touched (moving one would reload it). */
+export function moveTab(st: WebState, id: string, to: number): WebState {
+  const t = st.tabs[id];
+  if (!t) return st;
+  const s = sw(st, t.sessionId);
+  const from = s.tabs.indexOf(id);
+  const at = Math.max(0, Math.min(s.tabs.length - 1, to));
+  if (from < 0 || from === at) return st;
+  const tabs = s.tabs.filter((x) => x !== id);
+  tabs.splice(at, 0, id);
+  return { ...st, sessions: { ...st.sessions, [t.sessionId]: { ...s, tabs } } };
+}
+
 /** Send a tab somewhere (from the address bar or a link). */
 export function navigate(st: WebState, id: string, url: string): WebState {
   const t = st.tabs[id];

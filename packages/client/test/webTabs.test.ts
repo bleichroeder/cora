@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { EMPTY_WEB, activate, closeTab, cycle, deserialize, navigate, newTab, openUrl, serialize, setShown, update, type WebState } from '../src/lib/webTabs';
+import { EMPTY_WEB, activate, closeTab, cycle, deserialize, moveTab, navigate, newTab, openUrl, serialize, setShown, update, type WebState } from '../src/lib/webTabs';
 
 const urls = (st: WebState, sid: string) => (st.sessions[sid]?.tabs ?? []).map((id) => st.tabs[id].url);
 const active = (st: WebState, sid: string) => st.tabs[st.sessions[sid]?.active ?? '']?.url;
@@ -84,5 +84,29 @@ describe('browser width', () => {
     const st = { ...openUrl(EMPTY_WEB, 'a', 'https://1'), split: 0.4 };
     expect(deserialize(serialize(st)).split).toBe(0.4);
     expect(deserialize(serialize(EMPTY_WEB)).split).toBe(0.6);
+  });
+});
+
+describe('reordering tabs', () => {
+  it('a dragged tab moves within its own strip; pages keep their order; it survives a reload', () => {
+    let st = openUrl(EMPTY_WEB, 'a', 'https://one');
+    st = openUrl(st, 'a', 'https://two');
+    st = openUrl(st, 'a', 'https://three');
+    st = openUrl(st, 'b', 'https://other');
+    const [one, two, three] = st.sessions.a.tabs;
+    const order = st.order;
+    st = moveTab(st, three, 0);
+    expect(urls(st, 'a')).toEqual(['https://three', 'https://one', 'https://two']);
+    st = moveTab(st, three, 99);
+    expect(urls(st, 'a')).toEqual(['https://one', 'https://two', 'https://three']);
+    st = moveTab(st, one, 1);
+    expect(urls(st, 'a')).toEqual(['https://two', 'https://one', 'https://three']);
+    expect(st.order).toEqual(order); // page elements never move
+    expect(st.sessions.a.active).toBe(three);
+    expect(urls(st, 'b')).toEqual(['https://other']);
+    expect(moveTab(st, two, 0)).toBe(st); // already there
+    expect(moveTab(st, 'nope', 0)).toBe(st);
+    expect(urls(deserialize(serialize(st)), 'a')).toEqual(['https://two', 'https://one', 'https://three']);
+    void two;
   });
 });

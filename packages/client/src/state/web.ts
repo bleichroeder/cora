@@ -15,6 +15,8 @@ type Actions = {
   open(sid: string, url: string, o?: { after?: string; background?: boolean; reload?: boolean }): void;
   newTab(sid: string, url?: string, o?: { after?: string; background?: boolean }): void;
   closeTab(id: string): void;
+  /** a tab dragged to another place in its strip */
+  moveTab(id: string, to: number): void;
   activate(id: string): void;
   navigate(id: string, url: string): void;
   update(id: string, p: { url?: string; title?: string }): void;
@@ -36,6 +38,7 @@ export const useWeb = create<W.WebState & Actions>((set, get) => {
     open: (sid, url, o) => apply((st) => W.openUrl(st, sid, url, o)),
     newTab: (sid, url, o) => apply((st) => W.newTab(st, sid, url, o)),
     closeTab: (id) => apply((st) => W.closeTab(st, id)),
+    moveTab: (id, to) => apply((st) => W.moveTab(st, id, to)),
     activate: (id) => apply((st) => W.activate(st, id)),
     navigate: (id, url) => apply((st) => W.navigate(st, id, url)),
     update: (id, p) => apply((st) => W.update(st, id, p)),

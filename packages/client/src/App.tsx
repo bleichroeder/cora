@@ -37,6 +37,7 @@ import { Boundary } from './components/Boundary';
 import { DiffView } from './components/DiffView';
 import { ChangesPane } from './components/ChangesPane';
 import { WebPane, openFind, stepTab, tabOfPage } from './components/WebPane';
+import { openInBrowser } from './state/browser';
 import { useWeb } from './state/web';
 import { JiraText } from './components/JiraChip';
 import { backgroundTasks } from './lib/background';
@@ -361,11 +362,11 @@ export function App() {
     if (!desktop) return;
     const offFocus = desktop.onFocusSession((sid) => useBrain.getState().setFocus(sid));
     const offCmd = desktop.onCommand((c) => c === 'new-session' && useBrain.getState().setModal('new-session'));
-    // links clicked anywhere in the app open in the built-in browser (with no session open, in your browser)
+    // links clicked anywhere in the app open in the built-in browser: the session's, or with no session open, Cora's Browser
     const offWeb = desktop.onOpenWeb?.((url) => {
       const st = useBrain.getState();
       if (st.focus && !st.overview) useWeb.getState().open(st.focus, url);
-      else desktop!.openExternal?.(url);
+      else openInBrowser(url);
     });
     // a page asking for a new tab (a target=_blank link) or a tab shortcut: it belongs to whichever session owns the page
     // the key in a page's login field: a session's tab, or a Tool in the drawer when 1Password is on there
@@ -378,10 +379,10 @@ export function App() {
       const w = useWeb.getState();
       const t = w.tabs[tabOfPage.get(from) ?? ''];
       if (!t) {
-        // a tool's page (Slack): its links open in the session you're looking at (else your browser); Ctrl+W closes the drawer
+        // a tool's page (Slack): its links open in the session you're looking at (else Cora's Browser); Ctrl+W closes the drawer
         if (!toolOfPage.has(from)) return;
         const focus = useBrain.getState().focus;
-        if (url) focus && !useBrain.getState().overview ? w.open(focus, url, { background }) : desktop!.openExternal?.(url);
+        if (url) focus && !useBrain.getState().overview ? w.open(focus, url, { background }) : openInBrowser(url, { background });
         else if (key === 'w') useTools.getState().close();
         else if (key === 'f') openToolFind();
         return;
@@ -390,8 +391,8 @@ export function App() {
       else if (key === 't') w.newTab(t.sessionId);
       else if (key === 'w') w.closeTab(t.id);
       else if (key === 'next' || key === 'prev') w.cycle(t.sessionId, key === 'next' ? 1 : -1);
-      else if (key === 'l') (document.querySelector('.web-addr input') as HTMLInputElement | null)?.focus();
-      else if (key === 'f') openFind();
+      else if (key === 'l') (document.querySelector(`.web-addr[data-group="${CSS.escape(t.sessionId)}"] input`) as HTMLInputElement | null)?.focus();
+      else if (key === 'f') openFind(t.sessionId);
     });
     let prev = useBrain.getState().sessions;
     const unsub = useBrain.subscribe((st) => {
