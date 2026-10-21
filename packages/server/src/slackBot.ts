@@ -1,4 +1,4 @@
-import { firstSentence, inQuiet, summarizeTool, toMrkdwn, type BrainEvent, type PendingDecision, type PendingRequest, type SlackBotSettings, type SlackBotStatus, SLACK_DM_MARK } from '@cora/shared';
+import { firstSentence, inQuiet, summarizeTool, toMrkdwn, type Approval, type BrainEvent, type PendingDecision, type PendingRequest, type SlackBotSettings, type SlackBotStatus, type SlackDraft, SLACK_DM_MARK } from '@cora/shared';
 import type { Slack } from './slack';
 
 /**
@@ -6,6 +6,10 @@ import type { Slack } from './slack';
  * itself: prompts a session is waiting on (with Allow / Deny), failures, tickets assigned to you, and a digest of
  * finished sessions. What you write in that DM goes to Cora's agent, and its reply comes back. Only your own clicks
  * and messages in that DM count.
+ *
+ * Whatever waits for your OK can be answered from here while you're away: a session's permission prompt (Allow /
+ * Deny), a Slack message a session drafted (Send / Discard), and Cora's own cards (Yes / No, or its options). What was
+ * already waiting when you left comes here then. Handing Cora control (Away in its console) counts as away.
  */
 
 export type BotAlert = { kind: 'failure' | 'ticket' | 'finished' | 'mail'; text: string; /** sent once (a pipeline, a ticket) */ key?: string };
@@ -15,8 +19,16 @@ export type CoraBotDeps = {
   settings(): SlackBotSettings;
   pending: { list(): PendingRequest[]; resolve(id: string, d: PendingDecision): { ok: boolean; error?: string }; extend(id: string, ms: number): boolean };
   nameOf(sessionId: string): string;
-  /** your answer to one of Cora's questions (a card in its console), from a button here */
-  approve?(id: string, ok: boolean): Promise<{ ok: boolean; error?: string; result?: string }>;
+  /** your answer to one of Cora's cards (in its console), from a button here; `text`: the option you picked */
+  approve?(id: string, ok: boolean, text?: string): Promise<{ ok: boolean; error?: string; result?: string }>;
+  /** Cora's cards waiting for your OK */
+  cards?(): Approval[];
+  /** Slack messages sessions drafted, waiting for your OK */
+  drafts?(): SlackDraft[];
+  /** your Send or Discard on one, from a button here */
+  draft?(id: string, send: boolean): Promise<{ ok: boolean; error?: string; link?: string }>;
+  /** you handed Cora control (Away in its console): you're away, whatever the PC says */
+  handedOff?(): boolean;
   /** your words to Cora's agent (null: Cora's agent is off) */
   say?(text: string): { ok: boolean; error?: string } | null;
   onChange?(): void;
@@ -34,6 +46,8 @@ const PRESENCE_STALE_MS = 3 * 60_000;
 const REPLY_WAIT_MS = 10 * 60_000;
 /** Cora's opening line goes out on its own when the rest takes longer than this. */
 export const EARLY_MS = 3000;
+/** A draft older than this (kept across restarts) isn't news when you leave: it stays in Cora. */
+const DRAFT_NEWS_MS = 24 * 3_600_000;
 
 type Posted = { channel: string; ts: string; head: string; answered?: boolean };
 /** what you wrote in the DM, while Cora works on it: your message, what it has said so far, its "on it" message */
@@ -49,9 +63,15 @@ export class CoraBot {
   private sent = { day: '', n: 0 };
   private keys = new Set<string>();
   private prompts = new Map<string, Posted>();
-  /** Cora's questions sent here (by their card's id) */
+  /** Cora's questions sent here (by their card's id), and the options of those that have them */
   private questions = new Map<string, Posted>();
+  private options = new Map<string, string[]>();
+  private seenCards = new Set<string>();
+  /** drafts sent here (by id) */
+  private draftMsgs = new Map<string, Posted>();
+  private seenDrafts = new Set<string>();
   private seenPending = new Set<string>();
+  private wasAway = false;
   private heard = new Set<string>();
   private awaiting: Awaiting | null = null;
   private error: string | undefined;
@@ -70,20 +90,36 @@ export class CoraBot {
   // ---------------------------------------------------------------- presence
   /** The desktop app: how long since the last key or mouse move, and whether the screen is locked. */
   report(p: { idle: number; locked: boolean }): void {
-    const was = this.away();
     this.presence = { idle: Math.max(0, p.idle), locked: !!p.locked, at: this.now() };
+    this.refresh();
+  }
+  /**
+   * Did away change (the PC's presence, or you handed Cora control)? Gone: what's waiting for your OK comes here.
+   * Back: nothing more goes out, and a digest waiting isn't news any more.
+   */
+  refresh(): void {
     const is = this.away();
-    if (is && !was) this.awaySince = this.now();
-    if (!is && was) {
-      // back: nothing more goes out, and a digest waiting isn't news any more
+    if (is === this.wasAway) return;
+    this.wasAway = is;
+    if (is) {
+      this.awaySince = this.now();
+      void this.catchUp();
+    } else {
       this.awaySince = null;
       this.digest = [];
       if (this.digestTimer) clearTimeout(this.digestTimer);
       this.digestTimer = null;
     }
-    if (is !== was) this.d.onChange?.();
+    this.d.onChange?.();
+  }
+  /** You just left: whatever is waiting for your OK comes to your phone. */
+  async catchUp(): Promise<void> {
+    await this.pendingChanged(this.d.pending.list());
+    await this.draftsChanged();
+    await this.cardsChanged();
   }
   away(): boolean {
+    if (this.d.handedOff?.()) return true;
     const p = this.presence;
     if (!p || this.now() - p.at > PRESENCE_STALE_MS) return false;
     return p.locked || p.idle >= this.cfg().awayMinutes * 60;
@@ -154,8 +190,13 @@ export class CoraBot {
     const ids = new Set(list.map((p) => p.id));
     for (const p of list) {
       if (this.seenPending.has(p.id)) continue;
+      if (p.kind === 'elicitation') {
+        this.seenPending.add(p.id);
+        continue;
+      }
+      // not now (you're here, or quiet hours): it comes if it's still waiting when you leave
+      if (!this.cfg().ping.prompts || !this.mayAlert()) continue;
       this.seenPending.add(p.id);
-      if (p.kind === 'elicitation' || !this.cfg().ping.prompts || !this.mayAlert()) continue;
       this.d.pending.extend(p.id, AWAY_HOLD_MS);
       const msg = promptMessage(p, this.d.nameOf(p.sessionId));
       const r = await this.post(msg.text, msg.blocks);
@@ -175,13 +216,59 @@ export class CoraBot {
    * answer is the same as on its card in Cora's console. Goes out whether or not alerts are on: you set the watch.
    */
   async askOnPhone(id: string, text: string): Promise<void> {
-    if (!this.connected() || inQuiet(this.cfg().quiet, new Date(this.now())) || this.today() >= this.cfg().dailyCap) return;
+    if (this.seenCards.has(id) || !this.connected() || inQuiet(this.cfg().quiet, new Date(this.now())) || this.today() >= this.cfg().dailyCap) return;
+    this.seenCards.add(id);
     const head = text.split('\n')[0];
     const r = await this.post(text.slice(0, 2900), [
       section(toMrkdwn(text).slice(0, 2900)),
       { type: 'actions', elements: [btn('Yes', 'cora_yes', id, 'primary'), btn('No', 'cora_no', id)] },
     ]);
     if (r) this.questions.set(id, { ...r, head });
+  }
+
+  /**
+   * Cora's cards changed: new ones go to your phone while you're away (with Yes / No, or its options), and one you
+   * answered in Cora says so here.
+   */
+  async cardsChanged(): Promise<void> {
+    if (!this.d.cards) return;
+    const list = this.d.cards();
+    const ids = new Set(list.map((a) => a.id));
+    for (const a of list) {
+      if (this.seenCards.has(a.id) || !this.cfg().ping.prompts || !this.mayAlert()) continue;
+      this.seenCards.add(a.id);
+      const msg = cardMessage(a);
+      if (a.kind === 'ask' && a.options?.length) this.options.set(a.id, a.options);
+      const r = await this.post(msg.text, msg.blocks);
+      if (r) this.questions.set(a.id, { ...r, head: msg.head });
+    }
+    for (const [id, m] of this.questions) {
+      if (ids.has(id)) continue;
+      this.questions.delete(id);
+      this.options.delete(id);
+      if (!m.answered) await this.d.slack.updateAsCora(m.channel, m.ts, `${m.head}: answered in Cora`, [section(`${m.head}\n_Answered in Cora._`)]).catch(() => {});
+    }
+    for (const id of this.seenCards) if (!ids.has(id) && !this.questions.has(id)) this.seenCards.delete(id);
+  }
+
+  /** Slack messages sessions drafted: new ones go to your phone while you're away (Send / Discard). */
+  async draftsChanged(): Promise<void> {
+    if (!this.d.drafts) return;
+    const list = this.d.drafts();
+    const ids = new Set(list.map((d) => d.id));
+    for (const d of list) {
+      if (this.seenDrafts.has(d.id) || this.now() - d.createdAt > DRAFT_NEWS_MS || !this.cfg().ping.prompts || !this.mayAlert()) continue;
+      this.seenDrafts.add(d.id);
+      const msg = draftMessage(d, d.sessionId ? this.d.nameOf(d.sessionId) : 'A session');
+      const r = await this.post(msg.text, msg.blocks);
+      if (r) this.draftMsgs.set(d.id, { ...r, head: msg.head });
+    }
+    for (const [id, m] of this.draftMsgs) {
+      if (ids.has(id)) continue;
+      this.draftMsgs.delete(id);
+      if (!m.answered) await this.d.slack.updateAsCora(m.channel, m.ts, `${m.head}: answered in Cora`, [section(`${m.head}\n_Answered in Cora._`)]).catch(() => {});
+    }
+    for (const id of this.seenDrafts) if (!ids.has(id) && !this.draftMsgs.has(id)) this.seenDrafts.delete(id);
   }
 
   /** A button in one of Cora's messages (Socket Mode's interactive envelope). Only your clicks count. */
@@ -191,6 +278,11 @@ export class CoraBot {
     if (!me.connected || payload.user?.id !== me.userId) return;
     const a = payload.actions?.[0];
     if (a && ['cora_yes', 'cora_no'].includes(a.action_id)) return this.answer(payload, String(a.value ?? ''), a.action_id === 'cora_yes');
+    if (a?.action_id === 'cora_pick') {
+      const [id, i] = String(a.value ?? '').split('#');
+      return this.answer(payload, id, true, this.options.get(id)?.[Number(i)]);
+    }
+    if (a && ['cora_send', 'cora_discard'].includes(a.action_id)) return this.sendDraft(payload, String(a.value ?? ''), a.action_id === 'cora_send');
     if (!a || !['cora_allow', 'cora_deny'].includes(a.action_id)) return;
     const id = String(a.value ?? '');
     const m = this.prompts.get(id);
@@ -204,16 +296,32 @@ export class CoraBot {
     if (channel && ts) await this.d.slack.updateAsCora(channel, ts, `${head}: ${r.ok ? (allow ? 'allowed' : 'denied') : 'gone'}`, [section(`${head}\n${note}`)]).catch(() => {});
   }
 
-  /** Your Yes or No to one of Cora's questions: runs as on its card; the message says what happened. */
-  private async answer(payload: any, id: string, yes: boolean): Promise<void> {
+  /** Your Yes or No (or the option you picked) to one of Cora's cards: runs as on its card; the message says what happened. */
+  private async answer(payload: any, id: string, yes: boolean, pick?: string): Promise<void> {
     const q = this.questions.get(id);
     const channel = String(payload.channel?.id ?? q?.channel ?? '');
     const ts = String(payload.message?.ts ?? q?.ts ?? '');
     const head = q?.head ?? 'That question';
-    const r = this.d.approve ? await this.d.approve(id, yes) : { ok: false, error: 'Cora is off' };
+    if (q) q.answered = true;
+    const r = this.d.approve ? await this.d.approve(id, yes, pick) : { ok: false, error: 'Cora is off' };
     this.questions.delete(id);
-    const note = !r.ok ? `_${r.error === 'not found (already answered)' ? 'Already answered (in Cora, or here).' : `Couldn't: ${r.error}`}_` : yes ? `✅ ${r.result ?? 'Started'}` : '⛔ Not started';
+    this.options.delete(id);
+    const note = !r.ok ? `_${r.error === 'not found (already answered)' ? 'Already answered (in Cora, or here).' : `Couldn't: ${r.error}`}_` : pick !== undefined ? `✅ You answered: ${pick}` : yes ? `✅ ${r.result ?? 'Done'}` : '⛔ No';
     if (channel && ts) await this.d.slack.updateAsCora(channel, ts, `${head}: ${r.ok ? (yes ? 'yes' : 'no') : 'gone'}`, [section(`${head}\n${note}`)]).catch(() => {});
+  }
+
+  /** Your Send or Discard on a session's draft: as in Cora's outbox; the message says what happened. */
+  private async sendDraft(payload: any, id: string, send: boolean): Promise<void> {
+    const m = this.draftMsgs.get(id);
+    const channel = String(payload.channel?.id ?? m?.channel ?? '');
+    const ts = String(payload.message?.ts ?? m?.ts ?? '');
+    const head = m?.head ?? 'That message';
+    if (m) m.answered = true;
+    const r = this.d.draft ? await this.d.draft(id, send) : { ok: false, error: 'Slack is off' };
+    if (r.ok) this.draftMsgs.delete(id);
+    else if (m) m.answered = false;
+    const note = !r.ok ? `_${r.error === 'not found (already answered)' ? 'Already answered (in Cora, or here).' : `Couldn't: ${r.error}`}_` : send ? `✅ Sent${'link' in r && r.link ? `: ${r.link}` : ''}` : '🗑 Discarded';
+    if (channel && ts) await this.d.slack.updateAsCora(channel, ts, `${head}: ${r.ok ? (send ? 'sent' : 'discarded') : 'not sent'}`, [section(`${head}\n${note}`)]).catch(() => {});
   }
 
   // ---------------------------------------------------------------- your Cora DM: instructions, and Cora's reply
@@ -337,6 +445,34 @@ export function promptMessage(p: PendingRequest, who: string): { head: string; t
           { type: 'button', action_id: 'cora_deny', style: 'danger', text: { type: 'plain_text', text: 'Deny' }, value: p.id },
         ],
       },
+    ],
+  };
+}
+
+/** One of Cora's cards as a message: what it wants to do, and Yes / No (a question: its options, or answer in Cora). */
+export function cardMessage(a: Approval): { head: string; text: string; blocks: unknown[] } {
+  const head = a.kind === 'ask' ? `*Cora* asks you: ${a.title}` : `*Cora* wants to: ${a.title}`;
+  const quoted = a.text ? `>${a.text.slice(0, 1200).replace(/\n/g, '\n>')}` : '';
+  const body = [a.kind === 'ask' ? '' : a.detail, quoted].filter(Boolean).join('\n');
+  const text = `${head.replace(/\*/g, '')}${a.text ? `: ${a.text.slice(0, 200)}` : ''}`;
+  if (a.kind === 'ask') {
+    const picks = (a.options ?? []).map((o, i) => btn(o.slice(0, 70), 'cora_pick', `${a.id}#${i}`, i === 0 ? 'primary' : undefined));
+    const how = picks.length ? '' : '\n_Answer it in Cora, or write your answer here and Cora will hear it._';
+    return { head, text, blocks: [section(`${head}${body ? `\n${body}` : ''}${how}`), ...(picks.length ? [{ type: 'actions', elements: picks }] : [])] };
+  }
+  return { head, text, blocks: [section(`${head}\n${body}`), { type: 'actions', elements: [btn('Yes', 'cora_yes', a.id, 'primary'), btn('No', 'cora_no', a.id)] }] };
+}
+
+/** A session's Slack draft as a message: to whom, what, and Send / Discard (to change it first: in Cora). */
+export function draftMessage(d: SlackDraft, who: string): { head: string; text: string; blocks: unknown[] } {
+  const head = `*${who}* wants to send a Slack message to *${d.to.label}*${d.threadTs ? ' (in a thread)' : ''}`;
+  const files = d.files?.length ? `\n_with ${d.files.length === 1 ? d.files[0].name : `${d.files.length} files`}_` : '';
+  return {
+    head,
+    text: `${who} wants to send ${d.to.label}: ${d.text.slice(0, 200)}`,
+    blocks: [
+      section(`${head}\n>${d.text.slice(0, 2000).replace(/\n/g, '\n>')}${files}\n_To change it first: in Cora's Slack outbox._`),
+      { type: 'actions', elements: [btn('Send', 'cora_send', d.id, 'primary'), btn('Discard', 'cora_discard', d.id, 'danger')] },
     ],
   };
 }

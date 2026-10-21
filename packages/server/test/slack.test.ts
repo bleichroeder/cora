@@ -26,6 +26,7 @@ function fakeSlack() {
           ok: true,
           members: [
             { id: 'U1', name: 'dana', profile: { display_name: 'Dana', real_name: 'Dana Scully', email: 'dana@acme.com' } },
+            { id: 'U0', name: 'david', profile: { display_name: 'David', real_name: 'David Example', email: 'david@acme.com' } },
             { id: 'U2', name: 'dan.m', profile: { display_name: 'Dan', real_name: 'Dan Miller', email: 'dmiller@acme.com' } },
             { id: 'U3', name: 'oldtimer', deleted: true, profile: {} },
             { id: 'B1', name: 'jirabot', is_bot: true, profile: {} },
@@ -163,7 +164,7 @@ describe('the Slack connection', () => {
     expect(r.lines).toEqual(['[2023-11-14 22:13] Dana: hi @Dan, see the doc (https://x.io) (2 replies, thread 1700000000.000000)', '[2023-11-14 22:15] Dan: second']);
     const t = await slack.read({ link: 'https://acme.slack.com/archives/C1/p1700000000000000' });
     expect(t.thread).toBe('1700000000.000000');
-    expect(t.lines.map((l) => l.split('] ')[1])).toEqual(['Dana: question?', 'david: answer'.replace('david', 'U0')]);
+    expect(t.lines.map((l) => l.split('] ')[1])).toEqual(['Dana: question?', 'David: answer']);
   });
 
   it('forgets a token Slack no longer accepts', async () => {
@@ -323,6 +324,15 @@ describe('the Slack tools', () => {
     expect(outbox.list()[0]).toMatchObject({ to: { id: 'C1' }, threadTs: '1700000000.000100' });
     await outbox.decide(outbox.list()[0].id, { action: 'discard' });
     expect((await pending).content[0].text).toMatch(/discarded/);
+  });
+
+  it('a message to you yourself goes at once, with no draft (any session: nobody else reads it)', async () => {
+    const { call, outbox, posted } = await setup();
+    const r = await call('slack_send', { to: 'U0', text: 'Done: the README is on GitHub' });
+    expect(r.content[0].text).toMatch(/^Sent to the user's own DM, straight away/);
+    expect(outbox.list()).toEqual([]);
+    expect(posted.at(-1)).toMatchObject({ channel: 'D-U0' });
+    expect(posted.at(-1).text).toMatch(/^Done: the README is on GitHub/);
   });
 
   it('asks for an id when a name is ambiguous, without making a draft', async () => {

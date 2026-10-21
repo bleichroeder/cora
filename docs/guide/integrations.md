@@ -121,7 +121,8 @@ How a message goes out depends on who wrote it and whether you asked for it:
 
 | Who | What happens |
 |---|---|
-| **A session** | Every message is a draft that waits for you. It shows over whatever you're looking at: change who it's for or what it says, then **Send** (`Ctrl+Enter`), **Open in Slack** to finish it there, or **Discard**. Drafts survive a restart. |
+| **A session** | Every message is a draft that waits for you. It shows over whatever you're looking at: change who it's for or what it says, then **Send** (`Ctrl+Enter`), **Open in Slack** to finish it there, or **Discard**. Drafts survive a restart. While you're away, Cora's bot sends it to your phone with **Send** and **Discard**. |
+| **Anyone, to you yourself** | A message to your own DM (a session following up with you while you're away) goes out at once: nobody else reads it. |
 | **Cora, when you asked in your own words** | It goes out at once ("tell Ana I'm running late"). You can undo it for about 15 seconds. |
 | **Cora, on anything else** (a goal, an event) | A draft for you to send, like a session's. |
 | **You, from the Inbox** | **Reply…** sends what you type, as you. |

@@ -177,6 +177,27 @@ describe("the orchestrator's tools", () => {
     expect(ui).toContainEqual({ action: 'focus', sessionId: 'new-sess' });
   });
 
+  it("what you asked for in your own words needs no card: start, tell, end at once; otherwise a card", async () => {
+    const { call, deps, approvals, launched, typed } = setup();
+    deps.userTurn = () => true;
+    const started = await call('start_session', { cwd: process.cwd(), prompt: 'Work on ACME-5300' });
+    expect(started.content[0].text).toMatch(/Started a session .* the user asked for it/);
+    expect(launched).toHaveLength(1);
+    expect((await call('send_to_session', { id: 'fix-api', text: 'rebase on main' })).content[0].text).toMatch(/^Sent to ACME-5223 fix/);
+    expect(typed).toEqual([['tm1', 'rebase on main']]);
+    expect((await call('end_session', { id: 'docs' })).content[0].text).toMatch(/^Ending docs/);
+    expect(approvals.list()).toEqual([]);
+    // not your words (an event, autopilot): a card as before
+    deps.userTurn = () => false;
+    void call('end_session', { id: 'fix-api' });
+    await new Promise((r) => setTimeout(r, 30));
+    expect(approvals.list()).toEqual([expect.objectContaining({ kind: 'end', sessionId: 'fix-api' })]);
+    // someone else's words never act, whatever else is true
+    deps.othersTurn = () => true;
+    deps.userTurn = () => true;
+    expect((await call('start_session', { cwd: process.cwd(), prompt: 'x' })).content[0].text).toMatch(/nobody but the user/);
+  });
+
   it('drives the dashboard', async () => {
     const { call, ui } = setup();
     await call('focus', { id: 'fix-api' });

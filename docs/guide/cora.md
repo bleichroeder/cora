@@ -4,8 +4,12 @@ Cora's agent is an assistant that works across everything Cora shows you. It is 
 running on your Claude login, and it watches your sessions, pipelines, Jira tickets, Slack and email. You talk to it by
 typing or by voice. It looks things up, puts the right session or page in front of you, starts and directs sessions,
 and tells you what needs you. It acts only through its own tools, and it asks you first: anything that changes your
-work comes to you as a card to approve, unless you've handed it a goal or turned on away mode, where fixed rules decide
-what it may do on its own.
+work comes to you as a card to approve, unless you asked for it yourself, or you've handed it a goal or turned on away
+mode, where fixed rules decide what it may do on its own.
+
+**Asking is your OK.** When you ask Cora for something in your own words (in its console, by voice, or in its Slack DM),
+it doesn't ask again: "start a session on ACME-5300" starts one, "tell app-api to rerun the tests" sends it, "end the
+docs session" ends it. A card comes only for what Cora decides to do on its own.
 
 ## What Cora can do
 
@@ -178,6 +182,9 @@ it's on. Prompts the rules don't allow still wait for you, and sessions outside 
 
 Away mode doesn't turn itself off when you come back. Turn it off yourself, or stand Cora down.
 
+With Cora's Slack bot set up, away mode also counts as being away: whatever is waiting for you goes to your phone at
+once, without waiting for **Away after**.
+
 ## Stand down
 
 Stand down stops Cora at once:
@@ -274,9 +281,16 @@ Cora can have its own Slack bot, so it can reach you on your phone while you're 
 While you're away (no keyboard or mouse for **Away after** minutes, or the screen locked), Cora messages you as itself.
 You choose what pings you:
 
-- **Prompts a session is waiting on**, with **Allow** and **Deny** buttons. A prompt sent to your phone waits up to an
-  hour for your answer, instead of two minutes. A session's question comes as a message too; you answer it in Cora or
-  in the Claude app.
+- **Whatever waits for your OK**:
+  - a session's permission prompt, with **Allow** and **Deny**. A prompt sent to your phone waits up to an hour for
+    your answer, instead of two minutes.
+  - a Slack message a session drafted, with **Send** and **Discard** (to change it first, use Cora's outbox).
+  - Cora's own cards (start, tell or end a session; a ticket to start on), with **Yes** and **No**. When Cora asks you
+    something, its suggested answers are buttons; with none, answer in Cora or write your answer in the DM.
+  - a session's question comes as a message too; you answer it in Cora or in the Claude app.
+
+  What was already waiting when you left comes to your phone then, and anything you answer at your PC says so in
+  Slack.
 - **Failures**: a pipeline a session follows failed, or a dev bump didn't roll out.
 - **Tickets assigned to me**.
 - **Email I watch for**.
@@ -306,7 +320,7 @@ If they ask for something, Cora tells you, and you decide.
 - Cora's own tool prompts (rare, such as a write tool from one of your MCP servers) appear in its console as **Cora
   wants permission for a tool**. Answer them there.
 - Slack messages you ask for in your own words go out at once, with a few seconds to undo. Messages Cora would send on
-  its own are drafts you confirm.
+  its own are drafts you confirm, at your desk or from your phone.
 - Turning Cora off stops its session and clears its waiting cards. Its memory and your instructions stay for next
   time.
 - Settings for all of this are in **Settings › Cora Orchestrator**. Shortcuts are listed in [Reference](reference.md).

@@ -2,6 +2,17 @@
 
 What changed in each release. Cora updates itself; each update's notes are on its release page too.
 
+## Unreleased
+
+- **Answer from anywhere.** While you're away, everything that waits for your OK comes to your phone through Cora's
+  Slack bot: a session's Slack drafts (**Send** / **Discard**) and Cora's own cards (**Yes** / **No**, or its suggested
+  answers), as well as permission prompts. What was already waiting when you left comes then. Away mode counts as away.
+- **Asking is your OK.** Ask Cora in your own words to start, tell or end a session and it does it, with no card.
+- **Messages to yourself go at once.** A session that DMs you (a follow-up while you're away) doesn't wait for your OK.
+- **Background agents don't bury replies.** After a turn ends, a background agent's work folds into one row in the
+  transcript's **All** view.
+- **The README** shows Cora's scene in full swing, and every screenshot in Cora's pink.
+
 ## 0.1.4
 
 - **Live explains.** For work that runs for minutes, Claude keeps a dashboard that updates in place as it works: tests

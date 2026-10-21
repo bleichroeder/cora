@@ -103,7 +103,7 @@ export function BotSettings({ server, save }: { server: Settings | null; save(p:
       <Row label="Away after" hint="No keyboard or mouse for this long, or the screen locked.">
         <Choice value={c.awayMinutes} onChange={(awayMinutes) => set({ awayMinutes })} options={AWAY} />
       </Row>
-      <Toggle label="Prompts a session is waiting on" hint="With Allow and Deny; it waits up to an hour for your answer instead of two minutes." checked={c.ping.prompts} onChange={(prompts) => set({ ping: { prompts } })} />
+      <Toggle label="Whatever waits for your OK" hint="Prompts (Allow / Deny; they wait up to an hour instead of two minutes), Slack drafts (Send / Discard) and Cora's cards (Yes / No). What was waiting when you left comes then." checked={c.ping.prompts} onChange={(prompts) => set({ ping: { prompts } })} />
       <Toggle label="Failures" hint="A pipeline a session follows failed; a dev bump didn't roll out." checked={c.ping.failures} onChange={(failures) => set({ ping: { failures } })} />
       <Toggle label="Tickets assigned to me" checked={c.ping.tickets} onChange={(tickets) => set({ ping: { tickets } })} />
       <Toggle label="Email I watch for" hint="Once Gmail is connected: new mail matching what you told Cora to watch for (Settings → Gmail)." checked={c.ping.mail !== false} onChange={(mail) => set({ ping: { mail } })} />

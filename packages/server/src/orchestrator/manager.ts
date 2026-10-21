@@ -542,6 +542,11 @@ export class OrchestratorManager {
     return judge({ ...req, cwd: this.d.cwdOf?.(sessionId) ?? '' }, this.mandateFor(sessionId));
   }
 
+  /** You handed Cora control (Away in its console): it answers prompts within its mandate, and you count as away. */
+  inControl(): boolean {
+    return this.d.settings().orchestrator.enabled && this.control;
+  }
+
   setControl(on: boolean): void {
     if (this.control === on) return this.changed();
     this.control = on;

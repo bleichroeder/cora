@@ -276,6 +276,7 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
       jiraInbox: (ms, kinds) => (d.jira && prefs.get().jira.watch.on ? d.jira.recent(ms, kinds) : null),
       jiraStart: (p) => o.jiraStarts.start(p),
       othersTurn: () => o.othersTurn(),
+      userTurn: () => o.userTurn(),
       coraDm: (t) => (d.bot ? d.bot.dm(t) : Promise.resolve({ ok: false, error: "Cora's own Slack bot isn't set up (Settings → Slack)." })),
       isAgent: (sid) => o.isAgent(sid),
       ui: (cmd) => o.ui(cmd),

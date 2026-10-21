@@ -16,6 +16,11 @@ export type OrchToolDeps = {
   jiraInbox?(sinceMs: number, kinds?: JiraEventKind[]): JiraEvent[] | null;
   /** Cora is on a turn someone else's Slack words started: its action tools refuse (see ACTS) */
   othersTurn?(): boolean;
+  /**
+   * Cora is working on what the user just asked, in their own words (console, voice, their Cora DM): asking for it was
+   * their OK, so starting, telling or ending a session needs no card (as a Slack message they asked for goes at once)
+   */
+  userTurn?(): boolean;
   /** a DM to the user from Cora's own Slack bot (null: the bot isn't set up) */
   coraDm?(text: string): Promise<{ ok: boolean; error?: string }>;
   /** start work on a ticket assigned to the user: a card for them, or (allowed) a session, by Cora's rules */
@@ -176,7 +181,7 @@ export function registerOrchestratorTools(server: McpServer, d: OrchToolDeps): v
       return `Sent to ${name}.`;
     };
     const goal = d.goal();
-    if ((working(goal) && goal!.workers.includes(id)) || d.talk.allowed(id)) {
+    if ((working(goal) && goal!.workers.includes(id)) || d.talk.allowed(id) || d.userTurn?.()) {
       try {
         await send(undefined);
         return { sent: true, name, since };
@@ -307,8 +312,8 @@ export function registerOrchestratorTools(server: McpServer, d: OrchToolDeps): v
   server.registerTool(
     'start_session',
     {
-      title: 'Start a session (the user OKs it)',
-      description: 'Start a Claude Code session in a folder with a first prompt, hosted in Cora. The user sees your prompt and OKs (or changes) it first. Make the prompt self-contained: what to do, the context, what done looks like.',
+      title: 'Start a session',
+      description: "Start a Claude Code session in a folder with a first prompt, hosted in Cora. When the user asked you for it in their own words (what you're working on now), it starts at once; otherwise they see your prompt and OK (or change) it first. Make the prompt self-contained: what to do, the context, what done looks like.",
       inputSchema: {
         cwd: z.string().min(2).max(400).describe('The folder (an absolute path; a session usually knows its repo’s path)'),
         prompt: z.string().min(1).max(20_000).describe('Its first prompt'),
@@ -328,8 +333,9 @@ export function registerOrchestratorTools(server: McpServer, d: OrchToolDeps): v
         if (r.pending) return `Started a session in ${cwd} (id ${r.terminal.sessionId}); it's still starting. Its prompt goes in as soon as it's ready, and you'll hear either way: don't send it anything meanwhile.${worker}`;
         return r.sent ? `Started a session in ${cwd} (id ${r.terminal.sessionId}) and gave it the prompt.${worker}` : `Started a session in ${cwd} (id ${r.terminal.sessionId}), but couldn't give it the prompt: ${r.why}. Tell the user.`;
       };
-      // on autopilot, in one of the mandate's repos: no OK needed
+      // on autopilot, in one of the mandate's repos, or the user asked for it just now: no card
       if (working(d.goal()) && d.inRepos(cwd)) return text(await go(undefined));
+      if (d.userTurn?.()) return text(`${await go(undefined)} (Started at once: the user asked for it.)`);
       const out = await d.approvals.request({ kind: 'start', title: `Start a session in ${cwd.split(/[\\/]/).filter(Boolean).pop() ?? cwd}`, detail: `${cwd}${model ? ` · ${model}` : ''} · if Claude Code asks whether to trust this folder, Cora says yes`, text: prompt, cwd }, go, { do: 'start', cwd, ...(model ? { model } : {}) });
       return outcome(out);
     },
@@ -356,8 +362,8 @@ export function registerOrchestratorTools(server: McpServer, d: OrchToolDeps): v
   server.registerTool(
     'send_to_session',
     {
-      title: 'Give a session its next instruction (the user OKs it)',
-      description: 'Type a prompt into a session hosted in Cora and send it, as if the user had. The user sees it and OKs (or changes) it first. Only for hosted sessions (see `sessions`); resume_session first otherwise.',
+      title: 'Give a session its next instruction',
+      description: "Type a prompt into a session hosted in Cora and send it, as if the user had. When the user asked you for it in their own words just now, it goes in at once; otherwise they see it and OK (or change) it first. Only for hosted sessions (see `sessions`); resume_session first otherwise.",
       inputSchema: { id: z.string().min(4).max(80), text: z.string().min(1).max(20_000).describe('What to tell it') },
     },
     async ({ id, text: msg }) => {
@@ -370,7 +376,7 @@ export function registerOrchestratorTools(server: McpServer, d: OrchToolDeps): v
     {
       title: 'Ask a session something and wait for its answer',
       description:
-        "Type a message into a session hosted in Cora and wait (up to 45 seconds) for it to finish that turn: you get its whole reply (and the tools it used), so you can follow up with another ask_session. For questions it must act on or that need its live state. The first message needs the user's OK, which lets you carry on the conversation with that session for 10 minutes; a goal's workers need none. Only when it's idle (not mid-turn). For questions about what it did or knows, prefer ask_copy (it doesn't disturb the session).",
+        "Type a message into a session hosted in Cora and wait (up to 45 seconds) for it to finish that turn: you get its whole reply (and the tools it used), so you can follow up with another ask_session. For questions it must act on or that need its live state. The first message needs the user's OK (unless they asked for it in their own words just now), which lets you carry on the conversation with that session for 10 minutes; a goal's workers need none. Only when it's idle (not mid-turn). For questions about what it did or knows, prefer ask_copy (it doesn't disturb the session).",
       inputSchema: {
         id: z.string().min(4).max(80),
         text: z.string().min(1).max(20_000).describe('What to ask or tell it'),
@@ -410,15 +416,15 @@ export function registerOrchestratorTools(server: McpServer, d: OrchToolDeps): v
   server.registerTool(
     'end_session',
     {
-      title: 'End a session (the user OKs it)',
-      description: 'End a running session (as the user would by hand). The user OKs it first.',
+      title: 'End a session',
+      description: "End a running session (as the user would by hand). When the user asked you to, in their own words just now, it ends at once; otherwise they OK it first.",
       inputSchema: { id: z.string().min(4).max(80) },
     },
     async ({ id }) => {
       const s = known(id);
       if (!s) return fail(`No session ${id}.`);
       const goal = d.goal();
-      if (working(goal) && goal!.workers.includes(id)) return text(`Ending ${nameOf(s)}: ${await d.end(id)}.`);
+      if ((working(goal) && goal!.workers.includes(id)) || d.userTurn?.()) return text(`Ending ${nameOf(s)}: ${await d.end(id)}.`);
       const out = await d.approvals.request({ kind: 'end', title: `End "${nameOf(s)}"`, detail: `${s.state} · ${s.cwd}`, sessionId: id }, async () => `Ending ${nameOf(s)}: ${await d.end(id)}.`, { do: 'end', sessionId: id });
       return outcome(out);
     },

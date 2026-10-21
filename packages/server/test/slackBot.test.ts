@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { DEFAULT_SLACK_BOT, firstSentence, inQuiet, type BrainEvent, type PendingRequest, type SlackBotSettings } from '@cora/shared';
+import { DEFAULT_SLACK_BOT, firstSentence, inQuiet, type Approval, type BrainEvent, type PendingRequest, type SlackBotSettings, type SlackDraft } from '@cora/shared';
 import { CoraBot, EARLY_MS, clean, promptMessage } from '../src/slackBot';
 import { slackManifest } from '../src/slack';
 import { computeHooksBlock, shortHooks } from '../src/settings';
@@ -17,6 +17,11 @@ function world(o: Partial<SlackBotSettings> = {}) {
   const resolved: Array<[string, string]> = [];
   const extended: string[] = [];
   let pending: PendingRequest[] = [];
+  let cards: Approval[] = [];
+  let drafts: SlackDraft[] = [];
+  let handed = false;
+  const picked: Array<[string, boolean, string | undefined]> = [];
+  const drafted: Array<[string, boolean]> = [];
   let settings: SlackBotSettings = { ...DEFAULT_SLACK_BOT, ...o };
   const slack = {
     botInfo: () => ({ userId: 'U_BOT', name: 'cora' }),
@@ -36,11 +41,18 @@ function world(o: Partial<SlackBotSettings> = {}) {
     },
     nameOf: (sid) => (sid === 's1' ? 'ACME-5301 · chat events' : sid),
     say: (t) => (said.push(t), { ok: true }),
-    approve: async (id, ok) => (approved.push([id, ok]), id === 'card1' && approved.filter((a) => a[0] === id).length === 1 ? { ok: true, result: 'Sent to orion' } : { ok: false, error: 'not found (already answered)' }),
+    approve: async (id, ok, text) => (approved.push([id, ok]), picked.push([id, ok, text]), (id === 'card1' || id === 'c-ask') && approved.filter((a) => a[0] === id).length === 1 ? { ok: true, result: 'Sent to orion' } : { ok: false, error: 'not found (already answered)' }),
+    cards: () => cards,
+    drafts: () => drafts,
+    draft: async (id, send) => (drafted.push([id, send]), drafts.some((d) => d.id === id) ? ((drafts = drafts.filter((d) => d.id !== id)), { ok: true, ...(send ? { link: 'https://x.slack.com/archives/D1/p1' } : {}) }) : { ok: false, error: 'not found (already answered)' }),
+    handedOff: () => handed,
     now: () => now,
   });
   return {
-    bot, posts, updates, reactions, said, resolved, extended, approved,
+    bot, posts, updates, reactions, said, resolved, extended, approved, picked, drafted,
+    setCards: (l: Approval[]) => (cards = l),
+    setDrafts: (l: SlackDraft[]) => (drafts = l),
+    handOff: (on: boolean) => ((handed = on), bot.refresh()),
     tick: (ms: number) => (now += ms),
     setPending: (l: PendingRequest[]) => (pending = l),
     setSettings: (p: Partial<SlackBotSettings>) => (settings = { ...settings, ...p }),
@@ -132,6 +144,75 @@ describe("Cora's bot: prompts from the phone", () => {
     await w.bot.pendingChanged([perm('p3')]);
     expect(w.posts).toHaveLength(1);
     expect(promptMessage({ ...perm('q'), kind: 'question', toolName: 'AskUserQuestion', toolInput: { questions: [{ question: 'Which env?' }] } }, 'canvas').text).toBe('canvas asks you: Which env?');
+  });
+});
+
+const card = (id: string, extra: Partial<Approval> = {}): Approval => ({ id, kind: 'start', title: 'Start a session in orion', detail: 'C:\code\orion', text: 'Work on ACME-5300', createdAt: 0, waiting: true, ...extra });
+const draft = (id: string): SlackDraft => ({ id, sessionId: 's1', to: { kind: 'person', id: 'U1', label: 'Dana' }, text: 'The fix is in QA', createdAt: Date.parse('2026-10-18T13:59:00'), waiting: true });
+const tap = (action: string, value: string) => ({ type: 'block_actions', user: { id: ME }, actions: [{ action_id: action, value }], channel: { id: 'D_CORA' }, message: { ts: '1.0' } });
+const settle = () => new Promise((r) => setTimeout(r, 0));
+
+describe("Cora's bot: whatever waits for your OK, from your phone", () => {
+  it('a draft: Send / Discard; Send sends it; one answered in Cora says so', async () => {
+    const w = world();
+    w.away();
+    w.setDrafts([draft('d1'), draft('d2')]);
+    await w.bot.draftsChanged();
+    expect(w.posts.map((p) => p.text)).toEqual(['ACME-5301 · chat events wants to send Dana: The fix is in QA', 'ACME-5301 · chat events wants to send Dana: The fix is in QA']);
+    expect(w.posts[0].blocks?.[1].elements.map((e: any) => [e.action_id, e.value])).toEqual([['cora_send', 'd1'], ['cora_discard', 'd1']]);
+    await w.bot.interactive({ ...tap('cora_send', 'd1'), user: { id: 'U_SOMEONE' } });
+    expect(w.drafted).toEqual([]);
+    await w.bot.interactive(tap('cora_send', 'd1'));
+    expect(w.drafted).toEqual([['d1', true]]);
+    expect(w.updates.at(-1)?.text).toMatch(/: sent$/);
+    // the other, answered at the PC
+    w.setDrafts([]);
+    await w.bot.draftsChanged();
+    expect(w.updates.at(-1)?.text).toMatch(/answered in Cora$/);
+    await w.bot.draftsChanged();
+    expect(w.posts).toHaveLength(2);
+  });
+
+  it("Cora's cards: Yes / No to act; a question with options gets them as buttons; once each, even when an email watch asked too", async () => {
+    const w = world();
+    w.away();
+    w.setCards([card('c-start'), card('c-ask', { kind: 'ask', title: 'Which database?', detail: 'Cora asks', text: '', options: ['Postgres', 'MySQL'] }), card('c-open', { kind: 'ask', title: 'Anything else?', detail: 'Cora asks', text: '' })]);
+    await w.bot.askOnPhone('c-start', 'already asked by an email watch');
+    await w.bot.cardsChanged();
+    expect(w.posts.map((p) => p.text)).toEqual(['already asked by an email watch', 'Cora asks you: Which database?', 'Cora asks you: Anything else?']);
+    expect(w.posts[1].blocks?.[1].elements.map((e: any) => [e.action_id, e.value, e.text.text])).toEqual([['cora_pick', 'c-ask#0', 'Postgres'], ['cora_pick', 'c-ask#1', 'MySQL']]);
+    expect(w.posts[2].blocks).toHaveLength(1); // no options: answer in Cora, or write it in the DM
+    await w.bot.interactive(tap('cora_pick', 'c-ask#1'));
+    expect(w.picked).toEqual([['c-ask', true, 'MySQL']]);
+    expect(w.updates.at(-1)?.text).toBe('*Cora* asks you: Which database?: yes');
+    // the others answered in Cora
+    w.setCards([]);
+    await w.bot.cardsChanged();
+    expect(w.updates.map((u) => u.text).filter((t) => /answered in Cora$/.test(t))).toHaveLength(2);
+  });
+
+  it('what was already waiting when you leave comes then; at the PC nothing goes; handing Cora control counts as away', async () => {
+    const w = world();
+    w.back();
+    w.setPending([perm('p1')]);
+    w.setCards([card('c1')]);
+    w.setDrafts([draft('d1')]);
+    await w.bot.pendingChanged([perm('p1')]);
+    await w.bot.cardsChanged();
+    await w.bot.draftsChanged();
+    expect(w.posts).toEqual([]);
+    // you hand Cora control and walk away: no waiting for the idle timer
+    w.handOff(true);
+    await settle();
+    await settle();
+    expect(w.bot.away()).toBe(true);
+    expect(w.posts.map((p) => p.text)).toEqual(['ACME-5301 · chat events wants to use Bash: git push origin ACME-5301', 'ACME-5301 · chat events wants to send Dana: The fix is in QA', 'Cora wants to: Start a session in orion: Work on ACME-5300']);
+    expect(w.extended).toEqual(['p1']);
+    // back: nothing more
+    w.handOff(false);
+    w.setCards([card('c1'), card('c2')]);
+    await w.bot.cardsChanged();
+    expect(w.posts).toHaveLength(3);
   });
 });
 

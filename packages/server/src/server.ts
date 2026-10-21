@@ -144,7 +144,7 @@ export async function startServer(config: Config, opts: { tail?: boolean; listen
   };
   const slackMsg = () => ({ t: 'slack' as const, status: slackStatus(), drafts: outbox.list(), sent: outbox.sent(), grants: outbox.grants(), ...(bot ? { bot: bot.status() } : {}) });
   const slack: Slack = new Slack({ dataDir: config.dataDir, ...(opts.slackApi ? { api: opts.slackApi } : {}), onChange: () => hub?.publishSlack(slackMsg()) });
-  const outbox: Outbox = new Outbox({ slack, sign: () => prefs.get().slack.sign, file: config.dbPath === ':memory:' ? undefined : join(config.dataDir, 'slack-grants.json'), draftsFile: config.dbPath === ':memory:' ? undefined : join(config.dataDir, 'slack-drafts.json'), onChange: () => hub?.publishSlack(slackMsg()), onUndo: (s) => orch?.feed.note(`The user took back the Slack message you just sent to ${s.to.label}; it's deleted.`) });
+  const outbox: Outbox = new Outbox({ slack, sign: () => prefs.get().slack.sign, file: config.dbPath === ':memory:' ? undefined : join(config.dataDir, 'slack-grants.json'), draftsFile: config.dbPath === ':memory:' ? undefined : join(config.dataDir, 'slack-drafts.json'), onChange: () => (hub?.publishSlack(slackMsg()), void bot?.draftsChanged()), onUndo: (s) => orch?.feed.note(`The user took back the Slack message you just sent to ${s.to.label}; it's deleted.`) });
   hub.slackSnapshot = slackMsg;
   // live events: threads sessions watch. A reply goes to the session (typed in when it's hosted here and free;
   // to Cora through what it hears), and to you (its row, a notification)
@@ -243,8 +243,14 @@ export async function startServer(config: Config, opts: { tail?: boolean; listen
     slack,
     settings: () => prefs.get().slackBot,
     pending: { list: () => pending.list(), resolve: (id, d) => pending.resolve(id, d), extend: (id, ms) => pending.extend(id, ms) },
-    // a Yes or No on your phone to one of Cora's cards (an email watch's "start on it?")
-    approve: (id, ok) => (orch ? orch.approvals.decide(id, { ok }) : Promise.resolve({ ok: false, error: 'Cora is off' })),
+    // what waits for your OK, answered from your phone while you're away: Cora's cards (Yes / No, or an option you
+    // picked), and the Slack messages sessions drafted (Send / Discard)
+    approve: (id, ok, text) => (orch ? orch.approvals.decide(id, { ok, ...(text !== undefined ? { text } : {}) }) : Promise.resolve({ ok: false, error: 'Cora is off' })),
+    cards: () => (orch?.status().enabled ? orch.approvals.list() : []),
+    drafts: () => outbox.list(),
+    draft: (id, send) => outbox.decide(id, { action: send ? 'send' : 'discard' }),
+    // handing Cora control (Away in its console) counts as away
+    handedOff: () => !!orch?.inControl(),
     nameOf: (sid) => {
       const s = store.getSession(sid);
       return s ? nameOf(s) : sid.slice(0, 8);
@@ -278,7 +284,12 @@ export async function startServer(config: Config, opts: { tail?: boolean; listen
     ptys,
     settings: () => prefs.get(),
     // a simulation's Cora (Running.sim.cora) stands in for the real one, which stays off
-    publish: (status) => hub?.publishOrchestrator({ t: 'orchestrator', status: simCora ?? status }),
+    publish: (status) => {
+      hub?.publishOrchestrator({ t: 'orchestrator', status: simCora ?? status });
+      // away may have changed (control), and a card may have come or gone: your phone hears
+      bot?.refresh();
+      void bot?.cardsChanged();
+    },
     publishUi: (cmd) => hub?.publishUi({ t: 'ui', cmd }),
     log: (m) => console.log(`  ${m}`),
     pending: { list: () => pending.list(), resolve: (id, d, by) => pending.resolve(id, d, by) },

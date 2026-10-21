@@ -597,6 +597,7 @@ function registerSlack(server: McpServer, sessionId: string | null, { slack, out
         'The call tells you what happened (sent, with a link; discarded; or still waiting for them).',
         'Write it the way the user would: short, plain, no headings; **bold**, `code`, links and @handle mentions work.',
         "Only send when the user asked for a message (or agreed to one). If a name is ambiguous you'll get the candidates: ask, or use slack_find.",
+        "A message to the user themselves (their own DM, e.g. to follow up with them while they're away) goes at once, with no draft.",
       ].join(' '),
       inputSchema: {
         to: z.string().min(1).max(200).describe('Who to: an id from slack_find (best), #channel, @handle, email or a name. Ignored when thread is a message link.'),
@@ -626,6 +627,12 @@ function registerSlack(server: McpServer, sessionId: string | null, { slack, out
         const threadTs = dm ? undefined : link ? (link.threadTs ?? link.ts) : thread && /^\d+\.\d+$/.test(thread.trim()) ? thread.trim() : undefined;
         if (thread && !threadTs && !dm) return fail('thread must be a Slack message link or a thread id like 1700000000.123456');
         const where = threadTs ? ' (in the thread)' : dm ? ' (in the DM, not a thread: in a DM, reply in the conversation)' : '';
+        // to the user themselves (their own DM): nobody else reads it, so there's nothing to confirm; it goes at once
+        const me = slack.status();
+        if (me.connected && target.kind === 'person' && target.id === me.userId) {
+          const r = await outbox.sendNow({ to: target, text, ...(threadTs ? { threadTs } : {}), ...(files ? { files } : {}) });
+          return { content: [{ type: 'text', text: `Sent to the user's own DM${withFiles}, straight away: a message only they read needs no OK. ${r.link}` }] };
+        }
         // asked for in the user's own words (Cora only): out at once, with a short undo
         if (direct?.()) {
           const r = await outbox.sendNow({ to: target, text, ...(threadTs ? { threadTs } : {}), ...(files ? { files } : {}) });
