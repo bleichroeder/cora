@@ -87,4 +87,13 @@ describe('compacting', () => {
   it('leaves a small database alone', () => {
     expect(new Store(':memory:').compact()).toBe(false);
   });
+
+  it("a message sent mid-turn (the hook gives it the turn's prompt id) doesn't replace the turn's prompt", () => {
+    const s = new Store(':memory:');
+    const p = (text: string, source: 'hook' | 'transcript') => ev({ id: 'prompt:p1', kind: 'prompt', text, source, tool: undefined, toolUseId: undefined, phase: undefined });
+    s.upsertEvent(p('pick more than one profile', 'hook'));
+    s.upsertEvent(p('pick more than one profile', 'transcript'));
+    expect(s.upsertEvent(p('also, add a home button', 'hook'))).toBeNull();
+    expect(s.eventsForSession('s1').find((e) => e.id === 'prompt:p1')?.text).toBe('pick more than one profile');
+  });
 });

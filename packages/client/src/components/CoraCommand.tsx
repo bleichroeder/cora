@@ -31,7 +31,7 @@ function lastExchange(evs: BrainEvent[]): { you?: string; reply?: string; acts: 
   const acts: string[] = [];
   for (const e of evs.slice(-300)) {
     if (e.agentId !== 'main') continue;
-    if (e.kind === 'prompt' && e.text) {
+    if (e.kind === 'prompt' && !e.queue && e.text) {
       you = e.text;
       reply = undefined;
       acts.length = 0;

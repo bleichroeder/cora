@@ -76,6 +76,8 @@ export class Registry {
       case 'prompt':
       case 'say':
       case 'think':
+        // a message you sent while it works, as queued, says nothing of what it's doing
+        if (e.kind === 'prompt' && e.queue) break;
         if (e.agentId !== 'main' && this.store.getAgent(sid, e.agentId)?.state === 'done') break;
         agentState = fl.size ? 'working' : 'thinking';
         break;

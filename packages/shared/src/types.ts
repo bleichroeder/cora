@@ -41,6 +41,13 @@ export type BrainEvent = {
   text?: string;
   /** kind 'say': the spoken summary Claude put at the end of the reply (its say-line), taken out of `text` */
   said?: string;
+  /**
+   * kind 'prompt': a message you sent while Claude was working. 'waiting': queued, Claude hasn't got it yet;
+   * 'delivered': it has (the message then shows where Claude got it, as a prompt of its own)
+   */
+  queue?: 'waiting' | 'delivered';
+  /** kind 'prompt': you sent it while Claude was working, and it got it mid-turn (at this event's time) */
+  midTurn?: boolean;
   durationMs?: number;
   /** kind 'task': how a background command ended */
   task?: { id: string; status: string; exit?: number; outputFile?: string };

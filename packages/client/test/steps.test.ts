@@ -117,4 +117,16 @@ describe('buildSteps', () => {
     ], 'all', new Map([['tA', 'a1'], ['tH', 'a3']]));
     expect(bg.map((s) => (s.fold ? `fold:${s.agentId}:${s.items.length}` : s.text))).toEqual(['reply', 'fold:a1:2', 'fold:a3:2']);
   });
+
+  it('a message sent while Claude works: the queue entry never shows here; taken mid-turn, a prompt marked so', () => {
+    const steps = buildSteps([
+      E({ kind: 'prompt', text: 'pick more profiles' }),
+      tool('main', 't1'),
+      E({ kind: 'prompt', id: 'queued:abc', text: 'add a home button', queue: 'delivered' }),
+      tool('main', 't2'),
+      E({ kind: 'prompt', text: 'add a home button', midTurn: true }),
+      tool('main', 't3'),
+    ], 'all');
+    expect(steps.map((s) => [s.prompt, !!s.mid])).toEqual([['pick more profiles', false], ['add a home button', true]]);
+  });
 });

@@ -36,7 +36,7 @@ export function createPipeline(store: Store, registry: Registry, hub: Hub, pendi
       if (!stored) continue;
       registry.ingest(stored);
       hub.publish(stored);
-      if (stored.kind === 'prompt' && stored.agentId === 'main') opts.onPrompt?.(stored);
+      if (stored.kind === 'prompt' && stored.agentId === 'main' && !stored.queue) opts.onPrompt?.(stored);
       opts.onEvent?.(stored);
     }
   };

@@ -17,6 +17,8 @@ export type Step = {
   /** the reply's say-line (spoken summary), and the id voice reads it under */
   said?: { id: string; text: string };
   prompt?: string;
+  /** the prompt is a message you sent while Claude was working: it got it here, mid-turn */
+  mid?: boolean;
   cont: boolean;
   items: Item[];
   fingerprint: IconRef[];
@@ -94,7 +96,7 @@ export function buildSteps(events: BrainEvent[], filter: 'all' | string, childBy
     }
     if (e.agentId === 'main') {
       if (e.kind === 'turn_end') mainIdle = true;
-      else if (e.kind === 'prompt' || e.kind === 'say' || e.kind === 'tool' || e.kind === 'think' || e.kind === 'spawn') mainIdle = false;
+      else if ((e.kind === 'prompt' && !e.queue) || e.kind === 'say' || e.kind === 'tool' || e.kind === 'think' || e.kind === 'spawn') mainIdle = false;
     }
     if (inBackground(e) && filter === 'all' && mainIdle && e.kind !== 'report') {
       if (e.kind === 'tool' && isAgentTool(e)) continue;
@@ -123,7 +125,10 @@ export function buildSteps(events: BrainEvent[], filter: 'all' | string, childBy
         open(e, { text: e.text || undefined, ...(e.said ? { said: { id: saidId(e), text: e.said } } : {}) });
         break;
       case 'prompt':
-        open(e, { prompt: e.text });
+        // a message you sent while it worked: waiting, it's pinned below the transcript (not here); taken, its own
+        // prompt (midTurn) shows where Claude got it
+        if (e.queue) break;
+        open(e, { prompt: e.text, ...(e.midTurn ? { mid: true } : {}) });
         break;
       case 'tool': {
         if (isAgentTool(e)) break;

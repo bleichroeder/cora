@@ -96,7 +96,7 @@ function ComposerBox({ sessionId }: { sessionId: string }) {
   const history = () =>
     promptHistory(
       sessionEvents(sessionId)
-        .filter((e) => e.kind === 'prompt' && e.agentId === 'main' && e.text)
+        .filter((e) => e.kind === 'prompt' && e.agentId === 'main' && !e.queue && e.text)
         .map((e) => ({ text: e.text!, ts: e.ts })),
       useComposer.getState().sent[sessionId] ?? [],
     );

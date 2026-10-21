@@ -165,6 +165,24 @@ describe('parseLine', () => {
     expect(parseLine({ type: 'queue-operation', operation: 'dequeue', timestamp: iso(6000), sessionId: SID }, ctx)).toEqual({ events: [], meta: {} });
   });
 
+  it("a message you send while Claude works: queued until it's taken; taken mid-turn, a prompt where Claude got it", () => {
+    const ctx = newParseCtx();
+    const msg = 'also, add a home button';
+    const q = parseLine({ type: 'queue-operation', operation: 'enqueue', timestamp: iso(1000), sessionId: SID, content: msg }, ctx).events;
+    expect(q).toEqual([expect.objectContaining({ kind: 'prompt', agentId: 'main', queue: 'waiting', text: msg, ts: T0 + 1000 })]);
+    const got = parseLine({ type: 'queue-operation', operation: 'remove', timestamp: iso(9000), sessionId: SID, content: msg, reason: 'absorbed_mid_turn' }, ctx).events;
+    expect(got).toEqual([
+      expect.objectContaining({ id: q[0].id, queue: 'delivered' }),
+      expect.objectContaining({ kind: 'prompt', midTurn: true, text: msg, ts: T0 + 9000 }),
+    ]);
+    expect(got[1].queue).toBeUndefined();
+    // taken as a turn of its own (the turn's own prompt shows it): only the queue entry ends
+    const own = parseLine({ type: 'queue-operation', operation: 'remove', timestamp: iso(9500), sessionId: SID, content: 'next thing' }, ctx).events;
+    expect(own).toEqual([expect.objectContaining({ queue: 'delivered', text: 'next thing' })]);
+    // system messages that queue (a task notification, a hand-back) aren't yours
+    expect(parseLine({ type: 'queue-operation', operation: 'enqueue', timestamp: iso(9600), sessionId: SID, content: '<task-notification>\n<task-id>x</task-id>\n</task-notification>' }, ctx).events).toEqual([]);
+  });
+
   it('system lines and titles', () => {
     const ctx = newParseCtx();
     expect(parseLine({ type: 'system', subtype: 'compact_boundary', uuid: 'y1', timestamp: iso(0), sessionId: SID }, ctx).events[0].kind).toBe('compact');

@@ -78,7 +78,7 @@ export function agentsAt(agents: AgentInfo[], events: BrainEvent[], at: number, 
     const ended = !isMain && a.endedAt != null && a.endedAt <= at ? a.endedAt : s?.state === 'done' ? s.endedAt ?? at : null;
     let state: AgentState = ended != null ? 'done' : s && s.state !== 'done' ? s.state : isMain ? 'idle' : 'thinking';
     if (ended == null && !next.has(a.agentId) && a.state !== 'done') state = a.state;
-    else if (isMain && state === 'thinking' && next.get('main')?.kind === 'prompt') state = 'idle';
+    else if (isMain && state === 'thinking' && next.get('main')?.kind === 'prompt' && !next.get('main')?.queue) state = 'idle';
     out.push({ ...a, startedAt: a.startedAt ? a.startedAt + shift : a.startedAt, endedAt: ended != null ? ended + shift : null, state });
   }
   return out;

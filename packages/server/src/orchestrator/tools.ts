@@ -91,7 +91,7 @@ const clip = (s: string | undefined, n: number) => {
 /** One event as a line of a session's story (null: not worth a line). */
 function storyLine(e: BrainEvent): string | null {
   const who = e.agentId === 'main' ? '' : `[${e.agentId.slice(0, 8)}] `;
-  if (e.kind === 'prompt') return `${who}you: ${clip(e.text, 400)}`;
+  if (e.kind === 'prompt') return e.queue ? null : `${who}you: ${clip(e.text, 400)}`;
   if (e.kind === 'say') return `${who}claude: ${clip(e.text, 600)}`;
   if (e.kind === 'tool' && e.phase === 'start' && e.tool) return `${who}· ${e.tool.name}: ${clip(e.tool.summary, 160)}`;
   if (e.kind === 'tool' && e.phase === 'end' && e.tool?.failed) return `${who}· ${e.tool.name} failed${e.tool.resultSummary ? `: ${clip(e.tool.resultSummary, 160)}` : ''}`;

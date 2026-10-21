@@ -68,6 +68,9 @@ export class Store {
     let next: NewEvent;
     if (row) {
       const prev = JSON.parse(row.json) as BrainEvent;
+      // A message you send while Claude works comes through the hook with the turn's prompt id: it isn't the turn's
+      // prompt, and mustn't replace it (the transcript shows it where Claude got it: parse.ts, queue operations)
+      if (prev.kind === 'prompt' && incoming.kind === 'prompt' && incoming.source === 'hook' && (prev.text ?? '').trim() !== (incoming.text ?? '').trim()) return null;
       const { seq: _s, ...prevNoSeq } = prev;
       next = deepMerge(prevNoSeq as NewEvent, incoming);
       next.ts = Math.min(prev.ts, incoming.ts);
@@ -122,13 +125,13 @@ export class Store {
 
   /** How many main-agent prompts a session has stored. */
   promptCount(sessionId: string): number {
-    const r = this.db.prepare("SELECT COUNT(*) AS n FROM events WHERE session_id = ? AND agent_id = 'main' AND kind = 'prompt'").get(sessionId) as { n: number };
+    const r = this.db.prepare("SELECT COUNT(*) AS n FROM events WHERE session_id = ? AND agent_id = 'main' AND kind = 'prompt' AND json_extract(json, '$.queue') IS NULL").get(sessionId) as { n: number };
     return r.n;
   }
 
   /** The session's earliest main-agent prompt still stored. */
   firstPrompt(sessionId: string): BrainEvent | undefined {
-    const r = this.db.prepare("SELECT json FROM events WHERE session_id = ? AND agent_id = 'main' AND kind = 'prompt' ORDER BY ts, seq LIMIT 1").get(sessionId) as { json: string } | undefined;
+    const r = this.db.prepare("SELECT json FROM events WHERE session_id = ? AND agent_id = 'main' AND kind = 'prompt' AND json_extract(json, '$.queue') IS NULL ORDER BY ts, seq LIMIT 1").get(sessionId) as { json: string } | undefined;
     return r ? JSON.parse(r.json) : undefined;
   }
 

@@ -126,7 +126,7 @@ function StepView({ step, sessionId, hosted, bare }: { step: Step; sessionId: st
     <div className={`step${step.agentId === 'main' ? '' : ' sub'}${step.cont ? ' cont' : ''}`} style={{ ['--c' as any]: color }}>
       {step.prompt ? (
         <div className={step.agentId === 'main' ? 'prompt' : 'task'}>
-          <span className="pl">{step.agentId === 'main' ? 'you' : 'its task'}</span>
+          <span className="pl">{step.agentId === 'main' ? (step.mid ? 'you · while it worked' : 'you') : 'its task'}</span>
           <Linkify text={step.prompt} jira sessionId={sessionId} />
         </div>
       ) : null}
@@ -208,6 +208,29 @@ function StepView({ step, sessionId, hosted, bare }: { step: Step; sessionId: st
           }
         });
   }
+}
+
+/** Messages you sent while Claude was working that it hasn't taken yet: pinned under the transcript until it does. */
+function Queued({ sessionId, version }: { sessionId: string; version: number | undefined }) {
+  const waiting = useMemo(
+    () => sessionEvents(sessionId).filter((e) => e.kind === 'prompt' && e.queue === 'waiting'),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [sessionId, version],
+  );
+  if (!waiting.length) return null;
+  return (
+    <div className="queued" title="Claude Code holds these until Claude is ready for them: at its next step, or when its turn ends">
+      {waiting.map((e) => (
+        <div key={e.id} className="q-row">
+          <span className="q-tag">
+            <Icon name="Clock" size={11} /> queued
+          </span>
+          <span className="q-t">{e.text}</span>
+        </div>
+      ))}
+      <div className="q-note">Claude gets {waiting.length === 1 ? 'it' : 'them'} at its next step.</div>
+    </div>
+  );
 }
 
 export function Transcript({ sessionId }: { sessionId: string }) {
@@ -330,6 +353,7 @@ export function Transcript({ sessionId }: { sessionId: string }) {
         </div>
         {!steps.length ? <div className="empty">{q ? 'No matches.' : 'Nothing yet.'}</div> : null}
       </div>
+      <Queued sessionId={sessionId} version={version} />
       <LiveActivity sessionId={sessionId} />
       {unseen && !follow ? (
         <button

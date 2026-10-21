@@ -49,7 +49,7 @@ export function markersFrom(events: BrainEvent[], waits: Wait[] = [], now = Date
   const explained = new Set<string>();
   for (const e of events) {
     const name = e.tool?.name ?? '';
-    if (e.kind === 'prompt' && e.agentId === 'main') {
+    if (e.kind === 'prompt' && e.agentId === 'main' && !e.queue) {
       out.push({ key: `prompt:${e.id}`, kind: 'prompt', ts: e.ts, agentId: e.agentId, icon: 'User', title: 'Your prompt', detail: clip(e.text ?? '', 160), eventId: e.id });
     } else if (e.kind === 'compact') {
       out.push({ key: `compact:${e.id}`, kind: 'compact', ts: e.ts, agentId: e.agentId, icon: 'Archive', title: 'Context compacted', eventId: e.id });

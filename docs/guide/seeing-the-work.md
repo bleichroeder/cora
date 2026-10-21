@@ -74,7 +74,9 @@ the 3D view** in **Settings › Scene** rebuilds it without touching anything el
 
 The **Transcript** tab is the written record of the session, step by step and agent by agent:
 
-- **Your prompts**, marked "you", and the task each subagent was given.
+- **Your prompts**, marked "you", and the task each subagent was given. A message you send while Claude is working
+  waits under the transcript as **queued** until Claude takes it, then shows where it did, marked "you · while it
+  worked".
 - **Replies** from each agent, formatted. Each has a copy button (it copies the text both as Markdown and formatted),
   and with voice turned on, a speaker to read it aloud (see [Voice](voice.md)).
 - **Tool calls**, one row each: what was called, on what, the result and how long it took. Click a row to see the

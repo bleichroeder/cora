@@ -26,7 +26,7 @@ function linesOf(evs: BrainEvent[]): Line[] {
   const out: Line[] = [];
   for (const e of evs.slice(-400)) {
     if (e.agentId !== 'main') continue;
-    if (e.kind === 'prompt' && e.text) out.push({ id: e.id, kind: 'you', text: e.text });
+    if (e.kind === 'prompt' && !e.queue && e.text) out.push({ id: e.id, kind: 'you', text: e.text });
     else if (e.kind === 'say' && e.text?.trim()) out.push({ id: e.id, kind: 'cora', text: e.text });
     else if (e.kind === 'tool' && e.phase === 'start' && e.tool) out.push({ id: e.id, kind: 'act', text: `${e.tool.name.replace(/^mcp__cora__/, '')}${e.tool.summary ? ` · ${e.tool.summary}` : ''}` });
     else if (e.kind === 'tool' && e.phase === 'end' && e.tool?.failed) out.push({ id: e.id, kind: 'act', text: `${e.tool.name.replace(/^mcp__cora__/, '')} failed`, failed: true });

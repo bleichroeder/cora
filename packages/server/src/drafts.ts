@@ -98,7 +98,7 @@ export class Drafts {
       const repo = await this.repoOf(s.cwd);
       if (!want.has(repo)) continue;
       const ev = this.d.events(s.id).filter((e) => e.ts >= w.since && e.ts <= w.until && e.agentId === 'main');
-      const prompts = ev.filter((e) => e.kind === 'prompt' && (e.text ?? '').trim()).map((e) => clip(e.text, 280));
+      const prompts = ev.filter((e) => e.kind === 'prompt' && !e.queue && (e.text ?? '').trim()).map((e) => clip(e.text, 280));
       if (!prompts.length && !ev.some((e) => e.kind === 'tool')) continue;
       sessions++;
       if (s.ticket) tickets.add(s.ticket.key);

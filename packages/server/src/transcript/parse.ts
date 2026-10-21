@@ -51,6 +51,13 @@ const IGNORED = new Set([
 
 const SYSTEM_INJECTED = /^\s*<(task-notification|system-reminder|command-|local-command|bash-|user-memory)/;
 
+/** A short, steady id for a message's text (FNV-1a): its queue entry and its delivery share it. */
+function hashText(s: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 0x01000193);
+  return (h >>> 0).toString(36);
+}
+
 function tag(s: string, name: string): string | undefined {
   const m = s.match(new RegExp(`<${name}>([\\s\\S]*?)</${name}>`));
   return m?.[1]?.trim();
@@ -271,7 +278,20 @@ function parseQueueOp(obj: any, ctx: ParseCtx): ParseResult {
   const content = obj.content;
   const sessionId: string = obj.sessionId ?? obj.session_id;
   const ts = Date.parse(obj.timestamp);
-  if (obj.operation !== 'enqueue' || typeof content !== 'string' || !sessionId || Number.isNaN(ts)) return { events, meta };
+  if (typeof content !== 'string' || !sessionId || Number.isNaN(ts)) return { events, meta };
+  // a message you sent while Claude was working: queued until Claude takes it ("remove"); taken mid-turn, it shows
+  // there, where Claude got it (Claude Code gives it the turn's prompt id: it isn't a turn of its own)
+  if (!content.startsWith('<') && !SYSTEM_INJECTED.test(content) && (obj.operation === 'enqueue' || obj.operation === 'remove')) {
+    const id = `queued:${hashText(content)}`;
+    const base = { sessionId, agentId: 'main', source: 'transcript' as const, kind: 'prompt' as const, icon: EVENT_ICON.prompt, text: content };
+    if (obj.operation === 'enqueue') events.push({ ...base, id, ts, queue: 'waiting' });
+    else {
+      events.push({ ...base, id, ts, queue: 'delivered' });
+      if (obj.reason === 'absorbed_mid_turn') events.push({ ...base, id: `prompt:mid:${hashText(content)}:${ts}`, ts, midTurn: true });
+    }
+    return { events, meta };
+  }
+  if (obj.operation !== 'enqueue') return { events, meta };
   const from = content.match(/^<agent-message from="([^"]+)">/)?.[1];
   if (from && content.includes('[Subagent hand-back]')) {
     const toolUseId = [...ctx.childByToolUse].find(([, child]) => child === from)?.[0];

@@ -26,7 +26,8 @@ export function changeOf(e: BrainEvent): ChangeEv | null {
 
 /** The session's changes grouped by turn (oldest first): each prompt of yours to the next, files in path order. */
 export function changeTurns(events: BrainEvent[], cwd: string | undefined): Turn[] {
-  const prompts = events.filter((e) => e.kind === 'prompt' && e.agentId === 'main').sort((a, b) => a.ts - b.ts);
+  // (a message you sent mid-turn isn't a turn of its own; its queue entry isn't a prompt at all)
+  const prompts = events.filter((e) => e.kind === 'prompt' && e.agentId === 'main' && !e.queue && !e.midTurn).sort((a, b) => a.ts - b.ts);
   const bounds = prompts.length ? prompts.map((p, i) => ({ key: p.id, prompt: p.text ?? '', from: p.ts, to: prompts[i + 1]?.ts ?? null })) : [];
   // edits before the first prompt we know of (a resumed session's history starts mid-way)
   bounds.unshift({ key: 'start', prompt: '', from: 0, to: prompts[0]?.ts ?? null });
