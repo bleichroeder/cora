@@ -1,0 +1,185 @@
+/* ---------- Settings, in the design language ---------- */
+.modal.settings { display: grid; grid-template-rows: 52px minmax(0, 1fr); width: min(940px, calc(100vw - 32px)); height: min(720px, 88vh); padding: 0; gap: 0; border: 0; border-radius: 14px; background: var(--nav); box-shadow: inset 0 0 0 1px var(--hair2), 0 30px 80px rgba(0, 0, 0, .7); font-family: var(--ui); color: var(--ink2); overflow: hidden; }
+
+/* the top: the title over the nav, Find a setting over the page, close */
+.set-top { display: grid; grid-template-columns: 220px minmax(0, 1fr) auto; align-items: center; border-bottom: 1px solid var(--hair2); }
+.set-title { display: flex; align-items: center; gap: 9px; padding: 0 18px; color: var(--ink); font: 600 14px var(--ui); }
+.set-title svg { color: var(--ink3); }
+.set-find { display: flex; align-items: center; gap: 8px; width: min(340px, 100%); height: 30px; margin-left: 24px; padding: 0 10px; border-radius: 8px; background: var(--raise); box-shadow: inset 0 0 0 1px var(--hair2); color: var(--ink4); cursor: text; }
+.set-find:focus-within, .set-find.on { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cora) 45%, transparent); color: var(--ink3); }
+.set-find input { flex: 1; min-width: 0; height: 100%; padding: 0; border: 0; outline: none; background: none; color: var(--ink); font: 400 12.5px var(--ui); }
+.set-find input::placeholder { color: var(--ink4); }
+.set-find kbd { flex: none; padding: 0; border: 0; background: none; color: var(--ink4); font: 500 10px var(--code); }
+.set-top .set-x { display: grid; place-items: center; width: 28px; height: 28px; margin-right: 12px; padding: 0; border: 0; border-radius: 7px; background: none; color: var(--ink3); }
+.set-top .set-x:hover { background: var(--raise); color: var(--ink); }
+
+.modal.settings .set-body { display: grid; grid-template-columns: 220px minmax(0, 1fr); min-height: 0; }
+/* the nav: groups under small-caps labels, a quiet state word where it matters */
+.modal.settings .set-nav { display: flex; flex-direction: column; gap: 0; padding: 10px; overflow-y: auto; border-right: 1px solid var(--hair); background: none; border-radius: 0; }
+.set-ng + .set-ng { margin-top: 6px; }
+.set-gl { display: flex; align-items: center; height: 28px; padding: 0 8px; color: var(--ink4); font: 600 9.5px var(--code); letter-spacing: .16em; text-transform: uppercase; }
+.modal.settings .set-nav button { display: flex; align-items: center; gap: 10px; width: 100%; height: 32px; padding: 0 8px; border: 0; border-radius: 8px; background: none; box-shadow: none; color: var(--ink2); font: 500 13px var(--ui); text-align: left; white-space: nowrap; }
+.modal.settings .set-nav button svg { flex: none; color: var(--ink3); }
+.modal.settings .set-nav button:hover { background: rgba(148, 163, 184, .05); color: var(--ink); }
+.modal.settings .set-nav button.on { background: var(--raise2); box-shadow: inset 0 0 0 1px var(--hair2); color: var(--ink); }
+.modal.settings .set-nav button.on svg { color: var(--ink); }
+.set-ns { margin-left: auto; display: inline-flex; align-items: center; gap: 5px; color: var(--ink4); font: 500 10px var(--code); }
+.set-ns i { width: 6px; height: 6px; border-radius: 50%; background: var(--work); }
+.set-ns.off i { background: var(--ink4); }
+
+/* the page */
+.modal.settings .set-pane { min-height: 0; overflow-y: auto; padding: 22px 28px 28px; scroll-behavior: auto; }
+.modal.settings .set-pane::-webkit-scrollbar-thumb { background: var(--raise2); border-color: var(--nav); }
+.modal.settings .set-sec { display: none; padding: 0; border: 0; min-height: 0; }
+.modal.settings .set-sec.on { display: block; }
+.modal.settings .set-sec-h { margin-bottom: 18px; }
+.modal.settings .set-sec-h h2 { margin: 0 0 4px; color: var(--ink); font: 600 18px var(--ui); letter-spacing: -.01em; }
+.modal.settings .set-intro { margin: 0; max-width: 580px; color: var(--ink3); font: 400 13px/1.55 var(--ui); }
+.modal.settings .set-intro kbd { padding: 0 4px; border: 0; border-radius: 4px; background: var(--raise2); box-shadow: inset 0 0 0 1px var(--hair2); color: var(--ink2); font: 500 10.5px var(--code); }
+/* groups: a small-caps label and a hairline, then their panel */
+.set-grp-l { display: flex; align-items: center; gap: 8px; margin: 22px 0 8px; color: var(--ink4); font: 600 9.5px var(--code); letter-spacing: .16em; text-transform: uppercase; }
+.set-grp-l::after { content: ''; flex: 1; height: 1px; background: var(--hair); }
+/* a panel of rows */
+.set-panel { border-radius: 12px; background: var(--raise); box-shadow: inset 0 0 0 1px var(--hair); }
+.set-panel + .set-panel { margin-top: 12px; }
+.modal.settings .set-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: 24px; row-gap: 10px; min-height: 56px; padding: 10px 14px; }
+.modal.settings .set-row + .set-row { border-top: 1px solid var(--hair); }
+.modal.settings .set-row.wide { grid-template-columns: minmax(0, 1fr); }
+.modal.settings .set-row:not(:has(.set-l)) { grid-template-columns: minmax(0, 1fr); }
+.modal.settings .set-l { display: flex; flex-direction: column; gap: 1px; min-width: 0; line-height: normal; }
+.modal.settings .set-l > b { color: var(--ink); font: 500 13px/18px var(--ui); }
+.modal.settings .set-l .set-hint { max-width: 440px; color: var(--ink3); font: 400 12px/17px var(--ui); }
+.modal.settings .set-hint b { color: var(--ink2); font-weight: 600; }
+.modal.settings .set-c { display: flex; flex-direction: row; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; min-width: 0; max-width: 460px; }
+.modal.settings .set-row.wide .set-c, .modal.settings .set-row:not(:has(.set-l)) .set-c { flex-direction: column; align-items: stretch; justify-content: flex-start; max-width: none; }
+.modal.settings .set-loading { padding: 14px; color: var(--ink4); font: 400 12.5px var(--ui); }
+.modal.settings .ny-err { color: #ffb3b3; font: 500 11.5px var(--code); }
+
+/* controls: the small segmented switch, a green switch, quiet buttons, inputs in Figtree */
+.modal.settings .seg { display: inline-flex; gap: 1px; padding: 2px; border: 0; border-radius: 8px; background: var(--nav); box-shadow: inset 0 0 0 1px var(--hair2); overflow: visible; }
+.modal.settings .seg-b { height: 24px; padding: 0 10px; border: 0; border-radius: 6px; color: var(--ink3); font: 500 12px var(--ui); white-space: nowrap; }
+.modal.settings .seg-b:hover { background: none; color: var(--ink2); }
+.modal.settings .seg-b.on { background: var(--raise2); box-shadow: inset 0 0 0 1px var(--hair2); color: var(--ink); }
+.modal.settings .set-sw { align-items: center; gap: 10px; padding: 0; color: var(--ink2); font: 400 13px var(--ui); }
+.modal.settings .set-sw-track { width: 32px; height: 18px; border: 0; border-radius: 9px; background: var(--raise2); box-shadow: inset 0 0 0 1px var(--hair2); }
+.modal.settings .set-sw-knob { top: 3px; left: 3px; background: var(--ink4); }
+.modal.settings .set-sw:hover .set-sw-track { box-shadow: inset 0 0 0 1px var(--ink4); }
+.modal.settings .set-sw input:checked + .set-sw-track { background: color-mix(in srgb, var(--work) 40%, var(--raise2)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--work) 55%, transparent); }
+.modal.settings .set-sw input:checked + .set-sw-track .set-sw-knob { transform: translateX(14px); background: #eafff4; }
+.modal.settings .set-sw input:focus-visible + .set-sw-track { outline: 2px solid color-mix(in srgb, var(--cora) 60%, transparent); }
+.modal.settings .btn { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 11px; border: 0; border-radius: 8px; background: var(--raise2); box-shadow: inset 0 0 0 1px var(--hair2); color: var(--ink2); font: 500 12px var(--ui); white-space: nowrap; }
+.modal.settings .btn svg { color: var(--ink3); }
+.modal.settings .btn:hover:not(:disabled) { color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink4); }
+.modal.settings .btn.ghost { background: none; box-shadow: none; color: var(--ink3); }
+.modal.settings .btn.ghost:hover:not(:disabled) { background: var(--raise2); color: var(--ink); }
+.modal.settings .btn.ghost.bad { color: #ffb3b3; }
+.modal.settings .btn.allow { background: color-mix(in srgb, var(--work) 14%, var(--raise)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--work) 40%, transparent); color: #d9fbe9; }
+.modal.settings .icon-btn { border: 0; background: none; color: var(--ink4); }
+.modal.settings .icon-btn:hover:not(:disabled) { color: var(--ink); background: var(--raise2); }
+.modal.settings .linkish { color: var(--ink2); }
+.modal.settings .set-input, .modal.settings .vkey input, .modal.settings .vkey select { height: 30px; box-sizing: border-box; padding: 0 10px; border: 0; border-radius: 8px; outline: none; background: var(--nav); box-shadow: inset 0 0 0 1px var(--hair2); color: var(--ink); font: 400 12.5px var(--ui); }
+.modal.settings .set-input.code, .modal.settings .vkey input[type='password'] { font: 400 12px var(--code); }
+.modal.settings .set-input:focus, .modal.settings .vkey input:focus, .modal.settings .vkey select:focus { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cora) 45%, transparent); }
+.modal.settings .set-input::placeholder, .modal.settings .vkey input::placeholder { color: var(--ink4); }
+.modal.settings .vkey select { max-width: 300px; }
+.modal.settings .vkey code { color: var(--ink2); font: 400 12px var(--code); }
+.modal.settings .jset-me { color: var(--ink2); font: 500 12.5px var(--ui); }
+
+/* the Orchestrator page */
+.modal.settings .orch-status { display: inline-flex; align-items: center; gap: 7px; color: var(--ink2); font: 500 12.5px var(--ui); }
+.modal.settings .orch-status.bad { color: #ffb3b3; }
+.modal.settings .orch-repos { display: flex; flex-direction: column; gap: 0; }
+.modal.settings .orch-repo { display: grid; grid-template-columns: 26px minmax(0, 1fr) auto; align-items: center; column-gap: 10px; width: auto; height: 38px; padding: 0 2px; border: 0; border-radius: 0; background: none; color: var(--ink); font: 400 12px var(--code); }
+.modal.settings .orch-repo + .orch-repo { border-top: 1px solid var(--hair); }
+.modal.settings .orch-repo .dl-tile { width: 26px; height: 26px; border-radius: 7px; font-size: 11px; }
+.modal.settings .orch-path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.modal.settings .orch-none { color: var(--ink4); font: 400 12.5px var(--ui); }
+.modal.settings .orch-add { margin-top: 2px; flex-wrap: nowrap; }
+.modal.settings .orch-add .set-input { flex: 1; min-width: 0; width: auto; }
+.modal.settings .orch-sugg { align-items: center; gap: 6px; margin-top: 0; }
+.modal.settings .orch-sugg > span { color: var(--ink4); font: 400 11.5px var(--ui); }
+.modal.settings .orch-chip { height: 22px; padding: 0 8px; border: 0; border-radius: 6px; box-shadow: inset 0 0 0 1px var(--hair2); color: var(--ink3); font: 400 11px var(--code); }
+.modal.settings .orch-chip:hover { color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink4); }
+.modal.settings .set-input.orch-memory { width: 100%; height: auto; min-height: 150px; padding: 9px 11px; resize: vertical; font: 400 12.5px/1.55 var(--ui); }
+.modal.settings .orch-mem-a { margin-top: 0; }
+.modal.settings .orch-limits { gap: 4px; color: var(--ink2); font: 400 12.5px var(--ui); }
+.modal.settings .orch-limits svg { color: var(--need); }
+.modal.settings .set-row .set-c > .set-input:only-child { width: 260px; }
+/* several fields (tokens, a client id and secret): under the words, side by side, the button at the end */
+.modal.settings .set-row:has(.set-c > .set-input ~ .set-input) { grid-template-columns: minmax(0, 1fr); }
+.modal.settings .set-row:has(.set-c > .set-input ~ .set-input) .set-l .set-hint { max-width: 640px; }
+.modal.settings .set-row:has(.set-c > .set-input ~ .set-input) .set-c { flex-direction: row; justify-content: flex-start; max-width: none; }
+.modal.settings .set-row:has(.set-c > .set-input ~ .set-input) .set-c > .set-input { flex: 1 1 200px; width: auto; min-width: 0; }
+
+/* Find a setting: every page's matching rows, the words lit */
+.modal.settings .set-pane.searching .set-sec-h:not(.set-found) { margin: 18px 0 4px; }
+.modal.settings .set-pane.searching .set-sec-h:not(.set-found) h2 { color: var(--ink3); font: 500 10.5px var(--code); letter-spacing: .04em; }
+.modal.settings .set-pane.searching .set-sec-h:not(.set-found) .set-intro { display: none; }
+.modal.settings .set-pane.searching .set-grp-l { margin: 8px 0 4px; }
+.modal.settings [data-miss] { display: none !important; }
+.modal.settings .set-pane.searching .set-row { border-top: 0; }
+.modal.settings .set-pane.searching .set-row:not([data-miss]) ~ .set-row:not([data-miss]) { border-top: 1px solid var(--hair); }
+::highlight(set-find) { background-color: rgba(245, 196, 81, .28); color: var(--ink); }
+
+/* the Tools page: a tool on one line (name, address, move, remove) */
+.modal.settings .set-row .set-c:has(> .tl-url) { flex-direction: row; flex-wrap: nowrap; align-items: center; }
+.modal.settings .set-input.tl-name { position: static; width: 150px; flex: none; }
+.modal.settings .set-input.tl-url { flex: 1; min-width: 0; width: auto; }
+
+/* your instructions for Cora */
+.orch-instr { width: 100%; min-height: 110px; resize: vertical; padding: 8px 10px; font: 400 13px/1.5 var(--ui); }
+.orch-instr-act { display: flex; align-items: center; justify-content: flex-end; gap: 8px; width: 100%; margin-top: 6px; }
+.orch-instr-act .dim:first-child { margin-right: auto; color: var(--ink4); font: 500 10.5px var(--code); }
+
+/* pronunciations: say this as that */
+.vpron { display: flex; flex-direction: column; gap: 6px; width: 100%; }
+.vpron-row, .vpron-add { display: flex; align-items: center; gap: 8px; }
+.vpron-row { height: 28px; padding: 0 4px 0 10px; border-radius: 8px; background: var(--raise); box-shadow: inset 0 0 0 1px var(--hair); color: var(--ink2); font: 400 12.5px var(--ui); }
+.vpron-row code { color: var(--ink); font: 500 12px var(--code); }
+.vpron-row svg, .vpron-add svg { flex: none; color: var(--ink4); }
+.vpron-row > span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vpron-add .set-input { flex: 1; min-width: 0; }
+
+/* a 3D view that kept failing: what happened, and a restart */
+.gl-stopped { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; gap: 12px; padding: 24px; color: var(--ink2); font: 400 13px/1.5 var(--ui); text-align: left; }
+.gl-stopped > svg { flex: none; color: var(--think); }
+.gl-stopped > span { display: flex; flex-direction: column; max-width: 360px; }
+.gl-stopped b { color: var(--ink); font-weight: 600; }
+.gl-restart { display: inline-flex; align-items: center; gap: 10px; }
+.gl-restart .dim { color: var(--ink4); font: 500 10.5px var(--code); }
+
+/* Settings → Tools: a tool's name and address, then how it looks in the nav */
+.modal.settings .tl-tool { display: flex; flex-direction: column; gap: 8px; width: 100%; }
+.modal.settings .tl-line { display: flex; align-items: center; gap: 6px; width: 100%; }
+.modal.settings .tl-look { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.modal.settings .tl-lab { margin: 0 2px 0 8px; color: var(--ink4); font: 600 9.5px var(--code); letter-spacing: .14em; text-transform: uppercase; }
+.modal.settings .tl-lab:first-child { margin-left: 0; }
+.modal.settings .tl-sw { width: 16px; height: 16px; padding: 0; border: 0; border-radius: 50%; background: var(--sc); box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .3); cursor: pointer; }
+.modal.settings .tl-sw.on { box-shadow: 0 0 0 2px var(--raise), 0 0 0 3.5px var(--sc, var(--ink3)); }
+.modal.settings .tl-sw.none { position: relative; background: none; box-shadow: inset 0 0 0 1px var(--hair2); }
+.modal.settings .tl-sw.none::after { content: ''; position: absolute; left: 3px; right: 3px; top: 7px; height: 1.5px; background: var(--ink4); transform: rotate(-45deg); }
+.modal.settings .tl-sw.none.on { box-shadow: 0 0 0 2px var(--raise), 0 0 0 3.5px var(--ink3); }
+.modal.settings .set-input.tl-tag { position: static; width: 54px; font: 600 11px var(--code); text-transform: uppercase; }
+.modal.settings .set-input.tl-folder { position: static; width: 140px; }
+
+/* a setting that waits on another (Jira starts need Cora on) */
+.modal.settings .set-dim { opacity: .45; pointer-events: none; }
+
+/* Settings > Cora: its colour */
+.modal.settings .cora-swatches { display: flex; align-items: center; gap: 8px; }
+.modal.settings .swatch { width: 18px; height: 18px; padding: 0; border: 0; border-radius: 50%; background: var(--sc); box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .3); cursor: pointer; }
+.modal.settings .swatch.on { box-shadow: 0 0 0 2px var(--raise), 0 0 0 3.5px var(--sc); }
+
+/* Settings > Environments: a status dot beside each one's name */
+.modal.settings .env-name { display: inline-flex; align-items: center; gap: 8px; }
+
+
+/* Tools › Notes templates: a template's text, then its buttons */
+.set-input.tpl-text { box-sizing: border-box; width: 100%; height: auto; min-height: 260px; padding: 8px 10px; font: 500 11.5px/1.55 var(--code); white-space: pre-wrap; resize: vertical; }
+.tpl-acts { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+
+/* Settings › Gmail: the Google app's JSON, and what Cora watches for (a name and a Gmail search on one line) */
+.modal.settings .set-input.gm-json { width: 100%; height: auto; min-height: 80px; padding: 8px 10px; resize: vertical; font: 400 11.5px/1.5 var(--code); }
+.modal.settings .gm-rule { display: flex; gap: 6px; width: 100%; align-items: center; }
+.modal.settings .gm-rule .set-input.code { flex: 1; min-width: 0; }
+.modal.settings .set-input.gm-label { width: 140px; flex: none; }

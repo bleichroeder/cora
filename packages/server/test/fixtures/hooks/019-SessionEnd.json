@@ -1,0 +1,14 @@
+{
+  "receivedAt": 1791818504921,
+  "headers": {
+    "token": "captest"
+  },
+  "body": {
+    "session_id": "d07d7d71-88b0-4819-9384-99aaaec60551",
+    "transcript_path": "C:\\Users\\dev\\.claude\\projects\\C--work-capdemo\\d07d7d71-88b0-4819-9384-99aaaec60551.jsonl",
+    "cwd": "C:\\work\\capdemo",
+    "prompt_id": "22502ecc-9c8b-437a-8f1c-da09c0d1ff98",
+    "hook_event_name": "SessionEnd",
+    "reason": "other"
+  }
+}

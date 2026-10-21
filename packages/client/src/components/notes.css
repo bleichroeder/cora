@@ -1,0 +1,141 @@
+/* ---------- Cora's Notes tool, in the drawer ---------- */
+.notes { position: absolute; inset: 0; display: flex; background: var(--nav); color: var(--ink2); font-family: var(--ui); }
+.notes.off { visibility: hidden; pointer-events: none; }
+
+/* the list */
+.nt-list { flex: none; width: 200px; display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--hair); }
+.nt-search { display: flex; align-items: center; gap: 7px; height: 28px; margin: 10px; padding: 0 9px; border-radius: 8px; background: var(--raise); box-shadow: inset 0 0 0 1px var(--hair); color: var(--ink4); }
+.nt-search input { flex: 1; min-width: 0; border: 0; outline: 0; background: none; color: var(--ink); font: 500 12px var(--ui); }
+.nt-search input::placeholder { color: var(--ink4); }
+.nt-rows { flex: 1; overflow-y: auto; padding-bottom: 6px; }
+.nt-sl { display: flex; align-items: center; gap: 6px; padding: 8px 14px 4px; color: var(--ink4); font: 600 9.5px var(--code); letter-spacing: .16em; text-transform: uppercase; }
+.nt-sl::after { content: ''; flex: 1; height: 1px; background: var(--hair); }
+.nt-r { display: flex; flex-direction: column; justify-content: center; width: calc(100% - 12px); height: 44px; margin: 0 6px; padding: 0 8px; border: 0; border-radius: 8px; background: none; text-align: left; cursor: pointer; }
+.nt-r:hover { background: var(--raise); }
+.nt-r.on { background: var(--raise2); box-shadow: inset 0 0 0 1px var(--hair2); }
+.nt-r b { display: flex; align-items: center; gap: 6px; overflow: hidden; color: var(--ink); font: 500 12.5px/16px var(--ui); white-space: nowrap; text-overflow: ellipsis; }
+.nt-r span { overflow: hidden; color: var(--ink4); font: 500 10px/14px var(--code); white-space: nowrap; text-overflow: ellipsis; }
+.nt-by { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--cora); }
+.nt-new { display: flex; align-items: center; justify-content: center; gap: 6px; height: 28px; margin: 6px 10px 10px; border: 0; border-radius: 8px; background: var(--raise); box-shadow: inset 0 0 0 1px var(--hair2); color: var(--ink2); font: 500 12px var(--ui); cursor: pointer; }
+.nt-new:hover { background: var(--raise2); color: var(--ink); }
+.nt-none { padding: 18px; color: var(--ink4); font: 400 12px/1.5 var(--ui); }
+
+/* the note */
+.nt-note { position: relative; flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.nt-doc { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.nt-h { flex: none; display: flex; align-items: center; gap: 6px; padding: 12px 12px 4px 18px; }
+.nt-h h3 { margin: 0; color: var(--ink); font: 600 16px var(--ui); }
+.nt-title { flex: 1; min-width: 0; padding: 2px 4px; margin-left: -4px; border: 0; border-radius: 6px; outline: 0; background: none; color: var(--ink); font: 600 16px var(--ui); }
+.nt-title:hover, .nt-title:focus { background: var(--raise); }
+.nt-saved { color: var(--ink4); font: 500 10.5px var(--code); white-space: nowrap; }
+.nt-h .icon-btn.on { color: var(--cora); }
+.nt-meta { flex: none; padding: 0 18px 8px; color: var(--ink4); font: 500 10.5px var(--code); }
+.nt-text { flex: 1; min-height: 0; margin: 0; padding: 6px 18px 18px; border: 0; outline: 0; resize: none; background: none; color: var(--ink2); font: 400 13px/1.65 var(--ui); }
+.nt-text::placeholder { color: var(--ink4); }
+.nt-confirm { display: flex; align-items: center; gap: 8px; margin: 4px 18px 8px; padding: 8px 10px; border-radius: 9px; background: color-mix(in srgb, var(--need) 8%, var(--raise)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--need) 35%, transparent); color: var(--ink2); font: 500 12px var(--ui); }
+.nt-confirm .btn { height: 24px; }
+.nt-confirm .btn:first-of-type { margin-left: auto; }
+
+/* Scratch */
+.nt-jotbox { flex: none; margin: 6px 18px 4px; }
+.nt-jotbox textarea { width: 100%; min-height: 34px; padding: 7px 10px; border: 0; border-radius: 9px; outline: 0; resize: none; background: var(--raise); box-shadow: inset 0 0 0 1px var(--hair2); color: var(--ink); font: 400 13px/1.5 var(--ui); }
+.nt-jotbox textarea:focus { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cora) 45%, transparent); }
+.nt-jotbox textarea::placeholder { color: var(--ink4); }
+.nt-body { flex: 1; min-height: 0; overflow-y: auto; padding: 0 18px 18px; }
+.nt-day { padding: 12px 0 2px; color: var(--ink4); font: 600 9.5px var(--code); letter-spacing: .16em; text-transform: uppercase; }
+.nt-jot { position: relative; display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; gap: 10px; padding: 7px 0; border-bottom: 1px solid var(--hair); }
+.nt-jot .t { color: var(--ink4); font: 500 10.5px/20px var(--code); }
+.nt-jot .w { color: var(--ink2); font: 400 13px/1.55 var(--ui); white-space: pre-wrap; overflow-wrap: anywhere; }
+.nt-jot.by .w { padding-left: 10px; box-shadow: inset 2px 0 0 color-mix(in srgb, var(--cora) 55%, transparent); }
+.nt-jot .src { display: block; color: var(--ink4); font: 500 10px var(--code); }
+.nt-ja { display: inline-flex; align-items: flex-start; gap: 2px; opacity: 0; }
+.nt-jot:hover .nt-ja { opacity: 1; }
+.nt-ja .icon-btn { width: 22px; height: 22px; }
+.nt-menu { position: absolute; right: 0; top: 30px; z-index: 5; display: flex; flex-direction: column; min-width: 200px; max-width: 280px; padding: 4px; border-radius: 10px; background: var(--raise); box-shadow: inset 0 0 0 1px var(--hair2), 0 14px 34px rgba(0, 0, 0, .6); }
+.nt-mh { padding: 4px 8px 6px; color: var(--ink4); font: 600 9.5px var(--code); letter-spacing: .14em; text-transform: uppercase; }
+.nt-menu button { display: flex; align-items: center; gap: 8px; height: 28px; padding: 0 8px; border: 0; border-radius: 7px; background: none; color: var(--ink2); font: 500 12px var(--ui); text-align: left; cursor: pointer; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.nt-menu button:hover { background: var(--raise2); color: var(--ink); }
+
+/* narrow: the list, then the note */
+.notes.drill .nt-list { width: 100%; border-right: 0; }
+.notes.drill .nt-note { display: none; }
+.notes.drill.opened .nt-list { display: none; }
+.notes.drill.opened .nt-note { display: flex; }
+.nt-back { align-self: flex-start; display: inline-flex; align-items: center; gap: 4px; height: 26px; margin: 8px 0 0 10px; padding: 0 8px; border: 0; border-radius: 7px; background: none; color: var(--ink3); font: 500 12px var(--ui); cursor: pointer; }
+.nt-back:hover { background: var(--raise); color: var(--ink); }
+
+/* the nav: Cora's own tools, under yours */
+.rail .rt-sub { display: flex; align-items: center; gap: 8px; margin: 12px 0 8px; color: color-mix(in srgb, var(--cora) 70%, var(--ink4)); font: 600 9.5px var(--code); letter-spacing: .16em; text-transform: uppercase; }
+.rail .rt-sub::before, .rail .rt-sub::after { content: ''; flex: 1; height: 1px; background: var(--hair); }
+.rail .rt-sub.left::before { display: none; }
+.rail .rt-b.rt-cora { color: var(--cora); background: color-mix(in srgb, var(--cora) 10%, var(--raise)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cora) 38%, transparent); }
+.rail .rt-b.rt-cora.on { box-shadow: inset 0 0 0 1px var(--cora), 0 0 12px color-mix(in srgb, var(--cora) 25%, transparent); }
+.rail .rt-cora-ico { display: grid; place-items: center; width: 22px; height: 22px; justify-self: center; border-radius: 6px; color: var(--cora); background: color-mix(in srgb, var(--cora) 12%, var(--raise2)); }
+.rail .rt-pdot { width: 8px; height: 8px; border-radius: 50%; background: var(--cora); }
+.rail .rt-b .rt-badge.cora { background: var(--cora); }
+.rail .rt-card + .rt-card { margin-top: 0; }
+
+/* the drawer's header for a built-in tool */
+.td-tile.cora { color: var(--cora); background: color-mix(in srgb, var(--cora) 14%, var(--raise2)); }
+.td-body .notes { z-index: 1; }
+
+/* quick capture (its own small window) */
+html.capture, html.capture body { background: transparent !important; overflow: hidden; }
+.qc { position: fixed; left: 8px; right: 8px; top: 8px; border-radius: 14px; background: rgba(17, 21, 29, .98); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cora) 40%, transparent), 0 14px 30px rgba(0, 0, 0, .55); font-family: var(--ui); }
+.qc-i { display: flex; gap: 10px; padding: 12px 12px 8px; }
+.qc-logo { flex: none; display: grid; place-items: center; width: 26px; height: 26px; border-radius: 8px; background: color-mix(in srgb, var(--cora) 14%, var(--nav)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cora) 35%, transparent); color: var(--cora); }
+.qc textarea { flex: 1; min-height: 44px; border: 0; outline: 0; resize: none; background: none; color: var(--ink); font: 400 14px/1.5 var(--ui); }
+.qc textarea::placeholder { color: var(--ink4); }
+.qc-f { display: flex; align-items: center; gap: 10px; padding: 7px 12px 9px; border-top: 1px solid var(--hair); color: var(--ink4); font: 500 10.5px var(--code); }
+.qc-to { display: inline-flex; align-items: center; gap: 6px; height: 22px; padding: 0 8px; border-radius: 6px; background: var(--raise2); box-shadow: inset 0 0 0 1px var(--hair2); color: var(--ink2); font: 500 11px var(--ui); }
+.qc-to input { width: 160px; border: 0; outline: 0; background: none; color: var(--ink); font: 500 11px var(--ui); }
+.qc kbd { padding: 0 5px; border-radius: 4px; background: var(--raise2); box-shadow: inset 0 0 0 1px var(--hair2); color: var(--ink3); font: 500 10px var(--code); }
+.qc-pick { margin: 0 8px 8px; padding: 4px; border-radius: 10px; background: var(--nav); box-shadow: inset 0 0 0 1px var(--hair2); }
+.qc-pick div { display: flex; align-items: center; gap: 8px; height: 28px; padding: 0 10px; border-radius: 7px; color: var(--ink2); font: 500 12px var(--ui); cursor: pointer; }
+.qc-pick div.on { background: var(--raise2); color: var(--ink); }
+.qc-pick div span { margin-left: auto; color: var(--ink4); font: 500 10px var(--code); }
+.qc-done { display: flex; align-items: center; justify-content: center; gap: 8px; height: 46px; color: var(--ink2); font: 500 12.5px var(--ui); }
+.qc-done b { color: var(--work); }
+.qc-err { padding: 0 12px 8px; color: #ffb3b3; font: 500 11px var(--code); }
+
+/* undo a deleted jot */
+.nt-undo { flex: none; display: flex; align-items: center; gap: 8px; margin: 6px 18px 0; padding: 4px 6px 4px 10px; border-radius: 8px; background: var(--raise); box-shadow: inset 0 0 0 1px var(--hair2); color: var(--ink3); font: 500 12px var(--ui); }
+.nt-undo .btn { height: 24px; margin-left: auto; }
+/* reading a note: formatted, its task boxes tickable (double-click to write) */
+.nt-read { flex: 1; min-height: 0; overflow-y: auto; padding: 2px 18px 18px; color: var(--ink2); font: 400 13px/1.65 var(--ui); cursor: text; }
+.nt-read .md li.task-list-item { list-style: none; margin-left: -18px; }
+.nt-read .md-task { margin: 0 8px 0 0; vertical-align: -2px; accent-color: var(--cora); cursor: pointer; }
+.nt-read .md li.task-list-item:has(> .md-task:checked) { color: var(--ink4); text-decoration: line-through; }
+/* a jot just added from elsewhere: the Notes tile says so */
+.rail .rt-b.rt-cora.flash { animation: nt-flash 1.4s ease-out 1; }
+@keyframes nt-flash { 0%, 30% { box-shadow: inset 0 0 0 1px var(--cora), 0 0 18px color-mix(in srgb, var(--cora) 60%, transparent); } }
+
+/* templates: the New note menu, the Templates section, the fill sheet, a draft on its way */
+.nt-newbox { position: relative; display: flex; margin: 6px 10px 10px; }
+.nt-newbox .nt-new { flex: 1; margin: 0; border-radius: 8px 0 0 8px; }
+.nt-newbox .nt-new.nt-more { flex: none; width: 28px; padding: 0; border-radius: 0 8px 8px 0; box-shadow: inset 0 0 0 1px var(--hair2), inset 1px 0 0 rgba(0, 0, 0, .3); }
+.nt-menu.nt-newmenu { left: 0; right: auto; top: auto; bottom: 36px; width: 240px; }
+.nt-menu em, .nt-tpl em { margin-left: auto; color: var(--cora); font: normal 500 10px var(--code); }
+.nt-fold { width: 100%; border: 0; background: none; cursor: pointer; }
+.nt-fold:hover { color: var(--ink3); }
+.nt-tpl b { gap: 8px; }
+.nt-tpl.add b { color: var(--ink3); font-weight: 500; }
+.nt-sheet { position: absolute; left: 0; right: 0; top: 0; z-index: 4; padding: 16px 18px; background: var(--nav); box-shadow: 0 1px 0 var(--hair2), 0 18px 30px rgba(0, 0, 0, .5); }
+.nt-sheet h4 { margin: 0 0 2px; color: var(--ink); font: 600 14px var(--ui); }
+.nt-sheet .sub { margin-bottom: 8px; color: var(--ink3); font: 400 12px var(--ui); }
+.nt-sheet .lab { margin: 10px 0 6px; color: var(--ink4); font: 600 9.5px var(--code); letter-spacing: .14em; text-transform: uppercase; }
+.nt-seg { display: inline-flex; flex-wrap: wrap; gap: 1px; padding: 2px; border-radius: 8px; background: var(--nav); box-shadow: inset 0 0 0 1px var(--hair2); }
+.nt-seg button { height: 24px; padding: 0 10px; border: 0; border-radius: 6px; background: none; color: var(--ink3); font: 500 12px var(--ui); cursor: pointer; }
+.nt-seg button.on { background: var(--raise2); box-shadow: inset 0 0 0 1px var(--hair2); color: var(--ink); }
+.nt-picks { display: flex; flex-wrap: wrap; gap: 6px; }
+.nt-picks button { height: 24px; padding: 0 9px; border: 0; border-radius: 7px; background: var(--raise); box-shadow: inset 0 0 0 1px var(--hair2); color: var(--ink4); font: 500 11.5px var(--ui); text-decoration: line-through; cursor: pointer; }
+.nt-picks button.on { color: var(--ink); text-decoration: none; background: color-mix(in srgb, var(--cora) 8%, var(--raise)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cora) 45%, transparent); }
+.nt-reads { margin-top: 12px; padding: 8px 10px; border-radius: 8px; background: var(--raise); box-shadow: inset 0 0 0 1px var(--hair); color: var(--ink3); font: 500 11px/1.6 var(--code); }
+.nt-reads b { color: var(--ink2); font-weight: 500; }
+.nt-asks { display: block; width: 100%; min-height: 48px; resize: vertical; padding: 7px 10px; border: 0; border-radius: 8px; background: var(--raise); box-shadow: inset 0 0 0 1px var(--hair2); color: var(--ink); font: 400 12px/1.5 var(--ui); outline: none; }
+.nt-asks:focus { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cora) 55%, var(--hair2)); }
+.nt-asks::placeholder { color: var(--ink4); }
+.nt-acts { display: flex; gap: 8px; margin-top: 14px; }
+.nt-sheet .cc-inerr { margin-top: 8px; color: #ffb3b3; font: 500 11px var(--code); }
+.nt-drafting { flex: none; display: flex; align-items: center; gap: 8px; margin: 0 18px 6px; padding: 7px 10px; border-radius: 8px; background: color-mix(in srgb, var(--cora) 7%, var(--raise)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cora) 30%, transparent); color: var(--ink2); font: 500 11.5px var(--ui); }
+.nt-src { flex: none; margin: 0 18px 10px; padding-top: 8px; border-top: 1px solid var(--hair); color: var(--ink4); font: 500 10.5px/1.6 var(--code); }

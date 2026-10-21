@@ -1,0 +1,19 @@
+{
+  "receivedAt": 1791818494911,
+  "headers": {
+    "token": "captest"
+  },
+  "body": {
+    "session_id": "d07d7d71-88b0-4819-9384-99aaaec60551",
+    "transcript_path": "C:\\Users\\dev\\.claude\\projects\\C--work-capdemo\\d07d7d71-88b0-4819-9384-99aaaec60551.jsonl",
+    "cwd": "C:\\work\\capdemo",
+    "prompt_id": "53fbd21c-06dc-4f3a-9fd9-3dfddb035788",
+    "permission_mode": "default",
+    "hook_event_name": "PreToolUse",
+    "tool_name": "Read",
+    "tool_input": {
+      "file_path": "C:\\work\\capdemo\\package.json"
+    },
+    "tool_use_id": "toolu_017YajbSULBNBHHUV6R3i5Ee"
+  }
+}

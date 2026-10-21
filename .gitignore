@@ -1,0 +1,12 @@
+node_modules/
+dist/
+.superpowers/
+*.log
+.env
+coverage/
+.playwright-mcp/
+
+# the installer (scripts/package.mjs)
+release/
+packaging/node_modules/
+packaging/update-token

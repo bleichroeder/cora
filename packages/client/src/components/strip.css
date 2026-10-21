@@ -1,0 +1,59 @@
+/* ---------- the timeline strip, in Cora's design language ---------- */
+.strip { border-top-color: var(--hair2); background: var(--nav); box-shadow: none; }
+.strip.replay { box-shadow: inset 0 1px 0 color-mix(in srgb, var(--run) 45%, transparent); }
+/* LIVE: a green ping; the zoom: the small segmented switch */
+.strip .tl-live { gap: 6px; color: var(--ink3); font: 600 9.5px/12px var(--code); letter-spacing: .14em; opacity: 1; }
+.strip .tl-live i { width: 6px; height: 6px; background: var(--work); box-shadow: none; animation: tl-green 1.8s ease-out infinite; }
+@keyframes tl-green { 0% { box-shadow: 0 0 0 0 rgba(61, 220, 151, .6); } 100% { box-shadow: 0 0 0 6px transparent; } }
+.strip .tl-live-btn { gap: 4px; padding: 0 8px; border: 0; border-radius: 6px; background: var(--raise2); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--work) 45%, transparent); color: #d9fbe9; font: 600 9.5px/14px var(--code); letter-spacing: .1em; }
+.strip .tl-live-btn:hover { filter: none; background: color-mix(in srgb, var(--work) 14%, var(--raise2)); box-shadow: inset 0 0 0 1px var(--work); }
+.strip .tl-older { display: grid; place-items: center; width: 22px; height: 18px; margin-right: 6px; padding: 0; border: 0; border-radius: 6px; background: var(--raise); box-shadow: inset 0 0 0 1px var(--hair2); color: var(--ink3); }
+.strip .tl-older:hover:not(:disabled) { color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink4); }
+.strip .tl-zoom { padding: 1px; border: 0; border-radius: 6px; background: var(--raise); box-shadow: inset 0 0 0 1px var(--hair); }
+.strip .tl-zoom button { padding: 0 6px; border-radius: 5px; color: var(--ink4); font: 500 9.5px/15px var(--code); }
+.strip .tl-zoom button:hover { color: var(--ink2); }
+.strip .tl-zoom button.on { color: var(--ink); background: var(--raise2); box-shadow: inset 0 0 0 1px var(--hair2); }
+/* the ruler: quiet ticks */
+.strip .tl-ruler { border-bottom-color: var(--hair); }
+.strip .tl-ruler:hover { background: none; }
+.strip .tl-tick { background: var(--hair2); }
+.strip .tl-tick span { color: var(--ink4); font: 500 9px/12px var(--code); }
+/* pins: small rings on a hairline */
+.strip .tl-pins::before { background: var(--hair); }
+.strip .tl-pin { top: 3px; width: 12px; height: 12px; margin-left: -6px; border: 0; background: var(--nav); box-shadow: inset 0 0 0 1.5px var(--c); color: transparent; }
+.strip .tl-pin > svg { display: none; }
+.strip .tl-pin::before { content: ''; width: 4px; height: 4px; border-radius: 50%; background: var(--c); }
+.strip .tl-pin:hover, .strip .tl-pin.on { transform: scale(1.2); box-shadow: inset 0 0 0 1.5px var(--c), 0 0 0 3px color-mix(in srgb, var(--c) 18%, transparent); }
+.strip .tl-pin .n { top: -6px; right: -9px; padding: 0 3px; border-radius: 6px; color: #0b0e14; background: var(--c); font: 700 8px/11px var(--code); }
+/* lanes: the agent's dot and name, then flat blocks */
+.strip .tl-name { color: var(--ink3); font: 400 10.5px/17px var(--code); }
+.strip .tl-name i.on { box-shadow: none; animation: none; opacity: 1; }
+.strip .tl-track { background: none; }
+.strip .tl-blk { top: 2px; height: 10px; border-radius: 3px; font-size: 0; transition: left .1s linear, width .1s linear, opacity .2s; }
+.strip .tl-blk > svg, .strip .tl-blk > span { display: none; }
+.strip .tl-blk.tool { color: transparent; background: color-mix(in srgb, var(--c) 24%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c) 45%, transparent); }
+.strip .tl-blk.think { top: 6px; height: 2px; border-radius: 1px; background: color-mix(in srgb, var(--a) 40%, transparent); box-shadow: none; }
+.strip .tl-blk.fail { --c: var(--need) !important; }
+.strip .tl-blk.live { border-radius: 3px; box-shadow: inset 0 0 0 1px var(--c); animation: tl-breathe-blk 1.6s ease-in-out infinite; }
+.strip .tl-blk.think.live { box-shadow: none; }
+.strip .tl-blk.live::after { display: none; }
+@keyframes tl-breathe-blk { 50% { background: color-mix(in srgb, var(--c) 40%, transparent); } }
+.strip .tl-wait { top: 1px; height: 12px; border-radius: 3px; background: repeating-linear-gradient(-45deg, rgba(255, 107, 107, .22) 0 3px, rgba(255, 107, 107, .06) 3px 6px); box-shadow: inset 0 0 0 1px rgba(255, 107, 107, .45); }
+/* now: a thin line with a dot; the playhead when you rewind */
+.strip .tl-now { width: 1px; background: linear-gradient(var(--ink2), transparent 85%); box-shadow: none; }
+.strip .tl-now::before { display: none; }
+.strip .tl-head-line::before { width: 1px; left: 0; background: linear-gradient(var(--run), color-mix(in srgb, var(--run) 15%, transparent)); box-shadow: none; }
+.strip .tl-knob { left: -5px; top: 3px; width: 11px; height: 11px; background: var(--run); box-shadow: 0 0 0 3px color-mix(in srgb, var(--run) 18%, transparent); }
+.strip .tl-head-line.live .tl-knob { left: -5px; background: var(--ink); box-shadow: 0 0 0 3px rgba(230, 235, 242, .12); }
+.strip .tl-tag { border: 0; border-radius: 6px; background: var(--raise2); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--run) 45%, transparent); color: var(--ink); font: 600 9.5px/14px var(--code); }
+.strip .tl-hair { opacity: .5; }
+/* the hover card: the design language's panel */
+.strip .tl-card { border: 0; border-radius: 12px; background: var(--raise); box-shadow: inset 0 0 0 1px var(--hair2), 0 14px 34px rgba(0, 0, 0, .6); backdrop-filter: none; font: 400 11px var(--code); }
+.strip .tl-ci-main { color: var(--ink2); }
+.strip .tl-ci-main:hover { background: var(--raise2); }
+.strip .tl-ci b { color: var(--ink); font: 600 12px var(--ui); }
+.strip .tl-ci .dt { color: var(--ink3); }
+.strip .tl-ci .tm { color: var(--ink4); }
+.strip .tl-act { border: 0; border-radius: 6px; background: var(--raise2); box-shadow: inset 0 0 0 1px var(--hair2); color: var(--ink2); }
+.strip .tl-act:hover { color: var(--ink); box-shadow: inset 0 0 0 1px var(--c); }
+.strip .tl-empty { color: var(--ink4); }

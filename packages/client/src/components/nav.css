@@ -1,0 +1,154 @@
+/* ---------- the left nav, in Cora's design language (docs/design-language.md) ---------- */
+.rail {
+  background: var(--nav);
+  border-right-color: var(--hair2);
+  font-family: var(--ui);
+}
+
+/* New, Resume, Find: 12px from the line above, the list 12px below */
+.rail .rail-actions { display: grid; grid-template-columns: 1fr 1fr 32px; gap: 6px; padding: 12px 12px 0; border-top-color: var(--hair2); }
+.rail .rail-actions .btn { height: 30px; justify-content: center; gap: 6px; padding: 0 8px; border: 0; border-radius: 8px; background: var(--raise); box-shadow: inset 0 0 0 1px var(--hair2); color: var(--ink); font: 600 12.5px var(--ui); }
+.rail .rail-actions .btn:hover { background: var(--raise2); }
+.rail .rail-actions .btn.allow { background: color-mix(in srgb, var(--work) 14%, var(--raise)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--work) 40%, transparent); color: #d9fbe9; }
+.rail .rail-actions .btn.allow:hover { background: color-mix(in srgb, var(--work) 20%, var(--raise)); }
+.rail .rail-actions .rail-find { width: 32px; height: 30px; display: grid; place-items: center; border-radius: 8px; background: var(--raise); box-shadow: inset 0 0 0 1px var(--hair2); color: var(--ink3); }
+.rail .rail-actions .rail-find:hover { color: var(--ink); background: var(--raise2); }
+.rail .rail-scroll { padding: 4px 8px 8px; gap: 0; scrollbar-width: thin; scrollbar-color: #1d2430 transparent; }
+
+/* group headers: small caps, a count, a hairline */
+.ses-h { display: flex; align-items: center; gap: 8px; height: 30px; margin-top: 6px; padding: 0 6px; font: 600 10px var(--code); letter-spacing: .16em; text-transform: uppercase; color: var(--ink4); user-select: none; }
+.ses-group:first-child .ses-h { margin-top: 2px; }
+.ses-h.fold { cursor: pointer; }
+.ses-h.fold:hover { color: var(--ink3); }
+.ses-chev { flex: none; margin-left: -2px; transition: transform .15s; }
+.ses-h.closed .ses-chev { transform: rotate(-90deg); }
+.ses-n { color: var(--ink3); letter-spacing: .04em; }
+.ses-rule { flex: 1; height: 1px; background: var(--hair); }
+.ses-need { display: inline-flex; align-items: center; gap: 5px; padding: 0; border: 0; background: none; color: var(--need); font: 600 10px var(--code); letter-spacing: .04em; cursor: pointer; }
+.ses-need::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--need); box-shadow: 0 0 6px var(--need); }
+.ses-fresh { display: inline-flex; align-items: center; gap: 5px; padding: 0; border: 0; background: none; color: var(--run); font: 600 10px var(--code); letter-spacing: .04em; cursor: pointer; }
+.ses-fresh::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--run); }
+.ses-need + .ses-fresh { margin-left: 8px; }
+.ses-clear { padding: 0; border: 0; background: none; color: var(--ink4); font: 500 10px var(--code); letter-spacing: .04em; text-transform: none; cursor: pointer; opacity: 0; transition: opacity .12s; }
+.ses-h:hover .ses-clear { opacity: 1; }
+.ses-clear:hover { color: var(--ink2); }
+
+/* a session: one 46px row, nothing boxed */
+.ses { position: relative; display: grid; grid-template-columns: 28px minmax(0, 1fr); align-items: center; column-gap: 10px; width: 100%; height: 46px; margin: 0; padding: 0 8px 0 6px; border: 0; border-radius: 9px; background: none; color: inherit; text-align: left; cursor: pointer; transition: background .12s; }
+.ses:hover { background: rgba(148, 163, 184, .05); }
+.ses.on { background: var(--raise); box-shadow: inset 0 0 0 1px var(--hair2); }
+.ses.on::before { content: ''; position: absolute; left: 0; top: 13px; bottom: 13px; width: 2px; border-radius: 0 2px 2px 0; background: var(--ink2); }
+/* its tile: the session's colour and initial; its state rides on the corner */
+.ses-tile { position: relative; display: grid; place-items: center; width: 28px; height: 28px; border-radius: 8px; background: color-mix(in srgb, var(--sc) 16%, #0b0f16); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--sc) 35%, transparent); color: color-mix(in srgb, var(--sc) 80%, white); font: 700 12px var(--ui); }
+.ses-st { position: absolute; right: -3px; bottom: -3px; display: none; width: 10px; height: 10px; border-radius: 50%; border: 2px solid var(--nav); }
+.ses.on .ses-st { border-color: var(--raise); }
+.ses.work .ses-st { display: block; background: var(--work); }
+.ses.work .ses-st::after { content: ''; position: absolute; inset: -4px; border-radius: 50%; border: 1px solid var(--work); opacity: 0; animation: ses-ping 2.4s ease-out infinite; }
+@keyframes ses-ping { 0% { transform: scale(.6); opacity: .7; } 70%, 100% { transform: scale(1.4); opacity: 0; } }
+.ses.need .ses-st { display: block; background: var(--need); box-shadow: 0 0 8px var(--need); }
+/* finished while you were elsewhere: a blue corner, and the name bright, until you open it */
+.ses.fresh .ses-st { display: block; background: var(--run); }
+.ses.fresh .ses-nm { color: var(--ink); }
+/* being read aloud: a ring that breathes in Cora's colour */
+.ses.speaking .ses-tile::after { content: ''; position: absolute; inset: -4px; border-radius: 11px; box-shadow: 0 0 0 1.5px var(--cora); animation: ses-say 1.4s ease-in-out infinite; }
+@keyframes ses-say { 50% { opacity: .35; } }
+@media (prefers-reduced-motion: reduce) { .ses.speaking .ses-tile::after { animation: none; } }
+.ses.cora .ses-tile { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--sc) 35%, transparent), 0 0 0 2px var(--nav), 0 0 0 3.5px var(--cora); }
+.ses.on.cora .ses-tile { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--sc) 35%, transparent), 0 0 0 2px var(--raise), 0 0 0 3.5px var(--cora); }
+.ses-txt { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.ses-nm { color: var(--ink); font: 500 13px/17px var(--ui); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ses-l2 { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.ses-dir { flex: 1; min-width: 0; color: var(--ink4); font: 400 10.5px/14px var(--code); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* needs you: colour, nothing else */
+.ses.need { background: rgba(255, 107, 107, .055); }
+.ses.need:hover { background: rgba(255, 107, 107, .085); }
+.ses.need .ses-nm { color: #ffc9c9; }
+.ses.idle .ses-nm { color: var(--ink2); }
+.ses.done { opacity: .5; }
+.ses.dismissed { opacity: .35; }
+.ses.dragging { opacity: .35; }
+.ses[draggable='true'] { cursor: grab; }
+.ses.drop-above::after, .ses.drop-below::after { content: ''; position: absolute; left: 4px; right: 4px; height: 2px; border-radius: 1px; background: var(--run); box-shadow: 0 0 8px var(--run); pointer-events: none; }
+.ses.drop-above::after { top: -1px; }
+.ses.drop-below::after { bottom: -1px; }
+/* end or remove, on hover */
+.ses-x { position: absolute; top: 6px; right: 6px; display: grid; place-items: center; width: 18px; height: 18px; border-radius: 5px; color: var(--ink4); opacity: 0; transition: opacity .12s; cursor: pointer; }
+.ses:hover .ses-x { opacity: 1; }
+.ses-x:hover { color: #fca5a5; background: var(--raise2); }
+/* the ticket's key, tinted by its status (the hover card and the click stay) */
+.rail .jchip.bare { flex: none; gap: 0; padding: 0; border: 0; border-radius: 3px; background: none; font: 500 10px/14px var(--code); letter-spacing: .02em; color: var(--ink3); }
+.rail .jchip.bare.j-progress { color: color-mix(in srgb, #8ab4f8 80%, var(--ink3)); }
+.rail .jchip.bare.j-done { color: color-mix(in srgb, var(--work) 70%, var(--ink3)); }
+.rail .jchip.bare:hover { color: var(--ink); background: none; text-decoration: underline; }
+.rail .more-old { margin: 4px 6px; padding: 0; border: 0; background: none; color: var(--ink4); font: 500 11px var(--code); cursor: pointer; }
+.rail .more-old:hover { color: var(--ink2); }
+
+/* Tools and the footer: the same surfaces, hairlines and type; labels kept */
+.rail .rail-tools { padding: 10px 12px 12px; border-top-color: var(--hair2); }
+.rail .rt-h { height: 18px; margin: 0 0 8px; font: 600 10px var(--code); letter-spacing: .16em; color: var(--ink4); }
+.rail .rt-add { width: 18px; height: 18px; border: 0; border-radius: 5px; box-shadow: inset 0 0 0 1px var(--hair2); color: var(--ink4); }
+.rail .rt-b { border: 0; border-radius: 10px; background: var(--raise); box-shadow: inset 0 0 0 1px var(--hair2); }
+.rail .rt-b:hover { background: var(--raise2); box-shadow: inset 0 0 0 1px rgba(148, 163, 184, .22); }
+.rail .rt-b.on { box-shadow: inset 0 0 0 1px var(--cora), 0 0 12px color-mix(in srgb, var(--cora) 25%, transparent); }
+.rail .rt-badge { box-shadow: 0 0 0 2px var(--nav); }
+.rail .rail-foot { gap: 6px; padding: 0 12px; border-top-color: var(--hair2); font-family: var(--ui); }
+.rail .rf-btn { height: 32px; padding: 0 10px; gap: 10px; border: 0; border-radius: 8px; background: var(--raise); box-shadow: inset 0 0 0 1px var(--hair); color: var(--ink2); font: 500 12.5px var(--ui); }
+.rail .rf-btn:hover { background: var(--raise); box-shadow: inset 0 0 0 1px var(--hair2); color: var(--ink); }
+.rail .rf-btn.on { color: var(--ink); box-shadow: inset 0 0 0 1px var(--cora); }
+.rail .rf-btn kbd { font: 500 10px var(--code); color: var(--ink4); border: 0; box-shadow: inset 0 0 0 1px var(--hair2); }
+.rail .rf-sec { border: 0; border-radius: 8px; background: var(--raise); box-shadow: inset 0 0 0 1px var(--hair); }
+
+/* Cora's bridge: the same surface family */
+.rail .cora-bridge { margin: 12px; padding: 14px 12px 12px; border: 0; border-radius: 14px; background: radial-gradient(180px 110px at 50% 50px, color-mix(in srgb, var(--c) 12%, transparent), transparent 72%), var(--raise); box-shadow: inset 0 0 0 1px var(--hair); }
+.rail .cora-bridge.on { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c) 45%, transparent), 0 0 18px color-mix(in srgb, var(--c) 10%, transparent); }
+.rail .cora-bridge.small { padding: 7px 7px 7px 9px; border-radius: 11px; }
+.rail .cb-chip { height: 28px; border: 0; border-radius: 8px; background: var(--raise2); box-shadow: inset 0 0 0 1px var(--hair); color: var(--ink2); font: 500 12px var(--ui); }
+.rail .cb-chip:hover:not(:disabled) { color: var(--ink); box-shadow: inset 0 0 0 1px var(--hair2); }
+.rail .cb-chip.on { box-shadow: inset 0 0 0 1px var(--c); background: color-mix(in srgb, var(--c) 14%, var(--raise2)); color: var(--ink); }
+.rail .cb-on { border: 0; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cora) 45%, transparent); background: color-mix(in srgb, var(--cora) 12%, var(--raise)); color: var(--cora-hi); font: 600 11.5px var(--ui); }
+
+/* the tools, expanded: a tall card of named rows, raised over the session list (it scrolls under the shadow) */
+.rail .rt-hb { display: inline-flex; gap: 4px; }
+.rail .rt-view { border-style: solid; }
+.rail .rt-view.on { color: var(--cora); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cora) 45%, transparent); }
+.rail .rail-tools.expanded { position: relative; z-index: 2; background: var(--nav); box-shadow: 0 -14px 28px -8px rgba(0, 0, 0, .7), 0 -1px 0 var(--hair2); }
+.rail .rt-card { max-height: 46vh; overflow-y: auto; padding: 4px; border-radius: 12px; background: var(--raise); box-shadow: inset 0 0 0 1px var(--hair); }
+.rail .rt-r { position: relative; display: grid; grid-template-columns: 24px minmax(0, 1fr) auto; align-items: center; column-gap: 10px; width: 100%; height: 40px; padding: 0 8px 0 7px; border: 0; border-radius: 9px; background: none; text-align: left; cursor: pointer; }
+.rail .rt-r:hover { background: var(--raise2); }
+.rail .rt-r.on { background: color-mix(in srgb, var(--cora) 8%, var(--raise2)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cora) 40%, transparent); }
+.rail .rt-r .tool-ico, .rail .rt-r .tool-letter { justify-self: center; }
+.rail .rt-nm { min-width: 0; }
+.rail .rt-nm b { display: block; overflow: hidden; color: var(--ink); font: 500 12.5px/16px var(--ui); text-overflow: ellipsis; white-space: nowrap; }
+.rail .rt-nm i { display: block; overflow: hidden; color: var(--ink4); font: normal 400 10px/13px var(--code); text-overflow: ellipsis; white-space: nowrap; }
+.rail .rt-rr { display: inline-flex; align-items: center; gap: 6px; }
+.rail .rt-n { min-width: 18px; height: 18px; padding: 0 5px; box-sizing: border-box; border-radius: 9px; background: #e11d48; color: #fff; font: 600 9.5px/18px var(--code); text-align: center; }
+.rail .rt-dot { width: 8px; height: 8px; border-radius: 50%; background: #e11d48; }
+.rail .rt-k { color: var(--ink4); font: 500 10px var(--code); }
+.rail .rt-more { height: 34px; }
+.rail .rt-more .rt-nm b { color: var(--ink4); font-weight: 500; }
+.rail .rt-plus { display: grid; place-items: center; width: 22px; height: 22px; justify-self: center; border: 1px dashed var(--hair2); border-radius: 6px; color: var(--ink4); }
+.rail .rt-more:hover .rt-nm b, .rail .rt-more:hover .rt-plus { color: var(--ink2); }
+
+/* a tool's look: its tile tinted, a tag on the corner */
+.rail .rt-ico { position: relative; display: grid; place-items: center; }
+.rail .rt-b:has(> .rt-ico.tinted) { background: color-mix(in srgb, var(--tc) 14%, var(--raise)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tc) 50%, transparent); }
+.rail .rt-b.on:has(> .rt-ico.tinted) { box-shadow: inset 0 0 0 1px var(--cora), 0 0 12px color-mix(in srgb, var(--cora) 25%, transparent); }
+.rail .rt-r .rt-ico.tinted { width: 26px; height: 26px; margin: -2px; border-radius: 7px; background: color-mix(in srgb, var(--tc) 14%, var(--raise2)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tc) 50%, transparent); }
+.rail .rt-tag { position: absolute; right: -9px; bottom: -8px; min-width: 15px; height: 13px; padding: 0 3px; box-sizing: border-box; border-radius: 4px; background: var(--tc, var(--ink3)); color: #05070b; font: 700 8px/13px var(--code); letter-spacing: .02em; text-align: center; box-shadow: 0 0 0 2px var(--nav); }
+.rail .rt-r .rt-tag { right: -7px; bottom: -6px; box-shadow: 0 0 0 2px var(--raise); }
+/* a folder in the icon row: its tools, small, in one tile */
+.rail .rt-b.rt-fold { display: grid; grid-template-columns: repeat(2, 12px); grid-auto-rows: 12px; gap: 3px; place-content: center; background: var(--raise2); }
+.rail .rt-mini { display: grid; place-items: center; width: 12px; height: 12px; border-radius: 3px; overflow: hidden; background: color-mix(in srgb, var(--tc, transparent) 30%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tc, var(--hair2)) 60%, transparent); }
+.rail .rt-mini .tool-ico, .rail .rt-mini .tool-letter { width: 10px !important; height: 10px !important; font-size: 7px; }
+/* the folder, popped up above the row: its tools with their names */
+.rail .rail-tools { position: relative; }
+.rail .rt-fpop { position: absolute; left: 10px; right: 10px; bottom: calc(100% - 4px); z-index: 5; padding: 4px; border-radius: 12px; background: var(--raise); box-shadow: inset 0 0 0 1px var(--hair2), 0 -12px 34px rgba(0, 0, 0, .55); }
+.rail .rt-fh { display: flex; align-items: center; gap: 7px; height: 26px; padding: 0 8px; color: var(--ink4); font: 600 10px var(--code); letter-spacing: .14em; text-transform: uppercase; }
+/* names view: a folder is a row that opens */
+.rail .rt-frow { height: 34px; }
+.rail .rt-frow .rt-fico { display: grid; place-items: center; width: 24px; color: var(--ink3); }
+.rail .rt-frow .rt-nm b { color: var(--ink2); font-weight: 600; }
+.rail .rt-frow .rt-rr { color: var(--ink4); }
+.rail .rt-fin { padding-left: 12px; }
+/* installed Cora: a new version is waiting for a restart */
+.rail-foot .rf-update { color: var(--cora); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cora) 40%, transparent); background: color-mix(in srgb, var(--cora) 10%, var(--raise)); }

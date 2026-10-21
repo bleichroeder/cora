@@ -1,0 +1,156 @@
+import { useEffect, useRef, useState } from 'react';
+import type { SessionInfo } from '@cora/shared';
+import { useBrain } from '../state/store';
+import { MAIN_COLORS, isDismissed, sessionColor, sessionName, shortCwd } from '../lib/format';
+import { Icon } from './Icon';
+import { nudgeOrder, saveOrder } from '../lib/sessionOrder';
+// (the palette hosts the end-session confirm; it imports this file too, but only uses it when it runs)
+import { usePalette } from './Palette';
+import './popovers.css';
+
+const post = (url: string, body: unknown) => fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+
+export async function setSessionMeta(id: string, meta: { alias?: string | null; color?: string | null; ticket?: null }) {
+  const r = await post(`/api/sessions/${encodeURIComponent(id)}/meta`, meta);
+  if (r.ok) useBrain.getState().upsertSession(await r.json());
+}
+
+export async function dismissSession(id: string, undo = false): Promise<string | null> {
+  const r = await post(`/api/sessions/${encodeURIComponent(id)}/dismiss`, { undo });
+  if (!r.ok) return (await r.json().catch(() => ({}))).error ?? 'failed';
+  useBrain.getState().upsertSession(await r.json());
+  return null;
+}
+
+/** "Suggest a name": a quick Haiku call names the session from its first prompt (it replaces your name for it). */
+export async function suggestName(id: string): Promise<string | null> {
+  const r = await post(`/api/sessions/${encodeURIComponent(id)}/autoname`, {});
+  if (!r.ok) return (await r.json().catch(() => ({}))).error ?? 'failed';
+  useBrain.getState().upsertSession(await r.json());
+  return null;
+}
+
+export async function clearEnded() {
+  await post('/api/sessions/dismiss-ended', {});
+}
+
+/** Right-click menu for a session in the list: name, colour, dismiss. */
+export function SessionMenu({ s, x, y, onClose }: { s: SessionInfo; x: number; y: number; onClose(): void }) {
+  const [name, setName] = useState(s.alias ?? '');
+  const [err, setErr] = useState<string | null>(null);
+  const [naming, setNaming] = useState(false);
+  const box = useRef<HTMLDivElement>(null);
+  const hosted = useBrain((st) => st.terminals.some((t) => t.sessionId === s.id && t.alive));
+
+  useEffect(() => {
+    const down = (e: MouseEvent) => !box.current?.contains(e.target as Node) && onClose();
+    const key = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
+    window.addEventListener('mousedown', down);
+    window.addEventListener('keydown', key);
+    return () => {
+      window.removeEventListener('mousedown', down);
+      window.removeEventListener('keydown', key);
+    };
+  }, [onClose]);
+
+  const saveName = () => void setSessionMeta(s.id, { alias: name.trim() || null });
+  const suggest = async () => {
+    setErr(null);
+    setNaming(true);
+    const e = await suggestName(s.id);
+    setNaming(false);
+    if (e) setErr(e);
+    else setName('');
+  };
+  const current = sessionColor(s);
+
+  const label = sessionName(s);
+  const go = (f: () => unknown) => () => (f(), onClose());
+  return (
+    <div className="session-menu" ref={box} style={{ left: x, top: Math.min(y, window.innerHeight - 380) }}>
+      {/* the session, as its row */}
+      <div className="sm-h" style={{ ['--sc' as any]: current }}>
+        <span className="dl-tile">{(label.match(/[A-Za-z0-9]/)?.[0] ?? '·').toUpperCase()}</span>
+        <span className="sm-t">
+          <b>{label}</b>
+          <span>{shortCwd(s.cwd)}</span>
+        </span>
+      </div>
+      <div className="sm-gl">Name</div>
+      <div className="sm-name">
+        <input
+          value={name}
+          placeholder={sessionName({ ...s, alias: null })}
+          maxLength={60}
+          autoFocus
+          onChange={(e) => setName(e.target.value)}
+          onBlur={saveName}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              saveName();
+              onClose();
+            }
+          }}
+        />
+        <button className="sm-i" disabled={naming} title={naming ? 'Naming…' : 'Suggest a name (a quick Haiku call names it from its first prompt)'} onMouseDown={(e) => e.preventDefault()} onClick={() => void suggest()}>
+          <Icon name={naming ? 'LoaderCircle' : 'Sparkles'} size={14} />
+        </button>
+      </div>
+      <div className="sm-gl">Colour</div>
+      <div className="swatches">
+        {MAIN_COLORS.map((c) => (
+          <button key={c} className={`swatch${c === current ? ' on' : ''}`} style={{ background: c }} onClick={() => void setSessionMeta(s.id, { color: c })} title={c} />
+        ))}
+        <input type="color" value={current} onChange={(e) => void setSessionMeta(s.id, { color: e.target.value })} title="Custom colour" />
+        {s.color ? (
+          <button className="mini" onClick={() => void setSessionMeta(s.id, { color: null })}>
+            auto
+          </button>
+        ) : null}
+      </div>
+      <div className="sm-sep" />
+      {s.state !== 'ended'
+        ? ([-1, 1] as const).map((dir) => {
+            const ids = nudgeOrder(useBrain.getState().sessions, s.id, dir, (v) => useBrain.getState().showDismissed || !isDismissed(v));
+            return (
+              <button key={dir} className="sm-row" disabled={!ids} title="Or drag it in the list" onClick={() => ids && void saveOrder(ids).then(onClose)}>
+                <Icon name={dir < 0 ? 'ChevronUp' : 'ChevronDown'} size={14} /> Move {dir < 0 ? 'up' : 'down'}
+              </button>
+            );
+          })
+        : null}
+      {s.ticket ? (
+        <button className="sm-row" title={`It isn't about ${s.ticket.key} after all: no ticket card, not named after it`} onClick={go(() => void setSessionMeta(s.id, { ticket: null }))}>
+          <Icon name="TicketX" size={14} /> Not about {s.ticket.key}
+        </button>
+      ) : null}
+      {isDismissed(s) ? (
+        <button className="sm-row" onClick={() => void dismissSession(s.id, true).then(onClose)}>
+          <Icon name="Eye" size={14} /> Show in the list again
+        </button>
+      ) : (
+        <button
+          className="sm-row"
+          disabled={hosted}
+          title={hosted ? 'Running in Cora: end it first' : 'Hide it until it has new activity'}
+          onClick={async () => {
+            const e = await dismissSession(s.id);
+            if (e) setErr(e);
+            else onClose();
+          }}
+        >
+          <Icon name="EyeOff" size={14} /> Remove from the list
+        </button>
+      )}
+      {s.state !== 'ended' ? (
+        <>
+          <div className="sm-sep" />
+          <button className="sm-row bad" onClick={go(() => usePalette.setState({ ending: s.id }))}>
+            <Icon name="Power" size={14} /> End session…
+          </button>
+        </>
+      ) : null}
+      {err ? <div className="ny-err">{err}</div> : null}
+    </div>
+  );
+}

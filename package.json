@@ -1,0 +1,43 @@
+{
+  "name": "cora",
+  "version": "0.1.2",
+  "license": "MIT",
+  "description": "A desktop home for your Claude Code sessions, on Windows",
+  "author": "David Herzfeld",
+  "homepage": "https://github.com/bleichroeder/cora",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/bleichroeder/cora.git"
+  },
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/shared",
+    "packages/server",
+    "packages/client",
+    "packages/desktop"
+  ],
+  "bin": {
+    "cora": "packages/server/dist/cli.js",
+    "agent-brain": "packages/server/dist/cli.js"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc -p packages/shared && tsc -p packages/server --noEmit && tsc -p packages/client --noEmit && tsc -p packages/desktop --noEmit",
+    "build": "npm run build -w @cora/client && npm run build -w @cora/server && npm run build -w @cora/desktop",
+    "dev:server": "npm run dev -w @cora/server",
+    "dev:client": "npm run dev -w @cora/client",
+    "start": "node packages/server/dist/cli.js start",
+    "cora": "node packages/server/dist/cli.js",
+    "brain": "node packages/server/dist/cli.js",
+    "desktop": "npm run build && electron packages/desktop",
+    "postinstall": "node node_modules/electron/install.js"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "rcedit": "^4.0.1",
+    "typescript": "^5.7.0",
+    "vitest": "^4.1.12"
+  }
+}

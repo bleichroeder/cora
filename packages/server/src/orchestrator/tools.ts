@@ -1,0 +1,637 @@
+import { existsSync, statSync } from 'node:fs';
+import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { z } from 'zod';
+import type { BrainEvent, CiMsg, Goal, GoalState, PendingRequest, SecurityReport, SessionInfo, TerminalInfo, UiCommand } from '@cora/shared';
+import { isShell, JIRA_EVENT_KINDS, jiraLine, parseSince, type JiraEvent, type JiraEventKind } from '@cora/shared';
+import type { Approvals, ApprovalOutcome } from './approvals';
+import type { MandateRequest, Verdict } from './mandate';
+import type { CopyAnswer } from './copy';
+import type { Talk, TurnResult } from './talk';
+import { UNTRUSTED_JIRA, quoteOthers } from '../untrusted';
+
+/** What the orchestrator's tools need from the server (each a small function, so tests can fake them). */
+export type OrchToolDeps = {
+  approvals: Pick<Approvals, 'request'>;
+  /** the Jira inbox since a while ago (null: not watching Jira) */
+  jiraInbox?(sinceMs: number, kinds?: JiraEventKind[]): JiraEvent[] | null;
+  /** Cora is on a turn someone else's Slack words started: its action tools refuse (see ACTS) */
+  othersTurn?(): boolean;
+  /** a DM to the user from Cora's own Slack bot (null: the bot isn't set up) */
+  coraDm?(text: string): Promise<{ ok: boolean; error?: string }>;
+  /** start work on a ticket assigned to the user: a card for them, or (allowed) a session, by Cora's rules */
+  jiraStart?(p: { key: string; cwd: string; why?: string }): Promise<{ ok: boolean; text: string }>;
+  isAgent(sessionId: string): boolean;
+  ui(cmd: UiCommand): void;
+  remember(note: string): number | void;
+  sessions(): SessionInfo[];
+  session(id: string): SessionInfo | undefined;
+  events(id: string, limit: number): BrainEvent[];
+  explains(sessionId?: string): BrainEvent[];
+  pending(): PendingRequest[];
+  terminals(): TerminalInfo[];
+  pipelines(): CiMsg | null;
+  security(): SecurityReport | null;
+  /**
+   * start a Claude Code session here and type its first prompt in once it's ready (answering "trust this folder?"
+   * with yes when `trust`). `pending`: still starting when the tool had to answer; the agent hears how it went.
+   */
+  launch(o: { cwd: string; prompt: string; model?: string; trust?: boolean; plan?: boolean }): Promise<{ terminal: TerminalInfo; sent: boolean; why?: string; pending?: boolean }>;
+  /** resume one here (no prompt) */
+  resume(id: string): TerminalInfo;
+  /** type a prompt into a hosted session and submit it (throws when it can't take one now) */
+  input(terminalId: string, text: string): void;
+  /** end a session (hosted: as you would by hand) */
+  end(id: string): Promise<string>;
+  rename(id: string, name: string | null): void;
+  // autopilot
+  /** the live goal, if any */
+  goal(): Goal | null;
+  goalUpdate(p: { state?: GoalState; progress?: number; note?: string }): boolean;
+  addWorker(sessionId: string): void;
+  escalate(question: string, options?: string[]): Promise<ApprovalOutcome>;
+  /** the mandate's verdict on a request from a session */
+  judge(sessionId: string, req: Omit<MandateRequest, 'cwd'>): Verdict;
+  /** is this folder in one of the mandate's repos */
+  inRepos(cwd: string): boolean;
+  /** answer a held prompt as Cora (allow only where the mandate allows; the caller checks) */
+  decidePending(id: string, allow: boolean, rule: string, message?: string): boolean;
+  /** answer a held question (AskUserQuestion) as Cora; the error says why it couldn't */
+  answerPending(id: string, answers: Record<string, string>, rule: string): { ok: boolean; error?: string };
+  // conversations
+  /** the sessions it may talk with for a while, and waiting for their replies */
+  talk: Pick<Talk, 'allowed' | 'grant' | 'wait' | 'expect'>;
+  /** a side question to a copy of a session (the session itself untouched) */
+  askCopy(p: { sessionId: string; cwd: string; question: string; model?: string }): Promise<CopyAnswer>;
+  now?(): number;
+};
+
+/** A live goal Cora may act within (not blocked by its budget). */
+const working = (g: Goal | null) => !!g && (g.state === 'running' || g.state === 'waiting');
+
+const text = (t: string) => ({ content: [{ type: 'text' as const, text: t }] });
+const fail = (t: string) => ({ isError: true, content: [{ type: 'text' as const, text: t }] });
+
+export const nameOf = (s: Pick<SessionInfo, 'id' | 'alias' | 'autoName' | 'title' | 'project' | 'ticket'>) =>
+  s.alias || (s.ticket ? `${s.ticket.key}${s.ticket.summary ? ` · ${s.ticket.summary}` : ''}` : '') || s.autoName || s.title || s.project || s.id.slice(0, 8);
+
+const ago = (ts: number, now = Date.now()) => {
+  const s = Math.max(0, Math.round((now - ts) / 1000));
+  return s < 60 ? `${s}s ago` : s < 3600 ? `${Math.round(s / 60)}m ago` : s < 86400 ? `${Math.round(s / 3600)}h ago` : `${Math.round(s / 86400)}d ago`;
+};
+const clip = (s: string | undefined, n: number) => {
+  const t = (s ?? '').replace(/\s+/g, ' ').trim();
+  return t.length > n ? `${t.slice(0, n - 1)}…` : t;
+};
+
+/** One event as a line of a session's story (null: not worth a line). */
+function storyLine(e: BrainEvent): string | null {
+  const who = e.agentId === 'main' ? '' : `[${e.agentId.slice(0, 8)}] `;
+  if (e.kind === 'prompt') return `${who}you: ${clip(e.text, 400)}`;
+  if (e.kind === 'say') return `${who}claude: ${clip(e.text, 600)}`;
+  if (e.kind === 'tool' && e.phase === 'start' && e.tool) return `${who}· ${e.tool.name}: ${clip(e.tool.summary, 160)}`;
+  if (e.kind === 'tool' && e.phase === 'end' && e.tool?.failed) return `${who}· ${e.tool.name} failed${e.tool.resultSummary ? `: ${clip(e.tool.resultSummary, 160)}` : ''}`;
+  if (e.kind === 'turn_end') return `${who}— turn finished`;
+  if (e.kind === 'permission' || e.kind === 'question') return `${who}? waiting for the user: ${clip(e.text ?? e.tool?.summary, 160)}`;
+  return null;
+}
+
+/** What a session is doing, from its latest events. */
+function lastActivity(events: BrainEvent[]): string {
+  for (let i = events.length - 1; i >= 0; i--) {
+    const l = storyLine(events[i]);
+    if (l) return clip(l, 140);
+  }
+  return 'nothing yet';
+}
+
+/** What came of waiting for a session's reply, for the agent. */
+export function turnText(name: string, r: TurnResult, waitedS: number): string {
+  if (r.state === 'replied') return `${name} replied${r.tools.length ? ` (it used ${r.tools.join(', ')})` : ''}:\n\n${r.text || '(no words: only tool calls)'}`;
+  if (r.state === 'blocked') return `${name} is held on a prompt for the user: ${r.what} (your mandate doesn't answer it). Its reply comes to you as a [Cora] line once it carries on; tell the user if it matters.`;
+  if (r.state === 'ended') return `${name} ended before replying.`;
+  if (r.state === 'timeout') return `${name} is still working after ${waitedS}s. Its reply comes to you as a [Cora] line when it finishes; don't ask again.`;
+  return 'Stopped waiting (the conversation was ended, or you were stood down).';
+}
+
+/** A held question's questions and their options (AskUserQuestion's input). */
+export function questionsOf(input: unknown): Array<{ question: string; options: string[]; multi: boolean }> {
+  const qs = (input as { questions?: Array<{ question?: string; options?: Array<{ label?: string }>; multiSelect?: boolean }> })?.questions ?? [];
+  return qs.filter((q) => typeof q.question === 'string').map((q) => ({ question: q.question!, options: (q.options ?? []).map((o) => String(o.label ?? '')).filter(Boolean), multi: !!q.multiSelect }));
+}
+
+/** A held prompt, as a line for the agent (with the id `decide` and `answer_question` take). */
+export function pendingLine(x: PendingRequest, name: string): string {
+  if (x.kind === 'question') {
+    const qs = questionsOf(x.toolInput).map((q) => `"${q.question}" [${q.options.join(' | ')}]${q.multi ? ' (several allowed)' : ''}`);
+    return `${name} (${x.sessionId}) · question ${x.id}: ${qs.join(' ; ')} · ${ago(x.createdAt)}`;
+  }
+  return `${name} (${x.sessionId}) · ${x.kind} ${x.id} · ${x.toolName}: ${clip(JSON.stringify(x.toolInput ?? null), 240)} · ${ago(x.createdAt)}`;
+}
+
+const outcome = (o: ApprovalOutcome) =>
+  o.ok
+    ? text(o.result + (o.edited ? ' (The user changed it before it went; what was sent is above.)' : ''))
+    : o.why === 'denied'
+      ? text("The user said no. Don't ask again unless they bring it up.")
+      : text("It's waiting for the user's OK in Cora. Don't ask again; tell them it's waiting.");
+
+/**
+ * Cora's tools that act (on your sessions, your machine, your answers, its memory): refused while it's on a turn someone
+ * else's Slack words started, whatever those words ask. Seeing (sessions, pipelines…), telling you (notify, cora_dm)
+ * and replying in that conversation stay.
+ */
+export const ACTS = new Set(['start_session', 'resume_session', 'send_to_session', 'ask_session', 'ask_copy', 'end_session', 'rename_session', 'focus', 'open_url', 'open_tool', 'show_explain', 'jira_start', 'remember', 'goal_update', 'escalate', 'decide', 'answer_question']);
+export const OTHERS_REFUSAL = "Not on this turn: it started from someone else's Slack message, and nobody but the user can make Cora act. Reply to them if it fits, and tell the user what they asked (notify or cora_dm).";
+
+export function registerOrchestratorTools(server: McpServer, d: OrchToolDeps): void {
+  // the acting tools check, at every call, that the turn isn't someone else's
+  const register = server.registerTool.bind(server) as (name: string, def: unknown, fn: (...a: any[]) => unknown) => unknown;
+  (server as { registerTool: unknown }).registerTool = (name: string, def: unknown, fn: (...a: any[]) => unknown) =>
+    register(name, def, ACTS.has(name) ? async (...a: any[]) => (d.othersTurn?.() ? fail(OTHERS_REFUSAL) : fn(...a)) : fn);
+  const known = (id: string) => {
+    const s = d.session(id);
+    return s && !d.isAgent(id) ? s : undefined;
+  };
+  const hostedTerm = (id: string) => d.terminals().find((t) => t.sessionId === id && t.alive && !isShell(t));
+  const now = () => d.now?.() ?? Date.now();
+
+  /**
+   * Type into a hosted session. Straight in for a live goal's workers and for a conversation the user OKed in the last
+   * few minutes; otherwise the user OKs it, and that OK opens a conversation with the session. `asking`: the reply is
+   * awaited (a late OK still brings the reply back as a [Cora] line).
+   */
+  const sendTo = async (id: string, msg: string, asking: boolean): Promise<{ sent: true; name: string; since: number; edited?: boolean } | { sent: false; out: ReturnType<typeof text> }> => {
+    const s = known(id);
+    if (!s) return { sent: false, out: fail(`No session ${id}.`) };
+    const name = nameOf(s);
+    if (!hostedTerm(id)) return { sent: false, out: fail(`${name} isn't running in Cora: resume_session first (or ask the user).`) };
+    let since = 0;
+    const send = async (t: string | undefined, late = false) => {
+      const term = hostedTerm(id);
+      if (!term) throw new Error(`${name} isn't running in Cora any more`);
+      since = now();
+      d.input(term.terminalId, (t ?? msg).trim() || msg);
+      d.talk.grant(id);
+      if (late && asking) d.talk.expect(id, since);
+      return `Sent to ${name}.`;
+    };
+    const goal = d.goal();
+    if ((working(goal) && goal!.workers.includes(id)) || d.talk.allowed(id)) {
+      try {
+        await send(undefined);
+        return { sent: true, name, since };
+      } catch (e) {
+        return { sent: false, out: fail((e as Error).message) };
+      }
+    }
+    const out = await d.approvals.request(
+      { kind: 'send', title: `${asking ? 'Ask' : 'Tell'} "${name}"`, detail: `${s.state} · ${s.cwd} · your OK lets Cora carry on talking with it for 10 minutes`, text: msg, sessionId: id },
+      send,
+      { do: 'send', sessionId: id },
+    );
+    return out.ok ? { sent: true, name, since, edited: out.edited } : { sent: false, out: outcome(out) };
+  };
+
+  // ---------------------------------------------------------------- see
+  server.registerTool(
+    'sessions',
+    {
+      title: "The user's Claude Code sessions",
+      description: 'Every session Cora knows (newest activity first): name, id, state, folder, whether it runs in Cora (hosted, so you can send to it), what needs the user, and what it did last.',
+      inputSchema: { includeEnded: z.boolean().optional().describe('Also list ended sessions (default: only live and idle ones, plus ones ended in the last hour)') },
+    },
+    async ({ includeEnded }) => {
+      const now = Date.now();
+      const list = d
+        .sessions()
+        .filter((s) => !d.isAgent(s.id) && !(s.dismissedAt != null && s.dismissedAt >= s.lastTs))
+        .filter((s) => includeEnded || s.state !== 'ended' || now - s.lastTs < 3600_000)
+        .sort((a, b) => b.lastTs - a.lastTs);
+      if (!list.length) return text('No sessions.');
+      const hosted = new Set(d.terminals().filter((t) => t.alive && !isShell(t)).map((t) => t.sessionId));
+      return text(
+        list
+          .map((s) => `${nameOf(s)} · ${s.id} · ${s.state}${s.needsYou ? ` · NEEDS THE USER (${s.needsYou})` : ''}${hosted.has(s.id) ? ' · hosted' : ''} · ${s.cwd} · ${ago(s.lastTs, now)} · last: ${lastActivity(d.events(s.id, 40))}`)
+          .join('\n'),
+      );
+    },
+  );
+  server.registerTool(
+    'session',
+    {
+      title: 'What a session has been doing',
+      description: "One session's details and its recent story: the user's prompts, Claude's replies, its tool calls (newest last). With `search`, the events mentioning that instead.",
+      inputSchema: {
+        id: z.string().min(4).max(80).describe('The session id (from `sessions`)'),
+        limit: z.number().int().min(5).max(200).optional().describe('How many lines of its story (default 40)'),
+        search: z.string().max(200).optional().describe('Only events mentioning this'),
+      },
+    },
+    async ({ id, limit, search }) => {
+      const s = known(id);
+      if (!s) return fail(`No session ${id}.`);
+      const events = d.events(id, 1500);
+      let lines = events.map(storyLine).filter((l): l is string => !!l);
+      if (search) lines = lines.filter((l) => l.toLowerCase().includes(search.toLowerCase()));
+      lines = lines.slice(-(limit ?? 40));
+      const head = [`${nameOf(s)} · ${s.id}`, `state: ${s.state}${s.needsYou ? ` · needs the user (${s.needsYou})` : ''}${hostedTerm(id) ? ' · hosted in Cora' : ' · not hosted in Cora'}`, `folder: ${s.cwd}`, s.ticket ? `ticket: ${s.ticket.key}${s.ticket.summary ? ` (${s.ticket.summary})` : ''}` : '', s.model ? `model: ${s.model}` : '', `last activity: ${ago(s.lastTs)}`].filter(Boolean);
+      return text(`${head.join('\n')}\n\n${lines.join('\n') || (search ? `Nothing mentions "${search}".` : 'Nothing yet.')}`);
+    },
+  );
+  server.registerTool(
+    'pending',
+    { title: 'What sessions are waiting on', description: 'Permission prompts and questions sessions are waiting on the user for.', inputSchema: {} },
+    async () => {
+      const p = d.pending().filter((x) => !d.isAgent(x.sessionId));
+      if (!p.length) return text('Nothing is waiting on the user.');
+      return text(p.map((x) => pendingLine(x, nameOf(d.session(x.sessionId) ?? ({ id: x.sessionId, project: '', title: '' } as SessionInfo)))).join('\n'));
+    },
+  );
+  server.registerTool(
+    'pipelines',
+    { title: 'GitLab pipelines', description: 'The GitLab pipelines sessions follow (what they pushed or looked at): status, stages, and failed jobs.', inputSchema: {} },
+    async () => {
+      const ci = d.pipelines();
+      if (!ci || ci.health?.state && ci.health.state !== 'ok') return text(`Pipelines aren't available: ${ci?.health?.message ?? 'not watching'}.`);
+      const byKey = new Map((ci.pipelines ?? []).map((p) => [p.key, p]));
+      const lines: string[] = [];
+      for (const l of ci.links ?? []) {
+        if (d.isAgent(l.sessionId)) continue;
+        const s = d.session(l.sessionId);
+        for (const ref of l.pipelines.slice(0, 3)) {
+          const p = byKey.get(ref.key);
+          if (!p) continue;
+          const failed = p.stages.flatMap((st) => st.jobs.filter((j) => j.status === 'failed' && !j.allowFailure).map((j) => j.name));
+          lines.push(`${s ? nameOf(s) : l.sessionId} · ${p.project.split('/').pop()} #${p.id} on ${p.ref} · ${p.status} · stages: ${p.stages.map((st) => `${st.name} ${st.status}`).join(', ')}${failed.length ? ` · failed: ${failed.join(', ')}` : ''} · ${p.url}`);
+        }
+      }
+      return text(lines.join('\n') || 'No pipelines followed right now.');
+    },
+  );
+  server.registerTool(
+    'explains',
+    {
+      title: 'Explains',
+      description: 'Formatted documents sessions wrote (reports, plans, comparisons), newest first, with ids for show_explain.',
+      inputSchema: { sessionId: z.string().max(80).optional().describe('Only this session’s') },
+    },
+    async ({ sessionId }) => {
+      const list = d.explains(sessionId).filter((e) => !d.isAgent(e.sessionId)).slice(0, 30);
+      if (!list.length) return text('No explains.');
+      return text(list.map((e) => `${clip(String((e.tool?.input as { title?: unknown } | null)?.title ?? e.tool?.summary ?? 'explain'), 100)} · id ${e.toolUseId} · session ${nameOf(d.session(e.sessionId) ?? ({ id: e.sessionId } as SessionInfo))} (${e.sessionId}) · ${ago(e.ts)}`).join('\n'));
+    },
+  );
+  server.registerTool(
+    'security',
+    { title: 'Security check', description: 'Whether what Cora runs on still gets security fixes: Electron, Node.js, npm packages.', inputSchema: {} },
+    async () => {
+      const r = d.security();
+      if (!r) return text('The security check has no report yet.');
+      const e = r.electron;
+      const n = r.node;
+      const npm = r.npm;
+      return text(
+        [
+          e ? `Electron ${e.installed}: ${e.supported ? 'supported' : 'NO LONGER PATCHED'}${e.pending ? ` (${e.pending} installs at the next start)` : ''}` : '',
+          n ? `Node ${n.version}: ${n.ended ? 'PAST END OF LIFE' : n.securityBehind ? `MISSING SECURITY RELEASES (${n.latestInLine} is out)` : 'ok'}` : '',
+          npm ? `npm: ${npm.findings.length ? npm.findings.slice(0, 10).map((f) => `${f.severity} ${f.name}${f.dev ? ' (dev only)' : ''}: ${f.title}`).join('; ') : 'no known vulnerabilities'}` : '',
+          `checked ${ago(r.checkedAt)}`,
+        ]
+          .filter(Boolean)
+          .join('\n'),
+      );
+    },
+  );
+
+  // ---------------------------------------------------------------- sessions (acting ones need the user's OK)
+  server.registerTool(
+    'start_session',
+    {
+      title: 'Start a session (the user OKs it)',
+      description: 'Start a Claude Code session in a folder with a first prompt, hosted in Cora. The user sees your prompt and OKs (or changes) it first. Make the prompt self-contained: what to do, the context, what done looks like.',
+      inputSchema: {
+        cwd: z.string().min(2).max(400).describe('The folder (an absolute path; a session usually knows its repo’s path)'),
+        prompt: z.string().min(1).max(20_000).describe('Its first prompt'),
+        model: z.string().max(60).optional().describe('A model for it (default: the user’s usual)'),
+      },
+    },
+    async ({ cwd, prompt, model }) => {
+      if (!existsSync(cwd) || !statSync(cwd).isDirectory()) return fail(`No folder ${cwd}.`);
+      if (model && !/^[\w.[\]-]{2,60}$/.test(model)) return fail('model must be a model name like opus or sonnet');
+      const go = async (t: string | undefined) => {
+        // the user OKed it, or it's in a repo they gave Cora: a new folder's "trust it?" is answered yes
+        const r = await d.launch({ cwd, prompt: (t ?? prompt).trim() || prompt, trust: true, ...(model ? { model } : {}) });
+        const goal = d.goal();
+        if (working(goal)) d.addWorker(r.terminal.sessionId);
+        else d.ui({ action: 'focus', sessionId: r.terminal.sessionId });
+        const worker = working(goal) ? ' It works on the goal: its prompts are answered by your mandate.' : '';
+        if (r.pending) return `Started a session in ${cwd} (id ${r.terminal.sessionId}); it's still starting. Its prompt goes in as soon as it's ready, and you'll hear either way: don't send it anything meanwhile.${worker}`;
+        return r.sent ? `Started a session in ${cwd} (id ${r.terminal.sessionId}) and gave it the prompt.${worker}` : `Started a session in ${cwd} (id ${r.terminal.sessionId}), but couldn't give it the prompt: ${r.why}. Tell the user.`;
+      };
+      // on autopilot, in one of the mandate's repos: no OK needed
+      if (working(d.goal()) && d.inRepos(cwd)) return text(await go(undefined));
+      const out = await d.approvals.request({ kind: 'start', title: `Start a session in ${cwd.split(/[\\/]/).filter(Boolean).pop() ?? cwd}`, detail: `${cwd}${model ? ` · ${model}` : ''} · if Claude Code asks whether to trust this folder, Cora says yes`, text: prompt, cwd }, go, { do: 'start', cwd, ...(model ? { model } : {}) });
+      return outcome(out);
+    },
+  );
+  server.registerTool(
+    'resume_session',
+    {
+      title: 'Resume a session here',
+      description: 'Bring an idle or ended session back up hosted in Cora (nothing runs until something is sent to it), so you can send_to_session.',
+      inputSchema: { id: z.string().min(4).max(80) },
+    },
+    async ({ id }) => {
+      const s = known(id);
+      if (!s) return fail(`No session ${id}.`);
+      if (hostedTerm(id)) return text(`${nameOf(s)} is already running in Cora.`);
+      try {
+        d.resume(id);
+        return text(`Resumed ${nameOf(s)} in Cora; it's waiting for a prompt.`);
+      } catch (e) {
+        return fail(`Couldn't resume it: ${(e as Error).message}`);
+      }
+    },
+  );
+  server.registerTool(
+    'send_to_session',
+    {
+      title: 'Give a session its next instruction (the user OKs it)',
+      description: 'Type a prompt into a session hosted in Cora and send it, as if the user had. The user sees it and OKs (or changes) it first. Only for hosted sessions (see `sessions`); resume_session first otherwise.',
+      inputSchema: { id: z.string().min(4).max(80), text: z.string().min(1).max(20_000).describe('What to tell it') },
+    },
+    async ({ id, text: msg }) => {
+      const r = await sendTo(id, msg, false);
+      return r.sent ? text(`Sent to ${r.name}.${r.edited ? ' (The user changed it before it went; what was sent is above.)' : ''}`) : r.out;
+    },
+  );
+  server.registerTool(
+    'ask_session',
+    {
+      title: 'Ask a session something and wait for its answer',
+      description:
+        "Type a message into a session hosted in Cora and wait (up to 45 seconds) for it to finish that turn: you get its whole reply (and the tools it used), so you can follow up with another ask_session. For questions it must act on or that need its live state. The first message needs the user's OK, which lets you carry on the conversation with that session for 10 minutes; a goal's workers need none. Only when it's idle (not mid-turn). For questions about what it did or knows, prefer ask_copy (it doesn't disturb the session).",
+      inputSchema: {
+        id: z.string().min(4).max(80),
+        text: z.string().min(1).max(20_000).describe('What to ask or tell it'),
+        wait: z.number().int().min(5).max(45).optional().describe('How long to wait for its reply, in seconds (default and most 45; a later reply comes to you as a [Cora] line)'),
+      },
+    },
+    async ({ id, text: msg, wait }) => {
+      const s = known(id);
+      if (s && (s.state === 'working' || s.state === 'thinking')) return fail(`${nameOf(s)} is busy (mid-turn): wait until it's idle, or use ask_copy to ask a copy of it.`);
+      const r = await sendTo(id, msg, true);
+      if (!r.sent) return r.out;
+      const waitS = Math.min(wait ?? 45, 45);
+      return text(turnText(r.name, await d.talk.wait(id, r.since, waitS * 1000), waitS));
+    },
+  );
+  server.registerTool(
+    'ask_copy',
+    {
+      title: 'Ask a copy of a session (the session is untouched)',
+      description:
+        "A side question to a copy of a session: Claude Code resumes it as a fork that knows everything the session does and can read its files, answers you, and is thrown away. The session isn't interrupted or told, and no OK is needed. Works on any session Cora knows, running, idle or ended, hosted or not. For \"why did you…\", \"what's left…\", \"which files…\", \"what did you find…\". It can't act and doesn't see what happened after its last saved turn. Takes from a few seconds to a few minutes, and costs about one turn of that session.",
+      inputSchema: {
+        id: z.string().min(4).max(80),
+        question: z.string().min(1).max(8000),
+      },
+    },
+    async ({ id, question }) => {
+      const s = known(id);
+      if (!s) return fail(`No session ${id}.`);
+      if (!s.cwd || !existsSync(s.cwd)) return fail(`${nameOf(s)}'s folder (${s.cwd || 'unknown'}) isn't there any more, so it can't be resumed.`);
+      const model = s.model && /^[\w.[\]-]{2,80}$/.test(s.model) ? s.model : undefined;
+      const a = await d.askCopy({ sessionId: id, cwd: s.cwd, question, model });
+      if (!a.ok) return fail(`The copy of ${nameOf(s)} couldn't answer: ${a.error}`);
+      return text(`A copy of ${nameOf(s)} answered (the session itself wasn't touched):\n\n${a.text}`);
+    },
+  );
+  server.registerTool(
+    'end_session',
+    {
+      title: 'End a session (the user OKs it)',
+      description: 'End a running session (as the user would by hand). The user OKs it first.',
+      inputSchema: { id: z.string().min(4).max(80) },
+    },
+    async ({ id }) => {
+      const s = known(id);
+      if (!s) return fail(`No session ${id}.`);
+      const goal = d.goal();
+      if (working(goal) && goal!.workers.includes(id)) return text(`Ending ${nameOf(s)}: ${await d.end(id)}.`);
+      const out = await d.approvals.request({ kind: 'end', title: `End "${nameOf(s)}"`, detail: `${s.state} · ${s.cwd}`, sessionId: id }, async () => `Ending ${nameOf(s)}: ${await d.end(id)}.`, { do: 'end', sessionId: id });
+      return outcome(out);
+    },
+  );
+  server.registerTool(
+    'rename_session',
+    { title: 'Rename a session', description: 'Give a session a name the user will recognise (or null to clear it).', inputSchema: { id: z.string().min(4).max(80), name: z.string().max(60).nullable() } },
+    async ({ id, name }) => {
+      const s = known(id);
+      if (!s) return fail(`No session ${id}.`);
+      d.rename(id, name?.trim() || null);
+      return text(name?.trim() ? `Renamed it "${name.trim()}".` : 'Cleared its name.');
+    },
+  );
+
+  // ---------------------------------------------------------------- the dashboard
+  server.registerTool(
+    'focus',
+    { title: 'Show a session (or the overview)', description: "Put a session in front of the user in Cora, or the overview of all of them ('overview').", inputSchema: { id: z.string().min(4).max(80).describe("A session id, or 'overview'") } },
+    async ({ id }) => {
+      if (id === 'overview') return d.ui({ action: 'overview' }), text('Showing the overview.');
+      const s = known(id);
+      if (!s) return fail(`No session ${id}.`);
+      d.ui({ action: 'focus', sessionId: id });
+      return text(`Showing ${nameOf(s)}.`);
+    },
+  );
+  server.registerTool(
+    'open_url',
+    {
+      title: "Open a page in Cora's browser",
+      description: "Open a web page in Cora's built-in browser (signed in to the user's sites), in a session's tabs (the one on show if not given).",
+      inputSchema: { url: z.string().url().max(4000), sessionId: z.string().max(80).optional() },
+    },
+    async ({ url, sessionId }) => {
+      if (!/^https?:\/\//i.test(url)) return fail('Only http(s) pages.');
+      d.ui({ action: 'open_url', url, ...(sessionId ? { sessionId } : {}) });
+      return text(`Opened ${url}.`);
+    },
+  );
+  server.registerTool(
+    'open_tool',
+    { title: 'Open a tool', description: "Open one of the user's tools (Slack, …) in Cora's tools drawer, optionally at a page.", inputSchema: { tool: z.string().min(1).max(40).describe('Its name or id, e.g. slack'), url: z.string().url().max(4000).optional() } },
+    async ({ tool, url }) => {
+      if (url && !/^https?:\/\//i.test(url)) return fail('Only http(s) pages.');
+      d.ui({ action: 'open_tool', tool, ...(url ? { url } : {}) });
+      return text(`Opened ${tool}.`);
+    },
+  );
+  server.registerTool(
+    'show_explain',
+    { title: 'Show an explain', description: 'Open an explain (from `explains`) in Cora’s viewer.', inputSchema: { id: z.string().min(4).max(120), sessionId: z.string().min(4).max(80) } },
+    async ({ id, sessionId }) => {
+      if (!known(sessionId)) return fail(`No session ${sessionId}.`);
+      d.ui({ action: 'show_explain', id, sessionId });
+      return text('Showing it.');
+    },
+  );
+  server.registerTool(
+    'jira_inbox',
+    {
+      title: "What's happened in Jira",
+      description:
+        "What happened in Jira for the user since a time, newest first: tickets assigned to them, @mentions, comments and status changes on their tickets, changes on tickets they watch. Lines read `[when] KEY · who what · summary (link)`. They were already told about the loud ones: use this to catch them up (briefs) or answer what's new.",
+      inputSchema: {
+        since: z.string().max(20).optional().describe('How far back: e.g. 30m, 4h, 2d (default 24h)'),
+        kinds: z.array(z.enum(JIRA_EVENT_KINDS)).optional().describe('Only these kinds'),
+      },
+    },
+    async ({ since, kinds }) => {
+      const ms = parseSince(since ?? '24h');
+      if (ms == null) return fail('since must be like 30m, 4h or 2d');
+      const events = d.jiraInbox?.(ms, kinds) ?? null;
+      if (events == null) return fail("Cora isn't watching Jira: the user can turn it on in Settings → Jira (Watch Jira for me).");
+      return text(events.length ? quoteOthers('jira', UNTRUSTED_JIRA, events.map((e) => jiraLine(e)).join('\n')) : `Nothing in Jira in the last ${since ?? '24h'}.`);
+    },
+  );
+  server.registerTool(
+    'jira_start',
+    {
+      title: 'Start work on a ticket assigned to the user',
+      description:
+        "For a ticket just assigned to the user: give the folder its code lives in. Cora decides what happens by the user's setting: a card where they start it (or pick another folder), or a session started on its own that reads the ticket and stops at a plan. Call it once per assignment; call it again when the user says yes to its card in their own words.",
+      inputSchema: {
+        key: z.string().regex(/^[A-Z][A-Z0-9_]+-\d+$/).describe('The ticket, e.g. PROJ-123'),
+        cwd: z.string().min(2).max(400).describe('The folder to start it in (an absolute path)'),
+        why: z.string().max(200).optional().describe('Why that folder, in a few words (the user sees it)'),
+      },
+    },
+    async (p) => {
+      if (!d.jiraStart) return fail('Starting work from Jira is off.');
+      const r = await d.jiraStart(p);
+      return r.ok ? text(r.text) : fail(r.text);
+    },
+  );
+  server.registerTool(
+    'notify',
+    { title: 'Tell the user', description: 'A notification for the user (spoken too when Cora speaks): for something they should know while they’re elsewhere.', inputSchema: { text: z.string().min(1).max(300) } },
+    async ({ text: t }) => {
+      d.ui({ action: 'notify', text: t });
+      return text('Told them.');
+    },
+  );
+  server.registerTool(
+    'cora_dm',
+    {
+      title: 'Message the user on Slack, as Cora',
+      description: "A Slack DM to the user from Cora's own bot (it pings their phone): when they asked to be told something on Slack or their phone, or something they should know can't wait while they're away. Short and plain. (slack_send is for messages as the user, to other people.)",
+      inputSchema: { text: z.string().min(1).max(2900) },
+    },
+    async ({ text: t }) => {
+      const r = d.coraDm ? await d.coraDm(t) : { ok: false, error: "Cora's own Slack bot isn't set up." };
+      return r.ok ? text('Sent to their Cora DM.') : fail(r.error ?? 'Not sent.');
+    },
+  );
+  // ---------------------------------------------------------------- autopilot
+  server.registerTool(
+    'goal_update',
+    {
+      title: 'Report on the goal',
+      description: "Report on the goal you're on (autopilot): its state, how far along it is (0 to 1), and a short note the user sees. Use it at each milestone; state done when it's done (the note says what was done), blocked when you can't go on.",
+      inputSchema: {
+        state: z.enum(['running', 'waiting', 'blocked', 'done']).optional(),
+        progress: z.number().min(0).max(1).optional(),
+        note: z.string().min(1).max(500),
+      },
+    },
+    async (p) => (d.goalUpdate(p) ? text('Noted.') : fail('No goal is running.')),
+  );
+  server.registerTool(
+    'escalate',
+    {
+      title: 'Ask the user',
+      description: 'Ask the user something you need decided (a merge, a deploy, a choice between approaches, anything outside your mandate). It shows as a card in their console (with your options as buttons) and waits for their answer a while; if they answer later, it comes to you as a [Cora] line.',
+      inputSchema: { question: z.string().min(3).max(300), options: z.array(z.string().min(1).max(80)).max(6).optional() },
+    },
+    async ({ question, options }) => {
+      const o = await d.escalate(question, options);
+      if (o.ok) return text(o.result);
+      return text(o.why === 'waiting' ? "The question is waiting for the user in Cora. Carry on with what doesn't depend on it; their answer will come as a [Cora] line." : 'The user dismissed the question.');
+    },
+  );
+  server.registerTool(
+    'decide',
+    {
+      title: "Answer a session's permission prompt",
+      description: "Answer a prompt a session is held on (see `pending`): deny it (always yours to do, with a reason the session sees), or allow it, only where your mandate allows (otherwise it stays with the user and you're told why).",
+      inputSchema: { pendingId: z.string().min(4).max(80), allow: z.boolean(), reason: z.string().max(300).optional() },
+    },
+    async ({ pendingId, allow, reason }) => {
+      const p = d.pending().find((x) => x.id === pendingId);
+      if (!p || d.isAgent(p.sessionId)) return fail(`No prompt ${pendingId} is waiting (it may have been answered).`);
+      if (!allow) return d.decidePending(p.id, false, 'cora-denied', reason ? `Cora: ${reason}` : 'Cora said no.') ? text('Denied.') : fail('It was already answered.');
+      const v = d.judge(p.sessionId, { tool: p.toolName, input: p.toolInput, kind: p.kind });
+      if (v.verdict !== 'allow') return text(`Your mandate says ${v.verdict === 'refuse' ? 'never' : 'ask the user'}: ${v.why}. It stays with the user${v.verdict === 'ask' ? '; escalate if you need it' : ''}.`);
+      return d.decidePending(p.id, true, v.rule) ? text('Allowed.') : fail('It was already answered.');
+    },
+  );
+  server.registerTool(
+    'answer_question',
+    {
+      title: "Answer a session's question",
+      description:
+        "Answer a multiple-choice question a session asked the user (AskUserQuestion: `pending` lists them as `question <id>` with their options). Give an answer for every question: one of its options' labels, or your own words; for several, separate them with commas. A live goal's workers you answer yourself; for anyone else's session the user sees your answer first and OKs or changes it.",
+      inputSchema: {
+        pendingId: z.string().min(4).max(80),
+        answers: z.record(z.string().max(1000), z.string().min(1).max(2000)).describe('Each question (its exact text) → your answer'),
+      },
+    },
+    async ({ pendingId, answers }) => {
+      const p = d.pending().find((x) => x.id === pendingId);
+      if (!p || d.isAgent(p.sessionId)) return fail(`No question ${pendingId} is waiting (it may have been answered).`);
+      if (p.kind !== 'question') return fail(`${pendingId} is a ${p.kind} prompt, not a question: use decide.`);
+      const qs = questionsOf(p.toolInput);
+      const missing = qs.filter((q) => !answers[q.question]?.trim());
+      if (missing.length) return fail(`Answer every question, keyed by its exact text: ${missing.map((q) => `"${q.question}"`).join(', ')}.`);
+      const picked = Object.fromEntries(qs.map((q) => [q.question, answers[q.question].trim()]));
+      const s = d.session(p.sessionId);
+      const name = s ? nameOf(s) : p.sessionId.slice(0, 8);
+      const send = (a: Record<string, string>) => {
+        const r = d.answerPending(p.id, a, 'cora-answered');
+        if (!r.ok) throw new Error(r.error ?? 'it was already answered');
+        return `Answered ${name}: ${qs.map((q) => `${q.question} → ${a[q.question]}`).join('; ')}.`;
+      };
+      const goal = d.goal();
+      if (working(goal) && goal!.workers.includes(p.sessionId)) {
+        try {
+          return text(send(picked));
+        } catch (e) {
+          return fail((e as Error).message);
+        }
+      }
+      // anyone else's session: the user sees the answer as lines "question → answer", and may change the answers
+      const lines = qs.map((q) => `${q.question} → ${picked[q.question]}`).join('\n');
+      const out = await d.approvals.request({ kind: 'send', title: `Answer "${name}"'s question`, detail: `${s?.cwd ?? ''} · Cora's answer (change what follows a →)`, text: lines, sessionId: p.sessionId }, async (t) => {
+        const edited: Record<string, string> = { ...picked };
+        for (const line of (t ?? lines).split('\n')) {
+          const q = qs.find((x) => line.startsWith(`${x.question} →`));
+          const a = q ? line.slice(q.question.length + 2).trim() : '';
+          if (q && a) edited[q.question] = a;
+        }
+        return send(edited);
+      });
+      return outcome(out);
+    },
+  );
+  server.registerTool(
+    'remember',
+    { title: 'Remember something', description: 'Add a line to your memory (memory.md): the user’s preferences, projects, people, how they like things done.', inputSchema: { note: z.string().min(2).max(500) } },
+    async ({ note }) => {
+      const size = d.remember(note);
+      // past a point it wants tidying rather than growing on
+      return text(typeof size === 'number' && size > 24_000 ? `Remembered. Your memory is getting long (${Math.round(size / 1000)} KB): when it suits, tell the user they can tidy it in Settings › Cora (merge repeats, drop what no longer holds).` : 'Remembered.');
+    },
+  );
+}

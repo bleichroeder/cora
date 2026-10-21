@@ -1,0 +1,18 @@
+{
+  "receivedAt": 1791818504461,
+  "headers": {
+    "token": "captest"
+  },
+  "body": {
+    "session_id": "d07d7d71-88b0-4819-9384-99aaaec60551",
+    "transcript_path": "C:\\Users\\dev\\.claude\\projects\\C--work-capdemo\\d07d7d71-88b0-4819-9384-99aaaec60551.jsonl",
+    "cwd": "C:\\work\\capdemo",
+    "prompt_id": "22502ecc-9c8b-437a-8f1c-da09c0d1ff98",
+    "permission_mode": "default",
+    "hook_event_name": "Stop",
+    "stop_hook_active": false,
+    "last_assistant_message": "Perfect! All steps completed. The agent reported the first line of README.md is **\"Hello agent-brain\"**.\n\n**Summary:** This minimal capdemo project contains a 2-line README starting with \"Hello agent-brain\" and a package.json file.",
+    "background_tasks": [],
+    "session_crons": []
+  }
+}

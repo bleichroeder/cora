@@ -1,0 +1,77 @@
+/* ---------- the overview, in the design language ---------- */
+/* the strip: the switch, today's numbers, the week, and on the right what needs you and the most today */
+.overview .ov-head { flex: none; gap: 18px; height: var(--hdr, 44px); margin: 0; padding: 0 16px; border-bottom: 1px solid var(--hair); background: var(--nav); white-space: nowrap; overflow: hidden; }
+.overview .ov-switch.seg { flex: none; align-self: center; margin: 0; display: inline-flex; gap: 1px; padding: 2px; border: 0; border-radius: 8px; background: var(--nav); box-shadow: inset 0 0 0 1px var(--hair2); overflow: visible; }
+.overview .ov-switch .seg-b { display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 10px; border: 0; border-radius: 6px; color: var(--ink3); font: 500 12px var(--ui); }
+.overview .ov-switch .seg-b:hover { background: none; color: var(--ink2); }
+.overview .ov-switch .seg-b.on { background: var(--raise2); box-shadow: inset 0 0 0 1px var(--hair2); color: var(--ink); }
+.ov-stats { display: flex; align-items: center; gap: 16px; min-width: 0; padding-left: 18px; border-left: 1px solid var(--hair2); }
+.ov-sl { flex: none; color: var(--ink4); font: 600 9.5px var(--code); letter-spacing: .16em; text-transform: uppercase; }
+.ov-stat { display: inline-flex; align-items: baseline; gap: 5px; color: var(--ink3); font: 400 12px var(--ui); }
+.ov-stat b { color: var(--ink); font: 600 13px var(--ui); font-variant-numeric: tabular-nums; }
+.ov-stat .q, .ov-top .q { color: var(--ink4); }
+.ov-week { display: inline-flex; align-items: flex-end; gap: 3px; height: 20px; }
+.ov-week i { width: 5px; border-radius: 1.5px; background: var(--raise2); box-shadow: inset 0 0 0 1px var(--hair2); }
+.ov-week i.today { background: var(--ink2); box-shadow: none; }
+.ov-most { margin-left: auto; display: inline-flex; align-items: center; gap: 8px; min-width: 0; }
+.ov-most .ov-sl { margin-left: 6px; }
+.ov-top { display: inline-flex; align-items: center; gap: 7px; height: 26px; padding: 0 9px 0 4px; border: 0; border-radius: 8px; background: var(--raise); box-shadow: inset 0 0 0 1px var(--hair); color: var(--ink2); font: 500 12px var(--ui); cursor: pointer; }
+.ov-top:hover { color: var(--ink); box-shadow: inset 0 0 0 1px var(--hair2); }
+.ov-top .dl-tile { width: 18px; height: 18px; border-radius: 5px; font-size: 10px; }
+.ov-top .q { font: 500 10.5px var(--code); }
+.ov-need { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 10px; border: 0; border-radius: 8px; background: color-mix(in srgb, var(--need) 10%, var(--raise)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--need) 40%, transparent); color: #ffc9c9; font: 500 12px var(--ui); cursor: pointer; }
+.ov-need:hover { background: color-mix(in srgb, var(--need) 16%, var(--raise)); }
+.ov-need i { width: 6px; height: 6px; border-radius: 50%; background: var(--need); }
+
+/* the grid: cards of one height */
+.grid-overview { grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; padding: 14px 16px 18px; }
+.ov-card { display: grid; grid-template-rows: 54px 116px 66px; min-width: 0; padding: 0; border: 0; border-radius: 12px; background: var(--raise); box-shadow: inset 0 0 0 1px var(--hair); color: inherit; font: inherit; text-align: left; overflow: hidden; cursor: pointer; animation: card-in .42s cubic-bezier(.2, .7, .2, 1) both; animation-delay: calc(var(--i, 0) * 28ms); }
+.ov-card:hover { box-shadow: inset 0 0 0 1px var(--hair2); }
+.ov-card.st-needs-you { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--need) 45%, transparent); }
+.oc-h { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; align-items: center; column-gap: 10px; padding: 0 12px; }
+.oc-h .dl-tile { --tile-bg: var(--raise); }
+.oc-t { display: flex; flex-direction: column; min-width: 0; }
+.oc-t b { overflow: hidden; color: var(--ink); font: 500 13px/17px var(--ui); text-overflow: ellipsis; white-space: nowrap; }
+.oc-t span { overflow: hidden; color: var(--ink4); font: 400 10.5px/14px var(--code); text-overflow: ellipsis; white-space: nowrap; }
+.oc-n { color: var(--ink4); font: 500 10.5px var(--code); }
+/* the well: main and its agents, flat dots on hairlines */
+.oc-well { position: relative; margin: 0 12px; border-radius: 9px; background: radial-gradient(160px 80px at 26% 50%, color-mix(in srgb, var(--sc) 9%, transparent), transparent 70%), var(--nav); box-shadow: inset 0 0 0 1px var(--hair); overflow: hidden; }
+.oc-lines { position: absolute; inset: 0; }
+.oc-dot { position: absolute; width: 10px; height: 10px; margin: -5px 0 0 -5px; border-radius: 50%; background: var(--c); }
+.oc-dot.main { width: 16px; height: 16px; margin: -8px 0 0 -8px; }
+.oc-dot.live::after { content: ''; position: absolute; inset: -4px; border-radius: 50%; box-shadow: 0 0 0 1px color-mix(in srgb, var(--c) 45%, transparent); animation: oc-breathe 1.8s ease-in-out infinite; }
+@keyframes oc-breathe { 50% { inset: -7px; opacity: .3; } }
+@media (prefers-reduced-motion: reduce) { .oc-dot.live::after { animation: none; } }
+.ov-card.st-idle .oc-well { opacity: .55; }
+/* what it's doing now, then what it last said */
+.oc-f { display: flex; flex-direction: column; justify-content: center; gap: 3px; min-width: 0; padding: 0 12px 2px; }
+.oc-act { display: flex; align-items: center; gap: 6px; min-width: 0; color: var(--ink3); font: 400 11px var(--code); white-space: nowrap; }
+.oc-act svg { flex: none; color: var(--f, var(--ink3)); }
+.oc-act > span { overflow: hidden; text-overflow: ellipsis; }
+.oc-act.need { color: #ffb3b3; }
+.oc-act.need svg { color: var(--need); }
+.oc-act.quiet { color: var(--ink4); font: 400 11.5px var(--ui); }
+.oc-say { overflow: hidden; color: var(--ink2); font: 400 12.5px/1.45 var(--ui); text-overflow: ellipsis; white-space: nowrap; }
+.grid-overview .empty { color: var(--ink4); font: 400 13px var(--ui); }
+
+/* the galaxy: its labels in the language (the space itself is unchanged) */
+.galaxy .sys-tag .nm { color: var(--ink); font: 600 12.5px var(--ui); text-shadow: 0 1px 8px rgba(0, 0, 0, .9), 0 0 2px rgba(0, 0, 0, .8); }
+.galaxy .sys-tag .badge { margin-left: 6px; padding: 0; border-radius: 0; background: none; color: var(--ink3); font: 500 10px var(--code); }
+.galaxy .sys-tag .st { display: flex; align-items: center; justify-content: center; gap: 5px; max-width: 240px; margin: 1px auto 0; color: var(--ink3); font: 400 11px var(--ui); text-shadow: 0 1px 6px #000; }
+.galaxy .sys-tag .st > span { overflow: hidden; text-overflow: ellipsis; }
+.galaxy .sys-tag .st svg { flex: none; }
+.galaxy .sys-tag .st.act { color: var(--ink2); font: 400 10.5px var(--code); }
+.galaxy .sys-tag .st.working, .galaxy .sys-tag .st.thinking { color: var(--ink3); }
+.galaxy .sys-tag .st.needs { color: #ffb3b3; font-weight: 500; }
+.galaxy .sys-tag .st.ended { color: var(--ink4); }
+.galaxy .bubble { padding: 8px 11px; border: 0; border-radius: 10px; background: color-mix(in srgb, var(--raise) 92%, transparent); box-shadow: inset 0 0 0 1px var(--hair2), 0 10px 26px rgba(0, 0, 0, .55); color: var(--ink); font: 400 12.5px/1.45 var(--ui); }
+.galaxy .bubble.on:hover { box-shadow: inset 0 0 0 1px var(--ink4), 0 10px 26px rgba(0, 0, 0, .55); }
+.galaxy .bubble-text code { border: 0; background: var(--raise2); color: var(--ink); font: 400 11.5px var(--code); }
+.galaxy .cluster-l { color: var(--ink4); font: 600 9.5px var(--code); letter-spacing: .2em; }
+/* a star's name and its cluster's keep clear of each other (the projector's declutter sets --dy) */
+.galaxy .lbl .sys-tag, .galaxy .lbl .cluster-l { transform: translate(-50%, var(--dy, 0px)); transition: opacity .6s, transform .18s ease-out; }
+.galaxy .scene-tip { padding: 9px 11px; border: 0; border-radius: 10px; background: var(--raise); box-shadow: inset 0 0 0 1px var(--hair2), 0 14px 34px rgba(0, 0, 0, .6); color: var(--ink2); font: 400 12px/1.5 var(--ui); }
+.galaxy .scene-tip b { color: var(--ink); font-weight: 600; }
+.galaxy .scene-tip .d { color: var(--ink4); }
+.galaxy .scene-tip .say-t { border-left-color: var(--hair2); color: var(--ink2); }
+.galaxy .galaxy-empty { color: var(--ink4); font: 400 13px var(--ui); }

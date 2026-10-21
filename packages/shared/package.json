@@ -1,0 +1,9 @@
+{
+  "name": "@cora/shared",
+  "version": "0.1.2",
+  "license": "MIT",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts"
+}

@@ -1,0 +1,106 @@
+/* ---------- deploys, in the design language ---------- */
+
+/* the journey chip in the session header: a dot per step, then how far it got; hover (or click) for the journey */
+.dp-head { position: relative; display: inline-flex; align-items: center; flex: none; }
+.dp-chip { display: inline-flex; align-items: center; gap: 7px; height: 22px; padding: 0 8px; border: 0; border-radius: 7px; background: none; color: var(--ink2); font: 500 11px var(--code); cursor: pointer; }
+.dp-chip:hover, .dp-head.open .dp-chip { background: var(--raise); box-shadow: inset 0 0 0 1px var(--hair2); }
+.dp-dots { display: inline-flex; gap: 3px; }
+.dp-dots i { width: 6px; height: 6px; border-radius: 50%; background: var(--ink4); }
+.dp-dots i.ok { background: var(--work); }
+.dp-dots i.run { background: var(--run); box-shadow: 0 0 6px var(--run); }
+.dp-dots i.fail { background: var(--need); }
+.dp-where.run { color: var(--run); }
+.dp-head:hover .dp-card, .dp-head.open .dp-card { display: flex; }
+/* a bridge over the gap under the chip, so the pointer can reach the card */
+.dp-card::before { content: ''; position: absolute; left: 0; right: 0; top: -12px; height: 12px; }
+.dp-scope { margin-top: 2px; color: var(--ink3); font: 500 10.5px/15px var(--code); }
+.dp-scope em { color: var(--ink4); font-style: normal; }
+.focus-h .fh-card.dp-card { left: 0; right: auto; width: 560px; flex-direction: column; padding: 14px 16px; font-family: var(--ui); }
+.dp-h { display: flex; flex-direction: column; margin-bottom: 14px; }
+.dp-h b { overflow: hidden; color: var(--ink); font: 600 13px/18px var(--ui); white-space: nowrap; text-overflow: ellipsis; }
+.dp-h .k, .dp-cardx .k { color: var(--jira); font-weight: 600; }
+.dp-sub { color: var(--ink3); font: 500 11px var(--code); }
+
+.dp-journey { display: grid; }
+.dp-step { position: relative; display: flex; flex-direction: column; align-items: center; min-width: 0; padding: 22px 2px 0; text-align: center; }
+.dp-step::before { content: ''; position: absolute; top: 7px; left: -50%; width: 100%; height: 2px; background: var(--hair2); }
+.dp-step:first-child::before { display: none; }
+.dp-step.ok::before, .dp-step.run::before { background: color-mix(in srgb, var(--work) 55%, transparent); }
+.dp-step .o { position: absolute; top: 0; left: 50%; z-index: 1; width: 16px; height: 16px; border-radius: 50%; transform: translateX(-50%); background: var(--raise2); box-shadow: inset 0 0 0 1.5px var(--ink4); }
+.dp-step.ok .o { background: color-mix(in srgb, var(--work) 22%, var(--raise2)); box-shadow: inset 0 0 0 1.5px var(--work); }
+.dp-step.ok .o::after { content: '✓'; position: absolute; inset: 0; display: grid; place-items: center; color: var(--work); font: 700 9px var(--ui); }
+.dp-step.run .o { box-shadow: inset 0 0 0 1.5px var(--run), 0 0 10px color-mix(in srgb, var(--run) 50%, transparent); }
+.dp-step.fail .o { box-shadow: inset 0 0 0 1.5px var(--need), 0 0 8px color-mix(in srgb, var(--need) 45%, transparent); }
+.dp-step b { color: var(--ink); font: 600 11.5px var(--ui); }
+.dp-step span { max-width: 100%; color: var(--ink3); font: 500 10px/14px var(--code); overflow-wrap: anywhere; }
+.dp-note { display: flex; align-items: center; gap: 8px; margin-top: 12px; color: var(--run); font: 500 11px var(--code); }
+.dp-acts { display: flex; align-items: center; gap: 6px; margin-top: 14px; }
+.dp-card > .dp-acts { padding-top: 12px; border-top: 1px solid var(--hair); }
+
+/* which workloads a bump changes */
+.dp-confirm { display: flex; flex-direction: column; margin-top: 12px; padding: 6px; border-radius: 9px; background: var(--nav); box-shadow: inset 0 0 0 1px var(--hair); white-space: normal; }
+.dp-ch { padding: 4px 6px 6px; color: var(--ink4); font: 600 9.5px var(--code); letter-spacing: .14em; text-transform: uppercase; }
+.dp-ch .dp-host { color: var(--ink3); letter-spacing: 0; text-transform: none; font-weight: 500; }
+.dp-t { display: grid; grid-template-columns: 16px minmax(0, 1fr) auto; align-items: center; gap: 8px; height: 26px; padding: 0 6px; border-radius: 6px; color: var(--ink2); font: 500 12px var(--ui); cursor: pointer; }
+.dp-t:hover { background: var(--raise); }
+.dp-t input { margin: 0; accent-color: var(--work); }
+.dp-t .n { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dp-t .f { color: var(--ink4); font: 500 10.5px var(--code); }
+.dp-confirm .dp-acts { margin-top: 8px; padding: 0 2px 2px; }
+.dp-confirm .cc-inerr { margin: 6px 6px 0; color: #ffb3b3; font: 500 11px var(--code); }
+
+/* Cora's cards (the Jira cards' shape, in Cora's colour) */
+.sd-sent.dp-cardx { align-items: flex-start; }
+.dp-cardx .sd-sent-t > span { white-space: normal; }
+.dp-cardx .sd-sent-t > span.dp-pick { margin-top: 6px; color: var(--ink4); font: 500 10.5px/14px var(--code); }
+.dp-cardx .sd-sent-t > span.dp-acts { margin-top: 10px; overflow: visible; }
+.dp-cardx .sd-sent-t > span.dp-confirm { overflow: visible; }
+.dp-cardx .jw-x { padding: 0 7px; }
+.dp-bump .sd-logo-tile .dl-glyph { width: 12px; height: 12px; }
+.sd-sent.dp-bump.done .sd-logo-tile { color: var(--work); background: color-mix(in srgb, var(--work) 12%, var(--nav)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--work) 35%, transparent); }
+.sd-sent.dp-bump.failed { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--need) 45%, transparent), 0 16px 40px rgba(0, 0, 0, .6); }
+.sd-sent.dp-bump.failed .sd-logo-tile { color: var(--need); background: color-mix(in srgb, var(--need) 12%, var(--nav)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--need) 35%, transparent); }
+
+/* the Overview's Deploys view */
+.dp-view { height: 100%; overflow: auto; padding: 0 16px 20px; }
+.dp-vh { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 14px; height: 48px; background: var(--nav); }
+.dp-vh .seg { display: inline-flex; gap: 1px; padding: 2px; border-radius: 8px; background: var(--nav); box-shadow: inset 0 0 0 1px var(--hair2); }
+.dp-vh .seg-b { display: inline-flex; align-items: center; height: 24px; padding: 0 10px; border: 0; border-radius: 6px; background: none; color: var(--ink3); font: 500 12px var(--ui); cursor: pointer; }
+.dp-vh .seg-b:hover { color: var(--ink2); }
+.dp-vh .seg-b:disabled { opacity: .5; cursor: default; }
+.dp-vh .seg-b.on { background: var(--raise2); box-shadow: inset 0 0 0 1px var(--hair2); color: var(--ink); }
+.dp-net { display: inline-flex; align-items: center; gap: 14px; color: var(--ink2); font: 500 11px var(--code); }
+.dp-net > span { display: inline-flex; align-items: center; gap: 6px; }
+.dp-net i { color: var(--ink4); font-style: normal; }
+.dp-warn { color: var(--think); font: 500 11px var(--code); }
+.dp-empty { margin-top: 40px; color: var(--ink3); font: 400 12.5px var(--ui); text-align: center; }
+
+.dp-grid { display: grid; border-radius: 10px; overflow: hidden; box-shadow: inset 0 0 0 1px var(--hair); }
+.dp-grid > div { min-width: 0; padding: 9px 12px; border-bottom: 1px solid var(--hair); }
+.dp-grid .hd { padding: 8px 12px; background: var(--raise); color: var(--ink4); font: 600 10px var(--code); letter-spacing: .14em; text-transform: uppercase; }
+.dp-grid .dp-group { padding: 12px 12px 6px; border-bottom: 0; color: var(--ink2); font: 600 10px var(--code); letter-spacing: .14em; text-transform: uppercase; }
+.dp-grid .dp-group span { margin-left: 8px; color: var(--ink4); font-weight: 500; letter-spacing: 0; text-transform: none; }
+.dp-grid .svc { overflow: hidden; color: var(--ink); font: 600 12.5px var(--ui); text-overflow: ellipsis; white-space: nowrap; }
+.dp-grid .svc span { display: block; color: var(--ink4); font: 500 10px var(--code); }
+.dp-grid .cell { overflow: hidden; color: var(--ink2); font: 500 11.5px var(--code); text-overflow: ellipsis; white-space: nowrap; }
+.dp-grid .cell em { color: var(--ink4); font-style: normal; }
+.dp-grid .cell span { display: block; color: var(--ink4); font-size: 10px; }
+.dp-grid .cell.waiting { color: var(--think); }
+.dp-grid .cell.waiting span { color: color-mix(in srgb, var(--think) 70%, var(--ink4)); }
+.dp-grid .cell.roll { color: var(--run); animation: dp-pulse 2s ease-in-out infinite; }
+.dp-grid .cell.dead { color: var(--ink4); }
+.dp-grid .new { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; color: var(--ink2); font: 500 11.5px var(--code); }
+.dp-b { height: 22px; padding: 0 8px; border: 0; border-radius: 6px; background: color-mix(in srgb, var(--work) 12%, var(--raise)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--work) 35%, transparent); color: #c9f7e2; font: 500 11px var(--ui); cursor: pointer; }
+.dp-b:hover { background: color-mix(in srgb, var(--work) 20%, var(--raise)); }
+.dp-grid .dp-rowbump { padding: 0 12px 10px; }
+.dp-rowbump .dp-confirm { max-width: 460px; margin: 0 0 0 auto; }
+@keyframes dp-pulse { 50% { opacity: .6; } }
+@media (prefers-reduced-motion: reduce) { .dp-grid .cell.roll { animation: none; } }
+
+.dp-recent { margin-top: 18px; }
+.dp-label { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; color: var(--ink4); font: 600 10px var(--code); letter-spacing: .16em; text-transform: uppercase; }
+.dp-label span { color: var(--ink3); }
+.dp-label::after { content: ''; flex: 1; height: 1px; background: var(--hair); }
+.dp-recent .ev { display: grid; grid-template-columns: 48px minmax(0, 1fr) auto; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--hair); color: var(--ink2); font: 500 11.5px var(--code); }
+.dp-recent .ev .t, .dp-recent .ev .dim { color: var(--ink4); }
+.dp-recent .ev .w { color: var(--ink3); }

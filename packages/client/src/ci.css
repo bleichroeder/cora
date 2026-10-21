@@ -1,0 +1,60 @@
+/* ---------- GitLab pipelines: header strip, rail dots, job log ---------- */
+/* in a crowded header it gives way first: the time goes, then the stages squeeze (the session's name keeps its room) */
+.pl-head { position: relative; display: inline-flex; align-items: center; flex: 0 4 auto; min-width: 34px; font: 11px var(--mono); color: var(--c); }
+.pl-head.off { color: #64748b; gap: 5px; }
+.pl-head.stale { opacity: .55; }
+.pl-head:hover { opacity: 1; }
+.pl-main { display: inline-flex; align-items: center; gap: 6px; min-width: 0; overflow: hidden; padding: 1px 8px; border-radius: 10px; background: color-mix(in srgb, var(--c) 12%, #0b111c); border: 1px solid color-mix(in srgb, var(--c) 30%, transparent); }
+.pl-main:hover { border-color: color-mix(in srgb, var(--c) 70%, transparent); }
+/* a little attention by state: running shimmers, a manual job waiting breathes, a pass flashes once, a failure pulses
+   for a couple of minutes (then keeps a steady glow) */
+.pl-head.st-running .pl-main, .pl-head.st-pending .pl-main {
+  background-image: linear-gradient(105deg, transparent 35%, color-mix(in srgb, var(--c) 26%, transparent) 50%, transparent 65%);
+  background-size: 260% 100%; background-repeat: no-repeat;
+  animation: pl-shimmer 2.8s linear infinite, pl-breathe 2.8s ease-in-out infinite;
+}
+.pl-head.st-manual .pl-main { animation: pl-breathe 2.4s ease-in-out infinite; }
+.pl-head.st-success.fresh .pl-main { animation: pl-flash 2.4s ease-out 1; }
+.pl-head.st-failed .pl-main { box-shadow: 0 0 8px color-mix(in srgb, var(--c) 30%, transparent); border-color: color-mix(in srgb, var(--c) 60%, transparent); }
+.pl-head.st-failed.fresh .pl-main { animation: pl-alarm 1.6s ease-in-out infinite; }
+.pl-head.stale .pl-main { animation: none; box-shadow: none; }
+@keyframes pl-shimmer { from { background-position: 130% 0; } to { background-position: -30% 0; } }
+@keyframes pl-breathe { 50% { box-shadow: 0 0 9px color-mix(in srgb, var(--c) 40%, transparent); border-color: color-mix(in srgb, var(--c) 65%, transparent); } }
+@keyframes pl-flash { 0% { box-shadow: 0 0 0 0 transparent; } 15% { box-shadow: 0 0 14px 2px color-mix(in srgb, var(--c) 60%, transparent); border-color: var(--c); } 100% { box-shadow: 0 0 0 0 transparent; } }
+@keyframes pl-alarm { 50% { box-shadow: 0 0 14px 1px color-mix(in srgb, var(--c) 55%, transparent); border-color: var(--c); } }
+@media (prefers-reduced-motion: reduce) { .pl-head .pl-main { animation: none !important; } }
+.pl-stages { display: inline-flex; gap: 2px; align-items: center; min-width: 0; }
+.pl-seg { display: block; width: 12px; min-width: 3px; flex: 0 1 auto; height: 5px; border-radius: 3px; background: var(--c); opacity: .9; }
+.pl-seg.st-created, .pl-seg.st-pending, .pl-seg.st-skipped, .pl-seg.st-canceled { opacity: .55; }
+.pl-seg.st-running, .pl-dots .st-running { animation: pl-pulse 1.2s ease-in-out infinite; }
+.pl-t { color: color-mix(in srgb, var(--c) 80%, #e2e8f0); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 0 100 auto; }
+.pl-main > svg { flex: none; }
+.pl-head:hover .pl-card { display: block; }
+.fh-card.pl-card { left: 0; right: auto; width: 380px; }
+/* a bridge over the gap under the pill, so the pointer can reach the card's jobs */
+.pl-card::before { content: ''; position: absolute; left: 0; right: 0; top: -10px; height: 10px; }
+.pl-card a { color: #93c5fd; text-decoration: none; }
+.pl-card a:hover { text-decoration: underline; }
+.pl-list { display: block; margin-top: 8px; padding-top: 6px; border-top: 1px solid var(--line); max-height: 320px; overflow: auto; }
+.pl-st { display: block; margin: 4px 0; }
+.pl-sn { display: block; font-weight: 600; }
+.pl-jobs { display: flex; flex-wrap: wrap; gap: 3px; margin: 2px 0 0 10px; }
+.pl-job { display: inline-flex; align-items: center; gap: 4px; padding: 0 6px; border-radius: 8px; border: 1px solid color-mix(in srgb, var(--c) 35%, transparent); color: #cbd5e1; font: 10.5px/16px var(--mono); }
+.pl-job i { width: 6px; height: 6px; border-radius: 50%; background: var(--c); }
+.pl-job:hover { border-color: var(--c); }
+.pl-job.clickable { color: #fecaca; }
+.pl-job.st-running i { animation: pl-pulse 1.2s ease-in-out infinite; }
+.pl-card .hint { color: #475569; }
+
+.pl-dots { display: inline-flex; gap: 2px; align-items: center; margin-left: 6px; flex: none; }
+.pl-dots i { display: block; width: 5px; height: 5px; border-radius: 50%; background: var(--c); }
+.pl-dots .st-created, .pl-dots .st-pending, .pl-dots .st-skipped, .pl-dots .st-canceled { opacity: .5; }
+
+.pl-log { position: absolute; left: 12px; top: 12px; z-index: 30; width: min(760px, calc(100% - 32px)); max-height: 60%; display: flex; flex-direction: column; border: 1px solid #7f1d1d; border-radius: 10px; background: rgba(8, 12, 20, .97); box-shadow: 0 14px 40px rgba(0, 0, 0, .6); }
+.pl-log-h { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-bottom: 1px solid var(--line); font: 12px var(--mono); }
+.pl-log-h b { color: #fecaca; }
+.pl-log-h .btn { padding: 2px 8px; font-size: 11px; }
+.pl-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.pl-log pre { margin: 0; padding: 8px 12px; overflow: auto; font: 11px/1.45 var(--mono); color: #cbd5e1; white-space: pre-wrap; overflow-wrap: anywhere; }
+
+@keyframes pl-pulse { 50% { opacity: .35; } }

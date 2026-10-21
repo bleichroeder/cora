@@ -1,0 +1,33 @@
+/* the command palette (Ctrl+K): a search box over grouped results, near the top like the list dialogs */
+.pal-bg { position: fixed; inset: 0; z-index: 300; display: flex; justify-content: center; align-items: flex-start; padding-top: 12vh; background: rgba(2, 6, 12, .55); backdrop-filter: blur(3px); }
+.pal { width: min(680px, calc(100vw - 32px)); max-height: min(560px, 76vh); display: flex; flex-direction: column; background: rgba(10, 15, 24, .94); border: 1px solid #334155; border-radius: 14px; box-shadow: 0 30px 80px rgba(0, 0, 0, .6), 0 0 0 1px rgba(34, 211, 238, .04) inset; overflow: hidden; animation: pal-in .12s cubic-bezier(.2, .7, .2, 1); }
+@keyframes pal-in { from { opacity: 0; transform: translateY(-6px) scale(.985); } }
+.pal-in { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--line); color: #475569; }
+.pal-in input { flex: 1; min-width: 0; background: none; border: none; padding: 2px 0; font: 14px var(--mono); color: var(--bright); outline: none; }
+.pal-in input::placeholder { color: #475569; }
+.pal-busy { font: 11px var(--mono); color: var(--amber); }
+.pal-list { flex: 1; min-height: 0; overflow-y: auto; padding: 4px 8px 8px; }
+.pal-list::-webkit-scrollbar { width: 10px; }
+.pal-list::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 5px; border: 3px solid var(--panel); }
+.pal-gh { color: #475569; font: 600 10px var(--mono); text-transform: uppercase; letter-spacing: .08em; margin: 10px 8px 4px; }
+.pal-row { display: flex; align-items: center; gap: 10px; padding: 6px 10px; border-radius: 8px; cursor: pointer; min-height: 36px; }
+.pal-row.on { background: #0f1d2e; box-shadow: inset 2px 0 0 #22d3ee; }
+.pal-ic { flex: none; width: 18px; display: grid; place-items: center; color: #64748b; }
+.pal-row.on .pal-ic { color: #22d3ee; }
+.pal-ic .dot { box-shadow: 0 0 0 2px var(--panel), 0 0 0 3.5px var(--sc, #475569); }
+.pal-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.pal-l { color: #e2e8f0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pal-d { font: 10.5px var(--mono); color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pal mark { background: none; color: #67e8f9; font-weight: 600; text-decoration: underline; text-decoration-color: rgba(103, 232, 249, .35); text-underline-offset: 2px; }
+.pal-tag { flex: none; font: 10px var(--mono); color: #94a3b8; border: 1px solid var(--line); border-radius: 999px; padding: 1px 7px; }
+.pal-tag.t-resume { color: #fcd34d; border-color: #78350f; background: rgba(120, 53, 15, .18); }
+.pal-tag.t-needs-you { color: #fecaca; border-color: #7f1d1d; }
+.pal-tag.t-here { color: #67e8f9; border-color: #164e63; }
+.pal-tag.t-ended, .pal-tag.t-hidden { color: #64748b; }
+.pal-empty { padding: 22px 10px; color: #475569; font-size: 12px; text-align: center; }
+.pal-f { display: flex; align-items: center; gap: 14px; padding: 8px 16px; border-top: 1px solid var(--line); font: 10.5px var(--mono); color: #64748b; background: var(--panel2); }
+.pal-f kbd { margin-right: 3px; }
+.pal-err { color: var(--red); }
+/* its button in the rail's header: the two buttons there size to their labels so all three fit on one line */
+.rail-actions .btn { flex: 1 1 auto; white-space: nowrap; }
+.rail-find { flex: none; width: 26px; height: 26px; color: #64748b; }

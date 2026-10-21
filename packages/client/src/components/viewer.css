@@ -1,0 +1,95 @@
+/* ---------- the explain viewer and the diff review, in the design language ---------- */
+/* the viewer: the format's tile, the title with quiet meta, quiet buttons */
+.viewer { background: var(--nav); }
+.viewer .viewer-h { gap: 10px; height: 44px; padding: 0 10px 0 14px; border-bottom: 1px solid var(--hair2); background: none; color: var(--ink3); }
+.vw-tile { flex: none; display: grid; place-items: center; width: 26px; height: 26px; border-radius: 7px; --f: #c084fc; background: color-mix(in srgb, var(--f) 14%, var(--nav)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--f) 35%, transparent); color: var(--f); }
+.vw-tile.html { --f: var(--run); }
+.vw-t { display: flex; flex-direction: column; min-width: 0; }
+.vw-t b { overflow: hidden; color: var(--ink); font: 600 13.5px/18px var(--ui); text-overflow: ellipsis; white-space: nowrap; }
+.vw-t span { overflow: hidden; color: var(--ink4); font: 400 10.5px/14px var(--code); text-overflow: ellipsis; white-space: nowrap; }
+.vw-b, .vw-i { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 28px; border: 0; border-radius: 8px; background: none; color: var(--ink3); font: 500 12px var(--ui); white-space: nowrap; cursor: pointer; }
+.vw-b { padding: 0 10px; }
+.vw-i { width: 28px; }
+.vw-b:hover, .vw-i:hover { background: var(--raise); color: var(--ink); }
+.vw-b.done { color: var(--work); }
+/* the document: a page */
+.viewer .doc { padding: 34px 40px 70px; color: var(--ink2); font: 400 14.5px/1.7 var(--ui); }
+.viewer .doc .md { max-width: 760px; margin: 0 auto; }
+.viewer .doc .md > * { max-width: none; }
+.viewer .doc .md h1, .viewer .doc .md h2, .viewer .doc .md h3, .viewer .doc .md h4 { color: var(--ink); font-family: var(--ui); font-weight: 650; letter-spacing: -.01em; }
+.viewer .doc .md h1 { margin: 0 0 .6em; font-size: 24px; line-height: 1.25; }
+.viewer .doc .md h2 { margin: 1.4em 0 .5em; padding: 0; border: 0; font-size: 18px; }
+.viewer .doc .md h3 { margin: 1.2em 0 .4em; font-size: 15px; }
+.viewer .doc .md p { margin: 0 0 .9em; }
+.viewer .doc .md strong { color: var(--ink); }
+.viewer .doc .md a { color: var(--run); }
+.viewer .doc .md :not(pre) > code { padding: 1px 5px; border: 0; border-radius: 5px; background: var(--raise2); color: var(--ink); font: 400 .86em var(--code); }
+.viewer .doc .md pre { padding: 12px 14px; border: 0; border-radius: 10px; background: var(--raise); box-shadow: inset 0 0 0 1px var(--hair); }
+.viewer .doc .md pre code { color: var(--ink2); font: 400 12.5px/1.6 var(--code); }
+.viewer .doc .md blockquote { margin: .6em 0 1em; padding: .1em 0 .1em 14px; border-left: 2px solid var(--hair2); color: var(--ink3); }
+.viewer .doc .md hr { border-top-color: var(--hair2); }
+.viewer .doc .md table { margin: .4em 0 1.2em; font-size: 13.5px; }
+.viewer .doc .md th, .viewer .doc .md td { padding: 9px 14px 9px 0; border: 0; border-bottom: 1px solid var(--hair); color: var(--ink); }
+.viewer .doc .md th { padding-bottom: 8px; border-bottom-color: var(--hair2); background: none; color: var(--ink4); font: 600 9.5px var(--code); letter-spacing: .16em; text-transform: uppercase; }
+.viewer .html-frame { background: var(--nav); }
+.viewer .ny-err { padding: 14px; color: #ffb3b3; font: 500 11.5px var(--code); }
+
+/* the diff review */
+.diffview { background: var(--nav); --add: color-mix(in srgb, var(--work) 9%, transparent); --add-w: color-mix(in srgb, var(--work) 25%, transparent); --del: color-mix(in srgb, var(--need) 9%, transparent); --del-w: color-mix(in srgb, var(--need) 25%, transparent); }
+.diffview .dv-files { width: 270px; padding: 12px 8px; border-right: 1px solid var(--hair); background: none; }
+.diffview .dv-files-h { margin: 0 4px 12px; padding: 9px 11px; border: 0; border-radius: 10px; background: var(--raise); box-shadow: inset 0 0 0 1px var(--hair); color: var(--ink); font: 400 12.5px/1.5 var(--ui); }
+.diffview .dv-files-h span { display: block; margin-bottom: 3px; color: var(--ink4); font: 600 9.5px var(--code); letter-spacing: .14em; text-transform: uppercase; }
+.dv-files-gl { display: flex; align-items: center; gap: 8px; margin: 4px 6px 6px; color: var(--ink4); font: 600 9.5px var(--code); letter-spacing: .16em; text-transform: uppercase; }
+.dv-files-gl span { color: var(--ink3); letter-spacing: .04em; }
+.dv-files-gl::after { content: ''; flex: 1; height: 1px; background: var(--hair); }
+.diffview .dfile { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: 8px; min-height: 40px; padding: 0 8px; border: 0; border-radius: 8px; background: none; }
+.diffview .dfile:hover { background: rgba(148, 163, 184, .05); }
+.diffview .dfile.sel { border: 0; background: var(--raise2); box-shadow: inset 0 0 0 1px var(--hair2); }
+.df-t { display: flex; flex-direction: column; min-width: 0; }
+.diffview .dfile .nm { overflow: hidden; color: var(--ink); font: 500 12px/16px var(--code); text-overflow: ellipsis; white-space: nowrap; }
+.diffview .dfile .dir { color: var(--ink4); font: 400 10px/13px var(--code); }
+.diffview .dv-keys { display: flex; flex-wrap: wrap; gap: 4px 12px; padding: 8px 6px 0; color: var(--ink4); font: 500 10px var(--code); }
+.diffview .dv-keys b { color: var(--ink3); font-weight: 500; }
+/* the header: the path, then quiet controls */
+.diffview .dv-h { gap: 6px; min-height: 44px; padding: 6px 10px 6px 14px; border-bottom: 1px solid var(--hair2); background: none; }
+.diffview .dv-path { font: 400 12px var(--code); }
+.diffview .dv-path .dir { color: var(--ink4); }
+.diffview .dv-path b { color: var(--ink); font-weight: 500; }
+.dv-vr { flex: none; width: 1px; height: 16px; margin: 0 4px; background: var(--hair2); }
+.diffview .dv-h .btn, .diffview .dv-h a.btn { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border: 0; border-radius: 8px; background: none; box-shadow: none; color: var(--ink3); font: 500 12px var(--ui); text-decoration: none; white-space: nowrap; }
+.diffview .dv-h .btn:hover:not(:disabled) { background: var(--raise); color: var(--ink); }
+.diffview .dv-h .btn.on { background: var(--raise2); box-shadow: inset 0 0 0 1px var(--hair2); color: var(--ink); }
+.diffview .dv-h .icon-btn { display: inline-grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 7px; background: none; color: var(--ink3); }
+.diffview .dv-h .icon-btn:hover { background: var(--raise); color: var(--ink); }
+.diffview .seg { display: inline-flex; gap: 1px; padding: 2px; border: 0; border-radius: 8px; background: var(--nav); box-shadow: inset 0 0 0 1px var(--hair2); overflow: visible; }
+.diffview .seg-b { height: 24px; padding: 0 10px; border: 0; border-radius: 6px; background: none; color: var(--ink3); font: 500 12px var(--ui); }
+.diffview .seg-b:hover { background: none; color: var(--ink2); }
+.diffview .seg-b.on { background: var(--raise2); box-shadow: inset 0 0 0 1px var(--hair2); color: var(--ink); }
+.diffview .dsrc { padding: 0 6px; border: 0; border-radius: 5px; box-shadow: inset 0 0 0 1px var(--hair2); color: var(--ink3); font: 500 10px/18px var(--code); }
+.diffview .dsrc.new { color: var(--work); }
+.diffview .dsrc.git { color: var(--think); }
+.diffview .dv-sub { padding: 6px 14px; border-bottom: 1px solid var(--hair); color: var(--ink4); font: 400 11.5px var(--ui); }
+.diffview .dv-note { color: var(--ink4); }
+.diffview .dv-empty { color: var(--ink4); font: 400 13px var(--ui); }
+/* hunks on a raised band; lines at a tenth of green and red */
+.diffview .dh-h { height: 28px; padding: 0 14px; border-top: 1px solid var(--hair); border-bottom: 1px solid var(--hair); background: var(--raise); color: var(--ink4); font: 500 10.5px var(--code); }
+.diffview .dh-h.cur { background: var(--raise2); color: var(--ink3); }
+.diffview .dh-b { padding: 0 4px; border: 0; border-radius: 5px; background: none; color: var(--ink4); font: 500 10.5px var(--ui); text-decoration: none; }
+.diffview .dh-b:hover { background: var(--raise2); color: var(--ink); }
+.diffview .dt, .minidiff .dt { font: 400 12px/1.65 var(--code); }
+.diffview .dt td, .minidiff .dt td { color: var(--ink2); }
+.diffview .dt td.n { color: var(--ink4); }
+.diffview .dt td.m, .minidiff .dt td.m { color: var(--ink4); }
+.diffview .dt tr.a td, .minidiff .dt tr.a td { color: #d4f7e6; }
+.diffview .dt tr.a td.m, .minidiff .dt tr.a td.m { color: var(--work); }
+.diffview .dt tr.d td, .minidiff .dt tr.d td { color: #ffd6d6; }
+.diffview .dt tr.d td.m, .minidiff .dt tr.d td.m { color: var(--need); }
+.diffview .dt td.x { background: repeating-linear-gradient(135deg, var(--nav) 0 6px, var(--raise) 6px 12px); }
+.diffview .dt td.sepl { border-right-color: var(--hair); }
+.dcount { gap: 5px; font: 500 10.5px var(--code); }
+.plus { color: var(--work); }
+.minus { color: var(--need); }
+.dbar { gap: 1.5px; margin-left: 2px; }
+.dbar i { width: 4px; background: var(--raise2); }
+.dbar i.a { background: var(--work); }
+.dbar i.d { background: var(--need); }

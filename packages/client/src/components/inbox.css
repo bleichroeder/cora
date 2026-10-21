@@ -1,0 +1,74 @@
+/* Cora's Inbox: the row under Cora's card, and the view in the main area */
+
+.inbox-row { flex-shrink: 0; display: flex; align-items: center; gap: 8px; height: 38px; margin: 0 8px 6px; padding: 0 10px 0 11px; border: 0; border-radius: 11px; background: var(--raise); box-shadow: inset 0 0 0 1px var(--hair); color: var(--ink2); font: 500 12px var(--ui); cursor: pointer; text-align: left; }
+.inbox-row:hover { box-shadow: inset 0 0 0 1px var(--hair2); }
+.inbox-row.on { background: var(--raise2); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cora) 40%, transparent); }
+.inbox-row b { font: 600 12px var(--ui); color: var(--ink); }
+.inbox-row.quiet b { color: var(--ink2); font-weight: 500; }
+.ir-srcs { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+.inbox-row.quiet .ir-srcs { color: var(--ink4); font: 400 11px var(--ui); }
+.ir-src { display: inline-flex; align-items: center; gap: 5px; font: 600 10.5px var(--code); color: var(--ink2); }
+svg.brand { flex: none; display: block; stroke: none; }
+.brand-lens { flex: none; display: inline-block; border-radius: 50%; background: radial-gradient(circle, color-mix(in srgb, var(--cora) 45%, #fff) 0 18%, var(--cora-dim) 28% 40%, #05080d 45% 50%, #5b6675 55%); }
+
+/* a drawer by the nav, where Cora's console opens (or beside it, when it's open: --cc is the console's width) */
+.inbox-view { --cc: min(500px, calc(100% - 120px)); position: absolute; left: 0; top: 0; bottom: 0; z-index: 36; width: min(820px, calc(100% - 120px)); min-height: 0; display: grid; grid-template-rows: auto 1fr; background: var(--nav); border-right: 1px solid var(--hair2); box-shadow: 20px 0 50px rgba(0, 0, 0, .6); transform: translateX(-16px); opacity: 0; visibility: hidden; pointer-events: none; transition: transform .15s ease-in, opacity .15s ease-in, visibility 0s .15s; }
+.inbox-view.on { transform: none; opacity: 1; visibility: visible; pointer-events: auto; transition: transform .2s ease-out, opacity .2s ease-out, left .2s ease-out; }
+.inbox-view.beside { left: var(--cc); width: min(820px, calc(100% - var(--cc) - 60px)); box-shadow: 20px 0 50px rgba(0, 0, 0, .6), -1px 0 0 var(--hair2); }
+.ib-head { flex: none; display: flex; align-items: center; gap: 10px; height: var(--hdr, 44px); padding: 0 16px; border-bottom: 1px solid var(--hair); white-space: nowrap; min-width: 0; }
+.ib-head h2 { margin: 0; font: 600 15px var(--ui); color: var(--ink); }
+.ib-filters { display: flex; gap: 4px; margin-left: 10px; min-width: 0; overflow: hidden; }
+.ib-f { height: 26px; padding: 0 9px; border: 0; border-radius: 7px; background: none; display: inline-flex; align-items: center; gap: 6px; color: var(--ink3); font: 500 12px var(--ui); cursor: pointer; }
+.ib-f:hover { color: var(--ink2); background: var(--raise); }
+.ib-f.on { color: var(--ink); background: var(--raise); box-shadow: inset 0 0 0 1px var(--hair2); }
+.ib-f .n { color: var(--ink4); font: 600 10px var(--code); }
+.ib-sp { flex: 1; }
+.ib-unread { display: inline-flex; align-items: center; gap: 6px; color: var(--ink3); font: 500 12px var(--ui); cursor: pointer; }
+.ib-unread input { display: none; }
+.ib-sw { width: 26px; height: 15px; border-radius: 8px; background: var(--raise2); box-shadow: inset 0 0 0 1px var(--hair2); position: relative; transition: background .15s; }
+.ib-sw::after { content: ''; position: absolute; left: 2px; top: 2px; width: 11px; height: 11px; border-radius: 50%; background: var(--ink3); transition: left .15s, background .15s; }
+.ib-unread input:checked + .ib-sw { background: color-mix(in srgb, var(--cora) 55%, #0b3b36); }
+.ib-unread input:checked + .ib-sw::after { left: 13px; background: #e6fffb; }
+
+.ib-panes { display: grid; grid-template-columns: minmax(260px, 360px) minmax(0, 1fr); min-height: 0; }
+.ib-list { border-right: 1px solid var(--hair); overflow: auto; padding: 4px 8px 12px; }
+.ib-day { padding: 12px 8px 6px; font: 600 10px var(--code); letter-spacing: .16em; text-transform: uppercase; color: var(--ink4); }
+.ib-it { width: 100%; display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; gap: 2px 10px; padding: 9px 10px; border: 0; border-radius: 10px; background: none; text-align: left; cursor: pointer; color: inherit; }
+.ib-it:hover { background: var(--raise); }
+.ib-it.on { background: var(--raise); box-shadow: inset 0 0 0 1px var(--hair2); }
+.ib-tile { grid-row: span 2; width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; background: color-mix(in srgb, var(--c) 10%, var(--raise2)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c) 22%, transparent); }
+.ib-it .h { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font: 500 13px var(--ui); color: var(--ink); }
+.ib-it.read .h { color: var(--ink2); font-weight: 400; }
+.ib-it .w { display: flex; align-items: center; gap: 6px; font: 400 10.5px var(--code); color: var(--ink4); }
+.ib-it .w em { font-style: normal; color: var(--cora); }
+.ib-it .w i { width: 6px; height: 6px; border-radius: 50%; background: var(--cora); box-shadow: 0 0 6px var(--cora); }
+.ib-it .d { grid-column: 2 / 4; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--ink3); font: 400 12px var(--ui); }
+.ib-it.failed .d { color: color-mix(in srgb, var(--need) 70%, var(--ink3)); }
+.ib-empty { padding: 28px 12px; color: var(--ink4); font-size: 12.5px; line-height: 1.5; }
+
+.ib-detail { padding: 16px 20px; overflow: auto; min-width: 0; }
+.ib-dh { display: flex; align-items: center; gap: 10px; }
+.ib-dh .ib-tile { grid-row: auto; flex: none; }
+.ib-dh b { display: block; font: 600 14px var(--ui); color: var(--ink); }
+.ib-dh span span { color: var(--ink4); font: 400 11px var(--code); }
+.ib-msgs { margin-top: 14px; display: flex; flex-direction: column; gap: 8px; }
+.ib-msg { padding: 10px 14px; border-radius: 10px; background: var(--raise); box-shadow: inset 0 0 0 1px var(--hair); }
+.ib-msg .who { font: 600 12px var(--ui); color: var(--ink2); }
+.ib-msg .who span { margin-left: 6px; color: var(--ink4); font: 400 10.5px var(--code); }
+.ib-msg p { margin: 4px 0 0; color: var(--ink); font-size: 13px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
+.ib-new { display: flex; align-items: center; gap: 8px; margin: 4px 0 8px; font: 600 10px var(--code); letter-spacing: .12em; text-transform: uppercase; color: var(--cora); }
+.ib-new::after { content: ''; flex: 1; height: 1px; background: color-mix(in srgb, var(--cora) 35%, transparent); }
+.ib-mail { margin: 0; padding: 12px 14px; border-radius: 10px; background: var(--raise); box-shadow: inset 0 0 0 1px var(--hair); color: var(--ink2); font: 12.5px/1.55 var(--ui); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 420px; overflow: auto; }
+.ib-more { align-self: flex-start; }
+.ib-why { margin-top: 12px; color: var(--ink4); font-size: 12px; }
+.ib-why b { color: var(--ink3); font-weight: 500; }
+.ib-acts { display: flex; gap: 6px; margin-top: 16px; flex-wrap: wrap; }
+/* Settings › Slack: channels you follow */
+.jset-follow { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.jset-found { display: flex; flex-wrap: wrap; gap: 4px; }
+.ib-reply { margin-top: 14px; display: flex; flex-direction: column; gap: 8px; }
+.ib-reply textarea { resize: vertical; min-height: 64px; padding: 10px 12px; border: 0; border-radius: 10px; background: var(--raise); box-shadow: inset 0 0 0 1px var(--hair2); color: var(--ink); font: 13px/1.5 var(--ui); outline: none; }
+.ib-reply textarea:focus { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cora) 45%, transparent); }
+.ib-reply-b { display: flex; align-items: center; gap: 6px; font-size: 11.5px; }
+.ib-reply-b > :first-child { flex: 1; min-width: 0; }
+.ib-acts .brand-lens { margin-right: 1px; }

@@ -1,0 +1,208 @@
+/* ---------- Cora's console and command mode, in the design language ---------- */
+.cora-console { background: var(--nav); border-right: 1px solid var(--hair2); box-shadow: 20px 0 50px rgba(0, 0, 0, .6); font-family: var(--ui); }
+
+/* the header: the lens, the word, the model; the Away switch; command mode, ⋯, close */
+.cora-console .cc-h { gap: 8px; border-bottom-color: var(--hair2); }
+.cora-console .cc-h b { color: var(--ink); font: 700 11.5px var(--code); letter-spacing: .34em; }
+.cora-console .cc-st { color: var(--ink4); font: 500 10.5px var(--code); }
+.cora-console .cc-h .icon-btn { display: grid; place-items: center; width: 26px; height: 26px; padding: 0; border: 0; border-radius: 7px; background: none; color: var(--ink3); }
+.cora-console .cc-h .icon-btn:hover:not(:disabled), .cora-console .cc-h .icon-btn.on { background: var(--raise); color: var(--ink); }
+.cora-console .cc-away, .cora-cmd .cc-away { height: 24px; border: 0; background: var(--raise); box-shadow: inset 0 0 0 1px var(--hair2); color: var(--ink3); font: 500 11px var(--code); }
+.cora-console .cc-away:hover, .cora-cmd .cc-away:hover { color: var(--ink2); box-shadow: inset 0 0 0 1px var(--ink4); }
+.cora-console .cc-knob, .cora-cmd .cc-knob { background: var(--raise2); }
+.cora-console .cc-knob::after, .cora-cmd .cc-knob::after { background: var(--ink4); }
+.cora-console .cc-away.on, .cora-cmd .cc-away.on { color: var(--cora-hi); background: var(--raise); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cora) 45%, transparent); }
+.cora-console .cc-away.on .cc-knob, .cora-cmd .cc-away.on .cc-knob { background: color-mix(in srgb, var(--cora) 45%, var(--raise2)); }
+.cora-console .cc-away.on .cc-knob::after, .cora-cmd .cc-away.on .cc-knob::after { background: var(--cora-hi); box-shadow: none; }
+.cora-console .cc-stand { height: 24px; border: 0; border-radius: 7px; background: color-mix(in srgb, var(--need) 10%, var(--raise)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--need) 40%, transparent); color: #ffc9c9; font: 500 11.5px var(--ui); }
+.cora-console .cc-stand:hover { background: color-mix(in srgb, var(--need) 18%, var(--raise)); box-shadow: inset 0 0 0 1px var(--need); }
+/* ⋯: Brief me, Wrap up, Cora's settings */
+.cc-more { position: relative; }
+.cc-menu { position: absolute; right: 0; top: 30px; z-index: 5; display: flex; flex-direction: column; width: 236px; padding: 5px; border-radius: 10px; background: var(--raise); box-shadow: inset 0 0 0 1px var(--hair2), 0 14px 34px rgba(0, 0, 0, .6); animation: sd-in .12s ease-out; }
+.cc-menu button { display: flex; align-items: center; gap: 9px; height: 30px; padding: 0 9px; border: 0; border-radius: 7px; background: none; color: var(--ink2); font: 500 12.5px var(--ui); text-align: left; cursor: pointer; white-space: nowrap; }
+.cc-menu button svg { flex: none; color: var(--ink3); }
+.cc-menu button:hover:not(:disabled) { background: var(--raise2); color: var(--ink); }
+.cc-menu button:disabled { opacity: .45; cursor: default; }
+.cc-menu .cc-mk { margin-left: auto; overflow: hidden; text-overflow: ellipsis; color: var(--ink4); font: 400 10.5px var(--ui); }
+.cc-menu > i { height: 1px; margin: 4px 6px; background: var(--hair); }
+.cora-console .cc-err { background: color-mix(in srgb, var(--need) 10%, var(--nav)); color: #ffc9c9; font: 500 11.5px var(--code); }
+
+/* autopilot: a panel tinted green */
+.cora-console .cc-goal, .cora-cmd .cc-goal { margin: 12px 12px 0; padding: 11px 12px; border: 0; border-radius: 12px; background: color-mix(in srgb, var(--work) 5%, var(--raise)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--work) 28%, transparent); }
+.cora-cmd .cc-goal { margin: 0; }
+.cora-console .cc-goal.idle, .cora-cmd .cc-goal.idle { padding: 10px; }
+.cora-console .cc-goal.compose, .cora-cmd .cc-goal.compose { background: var(--raise); box-shadow: inset 0 0 0 1px var(--hair2); }
+.cora-console .cc-goal.st-waiting, .cora-cmd .cc-goal.st-waiting { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--think) 35%, transparent); }
+.cora-console .cc-goal.st-blocked, .cora-cmd .cc-goal.st-blocked { background: color-mix(in srgb, var(--need) 5%, var(--raise)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--need) 35%, transparent); }
+.cc-goal .cg-ico { width: 30px; height: 30px; border: 0; border-radius: 8px; background: color-mix(in srgb, var(--work) 14%, var(--nav)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--work) 35%, transparent); color: var(--work); }
+.cc-goal .cg-idle-t b { color: var(--ink); font: 600 12.5px var(--ui); }
+.cc-goal .cg-idle-t .dim { color: var(--ink3); font: 400 11.5px/1.4 var(--ui); }
+.cc-goal .cg-start { height: 28px; border: 0; border-radius: 8px; background: color-mix(in srgb, var(--work) 14%, var(--raise)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--work) 40%, transparent); color: #d9fbe9; font: 500 12px var(--ui); }
+.cc-goal .cg-start:hover { background: color-mix(in srgb, var(--work) 22%, var(--raise)); box-shadow: inset 0 0 0 1px var(--work); }
+.cc-goal .cg-tag { color: var(--work); font: 600 9.5px var(--code); letter-spacing: .14em; }
+.cc-goal .cg-state { color: var(--ink3); font: 500 10.5px var(--code); }
+.cc-goal.st-waiting .cg-state { color: var(--think); }
+.cc-goal.st-blocked .cg-state { color: var(--need); }
+.cc-goal .cg-text { margin: 6px 0 9px; color: var(--ink); font: 500 13px/1.45 var(--ui); }
+.cc-goal .cg-bar { height: 3px; border-radius: 2px; background: var(--raise2); }
+.cc-goal .cg-bar i { border-radius: 2px; background: var(--work); box-shadow: none; }
+.cc-goal .cg-meta { margin-top: 8px; color: var(--ink4); font: 500 10.5px var(--code); }
+.cc-goal .cg-meta .warn { color: var(--think); }
+.cc-goal .cg-workers .linkish { color: var(--ink2); }
+.cc-goal .cg-workers .linkish::before { content: ''; display: inline-block; width: 6px; height: 6px; margin-right: 5px; border-radius: 50%; background: var(--work); vertical-align: 1px; }
+.cc-goal .cg-note { margin-top: 8px; color: var(--ink2); font: 400 12.5px/1.5 var(--ui); }
+.cc-goal.compose textarea { border: 0; border-radius: 8px; background: var(--nav); box-shadow: inset 0 0 0 1px var(--hair); color: var(--ink); font: 400 13px/1.5 var(--ui); }
+.cc-goal.compose textarea:focus { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--work) 50%, transparent); }
+.cc-goal .cg-row select { border: 0; border-radius: 7px; background: var(--nav); box-shadow: inset 0 0 0 1px var(--hair2); color: var(--ink2); font: 500 11px var(--code); }
+.cc-goal .btn.ghost { height: 22px; padding: 0 9px; border: 0; border-radius: 6px; background: var(--raise2); box-shadow: inset 0 0 0 1px var(--hair2); color: var(--ink2); font: 500 11px var(--ui); }
+
+/* talking with: a quiet line */
+.cora-console .cc-talks, .cora-cmd .cc-talks { margin: 10px 12px 0; padding: 0; border: 0; background: none; color: var(--ink4); font: 500 10.5px var(--code); }
+.cc-talks .cc-talk { gap: 6px; height: 22px; padding: 0 4px 0 8px; border: 0; border-radius: 7px; background: var(--raise); box-shadow: inset 0 0 0 1px var(--hair); }
+.cc-talks .cc-talk::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--cora); }
+.cc-talks .ct-name { color: var(--ink2); }
+.cc-talks .ct-left { color: var(--ink4); opacity: 1; }
+.cc-talks .ct-end { color: var(--ink4); }
+.cc-talks .ct-end:hover { background: var(--raise2); color: var(--ink); }
+
+/* the conversation: the transcript's language */
+.cora-console .cc-body { gap: 0; padding: 4px 16px 10px; }
+.cora-console .cc-empty { color: var(--ink3); font: 400 13px/1.6 var(--ui); }
+.cora-console .cc-empty .dim { color: var(--ink4); }
+.cora-console .cc-you { align-self: stretch; max-width: none; margin: 12px 0 4px; padding: 10px 12px; border: 0; border-radius: 10px; background: var(--raise); box-shadow: inset 0 0 0 1px var(--hair); color: var(--ink); font: 400 13px/1.55 var(--ui); }
+.cc-you .cc-l { display: block; margin-bottom: 3px; color: var(--ink4); font: 600 9.5px var(--code); letter-spacing: .14em; text-transform: uppercase; }
+.cc-sh { display: flex; align-items: center; gap: 8px; margin: 14px 0 6px; color: var(--ink4); font: 600 10px var(--code); letter-spacing: .12em; }
+.cc-sh > i { width: 7px; height: 7px; border-radius: 50%; background: var(--cora); }
+.cc-sh .cc-rule { flex: 1; height: 1px; background: var(--hair); }
+.cora-console .cc-cora { align-self: stretch; max-width: none; margin: 4px 0; color: var(--ink); font: 400 13.5px/1.62 var(--ui); }
+.cora-console .cc-act { align-self: stretch; gap: 8px; min-height: 24px; color: var(--ink3); font: 400 11px var(--code); }
+.cora-console .cc-act svg { flex: none; color: var(--cora); opacity: .8; }
+.cora-console .cc-act > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cora-console .cc-act.failed { color: #ffb3b3; }
+.cora-console .cc-act.failed svg { color: var(--need); }
+.cora-console .cc-think { padding: 6px 0; }
+.cora-console .cc-dots i, .cora-cmd .cc-dots i { width: 5px; height: 5px; background: var(--think); }
+
+/* something it wants to do: a card with an amber edge */
+.cora-console .cc-approvals { gap: 8px; padding: 10px 12px; border-top: 1px solid var(--hair2); background: none; }
+.cora-console .cc-card, .cora-cmd .cc-card { gap: 0; padding: 11px 12px; border: 0; border-radius: 12px; background: var(--raise); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--think) 35%, transparent); }
+.cc-card .cc-card-h { gap: 8px; color: var(--ink); font: 600 12.5px var(--ui); }
+.cc-card .cc-card-h b { color: var(--ink); font-weight: 600; }
+.cc-card .cc-card-h svg { flex: none; color: var(--think); }
+.cc-card.k-ask .cc-card-h { color: var(--ink); }
+.cc-card .cc-later { padding: 0 7px; border-radius: 6px; background: var(--raise2); color: var(--ink3); font: 500 10px/18px var(--code); }
+.cc-card .cc-card-d { margin: 3px 0 0; color: var(--ink3); font: 500 10.5px/1.5 var(--code); }
+.cc-card .cc-opts { margin-top: 8px; }
+.cc-card .cc-card-t { margin-top: 8px; border: 0; border-radius: 8px; background: var(--nav); box-shadow: inset 0 0 0 1px var(--hair); color: var(--ink2); font: 400 12.5px/1.5 var(--ui); }
+.cc-card .cc-card-t:focus { color: var(--ink); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--think) 50%, transparent); }
+.cc-card .cc-card-a { justify-content: flex-start; gap: 6px; margin-top: 9px; }
+.cc-card .cc-card-a .btn, .cc-ask .btn { height: 28px; padding: 0 11px; border: 0; border-radius: 8px; background: var(--raise2); box-shadow: inset 0 0 0 1px var(--hair2); color: var(--ink); font: 500 12px var(--ui); }
+.cc-card .cc-card-a .btn.allow { background: color-mix(in srgb, var(--work) 14%, var(--raise)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--work) 40%, transparent); color: #d9fbe9; }
+.cc-card .cc-card-a .btn.allow:hover:not(:disabled) { background: color-mix(in srgb, var(--work) 22%, var(--raise)); box-shadow: inset 0 0 0 1px var(--work); }
+.cc-card .cc-card-a .btn.ghost { background: none; box-shadow: none; color: var(--ink3); }
+.cc-card .cc-card-a .btn.ghost:hover:not(:disabled) { color: var(--ink); background: var(--raise2); }
+/* a session asking Cora a question */
+.cora-console .cc-ask { border: 0; border-radius: 12px; background: var(--raise); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--think) 35%, transparent); }
+.cc-ask .cc-ask-h { color: var(--ink); font: 600 12.5px var(--ui); }
+.cc-ask .cc-ask-h svg { color: var(--think); }
+.cc-ask pre { color: var(--ink2); font: 400 11.5px/1.5 var(--code); }
+
+/* the input: the session composer */
+.cora-console .cc-in { padding: 0 12px 12px; border-top: 0; }
+.cora-console .cc-inerr, .cora-cmd .cc-inerr { color: #ffb3b3; font: 500 11px var(--code); }
+.cora-console .cc-row { gap: 6px; padding: 8px 8px 8px 12px; border-radius: 12px; background: var(--raise); box-shadow: inset 0 0 0 1px var(--hair2); }
+.cora-console .cc-row:focus-within { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cora) 45%, transparent); }
+.cora-console .cc-row textarea { min-height: 30px; padding: 5px 0; border: 0; border-radius: 0; background: none; box-shadow: none; color: var(--ink); font: 400 13.5px/1.5 var(--ui); }
+.cora-console .cc-row textarea:focus { box-shadow: none; }
+.cora-console .cc-row textarea::placeholder, .cora-cmd .cm-input textarea::placeholder { color: var(--ink4); }
+.cora-console .cc-mic, .cora-console .cc-send, .cora-cmd .cc-mic, .cora-cmd .cc-send { width: 30px; height: 30px; border: 0; border-radius: 8px; background: none; color: var(--ink3); }
+.cora-console .cc-mic:hover:not(:disabled), .cora-cmd .cc-mic:hover:not(:disabled) { background: var(--raise2); color: var(--ink); }
+.cora-console .cc-mic.on, .cora-cmd .cc-mic.on { background: color-mix(in srgb, var(--cora) 18%, var(--raise2)); color: var(--cora-hi); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cora) 50%, transparent); }
+/* send: the one bright button, once there's something to send */
+.cora-console .cc-send, .cora-cmd .cc-send { background: var(--ink); color: var(--nav); }
+.cora-console .cc-send:hover:not(:disabled), .cora-cmd .cc-send:hover:not(:disabled) { background: #fff; }
+.cora-console .cc-send:disabled, .cora-cmd .cc-send:disabled { opacity: 1; background: var(--raise2); color: var(--ink4); }
+
+/* ---------- command mode: the same pieces at full size ---------- */
+.cora-cmd { background: radial-gradient(700px 480px at 50% 34%, color-mix(in srgb, var(--c) 7%, transparent), transparent 70%), rgba(6, 8, 13, .97); color: var(--ink2); font-family: var(--ui); }
+.cora-cmd.st-idle, .cora-cmd.st-off { --c: var(--cora); }
+.cora-cmd.st-autopilot { --c: var(--work); }
+.cora-cmd.st-thinking { --c: var(--think); }
+.cora-cmd.st-needs-you { --c: var(--need); }
+.cora-cmd .cm-lens::before { width: 560px; height: 560px; background: radial-gradient(circle, color-mix(in srgb, var(--c) 9%, transparent), transparent 62%); }
+.cora-cmd .cm-rings i { border-color: color-mix(in srgb, var(--c) 12%, transparent); }
+.cora-cmd .cm-rings i:nth-child(2) { border-color: color-mix(in srgb, var(--c) 7%, transparent); }
+.cora-cmd .cm-h { height: 52px; gap: 8px; padding: 0 18px; }
+.cora-cmd .cm-h b { color: var(--ink); font: 700 12.5px var(--code); letter-spacing: .4em; text-shadow: none; }
+.cora-cmd .cm-tag { color: var(--ink4); font: 600 9.5px var(--code); letter-spacing: .2em; opacity: 1; }
+.cora-cmd .cm-btn { height: 28px; padding: 0 11px; border: 0; border-radius: 8px; background: var(--raise2); box-shadow: inset 0 0 0 1px var(--hair2); color: var(--ink2); font: 500 12px var(--ui); }
+.cora-cmd .cm-btn svg { color: var(--ink3); }
+.cora-cmd .cm-btn:hover:not(:disabled) { color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink4); }
+.cora-cmd .cm-btn.stand { background: color-mix(in srgb, var(--need) 10%, var(--raise)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--need) 40%, transparent); color: #ffc9c9; }
+.cora-cmd .cm-btn.stand svg { color: var(--need); }
+.cora-cmd .cm-btn.ghost { background: none; box-shadow: none; }
+.cora-cmd .cm-main { grid-template-columns: minmax(240px, 1fr) minmax(380px, 1.35fr) minmax(240px, 1fr); padding: 6px 22px 0; }
+.cora-cmd .cm-col { gap: 6px; }
+/* section labels: small caps, a count, a hairline */
+.cora-cmd .cm-col h3 { height: 30px; margin: 4px 0 0; color: var(--ink4); font: 600 10px var(--code); letter-spacing: .16em; }
+.cora-cmd .cm-col h3::after { content: ''; flex: 1; height: 1px; background: var(--hair); }
+.cora-cmd .cm-col h3 span { color: var(--ink3); letter-spacing: .04em; }
+/* rows, as in the nav */
+.cora-cmd .cm-row { display: grid; grid-template-columns: 28px minmax(0, 1fr); column-gap: 10px; min-height: 46px; padding: 0 8px 0 6px; border: 0; border-radius: 9px; background: none; }
+.cora-cmd .cm-row:hover { background: rgba(148, 163, 184, .05); }
+.cora-cmd .cm-row .dl-tile { --tile-bg: #06080d; }
+.cora-cmd .cm-row.needs > svg { justify-self: center; color: var(--need); }
+.cora-cmd .cm-row-t { gap: 0; }
+.cora-cmd .cm-row-t b { color: var(--ink); font: 500 13px/17px var(--ui); }
+.cora-cmd .cm-row-t span, .cora-cmd .cm-row.needs .cm-row-t span { color: var(--ink4); font: 400 10.5px/14px var(--code); }
+.cora-cmd .cm-quiet { margin: 0; padding: 6px 0; color: var(--ink4); font: 400 12.5px var(--ui); }
+/* the middle: the lens, what you asked, what Cora said */
+.cora-cmd .cm-center { gap: 12px; padding-top: 30px; }
+.cora-cmd .cm-state { color: var(--c); font: 600 11px var(--code); letter-spacing: .3em; }
+.cora-cmd .cm-you { max-width: 560px; color: var(--ink3); font: 400 13px/1.5 var(--ui); }
+.cora-cmd .cm-you::before { content: none; }
+.cora-cmd .cm-acts { color: var(--ink4); font: 400 11px var(--code); }
+.cora-cmd .cm-reply { max-width: 560px; color: var(--ink); font: 400 15.5px/1.65 var(--ui); }
+.cora-cmd .cm-reply .cm-quiet { text-align: center; }
+/* the input */
+.cora-cmd .cm-in { padding: 10px 22px 18px; }
+.cora-cmd .cm-input { align-items: flex-end; gap: 6px; width: min(720px, 100%); padding: 8px 8px 8px 12px; border: 0; border-radius: 12px; background: var(--raise); box-shadow: inset 0 0 0 1px var(--hair2); }
+.cora-cmd .cm-input:focus-within { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c) 45%, transparent); }
+.cora-cmd .cm-input textarea { min-height: 30px; padding: 5px 0; color: var(--ink); font: 400 14px/1.5 var(--ui); }
+.cora-cmd .cm-hint { color: var(--ink4); font: 400 10.5px var(--code); }
+.cora-cmd .cc-goal .cg-tag { display: none; }
+
+/* autopilot in the header: a Goal button, or a pill with the running goal's progress */
+.cora-console .cc-gpill { display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 9px 0 7px; border: 0; border-radius: 7px; background: var(--raise); box-shadow: inset 0 0 0 1px var(--hair2); color: var(--ink2); font: 500 11.5px var(--ui); white-space: nowrap; cursor: pointer; }
+.cora-console .cc-gpill svg { color: var(--work); }
+.cora-console .cc-gpill:hover, .cora-console .cc-gpill.on { background: var(--raise2); color: var(--ink); }
+.cora-console .cc-gpill.live { background: color-mix(in srgb, var(--work) 9%, var(--raise)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--work) 40%, transparent); color: #d9fbe9; font: 500 11px var(--code); }
+.cora-console .cc-gpill.live.st-waiting { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--think) 45%, transparent); color: #fde9b0; }
+.cora-console .cc-gpill.live.st-blocked { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--need) 45%, transparent); color: #ffc9c9; }
+.cc-ring { width: 13px; height: 13px; border-radius: 50%; background: conic-gradient(var(--work) calc(var(--p) * 1%), var(--raise2) 0); -webkit-mask: radial-gradient(circle, transparent 3.5px, #000 4px); mask: radial-gradient(circle, transparent 3.5px, #000 4px); }
+.st-waiting > .cc-ring { background: conic-gradient(var(--think) calc(var(--p) * 1%), var(--raise2) 0); }
+.st-blocked > .cc-ring { background: conic-gradient(var(--need) calc(var(--p) * 1%), var(--raise2) 0); }
+/* under the header while a goal runs: what it's on, in one line */
+.cora-console .cc-gline { flex: none; display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 12px; border: 0; border-bottom: 1px solid var(--hair); background: color-mix(in srgb, var(--work) 3%, var(--nav)); color: var(--ink3); font: 500 11px var(--ui); text-align: left; cursor: pointer; }
+.cora-console .cc-gline:hover { background: color-mix(in srgb, var(--work) 6%, var(--nav)); }
+.cora-console .cc-gline b { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink); font-weight: 500; }
+.cora-console .cc-gline .cc-gst { flex: none; color: var(--think); font: 500 10px var(--code); }
+.cora-console .cc-gline.st-blocked .cc-gst { color: var(--need); }
+.cora-console .cc-gline .cg-bar { flex: none; width: 54px; height: 3px; border-radius: 2px; background: var(--raise2); overflow: hidden; }
+.cora-console .cc-gline .cg-bar i { display: block; height: 100%; border-radius: 2px; background: var(--work); }
+.cora-console .cc-gline .cc-gm { flex: none; color: var(--ink4); font: 500 10px var(--code); }
+/* the goal card, over the conversation */
+.cora-console .cc-goalpop { position: absolute; top: calc(var(--hdr) - 2px); z-index: 6; width: min(360px, calc(100% - 24px)); border-radius: 12px; box-shadow: 0 16px 40px rgba(0, 0, 0, .65); }
+.cora-console .cc-goalpop .cc-goal { margin: 0; }
+.cora-console .cc-goalpop .cc-goal:not(.compose) { background: color-mix(in srgb, var(--work) 6%, var(--raise)); }
+
+/* talking to Cora: your words, live, and who they're for */
+.cora-console .cc-heard { display: flex; align-items: baseline; gap: 10px; margin: 0 0 8px; padding: 9px 12px; border-radius: 10px; background: color-mix(in srgb, var(--cora) 6%, var(--raise)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cora) 40%, transparent); }
+.cora-console .cc-heard-to { flex: none; display: inline-flex; align-items: center; gap: 5px; color: var(--cora); font: 600 10px var(--code); letter-spacing: .1em; text-transform: uppercase; }
+.cora-console .cc-heard-to svg { animation: cc-heard 1.2s ease-in-out infinite; }
+@keyframes cc-heard { 50% { opacity: .35; } }
+.cora-console .cc-heard-t { min-width: 0; color: var(--ink); font: 400 13px/1.5 var(--ui); }
+.cora-console .cc-heard-t .interim { color: var(--ink3); }
+/* Cora's own permission prompts, in its console (not floating over the scene) */
+.cc-needs:empty { display: none; }
+.cc-needs .needs-you { position: static; transform: none; width: auto; margin: 6px 10px; animation: none; z-index: auto; }

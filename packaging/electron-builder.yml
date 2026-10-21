@@ -1,0 +1,35 @@
+# Cora's Windows installer (scripts/package.mjs stages release/app and runs this from the repo root).
+appId: com.cora.desktop
+productName: Cora
+copyright: Copyright © 2026 David Herzfeld
+directories:
+  app: release/app
+  output: release/dist
+  buildResources: packaging
+# plain files: the server and its terminal host run them as Node (Cora.exe as Node, and the bundled Node)
+asar: false
+# @lydell/node-pty ships prebuilt for Node's stable ABI: nothing to rebuild
+npmRebuild: false
+extraResources:
+  - from: release/resources/node
+    to: node
+win:
+  target: [nsis]
+  icon: packaging/icon.ico
+  executableName: Cora
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: false
+  createDesktopShortcut: false
+  createStartMenuShortcut: true
+  shortcutName: Cora
+  # ~/.cora (sessions, settings, notes) is yours: uninstalling leaves it
+  deleteAppDataOnUninstall: false
+  artifactName: Cora-Setup-${version}.${ext}
+publish:
+  provider: github
+  owner: bleichroeder
+  repo: cora-releases
+  private: true
+  releaseType: release

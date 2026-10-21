@@ -1,0 +1,83 @@
+/* Setting Cora up: the first run, Settings › Setup and the pages' banners */
+
+.su-view { position: fixed; inset: 0; z-index: 30; display: grid; grid-template-columns: 300px 1fr; background: var(--nav); color: var(--ink); font-family: var(--ui); }
+/* moves the window: a strip across the top, nothing to click under it */
+.su-drag { position: absolute; top: 0; left: 0; right: 0; height: var(--hdr, 40px); z-index: 2; -webkit-app-region: drag; }
+.su-side { display: flex; flex-direction: column; padding: 48px 26px 24px; border-right: 1px solid var(--hair); background: radial-gradient(260px 200px at 50% 120px, color-mix(in srgb, var(--cora) 10%, transparent), transparent 72%), var(--nav); -webkit-app-region: drag; }
+.su-side > * { -webkit-app-region: no-drag; }
+.su-lens { width: 76px; height: 76px; margin: 6px auto 16px; border-radius: 50%; background: radial-gradient(circle, var(--cora-hi) 0 10px, var(--cora-dim) 11px 23px, #05080d 25px 31px, #5b6675 32px 35px, #2a313b 36px); box-shadow: 0 0 28px color-mix(in srgb, var(--cora) 32%, transparent); }
+.su-side h2 { margin: 0; text-align: center; font: 600 18px var(--ui); }
+.su-side .lead { margin: 8px 6px 22px; text-align: center; color: var(--ink3); font-size: 12.5px; line-height: 1.55; }
+.su-prog { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 12px; background: var(--raise); box-shadow: inset 0 0 0 1px var(--hair); }
+.su-prog .ring { flex: none; width: 38px; height: 38px; border-radius: 50%; display: grid; place-items: center; background: conic-gradient(var(--cora) calc(var(--p) * 1%), var(--raise2) 0); }
+.su-prog .ring::after { content: ''; width: 30px; height: 30px; border-radius: 50%; background: var(--raise); }
+.su-prog b { display: block; font: 600 13.5px var(--ui); }
+.su-prog small { display: block; margin-top: 2px; color: var(--ink4); font: 400 10.5px var(--code); }
+.su-toc { margin-top: 18px; display: flex; flex-direction: column; gap: 2px; }
+.su-toc button { display: flex; align-items: center; gap: 9px; height: 30px; padding: 0 10px; border: 0; border-radius: 8px; background: none; color: var(--ink3); font: 500 12.5px var(--ui); text-align: left; cursor: pointer; }
+.su-toc button:hover { background: var(--raise); color: var(--ink); }
+.su-side .foot { margin-top: auto; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.su-side .su-open { width: 100%; height: 34px; justify-content: center; }
+.su-side .su-open:disabled { opacity: .45; }
+.su-side .hint { color: var(--ink4); font-size: 11px; text-align: center; }
+.su-main { overflow: auto; margin-top: var(--hdr, 40px); padding: 8px 34px 40px; }
+.su-main .su-list { max-width: 880px; }
+
+.su-sec { display: flex; align-items: center; gap: 10px; margin: 6px 0 10px; font: 600 10px var(--code); letter-spacing: .16em; text-transform: uppercase; color: var(--ink4); scroll-margin-top: 20px; }
+.su-sec span { color: var(--ink3); }
+.su-sec::after { content: ''; flex: 1; height: 1px; background: var(--hair); }
+.su-rows { display: flex; flex-direction: column; gap: 6px; margin-bottom: 22px; }
+.su-row { border-radius: 12px; background: var(--raise); box-shadow: inset 0 0 0 1px var(--hair); }
+.su-row.open { background: color-mix(in srgb, var(--raise) 70%, var(--raise2)); box-shadow: inset 0 0 0 1px var(--hair2); }
+.su-rh { width: 100%; display: grid; grid-template-columns: 32px minmax(0, 1fr) auto 16px; align-items: center; gap: 12px; padding: 11px 14px 11px 12px; border: 0; background: none; color: inherit; text-align: left; cursor: pointer; }
+.su-rh .t { min-width: 0; }
+.su-rh .t b { display: block; font: 600 13.5px var(--ui); }
+.su-rh .t span { display: block; margin-top: 2px; color: var(--ink3); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.su-chev { color: var(--ink4); }
+.su-tile { flex: none; width: 32px; height: 32px; border-radius: 9px; display: grid; place-items: center; color: var(--c, var(--ink2)); background: color-mix(in srgb, var(--c, var(--ink3)) 11%, var(--raise2)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c, var(--ink3)) 24%, transparent); }
+.su-tile .brand-lens { width: 15px !important; height: 15px !important; }
+
+.su-st { display: inline-flex; align-items: center; gap: 7px; font: 500 11px var(--code); color: var(--ink3); white-space: nowrap; }
+.su-st i { width: 8px; height: 8px; border-radius: 50%; background: transparent; box-shadow: inset 0 0 0 1.5px var(--ink3); }
+.su-st.ok { color: color-mix(in srgb, var(--work) 80%, white); }
+.su-st.ok i { background: var(--work); box-shadow: 0 0 8px color-mix(in srgb, var(--work) 70%, transparent); }
+.su-st.part { color: color-mix(in srgb, var(--think) 85%, white); }
+.su-st.part i { background: var(--think); box-shadow: none; }
+.su-st.skipped { color: var(--ink4); }
+.su-st.skipped i { background: var(--ink4); box-shadow: none; }
+.su-st.req.needs { color: var(--need); }
+.su-st.req.needs i { box-shadow: inset 0 0 0 1.5px var(--need); }
+
+.su-rb { padding: 2px 14px 14px 56px; }
+.su-need { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; gap: 4px 12px; align-items: start; padding: 10px 0; border-top: 1px solid var(--hair); }
+.su-need:first-child { border-top: 0; }
+.su-need .mk { margin-top: 1px; width: 16px; height: 16px; border-radius: 50%; display: grid; place-items: center; box-shadow: inset 0 0 0 1.5px var(--ink3); }
+.su-need .mk.ok { background: color-mix(in srgb, var(--work) 18%, transparent); color: var(--work); box-shadow: none; }
+.su-need .lb { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; min-width: 0; }
+.su-need .lb b { font: 600 12.5px var(--ui); color: var(--ink); }
+.su-need .lb code { color: var(--ink4); font: 11px var(--code); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 360px; }
+.su-need .how { padding: 2px 6px; border-radius: 5px; font: 600 9.5px var(--code); letter-spacing: .08em; text-transform: uppercase; }
+.how.itself { color: color-mix(in srgb, var(--cora) 85%, white); background: color-mix(in srgb, var(--cora) 12%, transparent); }
+.how.ok { color: color-mix(in srgb, var(--run) 85%, white); background: color-mix(in srgb, var(--run) 13%, transparent); }
+.how.you { color: color-mix(in srgb, var(--think) 85%, white); background: color-mix(in srgb, var(--think) 12%, transparent); }
+.su-need .act { grid-row: span 2; display: flex; gap: 6px; align-items: center; }
+.su-need p { grid-column: 2 / 3; margin: 3px 0 0; color: var(--ink3); font-size: 12px; line-height: 1.5; }
+.su-go { color: #ccfbf1; background: color-mix(in srgb, var(--cora) 14%, var(--raise)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cora) 42%, transparent); }
+.su-cmd { grid-column: 2 / 4; margin-top: 8px; display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-radius: 9px; background: #070a10; box-shadow: inset 0 0 0 1px var(--hair2); font: 12px var(--code); color: var(--ink2); min-width: 0; }
+.su-cmd .pr { color: var(--ink4); }
+.su-cmd .c { overflow-wrap: anywhere; }
+.su-diff { grid-column: 2 / 4; margin: 8px 0 0; padding: 10px 12px; max-height: 260px; overflow: auto; border-radius: 9px; background: #070a10; box-shadow: inset 0 0 0 1px var(--hair2); font: 11.5px/1.6 var(--code); color: var(--ink3); white-space: pre; }
+.su-steps { grid-column: 2 / 4; margin: 8px 0 0; padding: 0; list-style: none; counter-reset: s; display: flex; flex-direction: column; gap: 6px; }
+.su-steps li { counter-increment: s; display: grid; grid-template-columns: 20px 1fr; gap: 8px; color: var(--ink2); font-size: 12.5px; line-height: 1.5; }
+.su-steps li::before { content: counter(s); width: 18px; height: 18px; margin-top: 1px; border-radius: 50%; display: grid; place-items: center; font: 600 10px var(--code); color: var(--ink3); box-shadow: inset 0 0 0 1px var(--hair2); }
+.su-key { grid-column: 2 / 4; display: flex; gap: 6px; margin-top: 10px; }
+.su-key input { flex: 1; }
+.su-err { grid-column: 2 / 4; }
+.su-tail { display: flex; align-items: center; gap: 8px; padding-top: 10px; border-top: 1px solid var(--hair); }
+.su-tail .sp { flex: 1; }
+.su-tail > span:first-child { color: var(--ink4); font-size: 11.5px; }
+
+
+/* in Settings › Setup: the list is the page */
+.modal.settings .su-list .su-sec:first-child { margin-top: 2px; }
+.modal.settings .su-list .su-rows:last-child { margin-bottom: 0; }

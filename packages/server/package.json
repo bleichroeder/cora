@@ -1,0 +1,28 @@
+{
+  "name": "@cora/server",
+  "version": "0.1.2",
+  "license": "MIT",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/cli.ts start --no-open",
+    "build": "tsup"
+  },
+  "dependencies": {
+    "@cora/shared": "*",
+    "@fastify/cookie": "^11.0.0",
+    "@fastify/static": "^10.1.6",
+    "@fastify/websocket": "^11.0.0",
+    "@lydell/node-pty": "^1.2.0-beta.15",
+    "@modelcontextprotocol/sdk": "^1.32.1",
+    "@xterm/headless": "^6.0.0",
+    "chokidar": "^4.0.0",
+    "diff": "^9.0.0",
+    "fastify": "^5.2.0",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "tsup": "^9.0.0",
+    "tsx": "^4.19.0"
+  }
+}

@@ -1,0 +1,99 @@
+/* ---------- the session scene's labels, in the design language ---------- */
+/* an agent: its name with a dark shadow (no coloured glow), then one quiet line */
+.scene-labels .agent-tag .nm { color: var(--ink); font: 600 12.5px var(--ui); text-shadow: 0 1px 8px rgba(0, 0, 0, .9), 0 0 2px #000; }
+.scene-labels .agent-tag .st { gap: 5px; margin-top: 1px; color: var(--ink3); font: 400 11px var(--ui); text-shadow: 0 1px 6px #000; }
+.scene-labels .agent-tag .st.act { color: var(--ink2); font: 400 10.5px var(--code); }
+.scene-labels .agent-tag .st.run, .scene-labels .agent-tag .st.think { color: var(--ink3); }
+.scene-labels .agent-tag .st.act.run { color: var(--ink2); }
+.scene-labels .agent-tag .st.done { color: var(--ink3); }
+.scene-labels .agent-tag .st.needs { color: #ffb3b3; font-weight: 500; }
+.scene-labels .agent-tag .st.needs svg { color: var(--need); }
+.scene-labels .agent-tag .st.voice-listen, .scene-labels .agent-tag .st.voice-speak { color: var(--cora); }
+.scene-labels .agent-tag .ctx { display: flex; align-items: center; justify-content: center; gap: 6px; margin-top: 3px; color: var(--ink4); font: 500 10px var(--code); text-shadow: 0 1px 6px #000; }
+.ctx-bar { display: block; width: 40px; height: 3px; border-radius: 2px; background: var(--raise2); overflow: hidden; }
+.ctx-bar b { display: block; width: var(--p); height: 100%; background: var(--pc, var(--work)); }
+/* a resource: its name, a quiet count; the busy one lights to white */
+.scene-labels .res-tag { gap: 6px; color: var(--ink3); font: 400 12px var(--ui); text-shadow: 0 1px 6px #000; }
+.scene-labels .res-tag.hot { color: var(--ink); }
+.scene-labels .res-n { margin-left: 0; color: var(--ink4); font: 500 10.5px var(--code); }
+/* a program at work: a pill on a hairline, the language's status glyph */
+.scene-labels .prog-chip { gap: 6px; height: 22px; padding: 0 8px; border: 0; border-radius: 7px; background: rgba(17, 21, 29, .92); box-shadow: inset 0 0 0 1px var(--hair2); color: var(--ink); font: 500 10.5px var(--code); }
+.scene-labels .prog-chip.hot { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c) 50%, transparent); }
+.scene-labels .prog-chip.fail { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--need) 40%, transparent); }
+.scene-labels .prog-chip .dl-glyph { width: 9px; height: 9px; }
+.scene-labels .prog-chip .n { color: var(--ink4); }
+.scene-labels .prog-chip .t { color: var(--ink2); }
+.scene-labels .prog-chip .bgb { color: var(--run); }
+.scene-labels .prog-lbl .lead { background: var(--hair2); opacity: 1; }
+/* hovering a program: the language's card */
+.scene-labels .prog-card, .scene-labels .prog-tip { border: 0; border-radius: 10px; background: var(--raise); box-shadow: inset 0 0 0 1px var(--hair2), 0 14px 34px rgba(0, 0, 0, .6); color: var(--ink2); font: 400 12px/1.5 var(--ui); }
+.scene-labels .prog-card b, .scene-labels .prog-tip b { color: var(--ink); font-weight: 600; }
+.scene-labels .prog-card .d, .scene-labels .prog-tip .d, .scene-labels .prog-card .k { color: var(--ink4); }
+.scene-labels .prog-card .v { color: var(--ink2); font: 400 11px var(--code); }
+.scene-labels .prog-card .ok { color: var(--work); }
+.scene-labels .prog-card .bad { color: var(--need); }
+.scene-labels .prog-card .warn { color: var(--think); }
+.scene-labels .prog-card .pc-h i { box-shadow: none !important; }
+/* the shell's tape: a panel, a small-caps header, a glyph per command */
+.scene-labels .res-cmds { gap: 0; width: 290px; padding: 8px 10px; border: 0; border-radius: 10px; background: rgba(17, 21, 29, .94); box-shadow: inset 0 0 0 1px var(--hair2), 0 10px 26px rgba(0, 0, 0, .5); }
+.scene-labels .res-cmds .cmd-h { display: flex; align-items: center; gap: 8px; width: 100%; margin-bottom: 5px; color: var(--ink4); font: 600 9.5px var(--code); letter-spacing: .16em; text-transform: uppercase; }
+.scene-labels .res-cmds .cmd-h::after { content: ''; flex: 1; order: 3; height: 1px; background: var(--hair); }
+.scene-labels .res-cmds .cmd-h .n { order: 2; margin-left: 0; color: var(--run); font-weight: 500; letter-spacing: .02em; text-transform: none; }
+.scene-labels .res-cmds .cmd { display: grid; grid-template-columns: 12px minmax(0, 1fr) auto; align-items: center; column-gap: 7px; width: 100%; max-width: none; min-height: 20px; color: var(--ink2); font: 400 10.5px var(--code); }
+.scene-labels .res-cmds .cmd .mk { width: 8px; height: 8px; }
+.scene-labels .res-cmds .cmd-t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.scene-labels .res-cmds .cmd.live { color: var(--ink); }
+.scene-labels .res-cmds .cmd.fail { color: #ffb3b3; }
+.scene-labels .res-cmds .cmd .ms { margin-left: 0; color: var(--ink4); font-size: 10px; }
+.scene-labels .res-cmds .cmd-tail { grid-column: 2 / -1; color: var(--ink4); }
+.scene-labels .res-cmds .cmd-more { padding: 2px 0 0 19px; color: var(--ink4); font: 500 10.5px var(--ui); }
+.scene-labels .res-cmds .cmd-more:hover { color: var(--ink2); }
+/* a file: a small pill */
+.scene-labels .drop-l { gap: 6px; height: 20px; padding: 0 7px; border: 0; border-radius: 6px; background: rgba(17, 21, 29, .9); box-shadow: inset 0 0 0 1px var(--hair2); color: var(--ink); font: 400 10.5px var(--code); }
+.scene-labels .drop-l:hover { box-shadow: inset 0 0 0 1px var(--ink4); }
+.scene-labels .drop-l i { width: 6px; height: 6px; }
+.scene-labels .drop-l span { color: var(--ink4); }
+/* what it said; the shelf; anthropic; the overflow */
+.scene-labels .bubble { padding: 8px 11px; border: 0; border-radius: 10px; background: rgba(17, 21, 29, .94); box-shadow: inset 0 0 0 1px var(--hair2), 0 10px 26px rgba(0, 0, 0, .55); color: var(--ink); font: 400 12.5px/1.45 var(--ui); }
+.scene-labels .bubble.on:hover { box-shadow: inset 0 0 0 1px var(--ink4), 0 10px 26px rgba(0, 0, 0, .55); }
+.scene-labels .bubble-text code { border: 0; background: var(--raise2); color: var(--ink); font: 400 11.5px var(--code); }
+.scene-labels .bubble-text strong { color: var(--ink); }
+.scene-labels .shelf-l { color: var(--ink4); font: 600 9.5px var(--code); letter-spacing: .16em; }
+.scene-labels .anth-tag { color: var(--ink3); font: 500 11px var(--ui); letter-spacing: 0; text-shadow: 0 1px 6px #000; }
+.scene-labels .anth-tag span { color: var(--ink4); font: 500 10px var(--code); }
+.scene-labels .overflow-tag { padding: 3px 9px; border: 0; border-radius: 7px; background: rgba(17, 21, 29, .9); box-shadow: inset 0 0 0 1px var(--hair2); color: var(--ink3); font: 500 11px var(--ui); }
+/* hovering a thing, and the scene's notes */
+.scene-labels .scene-tip { padding: 10px 12px; border: 0; border-radius: 10px; background: var(--raise); box-shadow: inset 0 0 0 1px var(--hair2), 0 14px 34px rgba(0, 0, 0, .6); color: var(--ink2); font: 400 12px/1.5 var(--ui); }
+.scene-labels .scene-tip b { color: var(--ink); font-weight: 600; }
+.scene-labels .scene-tip .d { color: var(--ink4); }
+.scene-labels .scene-tip .needs-t { color: #ffb3b3; }
+.scene-labels .scene-tip .say-t { border-left-color: var(--hair2); color: var(--ink2); }
+.scene-labels .scene-toast { border: 0; border-radius: 10px; background: var(--raise); box-shadow: inset 0 0 0 1px var(--hair2), 0 14px 34px rgba(0, 0, 0, .6); color: var(--ink); font: 500 12px var(--ui); }
+
+/* the explains' dock: the language's label, then pills like the files' */
+.scene-labels .exp-l { display: flex; align-items: center; gap: 8px; margin-bottom: 3px; color: var(--ink4); font: 600 9.5px var(--code); letter-spacing: .16em; text-transform: uppercase; }
+.scene-labels .exp-l span { color: var(--ink3); letter-spacing: .02em; }
+.scene-labels .exp-l::after { content: ''; width: 150px; height: 1px; background: var(--hair); }
+.scene-labels .exp-pill { display: inline-flex; align-items: center; gap: 7px; max-width: 250px; height: 24px; padding: 0 9px 0 3px; border: 0; border-radius: 8px; background: rgba(17, 21, 29, .92); box-shadow: inset 0 0 0 1px var(--hair2); color: var(--ink2); font: 500 11.5px var(--ui); cursor: pointer; transition: box-shadow .15s, color .15s; }
+.scene-labels .exp-pill:hover { color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink4); }
+.scene-labels .exp-pill .ic { flex: none; display: grid; place-items: center; width: 18px; height: 18px; border-radius: 5px; background: var(--raise2); box-shadow: inset 0 0 0 1px var(--hair2); color: var(--ink2); }
+.scene-labels .exp-pill .t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.scene-labels .exp-pill em { flex: none; color: var(--ink4); font: normal 500 10px var(--code); }
+.scene-labels .exp-pill.exp-more { padding-left: 9px; color: var(--ink4); }
+.scene-labels .exp-pill.exp-more:hover { color: var(--ink2); }
+/* a new one's pill: in as its card reaches the dock, with a brief brighter hairline */
+.scene-labels .exp-pill.arriving { animation: exp-in 1.4s ease-out 2.6s both; }
+@keyframes exp-in { 0% { opacity: 0; transform: translateY(-4px); box-shadow: inset 0 0 0 1px var(--ink3); color: var(--ink); } 25% { opacity: 1; transform: none; box-shadow: inset 0 0 0 1px var(--ink3); color: var(--ink); } 100% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .scene-labels .exp-pill.arriving { animation: none; } }
+
+/* over the scene while its shaders compile (scene/warmup.tsx): plain CSS, so it keeps moving while the page is busy */
+.scene-veil { position: absolute; inset: 0; z-index: 5; display: grid; place-content: center; justify-items: center; gap: 10px; background: #06090f; transition: opacity .45s ease; pointer-events: none; }
+.scene-veil.gone { opacity: 0; }
+.sv-ring { width: 46px; height: 46px; border-radius: 50%; border: 1.5px solid rgba(255, 255, 255, .08); border-top-color: var(--cora, #7dd3fc); animation: sv-spin 1.1s linear infinite; will-change: transform; }
+.sv-word { margin-top: 6px; font: 600 11px var(--mono); letter-spacing: .5em; padding-left: .5em; color: var(--ink2, #c7cfdb); }
+.sv-sub { font: 500 11px var(--ui); color: var(--ink4, #6b7585); animation: sv-breathe 2.4s ease-in-out infinite; }
+@keyframes sv-spin { to { transform: rotate(360deg); } }
+@keyframes sv-breathe { 50% { opacity: .45; } }
+@media (prefers-reduced-motion: reduce) { .sv-ring, .sv-sub { animation: none; } }
+/* an agent's name keeps clear of its neighbours' (the projector's declutter sets --dy) */
+.scene-labels .lbl .agent-tag { transform: translate(-50%, var(--dy, 0px)); transition: opacity .6s, transform .18s ease-out; }

@@ -1,0 +1,195 @@
+/* ---------- menus and popovers, in the design language ---------- */
+/* the session menu: the session as its row, small-caps Name and Colour, actions as rows */
+.session-menu { width: 268px; gap: 0; padding: 10px; border: 0; border-radius: 12px; background: var(--raise); box-shadow: inset 0 0 0 1px var(--hair2), 0 16px 40px rgba(0, 0, 0, .6); color: var(--ink2); font-family: var(--ui); }
+.sm-h { display: grid; grid-template-columns: 28px minmax(0, 1fr); align-items: center; column-gap: 10px; padding: 2px 2px 10px; border-bottom: 1px solid var(--hair); }
+.sm-h .dl-tile { --tile-bg: var(--raise); }
+.sm-t { display: flex; flex-direction: column; min-width: 0; }
+.sm-t b { overflow: hidden; color: var(--ink); font: 600 13px/17px var(--ui); text-overflow: ellipsis; white-space: nowrap; }
+.sm-t span { overflow: hidden; color: var(--ink4); font: 400 10.5px/14px var(--code); text-overflow: ellipsis; white-space: nowrap; }
+.sm-gl { display: flex; align-items: center; gap: 8px; margin: 10px 0 6px; color: var(--ink4); font: 600 9.5px var(--code); letter-spacing: .16em; text-transform: uppercase; }
+.sm-gl::after { content: ''; flex: 1; height: 1px; background: var(--hair); }
+.sm-name { display: flex; gap: 6px; }
+.sm-name input { flex: 1; min-width: 0; height: 30px; box-sizing: border-box; padding: 0 10px; border: 0; border-radius: 8px; outline: none; background: var(--nav); box-shadow: inset 0 0 0 1px var(--hair2); color: var(--ink); font: 400 12.5px var(--ui); }
+.sm-name input:focus { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cora) 45%, transparent); }
+.sm-name input::placeholder { color: var(--ink4); }
+.sm-i { display: grid; place-items: center; width: 30px; height: 30px; border: 0; border-radius: 8px; background: none; color: var(--ink3); cursor: pointer; }
+.sm-i:hover:not(:disabled) { background: var(--raise2); color: var(--ink); }
+.session-menu .swatches { gap: 6px; }
+.session-menu .swatch { width: 18px; height: 18px; border: 0; box-shadow: none; }
+.session-menu .swatch.on { box-shadow: 0 0 0 2px var(--raise), 0 0 0 3.5px var(--ink2); }
+.session-menu .swatches input[type='color'] { width: 22px; height: 20px; }
+.session-menu .mini { padding: 0 4px; border: 0; background: none; color: var(--ink3); font: 500 11px var(--ui); }
+.session-menu .mini:hover { color: var(--ink); }
+.sm-sep { height: 1px; margin: 10px 4px 6px; background: var(--hair); }
+.sm-sep + .sm-row { margin-top: 0; }
+.sm-row { display: flex; align-items: center; gap: 10px; width: 100%; height: 32px; padding: 0 8px; border: 0; border-radius: 7px; background: none; color: var(--ink2); font: 500 12.5px var(--ui); text-align: left; cursor: pointer; }
+.sm-row svg { flex: none; color: var(--ink3); }
+.sm-row:hover:not(:disabled) { background: var(--raise2); color: var(--ink); }
+.sm-row:disabled { opacity: .45; cursor: default; }
+.sm-row.bad { color: #ffb3b3; }
+.sm-row.bad svg { color: var(--need); }
+.session-menu .ny-err { margin-top: 6px; color: #ffb3b3; font: 500 11px var(--code); }
+
+/* the Jira card */
+.jcard { padding: 12px 14px; border: 0; border-radius: 12px; background: var(--raise); box-shadow: inset 0 0 0 1px var(--hair2), 0 16px 40px rgba(0, 0, 0, .6); color: var(--ink2); font: 400 12.5px var(--ui); }
+.jcard .jc-h { margin-bottom: 6px; font: 500 12px var(--code); }
+.jcard .jc-h b { color: var(--jira); font-weight: 500; }
+.jcard .jc-dim { color: var(--ink4); font: 400 11px var(--ui); }
+.jcard .jc-sum { margin-bottom: 10px; color: var(--ink); font: 500 13.5px/1.45 var(--ui); }
+.jcard .jc-meta { gap: 6px 12px; color: var(--ink3); font: 400 11.5px var(--ui); }
+.jc-st { display: inline-flex; align-items: center; gap: 5px; padding: 0 7px; border-radius: 6px; background: none; box-shadow: inset 0 0 0 1px var(--hair2); color: var(--ink2); font: 500 11px/20px var(--ui); letter-spacing: 0; text-transform: none; }
+.jc-st::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--ink3); }
+.jc-st.j-todo { background: none; color: var(--ink2); }
+.jc-st.j-progress { background: none; color: var(--ink2); }
+.jc-st.j-progress::before { background: var(--run); }
+.jc-st.j-done { background: none; color: var(--ink2); }
+.jc-st.j-done::before { background: var(--work); }
+.jcard .jc-who { color: var(--ink2); font: 400 12px var(--ui); }
+.jcard .jc-btn { height: 28px; margin-top: 10px; padding: 0 10px; border: 0; border-radius: 8px; background: none; box-shadow: none; color: var(--ink3); font: 500 12px var(--ui); }
+.jcard .jc-btn:hover { background: var(--raise2); color: var(--ink); }
+
+/* the pipeline card (the header's) */
+.fh-card.pl-card { padding: 12px 14px; border: 0; border-radius: 12px; background: var(--raise); box-shadow: inset 0 0 0 1px var(--hair2), 0 16px 40px rgba(0, 0, 0, .6); color: var(--ink2); font: 400 12px/1.6 var(--ui); }
+.pl-card .k { color: var(--ink4); }
+.pl-card .r > span:last-child { color: var(--ink2); font: 400 11.5px var(--code); }
+.pl-card a { color: var(--run); }
+.pl-card .pl-list { display: block; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--hair); }
+.pl-card .pl-sn { color: var(--ink) !important; font: 600 12px var(--ui); }
+.pl-card .pl-job { gap: 5px; height: 22px; padding: 0 8px; border: 0; border-radius: 6px; background: var(--nav); box-shadow: inset 0 0 0 1px var(--hair2); color: var(--ink2); font: 400 10.5px var(--code); }
+.pl-card .pl-job:hover { box-shadow: inset 0 0 0 1px var(--ink4); }
+.pl-card .pl-job.clickable { color: #ffb3b3; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--need) 40%, transparent); }
+.pl-card .hint, .pl-card .dim { color: var(--ink4); }
+.pl-card .btn { height: 28px; padding: 0 10px; border: 0; border-radius: 8px; background: none; color: var(--ink3); font: 500 12px var(--ui); }
+.pl-card .btn:hover { background: var(--raise2); color: var(--ink); }
+
+/* a Slack draft: amber-edged, something waiting on you */
+.slack-outbox .sd-card { gap: 10px; padding: 12px 14px; border: 0; border-radius: 12px; background: var(--raise); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--think) 35%, transparent), 0 16px 40px rgba(0, 0, 0, .6); color: var(--ink2); font-family: var(--ui); }
+.slack-outbox .sd-h { gap: 8px; color: var(--ink3); font: 400 12px var(--ui); }
+.slack-outbox .sd-h b { color: var(--ink); font: 600 13.5px var(--ui); }
+.slack-outbox .sd-logo { color: var(--ink2); }
+.slack-outbox .sd-later { padding: 0 7px; border-radius: 6px; background: var(--raise2); color: var(--ink3); font: 500 10.5px/18px var(--code); }
+.slack-outbox .sd-to { color: var(--ink4); font: 500 11.5px var(--ui); }
+.slack-outbox .sd-to .k { color: var(--ink4); }
+.slack-outbox .sd-chip { height: 24px; padding: 0 9px; border: 0; border-radius: 7px; background: var(--raise2); box-shadow: inset 0 0 0 1px var(--hair2); color: var(--ink); font: 500 12px var(--ui); }
+.slack-outbox .sd-chip:hover { box-shadow: inset 0 0 0 1px var(--ink4); }
+.slack-outbox .sd-chip .dim, .slack-outbox .sd-edit, .slack-outbox .sd-thread { color: var(--ink4); }
+.slack-outbox .sd-text { border: 0; border-radius: 9px; background: var(--nav); box-shadow: inset 0 0 0 1px var(--hair); color: var(--ink); font: 400 13px/1.5 var(--ui); }
+.slack-outbox .sd-text:focus { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cora) 45%, transparent); }
+.slack-outbox .sd-pick input { border: 0; border-radius: 8px; background: var(--nav); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cora) 45%, transparent); color: var(--ink); font: 400 12.5px var(--ui); }
+.slack-outbox .sd-hits { border: 0; border-radius: 10px; background: var(--raise); box-shadow: inset 0 0 0 1px var(--hair2), 0 14px 34px rgba(0, 0, 0, .6); }
+.slack-outbox .sd-hit { color: var(--ink2); font: 400 12.5px var(--ui); }
+.slack-outbox .sd-hit.on { background: var(--raise2); color: var(--ink); }
+.slack-outbox .sd-err { color: #ffb3b3; font: 500 11.5px var(--code); }
+.slack-outbox .btn { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 11px; border: 0; border-radius: 8px; background: none; box-shadow: none; color: var(--ink3); font: 500 12px var(--ui); }
+.slack-outbox .btn:hover:not(:disabled) { background: var(--raise2); color: var(--ink); }
+.slack-outbox .btn.allow { background: color-mix(in srgb, var(--work) 14%, var(--raise)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--work) 40%, transparent); color: #d9fbe9; }
+.slack-outbox .btn.allow:hover:not(:disabled) { background: color-mix(in srgb, var(--work) 22%, var(--raise)); box-shadow: inset 0 0 0 1px var(--work); }
+
+/* push to talk: a capsule with Cora's edge */
+.ptt-mic { border: 0; background: var(--raise); box-shadow: inset 0 0 0 1px var(--hair2), 0 8px 20px rgba(0, 0, 0, .5); color: var(--ink3); }
+.ptt-mic:hover { color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink4), 0 8px 20px rgba(0, 0, 0, .5); }
+.ptt-mic.hot { color: var(--cora); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cora) 50%, transparent), 0 8px 20px rgba(0, 0, 0, .5); }
+.ptt-mic.speaking { color: var(--ink2); box-shadow: inset 0 0 0 1px var(--hair2), 0 8px 20px rgba(0, 0, 0, .5); }
+.ptt-note { border: 0; border-radius: 10px; background: var(--raise); box-shadow: inset 0 0 0 1px var(--hair2), 0 10px 26px rgba(0, 0, 0, .55); color: var(--ink2); font: 400 12px var(--ui); }
+.ptt .ptt-cap { gap: 12px; min-height: 46px; padding: 0 16px; border: 0; border-radius: 23px; background: var(--raise); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cora) 45%, transparent), 0 16px 40px rgba(0, 0, 0, .6); }
+.ptt .ptt-txt { color: var(--ink); font: 400 13px/1.4 var(--ui); }
+.ptt .ptt-txt .interim { color: var(--ink4); }
+.ptt .ptt-tgt { color: var(--ink4); font: 500 11px var(--ui); }
+.ptt .ptt-tgt b { color: var(--ink2); }
+.ptt .ptt-review { border: 0; border-radius: 12px; background: var(--raise); box-shadow: inset 0 0 0 1px var(--hair2), 0 16px 40px rgba(0, 0, 0, .6); }
+.ptt .ptt-review textarea { color: var(--ink); font: 400 13px/1.5 var(--ui); }
+.ptt .ptt-row { color: var(--ink4); font: 500 11px var(--ui); }
+.ptt .btn { height: 28px; padding: 0 10px; border: 0; border-radius: 8px; background: none; color: var(--ink3); font: 500 12px var(--ui); }
+.ptt .btn.on { background: color-mix(in srgb, var(--work) 14%, var(--raise)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--work) 40%, transparent); color: #d9fbe9; }
+.ptt .ptt-err { color: #ffb3b3; font: 500 11px var(--code); }
+
+/* no sessions */
+.empty-state { gap: 8px; background: var(--nav); }
+.es-mark { display: grid; place-items: center; width: 44px; height: 44px; margin-bottom: 6px; border-radius: 12px; box-shadow: inset 0 0 0 1.5px var(--hair2); color: var(--ink4); }
+.empty-state h3 { margin: 0; color: var(--ink); font: 600 17px var(--ui); }
+.empty-state p { max-width: 380px; color: var(--ink3); font: 400 13px/1.55 var(--ui); }
+.empty-state .es-actions { gap: 8px; }
+.empty-state .btn { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px; border: 0; border-radius: 8px; background: var(--raise2); box-shadow: inset 0 0 0 1px var(--hair2); color: var(--ink2); font: 500 12.5px var(--ui); }
+.empty-state .btn.allow { background: color-mix(in srgb, var(--work) 14%, var(--raise)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--work) 40%, transparent); color: #d9fbe9; }
+
+/* a message Cora sent straight away (you asked): who it went to, and Undo while there's time */
+.sd-sent { display: flex; align-items: center; gap: 10px; box-sizing: border-box; padding: 10px 10px 10px 12px; border-radius: 12px; background: var(--raise); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cora) 40%, transparent), 0 16px 40px rgba(0, 0, 0, .6); font-family: var(--ui); }
+.sd-sent > .sd-logo-tile { flex: none; }
+.sd-sent > .sd-sent-t { flex: 1; }
+.sd-sent > .btn { flex: none; }
+/* beside Cora's card in the nav, pointing at it, newest on top */
+.cora-sent { position: fixed; z-index: 60; display: flex; flex-direction: column; gap: 8px; width: 380px; }
+.cora-sent > .sd-sent:first-child::before { content: ''; position: absolute; left: -6px; top: 20px; width: 10px; height: 10px; background: var(--raise); transform: rotate(45deg); box-shadow: -1px 1px 0 0 color-mix(in srgb, var(--cora) 40%, transparent); }
+.cora-sent > .sd-sent { position: relative; }
+/* in Cora's conversation: one line each, above the input */
+.cora-sent-inline { display: flex; flex-direction: column; gap: 6px; margin: 0 12px 8px; }
+.cora-cmd .cora-sent-inline { margin: 14px 0 0; width: 100%; max-width: 560px; }
+.sd-sent.inline { padding: 7px 8px 7px 10px; border-radius: 10px; background: color-mix(in srgb, var(--cora) 5%, var(--raise)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cora) 30%, transparent); }
+.sd-sent.inline .sd-logo-tile { width: 22px; height: 22px; border-radius: 6px; }
+.sd-sent.inline .sd-sent-t b { font: 600 12px/16px var(--ui); }
+.sd-sent.inline .btn { height: 24px; }
+.sd-logo-tile { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 8px; background: color-mix(in srgb, var(--cora) 14%, var(--nav)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cora) 35%, transparent); color: var(--cora); }
+.sd-sent-t { display: flex; flex-direction: column; min-width: 0; }
+.sd-sent-t b { color: var(--ink); font: 600 13px/17px var(--ui); }
+.sd-sent-t > span { overflow: hidden; color: var(--ink3); font: 400 12px/16px var(--ui); text-overflow: ellipsis; white-space: nowrap; }
+.sd-sent .sd-left { color: var(--ink4); font: 500 10.5px var(--code); }
+
+/* a message Cora sent by itself (a conversation you let it carry on) */
+.sd-sent .sd-own { font-weight: 400; color: var(--cora); }
+
+.sd-sent-t b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cora-sent { width: 430px; }
+
+/* Cora's cards beside its card in the nav (what it needs from you, then what it just sent) */
+.cora-float { position: fixed; z-index: 60; display: flex; flex-direction: column; gap: 8px; width: 430px; max-height: calc(100vh - 64px); overflow-y: auto; }
+.cora-float > :first-child { position: relative; }
+.cora-float > :first-child::before { content: ''; position: absolute; left: -6px; top: var(--arrow, 20px); opacity: var(--arrow-on, 1); width: 10px; height: 10px; background: var(--raise); transform: rotate(45deg); box-shadow: -1px 1px 0 0 color-mix(in srgb, var(--cora) 40%, transparent); }
+.cora-float .cc-card { gap: 0; padding: 11px 12px; border: 0; border-radius: 12px; background: var(--raise); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--think) 45%, transparent), 0 16px 40px rgba(0, 0, 0, .6); }
+.cora-float > .cc-card:first-child::before { box-shadow: -1px 1px 0 0 color-mix(in srgb, var(--think) 45%, transparent); }
+.cf-need { display: flex; align-items: center; gap: 10px; padding: 10px 10px 10px 12px; border-radius: 12px; background: var(--raise); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--need) 45%, transparent), 0 16px 40px rgba(0, 0, 0, .6); font-family: var(--ui); }
+.cora-float > .cf-need:first-child::before { box-shadow: -1px 1px 0 0 color-mix(in srgb, var(--need) 45%, transparent); }
+.cf-need .cf-ico { flex: none; display: grid; place-items: center; width: 28px; height: 28px; border-radius: 8px; background: color-mix(in srgb, var(--need) 14%, var(--nav)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--need) 35%, transparent); color: var(--need); }
+.cf-need .cf-t { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.cf-need .cf-t b { color: var(--ink); font: 600 13px/17px var(--ui); }
+.cf-need .cf-t span { overflow: hidden; color: var(--ink3); font: 400 12px/16px var(--ui); text-overflow: ellipsis; white-space: nowrap; }
+.cf-need .btn { flex: none; height: 28px; }
+/* files going with a Slack message */
+.sd-files { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 2px; }
+.sd-files.small { margin: 6px 0 0; }
+.sd-thumb { display: block; height: 72px; border-radius: 8px; overflow: hidden; box-shadow: inset 0 0 0 1px var(--hair2); background: var(--nav); }
+.sd-files.small .sd-thumb { height: 40px; border-radius: 6px; }
+.sd-thumb img { display: block; height: 100%; width: auto; max-width: 180px; object-fit: cover; }
+.sd-file { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 9px; border-radius: 7px; background: var(--raise2); box-shadow: inset 0 0 0 1px var(--hair2); color: var(--ink2); font: 500 11.5px var(--ui); }
+.sd-file i { color: var(--ink4); font: 500 10px var(--code); font-style: normal; }
+.sd-sent:has(.sd-files) { align-items: flex-start; }
+
+/* a Jira alert beside Cora: the sent card's shape, in Jira's colour */
+.sd-sent.jw-card { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--jira) 40%, transparent), 0 16px 40px rgba(0, 0, 0, .6); }
+.sd-sent.jw-card.inline { background: color-mix(in srgb, var(--jira) 5%, var(--raise)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--jira) 30%, transparent); }
+.sd-logo-tile.jw-tile { background: color-mix(in srgb, var(--jira) 14%, var(--nav)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--jira) 35%, transparent); color: var(--jira); }
+.jw-card .jw-x { padding: 0 7px; }
+.jw-list { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; margin-top: 4px; white-space: normal !important; }
+.jw-list .linkish { color: var(--ink2); font: 400 12px var(--ui); text-align: left; }
+.jw-list .linkish:hover { color: var(--ink); }
+.cora-float > .jw-card:first-child::before { box-shadow: -1px 1px 0 0 color-mix(in srgb, var(--jira) 40%, transparent); }
+
+/* a ticket assigned to you, and Cora offers to start it (or started it): the Jira card, with Cora's pick and actions */
+.sd-sent.jw-start { align-items: flex-start; }
+.jw-start .sd-sent-t b .k { color: var(--jira); }
+.jw-start .sd-sent-t > span.jw-pick { margin-top: 6px; color: var(--ink4); font: 500 10.5px/14px var(--code); white-space: normal; }
+.jw-start .jw-pick em { font-style: normal; color: var(--ink3); }
+.jw-started .sd-sent-t > span.jw-pick { margin-top: 2px; }
+.jw-start .sd-sent-t > span.jw-acts { display: flex; align-items: center; gap: 6px; margin-top: 10px; overflow: visible; }
+.jw-split { display: inline-flex; }
+.jw-split > .btn:first-child { gap: 6px; }
+.jw-split > .btn:first-child:not(:last-child) { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.jw-split > .jw-more { width: 26px; padding: 0; justify-content: center; border-top-left-radius: 0; border-bottom-left-radius: 0; box-shadow: inset 1px 0 0 rgba(0, 0, 0, .25); }
+.jw-start .sd-sent-t > span.jw-menu { display: flex; flex-direction: column; margin-top: 8px; padding: 4px; border-radius: 9px; background: var(--nav); box-shadow: inset 0 0 0 1px var(--hair); overflow: visible; white-space: normal; }
+.jw-menu .jw-mh { padding: 4px 8px 6px; color: var(--ink4); font: 600 9.5px var(--code); letter-spacing: .14em; text-transform: uppercase; }
+.jw-menu button { display: grid; grid-template-columns: 14px minmax(0, 1fr) auto; align-items: center; gap: 8px; width: 100%; height: 30px; padding: 0 8px; border: 0; border-radius: 7px; background: none; color: var(--ink2); font: 500 12px var(--ui); text-align: left; cursor: pointer; }
+.jw-menu button:hover, .jw-menu button.on { background: var(--raise); color: var(--ink); }
+.jw-menu button svg { color: var(--ink4); }
+.jw-menu button.on svg { color: var(--jira); }
+.jw-menu button span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.jw-menu i { color: var(--ink4); font: normal 500 10px var(--code); }
+.jw-start .sd-sent-t > span.cc-inerr { margin-top: 6px; white-space: normal; }

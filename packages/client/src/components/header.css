@@ -1,0 +1,52 @@
+/* ---------- the scene header, in Cora's design language ---------- */
+.focus-h { --tile-bg: var(--nav); gap: 10px; padding: 0 10px 0 12px; border-bottom-color: var(--hair2); background: var(--nav); font: 500 11px var(--code); color: var(--ink2); }
+/* who: the nav's tile, then the name */
+.focus-h .fh-id { gap: 10px; }
+.focus-h .fh-tile { width: 24px; height: 24px; border-radius: 7px; font-size: 11px; }
+.focus-h .fh-tile > i { width: 9px; height: 9px; }
+.focus-h .fh-name { color: var(--ink); font: 600 14px var(--ui); }
+.focus-h .fh-name:hover { text-decoration: underline dotted var(--ink4); text-underline-offset: 4px; }
+/* what it's doing: one word in its colour */
+.focus-h .fh-state { padding: 0; border-radius: 0; background: none; color: var(--ink3); font: 500 11px var(--code); }
+.focus-h .fh-state.st-working { color: var(--work); background: none; }
+.focus-h .fh-state.st-thinking { color: var(--think); background: none; }
+.focus-h .fh-state.st-needs-you { color: var(--need); background: none; }
+.focus-h .fh-state.st-ended { color: var(--ink4); }
+.focus-h .fh-bg { color: var(--ink4); }
+.fh-dv { flex: none; width: 1px; height: 18px; background: var(--hair2); }
+/* facts: quiet text with one glyph each, a soft surface on hover */
+.focus-h .tcard { flex: none; display: inline-flex; align-items: center; gap: 6px; height: 26px; max-width: none; padding: 0 8px; border: 0; border-radius: 7px; background: none; color: var(--ink2); font: 500 11px var(--code); cursor: pointer; }
+.focus-h .tcard:hover { background: var(--raise); box-shadow: inset 0 0 0 1px var(--hair); color: var(--ink); }
+.focus-h .tcard > svg { opacity: .8; }
+.focus-h .tcard .tk { color: var(--jira); font-weight: 600; }
+.focus-h .tcard .tst { color: var(--ink3); }
+.focus-h .tcard .tst.j-progress { color: var(--jira); }
+.focus-h .tcard .tst.j-done { color: var(--work); }
+.focus-h .tcard .jc-av, .focus-h .tcard img { width: 16px; height: 16px; }
+.focus-h .pl-head { flex: none; padding: 0; border: 0; border-radius: 0; background: none; }
+.focus-h .pl-main { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 8px; border: 0; border-radius: 7px; background: none; color: var(--ink2); font: 500 11px var(--code); cursor: pointer; }
+.focus-h .pl-main:hover { background: var(--raise); box-shadow: inset 0 0 0 1px var(--hair); color: var(--ink); }
+.focus-h .pl-head.st-failed .pl-main { color: #ffb4b4; }
+.focus-h .pl-t { display: inline-flex; gap: 6px; }
+.focus-h .pl-when { color: var(--ink4); }
+.focus-h .pl-head.off { color: var(--ink4); font: 500 11px var(--code); }
+/* the context: a thin bar, the number, the model */
+.focus-h .fh-meter { gap: 8px; height: 26px; padding: 0 8px; border: 0; border-radius: 7px; color: var(--ink2); font: 500 11px var(--code); }
+.focus-h .fh-meter:hover { background: var(--raise); box-shadow: inset 0 0 0 1px var(--hair); }
+.fh-bar { display: block; width: 40px; height: 4px; border-radius: 2px; background: var(--raise2); overflow: hidden; }
+.fh-bar i { display: block; height: 100%; border-radius: 2px; }
+.focus-h .fh-model { color: var(--ink4); }
+/* actions: the design language's buttons */
+.focus-h .web-toggle .web-n { margin-left: 2px; padding: 0 5px; border-radius: 8px; background: var(--raise2); color: var(--ink3); font: 500 10px/16px var(--code); }
+.focus-h .jump .btn { height: 28px; padding: 0 10px; border: 0; border-radius: 8px; background: var(--raise); box-shadow: inset 0 0 0 1px var(--hair2); color: var(--ink); font: 500 12px var(--ui); }
+.focus-h .jump .btn:hover { background: var(--raise2); }
+/* the hover cards: the design language's panel */
+.focus-h .fh-card { border: 0; border-radius: 12px; background: var(--raise); box-shadow: inset 0 0 0 1px var(--hair2), 0 14px 34px rgba(0, 0, 0, .6); font: 400 11.5px/1.55 var(--code); color: var(--ink2); }
+.focus-h .fh-card .k { color: var(--ink4); }
+
+/* where the ticket comes up in Slack: a quiet count */
+.focus-h .tslack { flex: none; display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 7px; border: 0; border-radius: 7px; background: none; color: var(--ink3); font: 500 11px var(--code); cursor: pointer; }
+.focus-h .tslack:hover { background: var(--raise); box-shadow: inset 0 0 0 1px var(--hair); color: var(--ink); }
+
+/* a new mention or comment on the session's ticket (Cora watching Jira), until you open it */
+.tcard .tc-new { width: 7px; height: 7px; flex: none; border-radius: 50%; background: var(--jira); box-shadow: 0 0 0 2px var(--nav), 0 0 8px color-mix(in srgb, var(--jira) 60%, transparent); }

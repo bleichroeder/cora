@@ -1,0 +1,15 @@
+{
+  "receivedAt": 1791818502188,
+  "headers": {
+    "token": "captest"
+  },
+  "body": {
+    "session_id": "d07d7d71-88b0-4819-9384-99aaaec60551",
+    "transcript_path": "C:\\Users\\dev\\.claude\\projects\\C--work-capdemo\\d07d7d71-88b0-4819-9384-99aaaec60551.jsonl",
+    "cwd": "C:\\work\\capdemo",
+    "prompt_id": "22502ecc-9c8b-437a-8f1c-da09c0d1ff98",
+    "permission_mode": "default",
+    "hook_event_name": "UserPromptSubmit",
+    "prompt": "<task-notification>\n<task-id>a66f422c0556491e6</task-id>\n<tool-use-id>toolu_013Jr8yyAvWTJzxoGzmhpVL9</tool-use-id>\n<output-file>C:\\Users\\dev\\AppData\\Local\\Temp\\claude\\C--work-capdemo\\d07d7d71-88b0-4819-9384-99aaaec60551\\tasks\\a66f422c0556491e6.output</output-file>\n<status>completed</status>\n<summary>Agent \"Read readme\" finished</summary>\n<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>\n<result>The first line of README.md is:\n\n**Hello agent-brain**</result>\n<usage><subagent_tokens>19964</subagent_tokens><tool_uses>1</tool_uses><duration_ms>5744</duration_ms></usage>\n</task-notification>"
+  }
+}

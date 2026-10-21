@@ -1,0 +1,33 @@
+{
+  "receivedAt": 1791818500707,
+  "headers": {
+    "token": "captest"
+  },
+  "body": {
+    "session_id": "d07d7d71-88b0-4819-9384-99aaaec60551",
+    "transcript_path": "C:\\Users\\dev\\.claude\\projects\\C--work-capdemo\\d07d7d71-88b0-4819-9384-99aaaec60551.jsonl",
+    "cwd": "C:\\work\\capdemo",
+    "prompt_id": "53fbd21c-06dc-4f3a-9fd9-3dfddb035788",
+    "permission_mode": "default",
+    "agent_id": "a66f422c0556491e6",
+    "agent_type": "general-purpose",
+    "hook_event_name": "PostToolUse",
+    "tool_name": "Read",
+    "tool_input": {
+      "file_path": "C:\\work\\capdemo\\README.md",
+      "limit": 1
+    },
+    "tool_response": {
+      "type": "text",
+      "file": {
+        "filePath": "C:\\work\\capdemo\\README.md",
+        "content": "Hello agent-brain",
+        "numLines": 1,
+        "startLine": 1,
+        "totalLines": 3
+      }
+    },
+    "tool_use_id": "toolu_01MAL4LAmw5KcbTahfNMuCop",
+    "duration_ms": 7
+  }
+}

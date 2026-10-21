@@ -1,0 +1,15 @@
+{
+  "receivedAt": 1791818496417,
+  "headers": {
+    "token": "captest"
+  },
+  "body": {
+    "session_id": "d07d7d71-88b0-4819-9384-99aaaec60551",
+    "transcript_path": "C:\\Users\\dev\\.claude\\projects\\C--work-capdemo\\d07d7d71-88b0-4819-9384-99aaaec60551.jsonl",
+    "cwd": "C:\\work\\capdemo",
+    "prompt_id": "53fbd21c-06dc-4f3a-9fd9-3dfddb035788",
+    "agent_id": "a66f422c0556491e6",
+    "agent_type": "general-purpose",
+    "hook_event_name": "SubagentStart"
+  }
+}

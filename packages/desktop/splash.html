@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'" />
+<title>Cora</title>
+<style>
+  /* the design language (packages/client/src/design.css), with its fonts shipped beside the splash */
+  @font-face { font-family: 'Figtree Variable'; src: url('dist/fonts/figtree-latin-wght-normal.woff2') format('woff2'); font-weight: 300 900; font-display: block; }
+  @font-face { font-family: 'JetBrains Mono Variable'; src: url('dist/fonts/jetbrains-mono-latin-wght-normal.woff2') format('woff2'); font-weight: 100 800; font-display: block; }
+  :root {
+    --ui: 'Figtree Variable', system-ui, sans-serif; --code: 'JetBrains Mono Variable', ui-monospace, Consolas, monospace;
+    --nav: #0b0e14; --raise: #11151d; --raise2: #161b25; --hair: rgba(148, 163, 184, .09); --hair2: rgba(148, 163, 184, .14);
+    --ink: #e6ebf2; --ink2: #a4afbf; --ink3: #6b7686; --ink4: #465061;
+    --work: #3ddc97; --need: #ff6b6b; --think: #f5c451; --run: #60a5fa;
+  }
+  html, body { margin: 0; height: 100%; background: #06090f; color: var(--ink2); font: 400 12px/1.45 var(--ui); overflow: hidden; user-select: none; -webkit-font-smoothing: antialiased; }
+  button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+  #c { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+  #ov { position: fixed; left: 50%; top: 60%; transform: translateX(-50%); width: 340px; z-index: 2; }
+  #ov::before { content: ''; position: absolute; inset: -40px -90px; background: radial-gradient(closest-side, rgba(6, 9, 15, .88), rgba(6, 9, 15, 0)); z-index: -1; }
+  /* the wordmark as the bridge writes it, truly centred (the tracking's trailing space taken back) */
+  .word { margin: 0 0 4px; text-align: center; color: var(--ink); font: 700 13px var(--code); letter-spacing: .36em; text-indent: .36em; opacity: 0; transition: opacity .8s; }
+  .word.on { opacity: 1; }
+  .sub { margin-bottom: 14px; text-align: center; color: var(--ink4); font: 400 11.5px var(--ui); }
+  /* a stage: the language's glyph (a spinner in its orb's colour while it runs), its name, its time */
+  .st { display: grid; grid-template-columns: 14px minmax(0, 1fr) auto; align-items: center; column-gap: 9px; min-height: 22px; color: var(--ink4); transition: color .3s; }
+  .st > span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .st .g { justify-self: center; width: 9px; height: 9px; box-sizing: border-box; border-radius: 50%; background: radial-gradient(circle, var(--ink4) 0 2px, transparent 2.5px); }
+  .st .t { color: var(--ink4); font: 500 10.5px var(--code); }
+  .st .d { color: var(--ink3); }
+  .st.run { color: var(--ink); }
+  .st.run .g { border: 1.6px solid color-mix(in srgb, var(--c) 30%, transparent); border-top-color: var(--c); background: none; animation: spin 1s linear infinite; }
+  .st.done { color: var(--ink3); }
+  .st.done .d { color: var(--ink4); }
+  .st.done .g { background: radial-gradient(circle, var(--work) 0 2.5px, color-mix(in srgb, var(--work) 22%, transparent) 3px); }
+  .st.skip .g { background: radial-gradient(circle, var(--ink4) 0 2px, transparent 2.5px); }
+  .st.fail { color: #ffb3b3; }
+  .st.fail .g { background: radial-gradient(circle, var(--need) 0 2.5px, color-mix(in srgb, var(--need) 25%, transparent) 3px); }
+  .st[hidden] { display: none; }
+  .bar { grid-column: 2 / -1; height: 3px; margin: 4px 0 6px; border-radius: 2px; background: var(--raise2); overflow: hidden; }
+  .bar i { display: block; height: 100%; width: 0; background: var(--c); transition: width .2s; }
+  .slow { grid-column: 2 / -1; display: flex; align-items: center; gap: 8px; margin: 0 0 6px; color: var(--think); font: 400 11.5px var(--ui); }
+  .slow em { color: var(--ink4); font-style: normal; }
+  .slow button { margin-left: auto; color: var(--ink3); font: 500 11.5px var(--ui); }
+  .slow button:hover { color: var(--ink); }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  /* what you should know, under the stages */
+  #notes { display: flex; flex-direction: column; gap: 6px; margin-top: 12px; }
+  #notes:empty { display: none; }
+  .note { display: grid; grid-template-columns: 14px minmax(0, 1fr) auto; align-items: center; column-gap: 9px; padding: 8px 10px; border-radius: 10px; background: rgba(17, 21, 29, .92); box-shadow: inset 0 0 0 1px var(--hair2); color: var(--ink2); font: 400 12px/1.45 var(--ui); }
+  .note.warn { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--think) 35%, transparent); }
+  .note b { color: var(--ink); font-weight: 600; }
+  .note span em { display: block; color: var(--ink4); font-style: normal; font-size: 11.5px; }
+  .note > i { justify-self: center; width: 8px; height: 8px; border-radius: 50%; background: var(--run); }
+  .note.warn > i { background: var(--think); }
+  .note.ok > i { background: var(--work); }
+  .btn { display: inline-flex; align-items: center; height: 28px; padding: 0 11px; border-radius: 8px; background: var(--raise2); box-shadow: inset 0 0 0 1px var(--hair2); color: var(--ink2); font: 500 12px var(--ui); white-space: nowrap; }
+  .btn:hover:not(:disabled) { color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink4); }
+  .btn:disabled { opacity: .5; cursor: default; }
+  .btn.go { background: color-mix(in srgb, var(--work) 14%, var(--raise)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--work) 40%, transparent); color: #d9fbe9; }
+  .btn.q { background: none; box-shadow: none; color: var(--ink3); }
+  .btn.q:hover { background: var(--raise2); color: var(--ink); }
+  /* when it can't start: the panel with a red edge */
+  .err { display: none; margin-top: 12px; padding: 11px 12px; border-radius: 12px; background: var(--raise); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--need) 45%, transparent), 0 14px 34px rgba(0, 0, 0, .6); color: var(--ink); font: 600 12.5px var(--ui); }
+  .err.on { display: block; }
+  .err code { display: block; margin: 7px 0 10px; padding: 7px 9px; border-radius: 8px; background: var(--nav); box-shadow: inset 0 0 0 1px var(--hair); color: #ffb3b3; font: 400 11px/1.5 var(--code); white-space: pre-wrap; max-height: 120px; overflow: auto; user-select: text; }
+  .err .a { display: flex; flex-wrap: wrap; gap: 6px; }
+  /* the build, quiet, at the foot */
+  #foot { position: fixed; left: 0; right: 0; bottom: 18px; z-index: 2; display: flex; justify-content: center; gap: 14px; color: var(--ink4); font: 500 10.5px var(--code); }
+  #foot b { color: var(--ink3); font-weight: 500; }
+  body.out #c, body.out #ov, body.out #foot { opacity: 0; filter: blur(10px); transition: opacity .45s, filter .45s; }
+  @media (prefers-reduced-motion: reduce) { .st.run .g { animation: none; } }
+  /* no Windows title bar: the top strip moves the window (its buttons sit over the right end) */
+  .win-drag { position: fixed; top: 0; left: 0; right: 0; height: 40px; z-index: 50; -webkit-app-region: drag; }
+</style>
+</head>
+<body>
+<div class="win-drag"></div>
+<canvas id="c"></canvas>
+<div id="ov">
+  <div class="word">CORA</div>
+  <div class="sub" id="sub">Starting up</div>
+  <div id="stages"></div>
+  <div id="notes"></div>
+  <div class="err" id="err">
+    Couldn't start Cora.
+    <code id="errmsg"></code>
+    <div class="a"><button class="btn go" id="retry">Retry</button><button class="btn q" id="nohost">Start without hosted terminals</button><button class="btn q" id="log">Open log</button></div>
+  </div>
+</div>
+<div id="foot"></div>
+<script src="dist/splash.js"></script>
+</body>
+</html>

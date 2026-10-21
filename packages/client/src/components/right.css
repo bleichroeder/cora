@@ -1,0 +1,256 @@
+/* ---------- the right panel: tabs and the transcript, in Cora's design language ---------- */
+.rightcol { background: var(--nav); grid-template-columns: minmax(0, 1fr); }
+/* tabs: text with an underline, counts in mono */
+.rtabs { gap: 18px; padding: 0 14px; background: var(--nav); border-bottom-color: var(--hair2); }
+.rtab { position: relative; height: 40px; padding: 0; border: 0; border-radius: 0; background: none; color: var(--ink3); font: 500 12.5px var(--ui); gap: 6px; }
+.rtab:hover { color: var(--ink2); }
+.rtab.on { top: 0; border: 0; background: none; color: var(--ink); }
+.rtab.on::after { content: ''; position: absolute; left: 0; right: 0; bottom: -1px; height: 2px; border-radius: 2px; background: var(--ink); }
+.rt-n { color: var(--ink4); font: 500 10px var(--code); }
+
+.journal { background: var(--nav); }
+/* who's talking: quiet filters, a live dot; search as an icon */
+.jhead { padding: 8px 12px; border-bottom-color: var(--hair); }
+.journal .chips { flex-wrap: nowrap; align-items: center; gap: 4px; max-height: none; overflow: hidden; }
+/* the chips scroll on their own (wheel: sideways), so search on the right is always in view */
+.journal .chips-scroll { flex: 1; min-width: 0; display: flex; align-items: center; gap: 4px; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 18px), transparent); mask-image: linear-gradient(90deg, #000 calc(100% - 18px), transparent); }
+.journal .chips-scroll::-webkit-scrollbar { display: none; }
+.journal .chip { flex: none; height: 24px; padding: 0 9px; gap: 6px; border: 0; border-radius: 7px; background: none; color: var(--ink3); font: 500 11px var(--code); white-space: nowrap; }
+.journal .chip:hover { color: var(--ink2); background: var(--raise); }
+.journal .chip.on { color: var(--ink); background: var(--raise); box-shadow: inset 0 0 0 1px var(--hair2); }
+.journal .chip.done { opacity: .55; }
+.journal .chip i { width: 7px; height: 7px; }
+.journal .chip .cl { width: 6px; height: 6px; border-radius: 50%; background: var(--work); box-shadow: 0 0 6px var(--work); }
+.chips-sp { flex: 1; min-width: 4px; }
+.jfind, .jx { flex: none; display: grid; place-items: center; width: 26px; height: 24px; padding: 0; border: 0; border-radius: 7px; background: none; color: var(--ink3); cursor: pointer; }
+.jfind:hover, .jx:hover { background: var(--raise); color: var(--ink); }
+.jsearch { display: flex; align-items: center; gap: 8px; height: 24px; color: var(--ink3); }
+.jsearch input { flex: 1; min-width: 0; height: 24px; padding: 0; border: 0; outline: none; background: none; color: var(--ink); font: 400 12.5px var(--ui); }
+/* tasks: one line that opens */
+.tasks { background: var(--nav); border-bottom-color: var(--hair); }
+.tasks-h { height: 34px; padding: 0 14px; gap: 10px; color: var(--ink3); font: 500 11px var(--code); }
+.tasks-h:hover { color: var(--ink2); }
+.tk-n { color: var(--ink3); }
+.tk-bar { width: 60px; height: 3px; background: var(--raise2); }
+.tk-bar > span { background: var(--think); }
+.tk-cur { color: var(--ink2); font: 400 12px var(--ui); }
+.task-list { padding: 0 14px 10px; }
+.tk-item { font: 400 12.5px/1.5 var(--ui); color: var(--ink2); }
+.tk-item.in_progress { color: var(--ink); }
+.tk-item.in_progress .tk-i { color: var(--think); }
+.tk-item.completed { color: var(--ink4); text-decoration-color: var(--ink4); }
+.tk-item.completed .tk-i { color: var(--work); }
+
+/* the feed */
+.journal .feed { padding: 6px 16px 44px; scrollbar-width: thin; scrollbar-color: #1d2430 transparent; }
+.journal .step { border-left: 0; padding: 0; margin: 0 0 6px; }
+.journal .step.sub { margin: 6px 0 8px 4px; padding: 2px 0 2px 12px; border-left: 2px solid color-mix(in srgb, var(--c) 45%, transparent); }
+.journal .feed.single .step.sub { margin-left: 0; padding-left: 0; border-left: 0; }
+/* your prompt: a quiet surface, labelled */
+.journal .prompt { margin: 12px 0 4px; padding: 10px 12px; max-height: 240px; border: 0; border-radius: 10px; background: var(--raise); box-shadow: inset 0 0 0 1px var(--hair); color: var(--ink); font: 400 13px/1.55 var(--ui); }
+.journal .task { margin: 4px 0; padding: 8px 10px; border-radius: 9px; background: color-mix(in srgb, var(--c) 6%, var(--nav)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c) 18%, transparent); color: var(--ink2); font: 400 12.5px/1.5 var(--ui); }
+.journal .pl { display: block; margin-bottom: 3px; font: 600 9.5px var(--code); letter-spacing: .14em; text-transform: uppercase; color: var(--ink4); }
+/* a step's head: who, a hairline, when */
+.journal .sh { justify-content: flex-start; gap: 8px; margin: 14px 0 6px; color: var(--ink4); font: 600 10px var(--code); letter-spacing: .12em; text-transform: uppercase; }
+.journal .sh > i { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--c); }
+.journal .sh-who { color: var(--ink3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.journal .sh .contd { color: var(--ink4); letter-spacing: .04em; text-transform: none; font-weight: 500; }
+.sh-rule { flex: 1; min-width: 12px; height: 1px; background: var(--hair); }
+.journal .ts { color: var(--ink4); font-weight: 500; letter-spacing: .04em; text-transform: none; }
+.journal .step.cont { margin-top: 0; }
+/* what Claude said: the thing you read */
+.journal .say { margin: 0 0 6px; color: var(--ink); font: 400 13.5px/1.62 var(--ui); }
+.journal .say .md p { margin: 0 0 9px; }
+.journal .say code { padding: 1px 5px; border-radius: 5px; background: var(--raise2); color: #d6e2f0; font: 500 11.5px var(--code); }
+/* what it did: quiet one-line rows */
+.journal .body { gap: 0; margin: 4px 0 2px; }
+.journal .tool .tl { display: grid; grid-template-columns: 16px auto minmax(0, 1fr) auto auto auto auto; align-items: center; column-gap: 8px; height: 26px; padding: 0 6px; margin: 0 -6px; border-radius: 6px; color: var(--ink3); font: 400 11px var(--code); line-height: 26px; }
+.journal .tool .tl:hover { background: var(--raise); color: var(--ink2); }
+.journal .tool .ti { display: grid; place-items: center; opacity: .8; }
+.journal .tool b { color: var(--ink2); font-weight: 500; }
+.journal .tool .in { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink3); }
+.journal .tool .out { color: var(--ink4); white-space: nowrap; }
+.journal .tool.live b { color: var(--ink); }
+.journal .tool.live .out { color: var(--run); }
+.journal .tool.fail b, .journal .tool.fail .out { color: var(--need); }
+.journal .tool .spin { margin: 0; border-color: var(--run); border-right-color: transparent; }
+.journal .tool .diffbtn { height: 18px; padding: 0 6px; border: 0; border-radius: 5px; box-shadow: inset 0 0 0 1px var(--hair2); color: var(--ink3); font: 500 10px var(--code); }
+.journal .tool .diffbtn:hover { color: var(--ink); }
+.journal .pv { margin: 2px 0 8px 22px; border: 0; border-radius: 9px; background: var(--raise); box-shadow: inset 0 0 0 1px var(--hair); }
+.journal .pv pre { color: var(--ink2); font: 400 10.5px/1.55 var(--code); }
+.journal .pv-h { color: var(--ink4); font: 600 9.5px var(--code); letter-spacing: .14em; }
+.journal .think { display: flex; align-items: center; gap: 6px; height: 22px; color: var(--ink4); font: 400 10.5px var(--code); }
+.journal .think::before { content: ''; width: 16px; height: 1px; background: var(--hair2); }
+/* a subagent started, its report, an explain */
+.journal .spawn { margin: 4px 0; padding: 8px 10px; border: 0; border-radius: 9px; background: var(--raise); box-shadow: inset 0 0 0 1px var(--hair); color: var(--ink3); font: 500 11px/1.6 var(--code); }
+.journal .spawn:hover { box-shadow: inset 0 0 0 1px var(--hair2); }
+.journal .spawn b { color: var(--ink); font: 600 12px var(--ui); }
+.journal .spawn .ss { color: var(--run); }
+.journal .spawn.done .ss { color: var(--work); }
+.journal .spawn .go { color: var(--ink3); }
+.journal .report { margin-top: 6px; padding: 10px 12px; border: 0; border-radius: 10px; background: color-mix(in srgb, var(--work) 5%, var(--raise)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--work) 20%, transparent); color: var(--ink); font: 400 12.5px/1.55 var(--ui); }
+.journal .explain-card { margin: 8px 0; padding: 10px 12px; border: 0; border-radius: 10px; background: var(--raise); box-shadow: inset 0 0 0 1px var(--hair2); }
+.journal .explain-card:hover, .journal .explain-card.on { box-shadow: inset 0 0 0 1px rgba(148, 163, 184, .26); }
+.journal .pc-h { gap: 8px; color: var(--ink2); font: 500 12px var(--ui); }
+.journal .pc-h b { color: var(--ink); font: 600 12.5px var(--ui); }
+.journal .pc-h .fmt { color: var(--ink4); font: 500 10px var(--code); }
+.journal .pc-h .go { color: var(--ink3); font: 500 10.5px var(--code); }
+.journal .pc-p { margin: 4px 0 0; color: var(--ink3); font: 400 12px/1.45 var(--ui); white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.journal .said { color: var(--ink3); font: italic 12.5px/1.6 var(--ui); }
+/* dividers: turn finished, compacted, interrupted */
+.journal .divider { gap: 8px; margin: 12px 0 2px; color: var(--ink4); font: 500 10px var(--code); }
+.journal .divider::after { content: ''; flex: 1; height: 1px; background: var(--hair); order: 2; }
+.journal .divider > :last-child:not(svg) { order: 3; }
+.journal .divider.interrupted { color: var(--need); }
+.journal .more { border: 0; border-radius: 999px; background: var(--raise2); box-shadow: inset 0 0 0 1px var(--hair2), 0 6px 18px rgba(0, 0, 0, .5); color: var(--ink); font: 500 11px var(--code); }
+.journal .spk { border-color: var(--hair2); color: var(--ink4); }
+
+/* ---------- Explains: the nav's rows, grouped by day ---------- */
+.explains { background: var(--nav); }
+.ex-scope { align-items: center; gap: 4px; height: 40px; padding: 0 12px; border-bottom-color: var(--hair); }
+.ex-scope .chip { height: 24px; padding: 0 9px; border: 0; border-radius: 7px; background: none; color: var(--ink3); font: 500 11px var(--code); }
+.ex-scope .chip:hover { color: var(--ink2); background: var(--raise); }
+.ex-scope .chip.on { color: var(--ink); background: var(--raise); box-shadow: inset 0 0 0 1px var(--hair2); }
+.ex-list { padding: 4px 8px 20px; scrollbar-width: thin; scrollbar-color: #1d2430 transparent; }
+.ex-gh { display: flex; align-items: center; gap: 8px; height: 30px; margin-top: 6px; padding: 0 6px; font: 600 10px var(--code); letter-spacing: .16em; text-transform: uppercase; color: var(--ink4); }
+.ex-n { color: var(--ink3); letter-spacing: .04em; }
+.ex-rule { flex: 1; height: 1px; background: var(--hair); }
+.ex-row { position: relative; display: grid; grid-template-columns: 28px minmax(0, 1fr); align-items: center; column-gap: 10px; height: 46px; padding: 0 8px 0 6px; border: 0; border-radius: 9px; color: inherit; }
+.ex-row:hover { background: rgba(148, 163, 184, .05); border-color: transparent; }
+.ex-row.on { background: var(--raise); box-shadow: inset 0 0 0 1px var(--hair2); border-color: transparent; }
+.ex-row.on::before { content: ''; position: absolute; left: 0; top: 13px; bottom: 13px; width: 2px; border-radius: 0 2px 2px 0; background: var(--ink2); }
+.ex-tile { --k: #c084fc; display: grid; place-items: center; width: 28px; height: 28px; border-radius: 8px; background: color-mix(in srgb, var(--k) 14%, #0b0f16); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--k) 32%, transparent); color: color-mix(in srgb, var(--k) 85%, white); }
+.ex-row.html .ex-tile { --k: #60a5fa; }
+.ex-main { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.ex-t { color: var(--ink); font: 500 13px/17px var(--ui); }
+.ex-l2 { display: flex; align-items: center; gap: 8px; min-width: 0; color: var(--ink4); font: 400 10.5px/14px var(--code); white-space: nowrap; overflow: hidden; }
+.ex-s { display: inline-flex; align-items: center; gap: 5px; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--ink3); }
+.ex-s i { flex: none; width: 6px; height: 6px; border-radius: 50%; }
+.explains .empty { color: var(--ink4); font: 400 12.5px/1.5 var(--ui); }
+
+/* ---------- Changes: a summary line, turns as their prompt on a hairline, files as quiet rows ---------- */
+.changes { background: var(--nav); }
+.ch-h { height: 40px; padding: 0 12px; border-bottom-color: var(--hair); background: var(--nav); color: var(--ink2); font: 500 11px var(--code); }
+.ch-sum { display: inline-flex; align-items: center; gap: 6px; }
+.changes .dbar { display: none; }
+.changes .dcount { display: inline-flex; gap: 6px; font: 500 10.5px var(--code); }
+.changes .dcount .plus { color: var(--work); }
+.changes .dcount .minus { color: var(--need); }
+.ch-empty { color: var(--ink4); font: 400 12.5px/1.5 var(--ui); }
+.ch-turn { margin-top: 10px; padding: 0 8px 2px; border-bottom: 0; }
+.ch-th { align-items: center; gap: 8px; height: 26px; padding: 0 6px; }
+.ch-th .p { flex: 0 1 auto; color: var(--ink2); font: 400 12.5px var(--ui); }
+.ch-rule { flex: 1 1 12px; min-width: 12px; height: 1px; background: var(--hair2); }
+.ch-th .t { flex: none; color: var(--ink4); font: 500 10px var(--code); }
+.ch-th .live { color: var(--work); }
+.ch-f { display: flex; align-items: center; gap: 10px; height: 34px; padding: 0 8px 0 10px; border: 0; border-radius: 8px; color: inherit; }
+.ch-f:hover { background: rgba(148, 163, 184, .05); }
+.ch-f.sel { background: var(--raise); box-shadow: inset 0 0 0 1px var(--hair2); border: 0; }
+.ch-f .fn { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 8px; overflow: hidden; white-space: nowrap; }
+.ch-f .nm { flex: none; color: var(--ink); font: 500 12.5px var(--ui); }
+.ch-f .dir { flex: 1; min-width: 0; color: var(--ink4); font: 400 10.5px var(--code); }
+.changes .dsrc { padding: 0; border: 0; border-radius: 0; color: var(--ink3); font: 500 10.5px var(--code); }
+.changes .dsrc.new { color: var(--work); }
+.changes .dsrc.git { color: var(--think); }
+.ch-git { padding: 6px 8px 12px; }
+.ch-gh { gap: 8px; height: 30px; padding: 0 6px; color: var(--ink4); font: 600 10px var(--code); letter-spacing: .16em; text-transform: uppercase; }
+.ch-gh:hover { color: var(--ink3); }
+.ch-chev { flex: none; transition: transform .15s; }
+.ch-chev.closed { transform: rotate(-90deg); }
+.ch-n { color: var(--ink3); letter-spacing: .04em; }
+.gst { display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 5px; --k: var(--ink3); background: color-mix(in srgb, var(--k) 14%, transparent); color: var(--k); font: 700 10px var(--code); }
+.gst.s-m { --k: var(--think); color: var(--k); }
+.gst.s-a { --k: var(--work); color: var(--k); }
+.gst.s-u { --k: var(--run); color: var(--k); }
+.gst.s-d { --k: var(--need); color: var(--k); }
+
+/* ---------- what's happening now, the terminal's bar, the composer ---------- */
+.activity { min-width: 0; overflow: hidden; gap: 0; padding: 6px 14px; border-top-color: var(--hair2); background: var(--nav); }
+.act-row { min-width: 0; display: grid; grid-template-columns: 7px minmax(0, 108px) 14px minmax(0, 1fr) auto 22px; align-items: center; column-gap: 8px; height: 22px; color: var(--ink3); font: 400 11px/22px var(--code); }
+.act-dot.live { animation: act-ping 1.8s ease-out infinite; }
+@keyframes act-ping { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--c) 60%, transparent); } 100% { box-shadow: 0 0 0 6px transparent; } }
+.act-row .act-n { color: var(--ink2); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.act-row .act-i { color: var(--ink4); }
+.act-row .act-glyph { color: var(--think); }
+.act-row .act-t { color: var(--ink3); }
+.act-row .act-time { color: var(--ink4); }
+.act-row.wait, .act-row.wait .act-t { color: var(--need); }
+.act-row.wait .act-n { color: #ffc9c9; }
+.act-row.wait .act-i { color: var(--need); }
+.act-row.idle .act-t { color: var(--ink4); }
+.act-more { height: 20px; padding-left: 15px; color: var(--ink4); font: 500 10.5px/20px var(--code); }
+
+.term-pane { background: var(--nav); }
+.term-h { gap: 4px; height: 36px; padding: 0 8px 0 10px; border-top: 1px solid var(--hair2); border-bottom-color: var(--hair); background: var(--nav); font: 500 11px var(--code); }
+.term-pane.collapsed .term-h { border-bottom: 0; }
+.term-tabs { gap: 4px; margin-left: 0; }
+.term-tab { height: 26px; padding: 0 9px; gap: 6px; border: 0; border-radius: 7px; color: var(--ink3); font: 500 11.5px var(--ui); }
+.term-tab:hover { color: var(--ink2); background: var(--raise); }
+.term-tab.on { color: var(--ink); background: var(--raise); box-shadow: inset 0 0 0 1px var(--hair2); border: 0; }
+.term-tab .tt-t { font-weight: 500; }
+.term-tab .tt-x:hover { color: var(--need); background: var(--raise2); }
+.term-h .icon-btn { width: 26px; height: 26px; border-radius: 7px; color: var(--ink3); }
+.term-h .icon-btn:hover { background: var(--raise); color: var(--ink); }
+.term-st { margin-left: 4px; color: var(--ink4); font: 500 10.5px var(--code); }
+.term-st.ask { color: var(--need); }
+.term-mode { gap: 2px; padding: 2px; border: 0; border-radius: 8px; background: var(--raise); box-shadow: inset 0 0 0 1px var(--hair); }
+.term-mode button { height: 22px; padding: 0 8px; border-radius: 6px; color: var(--ink3); font: 500 11px var(--ui); }
+.term-mode button:hover { color: var(--ink2); }
+.term-mode button.on { color: var(--ink); background: var(--raise2); box-shadow: inset 0 0 0 1px var(--hair2); }
+.term-confirm { border-bottom-color: var(--hair); font: 500 11px var(--code); }
+.term-window { margin: 0 10px 10px; border-radius: 10px; background: #070a10; box-shadow: inset 0 0 0 1px var(--hair2); }
+.term-window.compact { margin-bottom: 6px; }
+/* not hosted here: a panel with the two ways in */
+.ext-panel { margin: 0 10px 10px; padding: 12px 14px; gap: 6px; border-radius: 12px; background: var(--raise); box-shadow: inset 0 0 0 1px var(--hair2); font: 400 12.5px/1.5 var(--ui); }
+.ext-h { gap: 8px; color: var(--ink3); }
+.ext-h b { color: var(--ink); font: 600 13px var(--ui); }
+.ext-panel .dim { color: var(--ink3); }
+.ext-actions { gap: 6px; margin-top: 4px; }
+.ext-panel .btn { height: 30px; padding: 0 12px; border: 0; border-radius: 8px; background: var(--raise2); box-shadow: inset 0 0 0 1px var(--hair2); color: var(--ink); font: 500 12.5px var(--ui); }
+.ext-panel .btn.allow { background: color-mix(in srgb, var(--work) 14%, var(--raise)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--work) 40%, transparent); color: #d9fbe9; }
+.ext-panel .btn.ghost { background: var(--raise2); }
+
+/* the composer: one raised surface, send as the one bright button */
+.composer { padding: 0 10px 10px; border-top: 0; background: var(--nav); }
+.composer .cmp-row { gap: 6px; padding: 8px 8px 8px 12px; border: 0; border-radius: 12px; background: var(--raise); box-shadow: inset 0 0 0 1px var(--hair2); transition: box-shadow .15s; }
+.composer.cmp-on .cmp-row { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--run) 55%, var(--hair2)), 0 0 0 3px color-mix(in srgb, var(--run) 10%, transparent); }
+.composer.cmp-drag { background: var(--nav); box-shadow: none; }
+.composer.cmp-drag .cmp-row { box-shadow: inset 0 0 0 1px var(--run), 0 0 0 3px color-mix(in srgb, var(--run) 15%, transparent); }
+.composer .cmp-row textarea { color: var(--ink); font: 400 13.5px/1.5 var(--ui); }
+.composer .cmp-row textarea::placeholder { color: var(--ink4); }
+/* long text: the whole width, its scrollbar at the box's edge, the buttons on a row under it */
+.composer .cmp-row.cmp-tall { flex-wrap: wrap; row-gap: 4px; }
+.composer .cmp-row.cmp-tall textarea { flex: 1 0 100%; }
+.composer .cmp-row.cmp-tall textarea + .cmp-btn { margin-left: auto; }
+.composer .cmp-row textarea { scrollbar-width: thin; scrollbar-color: var(--hair2) transparent; }
+.composer .cmp-row textarea::-webkit-scrollbar { width: 8px; }
+.composer .cmp-row textarea::-webkit-scrollbar-thumb { border: 2px solid var(--raise); border-radius: 4px; background: var(--raise2); }
+.composer .cmp-row textarea::-webkit-scrollbar-thumb:hover { background: var(--ink4); }
+.composer .cmp-row textarea::-webkit-scrollbar-track { background: transparent; }
+.composer .cmp-btn { width: 30px; height: 30px; border-radius: 8px; color: var(--ink3); }
+.composer .cmp-btn:hover { background: var(--raise2); color: var(--ink); }
+.composer .cmp-btn.on { color: #c4b5fd; background: color-mix(in srgb, #a78bfa 18%, transparent); }
+.composer .cmp-send { background: var(--ink); color: #0b0e14; }
+.composer .cmp-send:hover { background: #fff; color: #0b0e14; }
+.composer .cmp-send:disabled { background: var(--raise2); color: var(--ink4); }
+.composer .cmp-chips { margin-bottom: 6px; gap: 6px; }
+.composer .cmp-chip { height: 24px; border: 0; border-radius: 7px; background: var(--raise2); box-shadow: inset 0 0 0 1px var(--hair); color: var(--ink2); font: 500 11px var(--code); }
+.composer .cmp-hint, .composer .cmp-err { margin: 6px 2px 0; font: 400 10.5px var(--code); color: var(--ink4); }
+.composer .cmp-err { color: #ffb4b4; }
+
+/* + opens your default shell; ⌄ beside it picks another kind (a menu like Windows Terminal's) */
+.tt-new { position: relative; display: inline-flex; align-items: center; }
+.tt-new .tt-kinds { width: 18px; margin-left: -4px; color: var(--ink4); }
+.tt-new .tt-kinds:hover { color: var(--ink2); }
+.tt-menu { position: fixed; z-index: 50; display: flex; flex-direction: column; min-width: 200px; padding: 4px; border-radius: 10px; background: var(--raise); box-shadow: inset 0 0 0 1px var(--hair2), 0 14px 34px rgba(0, 0, 0, .6); }
+.tt-menu button { display: flex; align-items: center; gap: 8px; height: 28px; padding: 0 8px; border: 0; border-radius: 7px; background: none; color: var(--ink2); font: 500 12px var(--ui); text-align: left; cursor: pointer; white-space: nowrap; }
+.tt-menu button:hover { background: var(--raise2); color: var(--ink); }
+.tt-menu-n { flex: 1; }
+.tt-menu-d { color: var(--ink4); font: 500 10px var(--code); }
+.tt-menu-note { padding: 6px 8px; color: var(--ink4); font: 400 11.5px var(--ui); }
+
+/* the activity bar's speaker (its first row's right end): replies read as they come (on), or only when you click */
+.act-side { display: grid; place-items: center; }
+.act-read { display: grid; place-items: center; width: 22px; height: 20px; padding: 0; border: 0; border-radius: 6px; background: none; color: var(--ink4); cursor: pointer; }
+.act-read:hover { background: var(--raise); color: var(--ink2); }
+.act-read.on { color: var(--cora); }

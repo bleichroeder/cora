@@ -1,0 +1,8 @@
+{
+  "name": "cora-packaging",
+  "private": true,
+  "description": "Cora's installer tools (kept out of the workspace): scripts/package.mjs uses them",
+  "devDependencies": {
+    "electron-builder": "^26.15.3"
+  }
+}

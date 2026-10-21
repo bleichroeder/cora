@@ -1,0 +1,74 @@
+/* ---------- the Tools drawer and the built-in browser, in the design language ---------- */
+/* the drawer: a hairline edge (teal while you drag it), the tool's tile, quiet controls */
+.tool-drawer { border-right: 0; background: var(--nav); box-shadow: 1px 0 0 var(--hair2), 18px 0 40px rgba(0, 0, 0, .55); }
+.tool-drawer.dragging { box-shadow: 2px 0 0 color-mix(in srgb, var(--cora) 60%, transparent), 18px 0 40px rgba(0, 0, 0, .55); }
+.tool-drawer .td-h { gap: 2px; padding: 0 8px 0 12px; border-bottom: 1px solid var(--hair2); background: none; color: var(--ink3); font: 400 12px var(--ui); }
+.td-tile { flex: none; display: grid; place-items: center; width: 22px; height: 22px; margin-right: 8px; border-radius: 6px; background: #fff; box-shadow: inset 0 0 0 1px var(--hair2); overflow: hidden; }
+.td-tile .tool-letter { background: var(--raise2); color: var(--ink); font: 700 10px var(--ui); }
+.td-tile:has(.tool-letter) { background: var(--raise2); }
+.tool-drawer .td-h b { margin-right: 10px; color: var(--ink); font: 600 13px var(--ui); white-space: nowrap; }
+.td-host { min-width: 0; overflow: hidden; color: var(--ink4); font: 400 10.5px var(--code); text-overflow: ellipsis; white-space: nowrap; }
+.tool-drawer .td-h .icon-btn, .web-bar .ib { display: inline-grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 7px; background: none; color: var(--ink3); }
+.tool-drawer .td-h .icon-btn:hover:not(:disabled), .web-bar .ib:hover:not(:disabled) { background: var(--raise); color: var(--ink); }
+.web-bar .ib:disabled { opacity: 1; color: var(--ink4); }
+.td-vr { flex: none; width: 1px; height: 16px; margin: 0 4px; background: var(--hair2); }
+.td-progress, .web-progress { position: absolute; left: 0; right: 0; top: 0; z-index: 3; height: 2px; background: linear-gradient(90deg, transparent, var(--cora), transparent); background-size: 40% 100%; background-repeat: no-repeat; box-shadow: none; animation: web-load 1.1s linear infinite; pointer-events: none; }
+.tool-drawer .td-resize:hover { background: linear-gradient(90deg, transparent 3px, color-mix(in srgb, var(--cora) 60%, transparent) 3px, color-mix(in srgb, var(--cora) 60%, transparent) 5px, transparent 5px); }
+
+/* the browser */
+.web-pane { background: var(--nav); }
+.web-pane:not(.wide) { box-shadow: -1px 0 0 var(--hair2); }
+.web-pane.wide { box-shadow: 0 0 0 1px var(--hair2); }
+.web-resize:hover::after, .web-pane.dragging .web-resize::after { background: color-mix(in srgb, var(--cora) 60%, transparent); }
+/* tabs: the language's segments */
+.web-pane .web-tabs { align-items: center; gap: 4px; height: 40px; padding: 0 8px; border-bottom: 1px solid var(--hair); background: var(--nav); }
+.web-pane .web-tab { gap: 7px; flex: 0 1 190px; height: 28px; padding: 0 5px 0 9px; border: 0; border-radius: 8px; color: var(--ink3); font: 500 12px var(--ui); }
+.web-pane .web-tab:hover { background: rgba(148, 163, 184, .05); color: var(--ink2); }
+.web-pane .web-tab.on { height: 28px; margin: 0; border: 0; background: var(--raise2); box-shadow: inset 0 0 0 1px var(--hair2); color: var(--ink); }
+.web-pane .web-tab img { width: 14px; height: 14px; border-radius: 3px; }
+.web-pane .web-tab > svg { flex: none; color: var(--ink4); }
+.web-pane .web-tab .wt-x { display: grid; place-items: center; width: 18px; height: 18px; padding: 0; border-radius: 5px; color: var(--ink4); }
+.web-pane .web-tab .wt-x:hover { background: var(--raise); color: var(--ink); }
+.web-pane .wt-spin { width: 12px; height: 12px; border: 1.6px solid color-mix(in srgb, var(--cora) 30%, transparent); border-top-color: var(--cora); }
+.web-pane .web-new { width: 28px; height: 28px; margin: 0; border-radius: 7px; color: var(--ink4); }
+.web-pane .web-new:hover { background: var(--raise); color: var(--ink); }
+/* the bar: the address as the language's input, the host bright and the rest quiet */
+.web-pane .web-bar { position: relative; gap: 2px; height: 42px; padding: 0 8px; border-bottom: 1px solid var(--hair2); background: none; }
+.web-pane .web-addr { position: relative; gap: 8px; height: 30px; margin: 0 6px; padding: 0 11px; border: 0; border-radius: 8px; background: var(--raise); box-shadow: inset 0 0 0 1px var(--hair2); color: var(--ink4); }
+.web-pane .web-addr:focus-within { border: 0; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cora) 45%, transparent); }
+.web-pane .web-addr > svg { flex: none; }
+.web-pane .web-addr input { color: var(--ink); font: 400 12.5px var(--ui); }
+.web-pane .web-addr input::placeholder { color: var(--ink4); }
+.web-pane .web-addr:not(.editing) input { color: transparent; }
+.web-addr-show { position: absolute; left: 30px; right: 11px; top: 0; bottom: 0; display: flex; align-items: center; overflow: hidden; font: 400 12.5px var(--ui); white-space: nowrap; pointer-events: none; }
+.web-addr-show b { flex: none; color: var(--ink); font-weight: 500; }
+.web-addr-show em { min-width: 0; overflow: hidden; color: var(--ink4); font-style: normal; text-overflow: ellipsis; }
+.web-pane .web-progress { top: 82px; }
+.web-pane .web-progress.idle { display: none; }
+/* find in page: the language's panel */
+.web-pane .web-find { gap: 2px; height: 36px; padding: 0 4px 0 11px; border: 0; border-radius: 10px; background: var(--raise); box-shadow: inset 0 0 0 1px var(--hair2), 0 12px 30px rgba(0, 0, 0, .55); }
+.web-pane .web-find input { width: 180px; color: var(--ink); font: 400 12.5px var(--ui); }
+.web-pane .web-find .wf-n { color: var(--ink4); font: 500 10.5px var(--code); }
+.web-pane .web-find .ib { width: 26px; height: 26px; border-radius: 7px; color: var(--ink3); }
+.web-pane .web-find .ib:hover:not(:disabled) { background: var(--raise2); color: var(--ink); }
+/* a new tab: recent pages as rows in a panel */
+.web-pane .web-start { padding: 30px max(24px, calc(50% - 320px)); background: var(--nav); color: var(--ink2); }
+.web-pane .ws-h { margin-bottom: 4px; color: var(--ink); font: 600 18px var(--ui); }
+.web-pane .ws-tip { max-width: 560px; margin-bottom: 18px; color: var(--ink3); font: 400 13px/1.55 var(--ui); }
+.ws-gl { display: flex; align-items: center; gap: 8px; margin: 0 0 8px; color: var(--ink4); font: 600 9.5px var(--code); letter-spacing: .16em; text-transform: uppercase; }
+.ws-gl::after { content: ''; flex: 1; height: 1px; background: var(--hair); }
+.web-pane .ws-list { gap: 0; border-radius: 12px; background: var(--raise); box-shadow: inset 0 0 0 1px var(--hair); overflow: hidden; }
+.web-pane .ws-list button { grid-template-columns: 22px minmax(0, 1fr) auto; height: 40px; padding: 0 12px; border: 0; border-radius: 0; background: none; color: var(--ink); }
+.web-pane .ws-list button + button { border-top: 1px solid var(--hair); }
+.web-pane .ws-list button:hover { background: var(--raise2); }
+.web-pane .ws-list img { justify-self: center; border-radius: 4px; }
+.web-pane .ws-list .t { font: 500 12.5px var(--ui); }
+.web-pane .ws-list .u { color: var(--ink4); font: 400 10.5px var(--code); }
+.web-pane .web-err { border: 0; border-radius: 10px; background: color-mix(in srgb, var(--need) 8%, var(--raise)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--need) 40%, transparent), 0 12px 30px rgba(0, 0, 0, .55); color: #ffc9c9; font: 400 12.5px var(--ui); }
+/* suggestions as you type an address: pages you've been to here, then your Chrome bookmarks and history */
+.web-addr { position: relative; }
+.web-sugg { position: absolute; top: calc(100% + 6px); left: 0; right: 0; z-index: 30; display: flex; flex-direction: column; padding: 4px; border-radius: 10px; background: var(--panel); box-shadow: inset 0 0 0 1px var(--hair2), 0 14px 36px rgba(0, 0, 0, .55); }
+.web-sugg .ws-s { display: grid; grid-template-columns: 16px minmax(0, auto) minmax(0, 1fr); align-items: center; gap: 8px; height: 30px; padding: 0 8px; border: 0; border-radius: 7px; background: none; color: var(--ink3); text-align: left; cursor: pointer; }
+.web-sugg .ws-s.on { background: var(--raise2); color: var(--ink); }
+.web-sugg .ws-s .t { overflow: hidden; color: var(--ink); font: 500 12.5px var(--ui); text-overflow: ellipsis; white-space: nowrap; max-width: 320px; }
+.web-sugg .ws-s .u { overflow: hidden; color: var(--ink4); font: 400 11px var(--code); text-overflow: ellipsis; white-space: nowrap; }

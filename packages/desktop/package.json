@@ -1,0 +1,16 @@
+{
+  "name": "@cora/desktop",
+  "productName": "Cora",
+  "version": "0.1.2",
+  "license": "MIT",
+  "private": true,
+  "main": "dist/main.cjs",
+  "scripts": {
+    "build": "tsup",
+    "start": "npm run build && electron ."
+  },
+  "devDependencies": {
+    "electron": "^44.9.0",
+    "tsup": "^9.0.0"
+  }
+}

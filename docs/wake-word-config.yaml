@@ -1,0 +1,90 @@
+## openWakeWord training config for Cora's "Hey Cora" wake word (see docs/wake-word.md).
+##
+## The shipped packages/client/public/wake/hey_cora.onnx is the MEAN of two models trained with
+## this file (scripts/ensemble.py in docs/wake-word.md):
+##   round 1 ("r1"): this config with the ROUND 1 values noted in the comments below
+##   round 2 ("r2"): this config exactly as written
+##
+## Used with openwakeword/train.py from dscripka/openWakeWord @ 368c037 plus the local patches
+## listed in docs/wake-word.md (the keys marked "patch" need them). Paths are relative to
+## ~/hey-cora in WSL.
+##
+## Run (from ~/hey-cora, venv active):
+##   python openWakeWord/openwakeword/train.py --training_config hey_cora.yaml --generate_clips
+##   python openWakeWord/openwakeword/train.py --training_config hey_cora.yaml --augment_clips [--overwrite]
+##   python openWakeWord/openwakeword/train.py --training_config hey_cora.yaml --train_model
+
+model_name: "hey_cora"
+
+target_phrase:
+  - "hey cora"
+
+# Hand-picked near misses. "hey kora" is deliberately NOT here: in CMUdict "kora" == "cora"
+# (K AO1 R AH0), so the TTS renders it identically to the positive phrase.
+custom_negative_phrases:
+  - "hey clara"
+  - "hey laura"
+  - "okay cora"
+  - "cora"
+  - "hey core"
+  - "hey corey"
+  - "hey carla"
+  - "hey cool"
+  - "a corer"
+# (patch) Repeat the custom phrases this many times ahead of the automatically generated
+# adversarial phrases. Upstream adds each custom phrase once, which is ~0 weight among 30k
+# generated texts. 9 phrases x 1200 = 10.8k of the 30k adversarial training clips (~36%);
+# the rest are the recipe's own phoneme-overlap phrases. The list is shuffled before TTS.
+custom_negative_phrases_repeat: 1200
+
+n_samples: 30000          # positive and adversarial training clips (each)
+n_samples_val: 3000       # positive and adversarial clips for checkpoint selection (each)
+tts_batch_size: 50
+augmentation_batch_size: 16
+
+# Shim that adapts upstream rhasspy/piper-sample-generator v3 (LibriTTS-R generator, 904 speakers)
+# to train.py's `from generate_samples import generate_samples` import, and resamples to 16 kHz.
+piper_sample_generator_path: "./psg_shim"
+
+output_dir: "./output"
+
+rir_paths:
+  - "./data/mit_rirs"           # 270 MIT environmental impulse responses
+
+background_paths:
+  - "./data/audioset_16k"       # AudioSet bal_train parquet shards 00-03: 2000 x 10 s clips
+  - "./data/fma_16k"            # FMA small: 240 random 30 s tracks (2 h)
+background_paths_duplication_rate:
+  - 1
+  - 1
+
+false_positive_validation_data_path: "./data/features/validation_set_features.npy"
+
+# ROUND 1: 1
+# (patch) Upstream silently truncated extra rounds (n_total ignored augmentation_rounds).
+augmentation_rounds: 2
+
+feature_data_files:
+  "ACAV100M_sample": "./data/features/openwakeword_features_ACAV100M_2000_hrs_16bit.npy"
+
+batch_n_per_class:
+  "ACAV100M_sample": 1024
+  "adversarial_negative": 100   # ROUND 1: 50
+  "positive": 100               # ROUND 1: 50
+
+model_type: "dnn"
+layer_size: 64                  # ROUND 1: 32
+
+steps: 75000                    # ROUND 1: 50000
+max_negative_weight: 1500
+target_false_positives_per_hour: 0.5   # ROUND 1: 0.2
+
+# (patch) Place the end of each positive clip 0-400 ms (upstream: 0-200 ms) before the end of
+# the 2 s training window, so the score stays high for more consecutive 80 ms frames
+# (Cora's detector needs 2 frames in a row). ROUND 1: not set (0.2).
+positive_end_jitter: 0.4
+
+# (patch) DataLoader workers / prefetch. Upstream used cpu_count//2 workers with prefetch 16,
+# all yielding identical batches. ROUND 1: 3 / 8.
+dataloader_workers: 2
+dataloader_prefetch: 4
