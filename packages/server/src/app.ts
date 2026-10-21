@@ -10,7 +10,7 @@ import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest }
 import cookie from '@fastify/cookie';
 import fastifyStatic from '@fastify/static';
 import websocket from '@fastify/websocket';
-import { INBOX_SOURCES, MAX_DRAFT_ASKS, ticketInPrompt, type TicketFacts, type PendingDecision, type SessionInfo, type SessionTicket, JIRA_EVENT_KINDS, type JiraEvent, type JiraEventKind, type JiraWatchStatus, HELLO_PREFIX, artifactUrl } from '@cora/shared';
+import { INBOX_SOURCES, MAX_DRAFT_ASKS, ticketInPrompt, type TicketFacts, type PendingDecision, type SessionInfo, type SessionTicket, JIRA_EVENT_KINDS, type JiraEvent, type JiraEventKind, type JiraWatchStatus, HELLO_PREFIX, artifactUrl, BROWSER_PROFILE_ID } from '@cora/shared';
 import { checkOptions, checkPrompt, launchArgs } from './launch';
 import { checkSummary, checkTicket, type Tickets } from './tickets';
 import { summarizeUsage } from './usage';
@@ -1460,10 +1460,13 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
   });
   // Cora's browser: your Chrome / Edge bookmarks and history (this PC's profiles), when you let it
   const chrome = d.chrome ?? new ChromeData();
-  app.get<{ Querystring: { q?: string } }>('/api/browser/suggest', { preHandler: requireUi }, async (req) => ({
-    suggestions: prefs.get().browser?.chrome === false ? [] : chrome.suggest(String(req.query.q ?? '').slice(0, 200)),
+  // `profile`: one of the browser's profiles (its Chrome / Edge profile's bookmarks and history); none: all of them
+  const profileOf = (p: unknown) => (typeof p === 'string' && BROWSER_PROFILE_ID.test(p) ? p : undefined);
+  app.get('/api/browser/profiles', { preHandler: requireUi }, async () => ({ profiles: chrome.profiles() }));
+  app.get<{ Querystring: { q?: string; profile?: string } }>('/api/browser/suggest', { preHandler: requireUi }, async (req) => ({
+    suggestions: prefs.get().browser?.chrome === false ? [] : chrome.suggest(String(req.query.q ?? '').slice(0, 200), 8, profileOf(req.query.profile)),
   }));
-  app.get('/api/browser/bar', { preHandler: requireUi }, async () => ({ bookmarks: prefs.get().browser?.chrome === false ? [] : chrome.bar() }));
+  app.get<{ Querystring: { profile?: string } }>('/api/browser/bar', { preHandler: requireUi }, async (req) => ({ bookmarks: prefs.get().browser?.chrome === false ? [] : chrome.bar(24, profileOf(req.query.profile)) }));
   app.get<{ Querystring: { path?: string } }>('/api/fs/dirs', { preHandler: requireUi }, async (req) => listDirs(req.query.path || (process.env.USERPROFILE ?? process.env.HOME ?? '/')));
 
   app.get<{ Params: { id: string } }>('/pty/:id', {

@@ -49,3 +49,23 @@ describe("your Chrome bookmarks and history, in Cora's browser", () => {
     expect(new ChromeData({ roots: () => [] }).suggest('git')).toEqual([]);
   });
 });
+
+describe('profiles', () => {
+  it("lists each profile with its browser's name for it; bookmarks and suggestions per profile, or all together", () => {
+    const root = mkdtempSync(join(tmpdir(), 'cora-chrome-'));
+    const make = (dir: string, bar: Array<[string, string]>) => {
+      mkdirSync(join(root, dir));
+      writeFileSync(join(root, dir, 'Bookmarks'), JSON.stringify({ roots: { bookmark_bar: { type: 'folder', children: bar.map(([name, url]) => ({ type: 'url', name, url })) } } }));
+    };
+    make('Default', [['Bank', 'https://bank.example/']]);
+    make('Profile 2', [['Pipelines', 'https://gitlab.work.example/pipelines']]);
+    writeFileSync(join(root, 'Local State'), JSON.stringify({ profile: { info_cache: { Default: { name: 'Personal' }, 'Profile 2': { name: 'Work' } } } }));
+    const c = new ChromeData({ roots: () => [root] });
+    expect(c.profiles()).toEqual([{ id: 'chrome:Default', name: 'Personal' }, { id: 'chrome:Profile 2', name: 'Work' }]);
+    expect(c.bar(24, 'chrome:Profile 2').map((b) => b.title)).toEqual(['Pipelines']);
+    expect(c.bar(24, 'chrome:Default').map((b) => b.title)).toEqual(['Bank']);
+    expect(c.bar().map((b) => b.title).sort()).toEqual(['Bank', 'Pipelines']);
+    expect(c.suggest('bank', 8, 'chrome:Profile 2')).toEqual([]);
+    expect(c.suggest('bank', 8, 'chrome:Default').map((s) => s.url)).toEqual(['https://bank.example/']);
+  });
+});

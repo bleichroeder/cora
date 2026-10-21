@@ -6,6 +6,7 @@ import type { Settings } from '@cora/shared';
 import { BotRow, BotSettings } from './SlackBotSettings';
 import { FollowRows } from './SlackFollowSettings';
 import { NoteTemplateRows } from './NoteTemplatesSettings';
+import { BrowserProfileRows } from './BrowserProfileSettings';
 import { desktop } from '../lib/desktop';
 import { DEFAULT_TOOLS, TOOL_TINTS, cleanTag, newTool, type ToolDef } from '../lib/tools';
 import { Group, Row, Section, Toggle } from './settingsUi';
@@ -365,6 +366,7 @@ export function ToolsSection({ server, save }: { server?: Settings | null; save?
             checked={server.browser?.chrome !== false}
             onChange={(on) => void save({ browser: { chrome: on } })}
           />
+          {server.browser?.chrome !== false ? <BrowserProfileRows server={server} save={save} /> : null}
         </Group>
       ) : null}
       <Group label="Notes templates">

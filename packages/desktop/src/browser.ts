@@ -6,6 +6,8 @@ import { windowFind } from './findBar';
 /** The built-in browser's logins and cookies: saved across restarts, kept apart from the dashboard's. */
 export const WEB_PARTITION = 'persist:web';
 export const isWeb = (u: string) => /^https?:\/\//i.test(u);
+/** A browser profile's logins (persist:web, or persist:web-<profile>): what a page in Cora may use. */
+export const isWebPartition = (p: string) => p === WEB_PARTITION || /^persist:web-[a-z0-9-]{1,40}$/.test(p);
 
 /** Chrome's user agent without Electron's and the app's tokens (some sign-in pages turn away "embedded" browsers). */
 export const plainUserAgent = (ua: string) => ua.replace(/\s(Electron|Cora|cora|agent-brain|@cora\/desktop|@agent-brain\/desktop)\/\S+/gi, '');
@@ -16,7 +18,27 @@ export const plainUserAgent = (ua: string) => ua.replace(/\s(Electron|Cora|cora|
  * the page's session, and tab shortcuts pressed inside a page reach the app.
  */
 export function setupBrowser(win: BrowserWindow, base: string) {
-  const ses = session.fromPartition(WEB_PARTITION);
+  webSession(WEB_PARTITION);
+
+  win.webContents.on('will-attach-webview', (e, prefs, params) => {
+    delete prefs.preload;
+    prefs.nodeIntegration = false;
+    prefs.contextIsolation = true;
+    prefs.sandbox = true;
+    // a browser profile's own logins (persist:web-…), else the browser's: never the app's
+    prefs.partition = isWebPartition(prefs.partition ?? '') ? prefs.partition : WEB_PARTITION;
+    webSession(prefs.partition!);
+    if (!isWeb(params.src) || !win.webContents.getURL().startsWith(base)) e.preventDefault();
+  });
+  attachWebviews(win);
+}
+
+/** Each browser profile's logins, set up once like the browser's: what pages may ask for, kept sign-ins, spelling. */
+const readied = new Set<string>();
+function webSession(partition: string): Electron.Session {
+  const ses = session.fromPartition(partition);
+  if (readied.has(partition)) return ses;
+  readied.add(partition);
   ses.setUserAgent(plainUserAgent(ses.getUserAgent()));
   // notifications, mic and camera, screen sharing only for the Tools' sites (Slack: messages, huddles); other pages get
   // clipboard writes and fullscreen, nothing else
@@ -29,16 +51,10 @@ export function setupBrowser(win: BrowserWindow, base: string) {
   ses.setDisplayMediaRequestHandler((req, cb) => void pickScreen(req.securityOrigin, cb));
   keepLogins(ses);
   enableSpellcheck(ses);
+  return ses;
+}
 
-  win.webContents.on('will-attach-webview', (e, prefs, params) => {
-    delete prefs.preload;
-    prefs.nodeIntegration = false;
-    prefs.contextIsolation = true;
-    prefs.sandbox = true;
-    prefs.partition = WEB_PARTITION;
-    if (!isWeb(params.src) || !win.webContents.getURL().startsWith(base)) e.preventDefault();
-  });
-
+function attachWebviews(win: BrowserWindow) {
   win.webContents.on('did-attach-webview', (_e, wc) => {
     // right-click: spelling, copy/paste, links, images, the page; new tabs open in this page's session
     const newTab = (url: string, background: boolean) => win.webContents.send('ab:web-tab', { from: wc.id, url, background });
@@ -75,7 +91,8 @@ export function setupBrowser(win: BrowserWindow, base: string) {
             parent: win,
             autoHideMenuBar: true,
             backgroundColor: '#ffffff',
-            webPreferences: { partition: WEB_PARTITION, sandbox: true, contextIsolation: true, nodeIntegration: false },
+            // signing in: with the logins of the tab that opened it (its profile's)
+            webPreferences: { session: wc.session, sandbox: true, contextIsolation: true, nodeIntegration: false },
           },
         };
       win.webContents.send('ab:web-tab', { from: wc.id, url, background: disposition === 'background-tab' });

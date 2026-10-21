@@ -7,7 +7,7 @@ import { NotesPane } from './Notes';
 import { desktop } from '../lib/desktop';
 import { toolEntries, toolHost, toolSite, unreadOf, type ToolDef, type ToolEntry } from '../lib/tools';
 import { BrowserTool, WEB_PARTITION, openFind } from './WebPane';
-import { BROWSER_ID } from '../state/browser';
+import { BROWSER_ID, currentGroup, isBrowserGroup } from '../state/browser';
 import { openSettings } from './SettingsModal';
 import { Icon } from './Icon';
 import { FindBar } from './FindBar';
@@ -172,7 +172,7 @@ const openBrowser = () => (useBrain.getState().setInbox(false), useTools.getStat
 /** Cora's Browser in the icon row. */
 function BrowserButton({ on }: { on: boolean }) {
   return (
-    <button className={`rt-b rt-cora${on ? ' on' : ''}`} title="Browser (Ctrl+Shift+B): Cora's own, not tied to a session" onClick={openBrowser}>
+    <button className={`rt-b rt-cora${on ? ' on' : ''}`} title="Browser (Ctrl+Shift+B)" onClick={openBrowser}>
       <Icon name="Globe" size={18} />
     </button>
   );
@@ -180,15 +180,16 @@ function BrowserButton({ on }: { on: boolean }) {
 
 /** Cora's Browser as a named row: how many tabs it has open. */
 function BrowserRow({ on }: { on: boolean }) {
-  const n = useWeb((w) => w.sessions[BROWSER_ID]?.tabs.filter((id) => w.tabs[id]?.url).length ?? 0);
+  // every profile's tabs
+  const n = useWeb((w) => Object.entries(w.sessions).reduce((k, [g, sw]) => k + (isBrowserGroup(g) ? sw.tabs.filter((id) => w.tabs[id]?.url).length : 0), 0));
   return (
-    <button className={`rt-r${on ? ' on' : ''}`} title="Browser (Ctrl+Shift+B): Cora's own, not tied to a session" onClick={openBrowser}>
+    <button className={`rt-r${on ? ' on' : ''}`} title="Browser (Ctrl+Shift+B)" onClick={openBrowser}>
       <span className="rt-cora-ico">
         <Icon name="Globe" size={14} />
       </span>
       <span className="rt-nm">
         <b>Browser</b>
-        <i>{n ? `${n} tab${n === 1 ? '' : 's'}` : 'Not tied to a session'}</i>
+        <i>{n ? `${n} tab${n === 1 ? '' : 's'}` : 'No tabs open'}</i>
       </span>
       <span className="rt-rr">
         <span className="rt-k">^⇧B</span>
@@ -420,7 +421,7 @@ export function ToolDrawer() {
       if (!e.ctrlKey || e.altKey || e.shiftKey || e.key.toLowerCase() !== 'f' || !box.current?.contains(e.target as Node)) return;
       e.preventDefault();
       e.stopPropagation();
-      if (useTools.getState().open === BROWSER_ID) openFind(BROWSER_ID);
+      if (useTools.getState().open === BROWSER_ID) openFind(currentGroup());
       else openToolFind();
     };
     window.addEventListener('keydown', k, true);
@@ -507,7 +508,7 @@ export function ToolDrawer() {
             <Icon name={browser ? 'Globe' : 'NotebookPen'} size={13} />
           </span>
           <b>{browser ? 'Browser' : 'Notes'}</b>
-          <span className="td-host">{browser ? 'not tied to a session' : '~/.cora/notes'}</span>
+          <span className="td-host">{browser ? '' : '~/.cora/notes'}</span>
           <span className="spacer" />
           <button className="icon-btn" title="Close (Esc)" onClick={() => useTools.getState().close()}>
             <Icon name="X" size={15} />
@@ -531,6 +532,10 @@ export function ToolDrawer() {
         </button>
         <button className="icon-btn" title={at?.loading ? 'Stop' : 'Reload'} onClick={() => (at?.loading ? page()?.stop() : page()?.reload())}>
           <Icon name={at?.loading ? 'X' : 'RotateCw'} size={14} />
+        </button>
+        {/* back to the page you set for it (Settings › Tools) */}
+        <button className="icon-btn" title={tool ? `Home: ${tool.url}` : 'Home'} disabled={!tool} onClick={() => tool && void page()?.loadURL(tool.url).catch(() => {})}>
+          <Icon name="House" size={14} />
         </button>
         <span className="td-vr" />
         <button className="icon-btn" title="Open in your browser" onClick={() => tool && desktop?.openExternal?.(page()?.getURL() || tool.url)}>

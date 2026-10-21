@@ -1,7 +1,8 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useWeb } from '../state/web';
 import { useTools } from '../state/tools';
-import { BROWSER_ID } from '../state/browser';
+import { BROWSER_ID, browserGroup, partitionOfGroup, profileOfGroup, useBrowserProfile, useBrowserSettings } from '../state/browser';
+import { openSettings } from './SettingsModal';
 import { hostOf, openOpMenu, useOp } from '../state/onepassword';
 import './onepassword.css';
 import type { WebTab } from '../lib/webTabs';
@@ -71,6 +72,8 @@ const host = (u: string) => {
 function Page({ tab, visible, onState, onVisit }: { tab: WebTab; visible: boolean; onState(id: string, s: TabState): void; onVisit(r: Recent): void }) {
   const el = useRef<Webview>(null);
   const first = useRef(tab.url); // src is set once; later navigation goes through loadURL
+  // its profile's sign-ins, fixed when it's made (a webview can't change them)
+  const partition = useRef(partitionOfGroup(tab.sessionId));
   const ready = useRef(false);
   const navSeen = useRef(tab.nav);
 
@@ -129,7 +132,7 @@ function Page({ tab, visible, onState, onVisit }: { tab: WebTab; visible: boolea
     else void w.loadURL(tab.url).catch(() => {});
   }, [tab.nav]);
 
-  return <webview ref={el as never} className={visible ? '' : 'off'} src={first.current} partition={WEB_PARTITION} {...({ allowpopups: 'true' } as object)} />;
+  return <webview ref={el as never} className={visible ? '' : 'off'} src={first.current} partition={partition.current} {...({ allowpopups: 'true' } as object)} />;
 }
 
 /**
@@ -139,6 +142,11 @@ function Page({ tab, visible, onState, onVisit }: { tab: WebTab; visible: boolea
  */
 function BrowserView({ group, shown, keys, buttons, intro }: { group: string; shown: boolean; keys: boolean; buttons?: React.ReactNode; intro: string }) {
   const web = useWeb();
+  // whose bookmarks and history: the group's profile (followed as Settings change)
+  const loaded = useBrowserSettings((b) => b.loaded);
+  useBrowserSettings((b) => b.profiles);
+  const profile = profileOfGroup(group);
+  const q = profile ? `profile=${encodeURIComponent(profile)}` : '';
   const s = web.sessions[group];
   const activeId = s?.active ?? null;
   const active = activeId ? web.tabs[activeId] : undefined;
@@ -219,14 +227,14 @@ function BrowserView({ group, shown, keys, buttons, intro }: { group: string; sh
   const [pick, setPick] = useState(-1);
   useEffect(() => {
     setPick(-1);
-    const q = addr.trim();
-    if (!editing || !q || q === active?.url) return void setSugg([]);
-    const lq = q.toLowerCase();
+    const typed = addr.trim();
+    if (!editing || !typed || typed === active?.url) return void setSugg([]);
+    const lq = typed.toLowerCase();
     const mine = recent.filter((r) => `${r.url} ${r.title}`.toLowerCase().includes(lq)).slice(0, 3).map((r) => ({ ...r, from: 'recent' }));
     setSugg(mine);
     let live = true;
     const t = setTimeout(() => {
-      void fetch(`/api/browser/suggest?q=${encodeURIComponent(q)}`)
+      void fetch(`/api/browser/suggest?q=${encodeURIComponent(typed)}${q ? `&${q}` : ''}`)
         .then((r) => (r.ok ? r.json() : { suggestions: [] }))
         .then((j: { suggestions: Array<{ url: string; title: string; from: string }> }) => {
           if (!live) return;
@@ -239,15 +247,17 @@ function BrowserView({ group, shown, keys, buttons, intro }: { group: string; sh
       live = false;
       clearTimeout(t);
     };
-  }, [addr, editing]);
-  // your Chrome bookmarks bar: under the address bar, and on a new tab
+  }, [addr, editing, q]);
+  // your Chrome bookmarks bar (the profile's): under the address bar, and on a new tab
   const [bar, setBar] = useState<Array<{ url: string; title: string }>>([]);
   useEffect(() => {
-    void fetch('/api/browser/bar')
+    let live = true;
+    void fetch(`/api/browser/bar${q ? `?${q}` : ''}`)
       .then((r) => (r.ok ? r.json() : { bookmarks: [] }))
-      .then((j: { bookmarks: Array<{ url: string; title: string }> }) => setBar(j.bookmarks))
+      .then((j: { bookmarks: Array<{ url: string; title: string }> }) => live && setBar(j.bookmarks))
       .catch(() => {});
-  }, []);
+    return () => void (live = false);
+  }, [q]);
   const toggleBar = () => {
     const on = !showBar;
     setShowBar(on);
@@ -434,7 +444,7 @@ function BrowserView({ group, shown, keys, buttons, intro }: { group: string; sh
       {finding && shown ? <FindBar press={finding} page={page() as never} onClose={() => setFinding(0)} /> : null}
       <div className="web-body">
         {web.order
-          .filter((id) => mounted.has(id) && web.tabs[id]?.url)
+          .filter((id) => loaded && mounted.has(id) && web.tabs[id]?.url)
           .map((id) => (
             <Page key={id} tab={web.tabs[id]} visible={shown && id === activeId} onState={onState} onVisit={onVisit} />
           ))}
@@ -572,30 +582,90 @@ export function WebPane({ view, sessionId }: { view: React.RefObject<HTMLDivElem
 
 /**
  * Cora's Browser, in the Tools drawer: tabs that belong to no session, with everything a session's tabs have (find,
- * 1Password, bookmarks, your Chrome history in the address bar). Opened with no tabs, it starts with a new one; closing
+ * 1Password, bookmarks, your Chrome history in the address bar). With profiles, a switcher like Chrome's: each profile
+ * has its own sign-ins, bookmarks and tabs, kept as they were. Opened with no tabs, it starts with a new one; closing
  * its last tab closes the drawer.
  */
 export function BrowserTool({ visible }: { visible: boolean }) {
-  const n = useWeb((w) => w.sessions[BROWSER_ID]?.tabs.length ?? 0);
-  const active = useWeb((w) => !!w.sessions[BROWSER_ID]?.active);
+  const profiles = useBrowserSettings((b) => b.profiles);
+  const picked = useBrowserProfile((p) => p.id);
+  const sessions = useBrowserSettings((b) => b.sessions);
+  const profile = !profiles.length ? '' : profiles.some((p) => p.id === picked) ? picked : (profiles.find((p) => p.id === sessions) ?? profiles.find((p) => p.partition === 'persist:web') ?? profiles[0]).id;
+  const group = browserGroup(profile);
+  const n = useWeb((w) => w.sessions[group]?.tabs.length ?? 0);
+  const active = useWeb((w) => !!w.sessions[group]?.active);
   const had = useRef(n > 0);
+  useEffect(() => void (had.current = n > 0), [group]);
   useEffect(() => {
     if (!visible) return void (had.current = n > 0);
     if (n > 0) return void (had.current = true);
     if (had.current) {
       had.current = false;
       useTools.getState().close();
-    } else useWeb.getState().newTab(BROWSER_ID);
-  }, [visible, n]);
+    } else useWeb.getState().newTab(group);
+  }, [visible, n, group]);
   return (
     <div className={`web-pane browser-tool${visible ? '' : ' off'}`}>
       <BrowserView
-        group={BROWSER_ID}
+        group={group}
         shown={visible && active}
         keys={visible}
-        intro="Cora's own browser: its tabs belong to no session. Links with nowhere better to go open here (an Inbox item with no Tool for its site). Sign in to a site once and every tab, here or in a session, shares it."
+        intro="Cora's own browser: its tabs belong to no session. Links with nowhere better to go open here (an Inbox item with no Tool for its site). Sign in to a site once and every tab of this profile shares it."
+        buttons={profiles.length > 1 ? <ProfileSwitch profiles={profiles} current={profile} /> : null}
       />
     </div>
+  );
+}
+
+/** A profile's colour (its avatar): steady for its id. */
+const AVATAR = ['#f472b6', '#38bdf8', '#a78bfa', '#34d399', '#fbbf24', '#fb923c', '#f87171', '#22d3ee'];
+const avatarOf = (id: string) => AVATAR[[...id].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7) % AVATAR.length];
+
+/** Chrome's profile button: who you're browsing as; pick another (its tabs come back as they were). */
+function ProfileSwitch({ profiles, current }: { profiles: Array<{ id: string; name: string }>; current: string }) {
+  const [open, setOpen] = useState(false);
+  const box = useRef<HTMLSpanElement>(null);
+  const me = profiles.find((p) => p.id === current);
+  useEffect(() => {
+    if (!open) return;
+    const away = (e: MouseEvent) => !box.current?.contains(e.target as Node) && setOpen(false);
+    const esc = (e: KeyboardEvent) => e.key === 'Escape' && (e.preventDefault(), e.stopPropagation(), setOpen(false));
+    window.addEventListener('mousedown', away);
+    window.addEventListener('keydown', esc, true);
+    return () => {
+      window.removeEventListener('mousedown', away);
+      window.removeEventListener('keydown', esc, true);
+    };
+  }, [open]);
+  const web = useWeb();
+  const count = (id: string) => web.sessions[browserGroup(id)]?.tabs.filter((t) => web.tabs[t]?.url).length ?? 0;
+  return (
+    <span className="web-prof" ref={box}>
+      <button className={`web-prof-b${open ? ' on' : ''}`} title={`Browsing as ${me?.name ?? 'you'}: switch profile`} onClick={() => setOpen(!open)}>
+        <span className="web-av" style={{ background: avatarOf(current) }}>
+          {(me?.name ?? '?').slice(0, 1).toUpperCase()}
+        </span>
+        <span className="web-prof-n">{me?.name}</span>
+      </button>
+      {open ? (
+        <div className="web-prof-menu" role="menu">
+          <div className="wpm-h">Profiles</div>
+          {profiles.map((p) => (
+            <button key={p.id} role="menuitemradio" aria-checked={p.id === current} className={p.id === current ? 'on' : ''} onClick={() => (useBrowserProfile.getState().set(p.id), setOpen(false))}>
+              <span className="web-av" style={{ background: avatarOf(p.id) }}>
+                {p.name.slice(0, 1).toUpperCase()}
+              </span>
+              <span className="t">{p.name}</span>
+              <span className="u">{count(p.id) ? `${count(p.id)} tab${count(p.id) === 1 ? '' : 's'}` : ''}</span>
+              {p.id === current ? <Icon name="Check" size={13} /> : <span />}
+            </button>
+          ))}
+          <button className="wpm-manage" onClick={() => (setOpen(false), openSettings('tools'))}>
+            <Icon name="Settings" size={13} /> Manage profiles
+          </button>
+        </div>
+      ) : null}
+    </span>
   );
 }
 

@@ -364,6 +364,20 @@ browser has: tabs you can drag, the address bar's suggestions, the bookmarks bar
 Links with nowhere better to go open here: an Inbox item whose site has no Tool of yours (one that does opens in that
 Tool, at that page), and a link you click with no session open. Closing its last tab closes the drawer.
 
+### Profiles
+
+Keep work and personal apart, as Chrome does. In **Settings › Tools › Cora's browser**, under **Profiles**, tick the
+Chrome and Edge profiles to bring in (any number). Each becomes a profile of Cora's browser with:
+
+- **its own sign-ins**: your work Google account in one, your personal one in the other.
+- **its own bookmarks bar and suggestions**, from that Chrome or Edge profile.
+- **its own tabs** in Cora's Browser, kept as they were while you're on another profile.
+
+Switch with the profile button at the end of the Browser's address bar. **Sessions use** picks the profile a session's
+browser signs in with (sessions don't switch: most work in one). One profile keeps the sign-ins Cora had before you
+brought profiles in, and Tools keep using those. With no profiles ticked, Cora's browser is one profile with all your
+bookmarks, as before.
+
 ### Pages sessions open
 
 A session can open a page for you, such as the merge request it just created or the ticket it just commented on. Sites
@@ -379,6 +393,7 @@ Tools are web apps you keep open for the whole of Cora, beside whichever session
 whatever you add (your Jira board, merge requests, a dashboard).
 
 - **Open one** from **Tools** in the left nav, or with `Ctrl+1` to `Ctrl+9`. It opens in a drawer beside the session.
+  **Home** in its header takes it back to the page you set for it.
   Drag its edge to resize it.
 - **Unread counts** show on a Tool's button when the app has news.
 - **Add, arrange and tell apart** in **Settings › Tools**: a name and an address; move up or down; a tint and a short

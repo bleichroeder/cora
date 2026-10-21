@@ -190,6 +190,19 @@ export type VoiceKeyInfo = {
   perms: { tts: boolean | null; stt: boolean | null; voices: boolean | null };
 };
 
+/**
+ * A profile of Cora's browser: one of your Chrome or Edge profiles (`chrome:Default`, `edge:Profile 1`), whose
+ * bookmarks and history it suggests from, with sign-ins of its own (its `partition`). One profile keeps the logins
+ * Cora had before profiles (`persist:web`), and Tools use those.
+ */
+export type BrowserProfile = { id: string; name: string; partition: string };
+export const BROWSER_PROFILE_ID = /^(chrome|edge):(Default|Profile \d{1,3})$/;
+/** The logins Cora's browser always had (Tools use them; one profile keeps them). */
+export const HOME_PARTITION = 'persist:web';
+/** A profile's own logins: stable, from its id. */
+export const partitionOf = (id: string) => `persist:web-${id.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
+export const isWebPartition = (p: string) => p === HOME_PARTITION || /^persist:web-[a-z0-9-]{1,40}$/.test(p);
+
 export type Settings = {
   explains: { mode: ExplainMode; frequency: ExplainFrequency; reply: ExplainReply };
   retentionDays: number;
@@ -207,8 +220,12 @@ export type Settings = {
   slackBot: import('./slackBot').SlackBotSettings;
   /** Slack in Cora's Inbox: the channels you follow (only what touches you there) */
   slack: { follow: import('./slack').SlackFollow[]; /** the sign-off on messages Cora sends for you (`:cora:`; empty: none) */ sign: string };
-  /** Cora's browser: suggest from (and show) your Chrome / Edge bookmarks and history */
-  browser: { chrome: boolean };
+  /**
+   * Cora's browser: suggest from (and show) your Chrome / Edge bookmarks and history. `profiles`: the ones you brought
+   * in, each with its own sign-ins (Cora's Browser switches between them); none: one profile with all of them.
+   * `sessions`: the profile sessions' browsers use.
+   */
+  browser: { chrome: boolean; profiles?: BrowserProfile[]; sessions?: string };
   /** 1Password in Cora's browser: fill logins, one-time codes, in Tools too */
   onepassword: import('./onepassword').OnePasswordSettings;
   /** setting Cora up: the features you skipped, and whether the first run was seen */

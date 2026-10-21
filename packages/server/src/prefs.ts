@@ -1,6 +1,6 @@
 import { copyFileSync, existsSync, readFileSync } from 'node:fs';
 import { isAbsolute } from 'node:path';
-import { DEFAULT_GITLAB_HOST, DEFAULT_TICKET_START, TICKET_STARTS, type TicketStart, DEFAULT_MANDATE, DEFAULT_ORCHESTRATOR, DEFAULT_SETTINGS, DEFAULT_VOICE, VOICE_READS, type OrchestratorSettings, type Settings, type VoiceSettings, INSTRUCTIONS_MAX, DELIVERY_MAX, PRONOUNCE_MAX, DEFAULT_JIRA_WATCH, JIRA_ALERT_LEVELS, JIRA_EVENT_KINDS, JIRA_START_MODES, isJiraHost, type JiraAlertLevel, type JiraEventKind, type JiraWatchSettings, DEFAULT_SLACK_BOT, FINISHED_MODES, isHHMM, type SlackBotSettings, MAX_FOLLOW, MAX_FOLLOW_WORDS, type SlackFollow, WORK_SERVERS_MAX, WORK_TOOLS_MAX, type WorkServer } from '@cora/shared';
+import { BROWSER_PROFILE_ID, HOME_PARTITION, partitionOf, type BrowserProfile, DEFAULT_GITLAB_HOST, DEFAULT_TICKET_START, TICKET_STARTS, type TicketStart, DEFAULT_MANDATE, DEFAULT_ORCHESTRATOR, DEFAULT_SETTINGS, DEFAULT_VOICE, VOICE_READS, type OrchestratorSettings, type Settings, type VoiceSettings, INSTRUCTIONS_MAX, DELIVERY_MAX, PRONOUNCE_MAX, DEFAULT_JIRA_WATCH, JIRA_ALERT_LEVELS, JIRA_EVENT_KINDS, JIRA_START_MODES, isJiraHost, type JiraAlertLevel, type JiraEventKind, type JiraWatchSettings, DEFAULT_SLACK_BOT, FINISHED_MODES, isHHMM, type SlackBotSettings, MAX_FOLLOW, MAX_FOLLOW_WORDS, type SlackFollow, WORK_SERVERS_MAX, WORK_TOOLS_MAX, type WorkServer } from '@cora/shared';
 import { checkPresets } from './launch';
 import { isGitlabHost } from './gitlabHost';
 import { writeFileAtomic } from './fsx';
@@ -9,7 +9,30 @@ const MODES = ['off', 'markdown', 'markdown+html'] as const;
 const FREQS = ['sparingly', 'normal', 'liberally'] as const;
 const REPLIES = ['pointer', 'summary'] as const;
 
-type Patch = { explains?: Partial<Settings['explains']>; retentionDays?: number; presets?: unknown; voice?: Partial<VoiceSettings>; autoName?: boolean; orchestrator?: Partial<Omit<OrchestratorSettings, 'mandate'>> & { mandate?: Partial<OrchestratorSettings['mandate']> }; jira?: { watch?: Partial<Omit<JiraWatchSettings, 'kinds'>> & { kinds?: Partial<JiraWatchSettings['kinds']> }; ticket?: Partial<TicketStart> }; gitlab?: { host?: string }; slackBot?: Partial<Omit<SlackBotSettings, 'ping' | 'quiet'>> & { ping?: Partial<SlackBotSettings['ping']>; quiet?: Partial<SlackBotSettings['quiet']> }; slack?: { follow?: unknown; sign?: unknown }; browser?: { chrome?: unknown }; onepassword?: { on?: unknown; otp?: unknown; tools?: unknown; suggest?: unknown }; setup?: { skipped?: unknown; seen?: unknown } };
+/**
+ * The browser's profiles from a patch: your Chrome / Edge profiles (id and name). Each keeps the sign-ins it had (its
+ * partition); a new one gets its own. One always keeps the logins Cora had before profiles: the one that has them, else
+ * the one sessions use, else the first.
+ */
+export function browserProfiles(raw: unknown, cur: BrowserProfile[] | undefined, sessions?: string): BrowserProfile[] {
+  if (!Array.isArray(raw) || raw.length > 12) throw new Error('browser.profiles must be a list of at most 12 profiles');
+  const seen = new Set<string>();
+  const out: BrowserProfile[] = raw.map((p: any) => {
+    const id = typeof p?.id === 'string' ? p.id : '';
+    const name = typeof p?.name === 'string' ? p.name.trim() : '';
+    if (!BROWSER_PROFILE_ID.test(id) || seen.has(id)) throw new Error('each browser profile needs an id like chrome:Default (once each)');
+    if (!name || name.length > 60) throw new Error('each browser profile needs a name (60 characters at most)');
+    seen.add(id);
+    return { id, name, partition: cur?.find((c) => c.id === id)?.partition ?? partitionOf(id) };
+  });
+  if (out.length && !out.some((p) => p.partition === HOME_PARTITION)) {
+    const home = out.find((p) => p.id === sessions) ?? out[0];
+    home.partition = HOME_PARTITION;
+  }
+  return out;
+}
+
+type Patch = { explains?: Partial<Settings['explains']>; retentionDays?: number; presets?: unknown; voice?: Partial<VoiceSettings>; autoName?: boolean; orchestrator?: Partial<Omit<OrchestratorSettings, 'mandate'>> & { mandate?: Partial<OrchestratorSettings['mandate']> }; jira?: { watch?: Partial<Omit<JiraWatchSettings, 'kinds'>> & { kinds?: Partial<JiraWatchSettings['kinds']> }; ticket?: Partial<TicketStart> }; gitlab?: { host?: string }; slackBot?: Partial<Omit<SlackBotSettings, 'ping' | 'quiet'>> & { ping?: Partial<SlackBotSettings['ping']>; quiet?: Partial<SlackBotSettings['quiet']> }; slack?: { follow?: unknown; sign?: unknown }; browser?: { chrome?: unknown; profiles?: unknown; sessions?: unknown }; onepassword?: { on?: unknown; otp?: unknown; tools?: unknown; suggest?: unknown }; setup?: { skipped?: unknown; seen?: unknown } };
 
 const num = (v: unknown, name: string, lo: number, hi: number) => {
   const n = Number(v);
@@ -104,7 +127,7 @@ export function migrateVoice(saved: Partial<VoiceSettings> | undefined): Partial
 
 /** Validates a settings patch; throws with a user-facing message on bad values. */
 export function applyPatch(cur: Settings, patch: Patch): Settings {
-  const next: Settings = { explains: { ...cur.explains }, retentionDays: cur.retentionDays, presets: cur.presets ?? [], voice: { ...DEFAULT_VOICE, ...cur.voice }, autoName: cur.autoName ?? false, orchestrator: { ...DEFAULT_ORCHESTRATOR, ...cur.orchestrator, mandate: { ...DEFAULT_MANDATE, ...cur.orchestrator?.mandate } }, jira: { watch: { ...DEFAULT_JIRA_WATCH, ...cur.jira?.watch, kinds: { ...DEFAULT_JIRA_WATCH.kinds, ...cur.jira?.watch?.kinds } }, ticket: { ...DEFAULT_TICKET_START, ...cur.jira?.ticket } }, gitlab: { host: cur.gitlab?.host || DEFAULT_GITLAB_HOST }, slackBot: { ...DEFAULT_SLACK_BOT, ...cur.slackBot, ping: { ...DEFAULT_SLACK_BOT.ping, ...cur.slackBot?.ping }, quiet: { ...DEFAULT_SLACK_BOT.quiet, ...cur.slackBot?.quiet } }, slack: { follow: cur.slack?.follow ?? [], sign: cur.slack?.sign ?? ':cora:' }, browser: { chrome: cur.browser?.chrome ?? true }, onepassword: { on: cur.onepassword?.on ?? true, otp: cur.onepassword?.otp ?? true, tools: cur.onepassword?.tools ?? true, suggest: cur.onepassword?.suggest ?? true }, setup: { skipped: cur.setup?.skipped ?? [], seen: cur.setup?.seen ?? false } };
+  const next: Settings = { explains: { ...cur.explains }, retentionDays: cur.retentionDays, presets: cur.presets ?? [], voice: { ...DEFAULT_VOICE, ...cur.voice }, autoName: cur.autoName ?? false, orchestrator: { ...DEFAULT_ORCHESTRATOR, ...cur.orchestrator, mandate: { ...DEFAULT_MANDATE, ...cur.orchestrator?.mandate } }, jira: { watch: { ...DEFAULT_JIRA_WATCH, ...cur.jira?.watch, kinds: { ...DEFAULT_JIRA_WATCH.kinds, ...cur.jira?.watch?.kinds } }, ticket: { ...DEFAULT_TICKET_START, ...cur.jira?.ticket } }, gitlab: { host: cur.gitlab?.host || DEFAULT_GITLAB_HOST }, slackBot: { ...DEFAULT_SLACK_BOT, ...cur.slackBot, ping: { ...DEFAULT_SLACK_BOT.ping, ...cur.slackBot?.ping }, quiet: { ...DEFAULT_SLACK_BOT.quiet, ...cur.slackBot?.quiet } }, slack: { follow: cur.slack?.follow ?? [], sign: cur.slack?.sign ?? ':cora:' }, browser: { chrome: cur.browser?.chrome ?? true, ...(cur.browser?.profiles?.length ? { profiles: cur.browser.profiles } : {}), ...(cur.browser?.sessions ? { sessions: cur.browser.sessions } : {}) }, onepassword: { on: cur.onepassword?.on ?? true, otp: cur.onepassword?.otp ?? true, tools: cur.onepassword?.tools ?? true, suggest: cur.onepassword?.suggest ?? true }, setup: { skipped: cur.setup?.skipped ?? [], seen: cur.setup?.seen ?? false } };
   const e = patch.explains ?? {};
   if (e.mode !== undefined) {
     if (!MODES.includes(e.mode as any)) throw new Error(`explains.mode must be one of ${MODES.join(', ')}`);
@@ -262,6 +285,17 @@ export function applyPatch(cur: Settings, patch: Patch): Settings {
   if (patch.browser?.chrome !== undefined) {
     if (typeof patch.browser.chrome !== 'boolean') throw new Error('browser.chrome must be true or false');
     next.browser = { ...next.browser, chrome: patch.browser.chrome };
+  }
+  // the browser's profiles (your Chrome / Edge ones you brought in), and the one sessions use
+  if (patch.browser?.profiles !== undefined || patch.browser?.sessions !== undefined) {
+    const sessions = patch.browser.sessions !== undefined ? patch.browser.sessions : next.browser.sessions;
+    if (sessions !== undefined && sessions !== null && typeof sessions !== 'string') throw new Error('browser.sessions must be a profile id');
+    const profiles = patch.browser.profiles !== undefined ? browserProfiles(patch.browser.profiles, next.browser.profiles, sessions || undefined) : (next.browser.profiles ?? []);
+    const kept = !!sessions && profiles.some((p) => p.id === sessions);
+    // asked for one that isn't there: refused; the one it was, gone with its profile: sessions go back to the default
+    if (sessions && !kept && patch.browser.sessions !== undefined) throw new Error('browser.sessions must be one of the profiles');
+    const { profiles: _p, sessions: _s, ...rest } = next.browser;
+    next.browser = { ...rest, ...(profiles.length ? { profiles } : {}), ...(kept ? { sessions } : {}) };
   }
   // the sign-off on what Cora sends for you: an emoji (:name:) or a few words, or nothing
   if (patch.slack?.sign !== undefined) {

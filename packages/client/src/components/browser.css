@@ -88,3 +88,20 @@
 /* Cora's Browser, in the Tools drawer: the same browser, filling the drawer */
 .web-pane.browser-tool { position: absolute; inset: 0; z-index: auto; box-shadow: none; }
 .web-pane.browser-tool.off { visibility: hidden; pointer-events: none; }
+
+/* the profile button (Cora's Browser): who you're browsing as, and the others to switch to */
+.web-pane .web-prof { position: relative; flex: none; }
+.web-pane .web-prof-b { display: inline-flex; align-items: center; gap: 6px; height: 28px; max-width: 150px; padding: 0 8px 0 4px; border: 0; border-radius: 14px; background: none; color: var(--ink2); font: 500 11.5px var(--ui); }
+.web-pane .web-prof-b:hover, .web-pane .web-prof-b.on { background: var(--raise); color: var(--ink); }
+.web-pane .web-prof-n { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.web-pane .web-av { flex: none; display: grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; color: #0b0e14; font: 700 10.5px var(--ui); }
+.web-pane .web-prof-menu { position: absolute; top: calc(100% + 6px); right: 0; z-index: 40; width: 240px; padding: 6px; border-radius: 12px; background: var(--raise); box-shadow: inset 0 0 0 1px var(--hair2), 0 16px 40px rgba(0, 0, 0, .6); }
+.web-pane .wpm-h { padding: 4px 8px 6px; color: var(--ink4); font: 600 9.5px var(--code); letter-spacing: .14em; text-transform: uppercase; }
+.web-pane .web-prof-menu button { display: grid; grid-template-columns: 20px minmax(0, 1fr) auto 14px; align-items: center; gap: 9px; width: 100%; height: 36px; padding: 0 8px; border: 0; border-radius: 8px; background: none; color: var(--ink); font: 500 12.5px var(--ui); text-align: left; }
+.web-pane .web-prof-menu button:hover { background: var(--raise2); }
+.web-pane .web-prof-menu button.on { background: color-mix(in srgb, var(--cora) 10%, var(--raise)); }
+.web-pane .web-prof-menu .t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.web-pane .web-prof-menu .u { color: var(--ink4); font: 400 10.5px var(--code); }
+.web-pane .web-prof-menu svg { color: var(--cora); }
+.web-pane .web-prof-menu .wpm-manage { display: flex; gap: 8px; height: 32px; margin-top: 4px; border-top: 1px solid var(--hair); border-radius: 0 0 8px 8px; color: var(--ink3); font-size: 12px; }
+.bp-list { display: flex; flex-direction: column; gap: 2px; width: 100%; }

@@ -14,6 +14,9 @@ What changed in each release. Cora updates itself; each update's notes are on it
 - **Cora's Browser.** A browser of its own in Tools (`Ctrl+Shift+B`), not tied to any session, with tabs, find,
   1Password and your bookmarks. Inbox links with no Tool for their site open there instead of a separate window.
 - **Every browser in Cora:** drag tabs to reorder them, and a bookmarks bar under the address bar.
+- **Browser profiles.** Bring in your Chrome and Edge profiles (Settings › Tools): each has its own sign-ins, bookmarks
+  bar and tabs, and Cora's Browser switches between them like Chrome. Sessions use the one you pick.
+- **Home** in a Tool's header takes it back to its page.
 - **Open in Jira from the Inbox** lands on the ticket, even when the Jira Tool wasn't open yet.
 - **The README** shows Cora's scene in full swing, and every screenshot in Cora's pink.
 

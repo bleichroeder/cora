@@ -1,7 +1,7 @@
 import { copyFileSync, existsSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { createRequire } from 'node:module';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 
 // loaded when it's needed (as the store does), so the CLI's warning filter is in place before node:sqlite
 const sqlite = () => createRequire(import.meta.url)('node:sqlite') as typeof import('node:sqlite');
@@ -26,6 +26,28 @@ const profiles = (root: string) => {
     return [];
   }
 };
+
+/** A Chrome or Edge profile on this PC: `chrome:Default`, its name as that browser shows it, and its folder. */
+export type ChromiumProfile = { id: string; name: string; dir: string };
+
+/** Every profile under these roots, with the names their browser gives them (its Local State). */
+export function chromiumProfiles(roots: string[]): ChromiumProfile[] {
+  const out: ChromiumProfile[] = [];
+  for (const root of roots) {
+    const kind = /edge/i.test(root) ? 'edge' : 'chrome';
+    let names: Record<string, { name?: string }> = {};
+    try {
+      names = JSON.parse(readFileSync(join(root, 'Local State'), 'utf8'))?.profile?.info_cache ?? {};
+    } catch {
+      /* no names: the folder's */
+    }
+    for (const dir of profiles(root)) {
+      const folder = basename(dir);
+      out.push({ id: `${kind}:${folder}`, name: String(names[folder]?.name || folder), dir });
+    }
+  }
+  return out;
+}
 
 /** A profile's bookmarks: the bar's first (they're the ones you use), then the rest. */
 function bookmarksOf(profile: string): { bar: WebSuggestion[]; all: WebSuggestion[] } {
@@ -74,42 +96,51 @@ function historyOf(profile: string): WebSuggestion[] {
  * (Sign-ins can't come over: the browsers encrypt them for themselves.)
  */
 export class ChromeData {
-  private cache: { at: number; bar: WebSuggestion[]; bookmarks: WebSuggestion[]; history: WebSuggestion[] } | null = null;
+  /** by profile ('*': all of them) */
+  private cache = new Map<string, { at: number; bar: WebSuggestion[]; bookmarks: WebSuggestion[]; history: WebSuggestion[] }>();
 
   constructor(private o: { roots?: () => string[]; now?: () => number } = {}) {}
 
-  private data() {
+  /** The Chrome and Edge profiles on this PC (to bring into Cora's browser). */
+  profiles(): Array<{ id: string; name: string }> {
+    return chromiumProfiles((this.o.roots ?? chromiumRoots)()).map(({ id, name }) => ({ id, name }));
+  }
+
+  /** One profile's bookmarks and history (`profile`: its id), or every profile's together. */
+  private data(profile?: string) {
+    const key = profile ?? '*';
     const now = this.o.now?.() ?? Date.now();
-    if (this.cache && now - this.cache.at < KEEP_MS) return this.cache;
+    const had = this.cache.get(key);
+    if (had && now - had.at < KEEP_MS) return had;
     const bar: WebSuggestion[] = [];
     const bookmarks: WebSuggestion[] = [];
     const history: WebSuggestion[] = [];
-    for (const root of (this.o.roots ?? chromiumRoots)()) {
-      for (const p of profiles(root)) {
-        const b = bookmarksOf(p);
-        bar.push(...b.bar);
-        bookmarks.push(...b.all);
-        history.push(...historyOf(p));
-      }
+    for (const p of chromiumProfiles((this.o.roots ?? chromiumRoots)())) {
+      if (profile && p.id !== profile) continue;
+      const b = bookmarksOf(p.dir);
+      bar.push(...b.bar);
+      bookmarks.push(...b.all);
+      history.push(...historyOf(p.dir));
     }
     const once = (l: WebSuggestion[]) => {
       const seen = new Set<string>();
       return l.filter((s) => !seen.has(s.url) && (seen.add(s.url), true));
     };
-    this.cache = { at: now, bar: once(bar), bookmarks: once(bookmarks), history: once(history) };
-    return this.cache;
+    const d = { at: now, bar: once(bar), bookmarks: once(bookmarks), history: once(history) };
+    this.cache.set(key, d);
+    return d;
   }
 
-  /** The bookmarks bar (a new tab shows it). */
-  bar(limit = 24): WebSuggestion[] {
-    return this.data().bar.slice(0, limit);
+  /** The bookmarks bar (under the address bar, and on a new tab): one profile's, or all of them. */
+  bar(limit = 24, profile?: string): WebSuggestion[] {
+    return this.data(profile).bar.slice(0, limit);
   }
 
   /** Pages for what's typed: every word in the address or title; bookmarks, then the most visited; a host that starts with it first. */
-  suggest(query: string, limit = 8): WebSuggestion[] {
+  suggest(query: string, limit = 8, profile?: string): WebSuggestion[] {
     const words = query.toLowerCase().split(/\s+/).filter(Boolean).slice(0, 6);
     if (!words.length) return [];
-    const d = this.data();
+    const d = this.data(profile);
     const hostOf = (u: string) => u.replace(/^https?:\/\/(www\.)?/i, '').toLowerCase();
     const score = (s: WebSuggestion) => (hostOf(s.url).startsWith(words[0]) ? 100_000 : 0) + (s.from === 'bookmark' ? 50_000 : 0) + Math.min(49_999, s.visits ?? 0);
     const seen = new Set<string>();

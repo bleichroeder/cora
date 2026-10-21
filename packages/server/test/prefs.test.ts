@@ -246,6 +246,32 @@ describe('channels you follow (Slack in the Inbox)', () => {
 });
 });
 
+describe("the browser's profiles", () => {
+  it("each keeps its sign-ins; one keeps Cora's old ones (sessions' first); sessions must use one of them", () => {
+    const file = join(mkdtempSync(join(tmpdir(), 'cora-pf-')), 'config.json');
+    const p = new Prefs(file);
+    p.update({ browser: { profiles: [{ id: 'chrome:Default', name: 'Personal' }, { id: 'chrome:Profile 2', name: 'Work' }], sessions: 'chrome:Profile 2' } });
+    const b = new Prefs(file).get().browser;
+    expect(b.profiles).toEqual([
+      { id: 'chrome:Default', name: 'Personal', partition: 'persist:web-chrome-default' },
+      { id: 'chrome:Profile 2', name: 'Work', partition: 'persist:web' },
+    ]);
+    expect(b.sessions).toBe('chrome:Profile 2');
+    // adding one later: the others keep theirs
+    p.update({ browser: { profiles: [...b.profiles!, { id: 'edge:Default', name: 'Edge' }] } });
+    expect(p.get().browser.profiles!.map((x) => x.partition)).toEqual(['persist:web-chrome-default', 'persist:web', 'persist:web-edge-default']);
+    // the partition isn't yours to set; the one with Cora's old logins gone, the one left keeps them
+    p.update({ browser: { profiles: [{ id: 'chrome:Default', name: 'Personal', partition: 'persist:evil' } as never] } });
+    expect(p.get().browser.profiles).toEqual([{ id: 'chrome:Default', name: 'Personal', partition: 'persist:web' }]);
+    expect(p.get().browser.sessions).toBeUndefined();
+    expect(() => applyPatch(DEFAULT_SETTINGS, { browser: { profiles: [{ id: '../x', name: 'x' }] } })).toThrow(/id like chrome:Default/);
+    expect(() => applyPatch(DEFAULT_SETTINGS, { browser: { profiles: [{ id: 'chrome:Default', name: 'A' }], sessions: 'edge:Default' } })).toThrow(/one of the profiles/);
+    // none: as before (one profile, every browser's bookmarks)
+    p.update({ browser: { profiles: [] } });
+    expect(p.get().browser).toEqual({ chrome: true });
+  });
+});
+
 describe('a damaged config.json (audit B1)', () => {
   it('one bad value: the rest are kept, the file is kept aside, and a save never writes defaults over them', () => {
     const dir = mkdtempSync(join(tmpdir(), 'cora-pf-bad-'));
