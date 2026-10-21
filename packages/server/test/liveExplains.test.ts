@@ -2,7 +2,9 @@ import { mkdtempSync, mkdirSync, symlinkSync, utimesSync, writeFileSync, existsS
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { LiveExplains, slugOf, type LiveData, type LiveVersion } from '../src/liveExplains';
+import { readFileSync } from 'node:fs';
+import { artifactUrl } from '@cora/shared';
+import { LiveExplains, sharePrompt, slugOf, type LiveData, type LiveVersion } from '../src/liveExplains';
 
 const SID = 'sess-live-0001';
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -90,5 +92,24 @@ describe('live explains', () => {
     mkdirSync(join(root, 'sess-empty-0002'));
     l.prune(Date.now());
     expect(existsSync(join(root, 'sess-empty-0002'))).toBe(false);
+  });
+
+  it("sharing: a copy in the explain's folder, and what the session is asked to do with it", async () => {
+    const { live: l, root, versions } = make();
+    l.watch();
+    const file = l.share(SID, 'Release 2.4', '<p>shared</p>');
+    expect(file).toBe(join(root, SID, 'release-24', 'share-release-24.html'));
+    expect(readFileSync(file, 'utf8')).toBe('<p>shared</p>');
+    await wait(300);
+    expect(versions).toEqual([]); // not a page: no new version
+    expect(() => l.share(SID, 'x', ' ')).toThrow();
+    expect(() => l.share('../x', 'x', '<p>')).toThrow(/not a session/);
+    const first = sharePrompt('Release "2.4"', file);
+    expect(first).toContain(`publish ${file} as a private claude.ai artifact titled "Release '2.4'"`);
+    expect(first).toContain('exactly as it is');
+    expect(sharePrompt('Release 2.4', file, 'https://claude.ai/artifact/abc')).toContain(`republish ${file} to the existing artifact https://claude.ai/artifact/abc`);
+    expect(artifactUrl('Published: https://claude.ai/artifact/AjNk-dh_c?sk=x (private)')).toBe('https://claude.ai/artifact/AjNk-dh_c');
+    expect(artifactUrl('https://claude.ai/code/artifact/1234-ab')).toBe('https://claude.ai/code/artifact/1234-ab');
+    expect(artifactUrl('https://evil.example/artifact/x')).toBeNull();
   });
 });

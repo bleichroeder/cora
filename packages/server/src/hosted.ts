@@ -51,6 +51,9 @@ const LIVE = [
   'For work that runs for minutes with progress worth watching (tests, a build, a deploy, a migration, a long search), keep a live explain instead of reporting progress in text:',
   'call the live_explain tool once with a title, write page.html (the layout; it reads its data with cora.onData((data) => { … }), called at load and on every change),',
   'then rewrite data.json whole at each real step (not every second). Keep the page fixed and put what changes in the data. Leave a final state that reads well afterwards.',
+  'Record when things start (ISO times) and let the page count elapsed time itself on a timer, so its clocks tick between your updates.',
+  'Update it as part of the work you are doing, never by polling on a schedule (/loop, sleeps): to watch numbers that change on their own (metrics, a queue),',
+  'offer the user a small poller script that writes data.json, for them to start themselves with ! (any credential it needs comes from their environment, never from you).',
 ].join(' ');
 
 /** The system-prompt addendum for hosted sessions, built from the explain settings (and voice, for spoken summaries). */

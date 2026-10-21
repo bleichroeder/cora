@@ -13,7 +13,7 @@ import { versionsOf } from '../lib/explainVersions';
 import { liveKey, loadLiveData, useLiveData } from '../state/liveExplains';
 
 export { PRESENT_TOOL } from '@cora/shared';
-import { isPresentTool } from '@cora/shared';
+import { artifactUrl, isPresentTool, shareFileName } from '@cora/shared';
 export type Explain = {
   sessionId: string;
   toolUseId: string;
@@ -114,7 +114,7 @@ export function Viewer({ p }: { p: Explain }) {
   const [content, setContent] = useState<string | null>(p.content ?? null);
   const [err, setErr] = useState<string | null>(null);
   // what the last button did, for a moment ("Copied", "Saved")
-  const [done, setDone] = useState<{ what: 'copy' | 'save'; text: string } | null>(null);
+  const [done, setDone] = useState<{ what: 'copy' | 'save' | 'link'; text: string } | null>(null);
   const html = p.format === 'html' || (content != null && looksLikeHtmlDoc(content));
   useEffect(() => {
     if (!done) return;
@@ -141,6 +141,48 @@ export function Viewer({ p }: { p: Explain }) {
     window.addEventListener('keydown', k);
     return () => window.removeEventListener('keydown', k);
   }, []);
+
+  // sharing: its session (running here) publishes a copy as a claude.ai artifact; the link is in that publish
+  const hosted = useBrain((s) => s.terminals.some((t) => t.sessionId === p.sessionId && t.alive));
+  const [shareUrl, setShareUrl] = useState<string | null>(null);
+  const [sharing, setSharing] = useState(false);
+  const publish = useMemo(() => {
+    const name = shareFileName(p.title).toLowerCase();
+    const ev = sessionEvents(p.sessionId)
+      .filter((e) => e.kind === 'tool' && e.phase === 'end' && e.tool?.name === 'Artifact' && !e.tool.failed && e.toolUseId)
+      .filter((e) => String((e.tool!.input as { file_path?: unknown } | undefined)?.file_path ?? '').replace(/\\/g, '/').toLowerCase().endsWith(`/${name}`))
+      .at(-1);
+    return ev?.toolUseId ?? null;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [p.sessionId, p.title, sessionVersion]);
+  useEffect(() => {
+    setShareUrl(null);
+    if (!publish) return;
+    let on = true;
+    void fetchToolDetail(p.sessionId, publish).then((d) => {
+      const url = d && !d.isError ? artifactUrl(d.result) : null;
+      if (on && url) {
+        setShareUrl(url);
+        setSharing(false);
+      }
+    });
+    return () => void (on = false);
+  }, [p.sessionId, publish]);
+  useEffect(() => setSharing(false), [p.sessionId, p.title]);
+  const share = (url?: string) => {
+    if (content == null) return;
+    const copy = html ? sandboxedHtml(content, explainShim({ vars: themeVars((n) => getComputedStyle(document.documentElement).getPropertyValue(n)), live: !!p.live, data: dataNow.current })) : standalone();
+    setSharing(true);
+    void fetch('/api/explains/share', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ sessionId: p.sessionId, title: p.title, html: copy, ...(url ? { url } : {}) }) })
+      .then(async (r) => (r.ok ? null : (((await r.json().catch(() => ({}))) as { error?: string }).error ?? `HTTP ${r.status}`)))
+      .catch((e) => String(e))
+      .then((e) => {
+        if (e) {
+          setSharing(false);
+          setErr(`Couldn't share it: ${e}`);
+        }
+      });
+  };
 
   // when it was written, and by which session (when that isn't the one on show)
   const ev = sessionEvents(p.sessionId).find((e) => e.toolUseId === p.toolUseId);
@@ -196,6 +238,29 @@ export function Viewer({ p }: { p: Explain }) {
             title="Copy source"
           >
             <Icon name={done?.what === 'copy' ? 'Check' : 'Copy'} size={14} /> {done?.what === 'copy' ? 'Copied' : 'Copy'}
+          </button>
+        ) : null}
+        {content && shareUrl ? (
+          <>
+            <button
+              className={`vw-b${done?.what === 'link' ? ' done' : ''}`}
+              onClick={() =>
+                void navigator.clipboard
+                  ?.writeText(shareUrl)
+                  .then(() => setDone({ what: 'link', text: 'Copied' }))
+                  .catch(() => setErr("Couldn't copy it"))
+              }
+              title={`Shared as a claude.ai artifact: ${shareUrl}. Copy the link to send it`}
+            >
+              <Icon name={done?.what === 'link' ? 'Check' : 'Link'} size={14} /> {done?.what === 'link' ? 'Copied' : 'Copy link'}
+            </button>
+            <button className="vw-i" disabled={sharing} onClick={() => share(shareUrl)} title={sharing ? 'Its session is updating the shared copy…' : 'Update the shared copy to this version (its session republishes it)'}>
+              <Icon name="RefreshCw" size={14} />
+            </button>
+          </>
+        ) : content && hosted ? (
+          <button className="vw-b" disabled={sharing} onClick={() => share()} title={sharing ? 'Its session is publishing it (you may be asked to allow it there)…' : 'Share as a claude.ai artifact: its session publishes a private copy you can send a link to'}>
+            <Icon name="Share2" size={14} /> {sharing ? 'Sharing…' : 'Share'}
           </button>
         ) : null}
         {desktop?.saveExplain && content ? (

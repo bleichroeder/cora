@@ -105,7 +105,7 @@ function buildServer(settings: Settings, sessionId: string | null, s?: McpSlack,
             content: [
               {
                 type: 'text',
-                text: `Live explain "${title}" is ready. Write the page to ${f.page} and keep the data in ${f.data}. The page reads it with cora.onData((data) => …) (called at load and on each change); write data.json whole each time (valid JSON, under 256 KB). Writing in that folder needs no permission.`,
+                text: `Live explain "${title}" is ready. Write the page to ${f.page} and keep the data in ${f.data}. The page reads it with cora.onData((data) => …) (called at load and on each change); write data.json whole each time (valid JSON, under 256 KB). Writing in that folder needs no permission. Write it as each step of your work happens, not on a schedule; put start times in the data and let the page tick elapsed time itself.`,
               },
             ],
           };

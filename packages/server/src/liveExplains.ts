@@ -1,6 +1,7 @@
 import { watch, type FSWatcher } from 'node:fs';
 import { lstatSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
+import { explainSlug, shareFileName } from '@cora/shared';
 
 /**
  * Live explains: a session keeps an explain current while
@@ -19,20 +20,19 @@ const SETTLE_MS = 150;
 const SID = /^[\w-]{8,80}$/;
 
 /** A title as a folder name: lower case, letters, digits and dashes, never empty. */
-export function slugOf(title: string): string {
-  const s = title
-    .toLowerCase()
-    .normalize('NFKD')
-    .replace(/[^\w\s-]/g, '')
-    .replace(/[\s_]+/g, '-')
-    .replace(/-+/g, '-')
-    .replace(/^-|-$/g, '')
-    .slice(0, 60)
-    .replace(/-$/, '');
-  return s || 'live';
+export const slugOf = explainSlug;
+
+/** What Cora types into a session to have it publish (or update) the shared copy of one of its explains. */
+export function sharePrompt(title: string, file: string, url?: string): string {
+  const name = title.replace(/\s+/g, ' ').trim().replace(/"/g, "'");
+  const asIs =
+    "It's a finished, self-contained page: publish it exactly as it is, without rewriting or redesigning it (if the Artifact tool can't publish from that folder, copy the file unchanged into your scratchpad and publish the copy). Then reply with just the link.";
+  return url
+    ? `Update the shared copy of the explain "${name}" (asked from Cora): republish ${file} to the existing artifact ${url}. ${asIs}`
+    : `Share the explain "${name}" (asked from Cora): publish ${file} as a private claude.ai artifact titled "${name}". ${asIs}`;
 }
 
-export type LiveVersion = { sessionId: string; slug: string; title: string; html: string };
+export type LiveVersion ={ sessionId: string; slug: string; title: string; html: string };
 export type LiveData = { sessionId: string; slug: string; data: unknown };
 
 export class LiveExplains {
@@ -54,6 +54,19 @@ export class LiveExplains {
     mkdirSync(dir, { recursive: true });
     writeFileSync(join(dir, META), JSON.stringify({ title: name, sessionId, at: Date.now() }));
     return { slug, dir, page: join(dir, PAGE), data: join(dir, DATA) };
+  }
+
+  /** Write the copy of an explain its session publishes when you share it; returns where. */
+  share(sessionId: string, title: string, html: string): string {
+    if (!SID.test(sessionId)) throw new Error('not a session');
+    const name = title.replace(/\s+/g, ' ').trim().slice(0, 120);
+    if (!name) throw new Error('give it a title');
+    if (!html.trim() || html.length > PAGE_MAX) throw new Error('nothing to share, or too big');
+    const dir = join(this.o.root, sessionId, slugOf(name));
+    mkdirSync(dir, { recursive: true });
+    const file = join(dir, shareFileName(name));
+    writeFileSync(file, html);
+    return file;
   }
 
   /** The newest good data an explain has (read from its file if it changed before Cora started). */

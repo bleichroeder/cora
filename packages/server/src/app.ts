@@ -10,7 +10,7 @@ import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest }
 import cookie from '@fastify/cookie';
 import fastifyStatic from '@fastify/static';
 import websocket from '@fastify/websocket';
-import { INBOX_SOURCES, MAX_DRAFT_ASKS, ticketInPrompt, type TicketFacts, type PendingDecision, type SessionInfo, type SessionTicket, JIRA_EVENT_KINDS, type JiraEvent, type JiraEventKind, type JiraWatchStatus, HELLO_PREFIX } from '@cora/shared';
+import { INBOX_SOURCES, MAX_DRAFT_ASKS, ticketInPrompt, type TicketFacts, type PendingDecision, type SessionInfo, type SessionTicket, JIRA_EVENT_KINDS, type JiraEvent, type JiraEventKind, type JiraWatchStatus, HELLO_PREFIX, artifactUrl } from '@cora/shared';
 import { checkOptions, checkPrompt, launchArgs } from './launch';
 import { checkSummary, checkTicket, type Tickets } from './tickets';
 import { summarizeUsage } from './usage';
@@ -33,6 +33,7 @@ import type { SecurityWatch } from './security';
 import type { OrchestratorManager } from './orchestrator/manager';
 import type { OrchToolDeps } from './orchestrator/tools';
 import { deliverWhenReady } from './orchestrator/deliver';
+import { sharePrompt } from './liveExplains';
 import { OTHERS_REFUSAL, nameOf } from './orchestrator/tools';
 import { repoOf } from './orchestrator/mandate';
 import { Prefs } from './prefs';
@@ -1168,7 +1169,34 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
     if (!/^[\w-]{8,80}$/.test(req.params.sid) || !/^[\w-]{1,60}$/.test(req.params.slug)) return reply.code(400).send({ error: 'bad explain' });
     return { data: d.live.latestData(req.params.sid, req.params.slug) ?? null };
   });
-  app.get<{ Querystring: { sessionId?: string; limit?: string } }>('/api/explains', { preHandler: requireUi }, async (req) => ({
+  // sharing an explain: a self-contained copy goes in its folder, and its session (hosted here) is asked to publish it
+  // as a claude.ai artifact, or to update the one it published before (the viewer finds the link in that publish)
+  app.post<{ Body: { sessionId?: unknown; title?: unknown; html?: unknown; url?: unknown } }>('/api/explains/share', { preHandler: requireAction }, async (req, reply) => {
+    if (!d.live || !ptys) return reply.code(501).send({ error: 'not supported' });
+    const { sessionId, title, html, url } = req.body ?? {};
+    if (typeof sessionId !== 'string' || typeof title !== 'string' || typeof html !== 'string') return reply.code(400).send({ error: 'bad explain' });
+    if (url != null && (typeof url !== 'string' || artifactUrl(url) !== url)) return reply.code(400).send({ error: 'not an artifact link' });
+    const t = ptys.list().find((x) => x.sessionId === sessionId && x.alive && x.mode !== 'shell');
+    if (!t) return reply.code(409).send({ error: "Its session isn't running in Cora, so it can't publish it." });
+    let file: string;
+    try {
+      file = d.live.share(sessionId, title, html);
+    } catch (e) {
+      return reply.code(400).send({ error: (e as Error).message });
+    }
+    void deliverWhenReady(
+      {
+        screen: () => ptys.screenLines(t.terminalId),
+        alive: () => ptys.list().some((x) => x.terminalId === t.terminalId && x.alive),
+        type: (text) => typeInto(t.terminalId, text),
+        key: (data) => void ptys.write(t.terminalId, data),
+      },
+      sharePrompt(title, file, url ?? undefined),
+      30 * 60_000,
+    ).then((r) => !r.sent && app.log.warn(`an explain's share wasn't asked for: ${r.why}`));
+    return { ok: true, file };
+  });
+  app.get<{ Querystring: { sessionId?: string; limit?: string } }>('/api/explains',{ preHandler: requireUi }, async (req) => ({
     explains: store.listExplains(req.query.sessionId, Math.min(Number(req.query.limit ?? 200), 1000)),
   }));
 

@@ -10,6 +10,8 @@ What changed in each release. Cora updates itself; each update's notes are on it
   step back through them in the viewer.
 - **Quieter Slack.** Slack's own notifications only while you're away from Cora, not for every message while you're
   in it.
+- **Share an explain.** Its session publishes a copy as a claude.ai artifact, and you get a link to send; update it
+  to the newest version later, at the same link.
 - **Cora is pink**, its default colour, icon and installer.
 
 ## 0.1.3

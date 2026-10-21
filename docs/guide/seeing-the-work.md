@@ -180,6 +180,15 @@ the viewer redraws in place, with no reload and no jump, so you can watch the nu
 Every HTML explain gets Cora's colours to use (yours included, if you've picked another in Settings), so what Claude
 draws looks like part of Cora.
 
+### Sharing an explain
+
+**Share**, in the viewer, gives you a link to send: the explain's session publishes a private copy of it as a
+claude.ai artifact (you may be asked to allow that in the session), and the button becomes **Copy link**. Who else can
+open it is up to you, on claude.ai. The copy is a snapshot: a live explain is shared as it is at that moment. To send
+a newer state, use the update button next to **Copy link**, and the session republishes it to the same link.
+
+Sharing needs the explain's session to be running in Cora, and a Claude account with artifacts.
+
 ### Choosing how much Claude uses them
 
 In **Settings › Explains**:
