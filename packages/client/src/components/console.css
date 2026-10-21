@@ -27,32 +27,32 @@
 .cc-menu > i { height: 1px; margin: 4px 6px; background: var(--hair); }
 .cora-console .cc-err { background: color-mix(in srgb, var(--need) 10%, var(--nav)); color: #ffc9c9; font: 500 11.5px var(--code); }
 
-/* autopilot: a panel tinted green */
-.cora-console .cc-goal, .cora-cmd .cc-goal { margin: 12px 12px 0; padding: 11px 12px; border: 0; border-radius: 12px; background: color-mix(in srgb, var(--work) 5%, var(--raise)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--work) 28%, transparent); }
+/* autopilot: a panel tinted in Cora's colour */
+.cora-console .cc-goal, .cora-cmd .cc-goal { margin: 12px 12px 0; padding: 11px 12px; border: 0; border-radius: 12px; background: color-mix(in srgb, var(--cora) 5%, var(--raise)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cora) 28%, transparent); }
 .cora-cmd .cc-goal { margin: 0; }
 .cora-console .cc-goal.idle, .cora-cmd .cc-goal.idle { padding: 10px; }
 .cora-console .cc-goal.compose, .cora-cmd .cc-goal.compose { background: var(--raise); box-shadow: inset 0 0 0 1px var(--hair2); }
 .cora-console .cc-goal.st-waiting, .cora-cmd .cc-goal.st-waiting { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--think) 35%, transparent); }
 .cora-console .cc-goal.st-blocked, .cora-cmd .cc-goal.st-blocked { background: color-mix(in srgb, var(--need) 5%, var(--raise)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--need) 35%, transparent); }
-.cc-goal .cg-ico { width: 30px; height: 30px; border: 0; border-radius: 8px; background: color-mix(in srgb, var(--work) 14%, var(--nav)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--work) 35%, transparent); color: var(--work); }
+.cc-goal .cg-ico { width: 30px; height: 30px; border: 0; border-radius: 8px; background: color-mix(in srgb, var(--cora) 14%, var(--nav)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cora) 35%, transparent); color: var(--cora); }
 .cc-goal .cg-idle-t b { color: var(--ink); font: 600 12.5px var(--ui); }
 .cc-goal .cg-idle-t .dim { color: var(--ink3); font: 400 11.5px/1.4 var(--ui); }
-.cc-goal .cg-start { height: 28px; border: 0; border-radius: 8px; background: color-mix(in srgb, var(--work) 14%, var(--raise)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--work) 40%, transparent); color: #d9fbe9; font: 500 12px var(--ui); }
-.cc-goal .cg-start:hover { background: color-mix(in srgb, var(--work) 22%, var(--raise)); box-shadow: inset 0 0 0 1px var(--work); }
-.cc-goal .cg-tag { color: var(--work); font: 600 9.5px var(--code); letter-spacing: .14em; }
+.cc-goal .cg-start { height: 28px; border: 0; border-radius: 8px; background: color-mix(in srgb, var(--cora) 14%, var(--raise)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cora) 40%, transparent); color: var(--cora-hi); font: 500 12px var(--ui); }
+.cc-goal .cg-start:hover { background: color-mix(in srgb, var(--cora) 22%, var(--raise)); box-shadow: inset 0 0 0 1px var(--cora); }
+.cc-goal .cg-tag { color: var(--cora); font: 600 9.5px var(--code); letter-spacing: .14em; }
 .cc-goal .cg-state { color: var(--ink3); font: 500 10.5px var(--code); }
 .cc-goal.st-waiting .cg-state { color: var(--think); }
 .cc-goal.st-blocked .cg-state { color: var(--need); }
 .cc-goal .cg-text { margin: 6px 0 9px; color: var(--ink); font: 500 13px/1.45 var(--ui); }
 .cc-goal .cg-bar { height: 3px; border-radius: 2px; background: var(--raise2); }
-.cc-goal .cg-bar i { border-radius: 2px; background: var(--work); box-shadow: none; }
+.cc-goal .cg-bar i { border-radius: 2px; background: var(--cora); box-shadow: none; }
 .cc-goal .cg-meta { margin-top: 8px; color: var(--ink4); font: 500 10.5px var(--code); }
 .cc-goal .cg-meta .warn { color: var(--think); }
 .cc-goal .cg-workers .linkish { color: var(--ink2); }
-.cc-goal .cg-workers .linkish::before { content: ''; display: inline-block; width: 6px; height: 6px; margin-right: 5px; border-radius: 50%; background: var(--work); vertical-align: 1px; }
+.cc-goal .cg-workers .linkish::before { content: ''; display: inline-block; width: 6px; height: 6px; margin-right: 5px; border-radius: 50%; background: var(--cora); vertical-align: 1px; }
 .cc-goal .cg-note { margin-top: 8px; color: var(--ink2); font: 400 12.5px/1.5 var(--ui); }
 .cc-goal.compose textarea { border: 0; border-radius: 8px; background: var(--nav); box-shadow: inset 0 0 0 1px var(--hair); color: var(--ink); font: 400 13px/1.5 var(--ui); }
-.cc-goal.compose textarea:focus { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--work) 50%, transparent); }
+.cc-goal.compose textarea:focus { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cora) 50%, transparent); }
 .cc-goal .cg-row select { border: 0; border-radius: 7px; background: var(--nav); box-shadow: inset 0 0 0 1px var(--hair2); color: var(--ink2); font: 500 11px var(--code); }
 .cc-goal .btn.ghost { height: 22px; padding: 0 9px; border: 0; border-radius: 6px; background: var(--raise2); box-shadow: inset 0 0 0 1px var(--hair2); color: var(--ink2); font: 500 11px var(--ui); }
 
@@ -126,7 +126,7 @@
 /* ---------- command mode: the same pieces at full size ---------- */
 .cora-cmd { background: radial-gradient(700px 480px at 50% 34%, color-mix(in srgb, var(--c) 7%, transparent), transparent 70%), rgba(6, 8, 13, .97); color: var(--ink2); font-family: var(--ui); }
 .cora-cmd.st-idle, .cora-cmd.st-off { --c: var(--cora); }
-.cora-cmd.st-autopilot { --c: var(--work); }
+.cora-cmd.st-autopilot { --c: var(--cora); }
 .cora-cmd.st-thinking { --c: var(--think); }
 .cora-cmd.st-needs-you { --c: var(--need); }
 .cora-cmd .cm-lens::before { width: 560px; height: 560px; background: radial-gradient(circle, color-mix(in srgb, var(--c) 9%, transparent), transparent 62%); }
@@ -174,27 +174,27 @@
 
 /* autopilot in the header: a Goal button, or a pill with the running goal's progress */
 .cora-console .cc-gpill { display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 9px 0 7px; border: 0; border-radius: 7px; background: var(--raise); box-shadow: inset 0 0 0 1px var(--hair2); color: var(--ink2); font: 500 11.5px var(--ui); white-space: nowrap; cursor: pointer; }
-.cora-console .cc-gpill svg { color: var(--work); }
+.cora-console .cc-gpill svg { color: var(--cora); }
 .cora-console .cc-gpill:hover, .cora-console .cc-gpill.on { background: var(--raise2); color: var(--ink); }
-.cora-console .cc-gpill.live { background: color-mix(in srgb, var(--work) 9%, var(--raise)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--work) 40%, transparent); color: #d9fbe9; font: 500 11px var(--code); }
+.cora-console .cc-gpill.live { background: color-mix(in srgb, var(--cora) 9%, var(--raise)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cora) 40%, transparent); color: var(--cora-hi); font: 500 11px var(--code); }
 .cora-console .cc-gpill.live.st-waiting { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--think) 45%, transparent); color: #fde9b0; }
 .cora-console .cc-gpill.live.st-blocked { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--need) 45%, transparent); color: #ffc9c9; }
-.cc-ring { width: 13px; height: 13px; border-radius: 50%; background: conic-gradient(var(--work) calc(var(--p) * 1%), var(--raise2) 0); -webkit-mask: radial-gradient(circle, transparent 3.5px, #000 4px); mask: radial-gradient(circle, transparent 3.5px, #000 4px); }
+.cc-ring { width: 13px; height: 13px; border-radius: 50%; background: conic-gradient(var(--cora) calc(var(--p) * 1%), var(--raise2) 0); -webkit-mask: radial-gradient(circle, transparent 3.5px, #000 4px); mask: radial-gradient(circle, transparent 3.5px, #000 4px); }
 .st-waiting > .cc-ring { background: conic-gradient(var(--think) calc(var(--p) * 1%), var(--raise2) 0); }
 .st-blocked > .cc-ring { background: conic-gradient(var(--need) calc(var(--p) * 1%), var(--raise2) 0); }
 /* under the header while a goal runs: what it's on, in one line */
-.cora-console .cc-gline { flex: none; display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 12px; border: 0; border-bottom: 1px solid var(--hair); background: color-mix(in srgb, var(--work) 3%, var(--nav)); color: var(--ink3); font: 500 11px var(--ui); text-align: left; cursor: pointer; }
-.cora-console .cc-gline:hover { background: color-mix(in srgb, var(--work) 6%, var(--nav)); }
+.cora-console .cc-gline { flex: none; display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 12px; border: 0; border-bottom: 1px solid var(--hair); background: color-mix(in srgb, var(--cora) 3%, var(--nav)); color: var(--ink3); font: 500 11px var(--ui); text-align: left; cursor: pointer; }
+.cora-console .cc-gline:hover { background: color-mix(in srgb, var(--cora) 6%, var(--nav)); }
 .cora-console .cc-gline b { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink); font-weight: 500; }
 .cora-console .cc-gline .cc-gst { flex: none; color: var(--think); font: 500 10px var(--code); }
 .cora-console .cc-gline.st-blocked .cc-gst { color: var(--need); }
 .cora-console .cc-gline .cg-bar { flex: none; width: 54px; height: 3px; border-radius: 2px; background: var(--raise2); overflow: hidden; }
-.cora-console .cc-gline .cg-bar i { display: block; height: 100%; border-radius: 2px; background: var(--work); }
+.cora-console .cc-gline .cg-bar i { display: block; height: 100%; border-radius: 2px; background: var(--cora); }
 .cora-console .cc-gline .cc-gm { flex: none; color: var(--ink4); font: 500 10px var(--code); }
 /* the goal card, over the conversation */
 .cora-console .cc-goalpop { position: absolute; top: calc(var(--hdr) - 2px); z-index: 6; width: min(360px, calc(100% - 24px)); border-radius: 12px; box-shadow: 0 16px 40px rgba(0, 0, 0, .65); }
 .cora-console .cc-goalpop .cc-goal { margin: 0; }
-.cora-console .cc-goalpop .cc-goal:not(.compose) { background: color-mix(in srgb, var(--work) 6%, var(--raise)); }
+.cora-console .cc-goalpop .cc-goal:not(.compose) { background: color-mix(in srgb, var(--cora) 6%, var(--raise)); }
 
 /* talking to Cora: your words, live, and who they're for */
 .cora-console .cc-heard { display: flex; align-items: baseline; gap: 10px; margin: 0 0 8px; padding: 9px 12px; border-radius: 10px; background: color-mix(in srgb, var(--cora) 6%, var(--raise)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cora) 40%, transparent); }
