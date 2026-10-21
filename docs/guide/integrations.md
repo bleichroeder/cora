@@ -346,7 +346,7 @@ to the work, instead of scattering tabs across your usual browser.
 - **The address bar** suggests as you type: pages you've visited in Cora first, then your Chrome and Edge bookmarks
   and history.
 - **The bookmarks bar** under the address bar is your Chrome bookmarks bar. Click one to go there, or middle-click to
-  open it in a new tab. The bookmark button beside the address bar hides or shows it (in every browser in Cora).
+  open it in a new tab. The ones that don't fit are under **»** at its end. The bookmark button beside the address bar hides or shows it (in every browser in Cora).
 - **A new tab** shows your Chrome bookmarks bar under **Your bookmarks**, and **Recent** pages.
 - **Find in the page** with `Ctrl+F`.
 - **Your usual browser** is a click away: **Open in your browser**, or `Ctrl+click` any link.
@@ -373,7 +373,7 @@ Chrome and Edge profiles to bring in (any number). Each becomes a profile of Cor
 - **its own bookmarks bar and suggestions**, from that Chrome or Edge profile.
 - **its own tabs** in Cora's Browser, kept as they were while you're on another profile.
 
-Switch with the profile button at the end of the Browser's address bar. **Sessions use** picks the profile a session's
+Switch with the profile button (its initial) at the end of the Browser's address bar. **Sessions use** picks the profile a session's
 browser signs in with (sessions don't switch: most work in one). One profile keeps the sign-ins Cora had before you
 brought profiles in, and Tools keep using those. With no profiles ticked, Cora's browser is one profile with all your
 bookmarks, as before.

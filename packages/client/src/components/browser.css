@@ -74,12 +74,21 @@
 .web-sugg .ws-s .u { overflow: hidden; color: var(--ink4); font: 400 11px var(--code); text-overflow: ellipsis; white-space: nowrap; }
 
 /* the bookmarks bar: your Chrome bookmarks bar, one quiet row under the address bar */
-.web-pane .web-marks { display: flex; align-items: center; gap: 2px; flex: none; height: 30px; padding: 0 8px; border-bottom: 1px solid var(--hair); overflow-x: auto; scrollbar-width: none; }
+.web-pane .web-marks-wrap { position: relative; flex: none; }
+.web-pane .web-marks { position: relative; display: flex; align-items: center; gap: 2px; height: 30px; padding: 0 8px; border-bottom: 1px solid var(--hair); overflow: hidden; }
 .web-pane .web-marks button { display: inline-flex; align-items: center; gap: 6px; flex: none; max-width: 180px; height: 24px; padding: 0 8px; border: 0; border-radius: 6px; background: none; color: var(--ink3); font: 500 11.5px var(--ui); white-space: nowrap; }
 .web-pane .web-marks button:hover { background: var(--raise); color: var(--ink); }
 .web-pane .web-marks button img { flex: none; width: 13px; height: 13px; border-radius: 3px; }
 .web-pane .web-marks button span { overflow: hidden; text-overflow: ellipsis; }
-.web-pane .web-marks + .web-progress { top: 112px; }
+.web-pane .web-marks-wrap + .web-progress { top: 112px; }
+.web-pane .web-marks .wm-measure { position: absolute; left: 0; top: 0; display: flex; gap: 2px; visibility: hidden; pointer-events: none; }
+.web-pane .web-marks .wm-more { flex: none; justify-content: center; width: 30px; max-width: none; margin-left: auto; padding: 0; color: var(--ink3); }
+.web-pane .web-marks .wm-more.on { background: var(--raise); color: var(--ink); }
+.web-pane .wm-menu { position: absolute; top: 100%; right: 8px; z-index: 40; display: flex; flex-direction: column; width: 280px; max-height: 60vh; padding: 6px; overflow-y: auto; border-radius: 12px; background: var(--raise); box-shadow: inset 0 0 0 1px var(--hair2), 0 16px 40px rgba(0, 0, 0, .6); }
+.web-pane .wm-menu button { display: flex; align-items: center; gap: 9px; height: 32px; padding: 0 9px; border: 0; border-radius: 8px; background: none; color: var(--ink2); font: 500 12px var(--ui); text-align: left; white-space: nowrap; }
+.web-pane .wm-menu button:hover { background: var(--raise2); color: var(--ink); }
+.web-pane .wm-menu button img { flex: none; width: 14px; height: 14px; border-radius: 3px; }
+.web-pane .wm-menu button span { overflow: hidden; text-overflow: ellipsis; }
 .web-bar .ib.on { color: var(--ink2); }
 /* a tab being dragged to a new place */
 .web-pane .web-tab[draggable] { cursor: default; }
@@ -91,9 +100,8 @@
 
 /* the profile button (Cora's Browser): who you're browsing as, and the others to switch to */
 .web-pane .web-prof { position: relative; flex: none; }
-.web-pane .web-prof-b { display: inline-flex; align-items: center; gap: 6px; height: 28px; max-width: 150px; padding: 0 8px 0 4px; border: 0; border-radius: 14px; background: none; color: var(--ink2); font: 500 11.5px var(--ui); }
+.web-pane .web-prof-b { display: inline-grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 50%; background: none; }
 .web-pane .web-prof-b:hover, .web-pane .web-prof-b.on { background: var(--raise); color: var(--ink); }
-.web-pane .web-prof-n { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .web-pane .web-av { flex: none; display: grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; color: #0b0e14; font: 700 10.5px var(--ui); }
 .web-pane .web-prof-menu { position: absolute; top: calc(100% + 6px); right: 0; z-index: 40; width: 240px; padding: 6px; border-radius: 12px; background: var(--raise); box-shadow: inset 0 0 0 1px var(--hair2), 0 16px 40px rgba(0, 0, 0, .6); }
 .web-pane .wpm-h { padding: 4px 8px 6px; color: var(--ink4); font: 600 9.5px var(--code); letter-spacing: .14em; text-transform: uppercase; }

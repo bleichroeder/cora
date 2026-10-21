@@ -425,21 +425,7 @@ function BrowserView({ group, shown, keys, buttons, intro }: { group: string; sh
         </button>
         {buttons}
       </div>
-      {showBar && bar.length ? (
-        <div className="web-marks" onWheel={(e) => e.deltaY && (e.currentTarget.scrollLeft += e.deltaY)}>
-          {bar.map((r) => (
-            <button
-              key={r.url}
-              title={r.url}
-              onClick={() => (active ? go(r.url) : web.open(group, r.url))}
-              onAuxClick={(e) => e.button === 1 && web.newTab(group, r.url, { background: true })}
-            >
-              {favicon(r.url)}
-              <span>{r.title || host(r.url)}</span>
-            </button>
-          ))}
-        </div>
-      ) : null}
+      {showBar && bar.length ? <MarksBar bar={bar} icon={favicon} onGo={(u) => (active ? go(u) : web.open(group, u))} onNewTab={(u) => web.newTab(group, u, { background: true })} /> : null}
       {st.loading ? <div className="web-progress" /> : <div className="web-progress idle" />}
       {finding && shown ? <FindBar press={finding} page={page() as never} onClose={() => setFinding(0)} /> : null}
       <div className="web-body">
@@ -488,6 +474,88 @@ function BrowserView({ group, shown, keys, buttons, intro }: { group: string; sh
         ) : null}
       </div>
     </>
+  );
+}
+
+/**
+ * The bookmarks bar, as Chrome does it: the bookmarks that fit the bar's width, then » with the rest in a menu. Each
+ * one's width is measured off-screen, so what fits follows the bar as it's resized.
+ */
+function MarksBar({ bar, icon, onGo, onNewTab }: { bar: Array<{ url: string; title: string }>; icon(u: string): React.ReactNode; onGo(u: string): void; onNewTab(u: string): void }) {
+  const box = useRef<HTMLDivElement>(null);
+  const measure = useRef<HTMLDivElement>(null);
+  const [fit, setFit] = useState(bar.length);
+  const [more, setMore] = useState(false);
+  useLayoutEffect(() => {
+    const b = box.current;
+    const m = measure.current;
+    if (!b || !m) return;
+    const GAP = 2;
+    const MORE = 30; // the » button
+    const calc = () => {
+      const widths = [...m.children].map((c) => (c as HTMLElement).offsetWidth);
+      const room = b.clientWidth - 16; // the bar's side padding
+      const total = widths.reduce((s, w, i) => s + w + (i ? GAP : 0), 0);
+      if (total <= room) return setFit(widths.length);
+      let used = 0;
+      let n = 0;
+      for (const w of widths) {
+        const next = used + w + (n ? GAP : 0);
+        if (next + GAP + MORE > room) break;
+        used = next;
+        n++;
+      }
+      setFit(n);
+    };
+    calc();
+    const ro = new ResizeObserver(calc);
+    ro.observe(b);
+    return () => ro.disconnect();
+  }, [bar]);
+  useEffect(() => {
+    if (!more) return;
+    const away = (e: MouseEvent) => !box.current?.parentElement?.contains(e.target as Node) && setMore(false);
+    const esc = (e: KeyboardEvent) => e.key === 'Escape' && (e.preventDefault(), e.stopPropagation(), setMore(false));
+    window.addEventListener('mousedown', away);
+    window.addEventListener('keydown', esc, true);
+    return () => {
+      window.removeEventListener('mousedown', away);
+      window.removeEventListener('keydown', esc, true);
+    };
+  }, [more]);
+  const mark = (r: { url: string; title: string }, after?: () => void) => (
+    <button
+      key={r.url}
+      title={r.url}
+      onClick={() => (onGo(r.url), after?.())}
+      onAuxClick={(e) => e.button === 1 && (onNewTab(r.url), after?.())}
+    >
+      {icon(r.url)}
+      <span>{r.title || host(r.url)}</span>
+    </button>
+  );
+  const rest = bar.slice(fit);
+  return (
+    <div className="web-marks-wrap">
+      <div className="web-marks" ref={box}>
+        {bar.slice(0, fit).map((r) => mark(r))}
+        {rest.length ? (
+          <button className={`wm-more${more ? ' on' : ''}`} title={`${rest.length} more bookmark${rest.length === 1 ? '' : 's'}`} onClick={() => setMore(!more)}>
+            <Icon name="ChevronsRight" size={14} />
+          </button>
+        ) : null}
+        {/* every bookmark at its own width, out of sight: what fits is worked out from these */}
+        <div className="wm-measure" ref={measure} aria-hidden>
+          {bar.map((r) => (
+            <button key={r.url} tabIndex={-1}>
+              {icon(r.url)}
+              <span>{r.title || host(r.url)}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+      {more && rest.length ? <div className="wm-menu">{rest.map((r) => mark(r, () => setMore(false)))}</div> : null}
+    </div>
   );
 }
 
@@ -641,11 +709,10 @@ function ProfileSwitch({ profiles, current }: { profiles: Array<{ id: string; na
   const count = (id: string) => web.sessions[browserGroup(id)]?.tabs.filter((t) => web.tabs[t]?.url).length ?? 0;
   return (
     <span className="web-prof" ref={box}>
-      <button className={`web-prof-b${open ? ' on' : ''}`} title={`Browsing as ${me?.name ?? 'you'}: switch profile`} onClick={() => setOpen(!open)}>
+      <button className={`web-prof-b${open ? ' on' : ''}`} title={`${me?.name ?? 'You'}: switch profile`} onClick={() => setOpen(!open)}>
         <span className="web-av" style={{ background: avatarOf(current) }}>
           {(me?.name ?? '?').slice(0, 1).toUpperCase()}
         </span>
-        <span className="web-prof-n">{me?.name}</span>
       </button>
       {open ? (
         <div className="web-prof-menu" role="menu">
