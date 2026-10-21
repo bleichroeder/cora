@@ -2,7 +2,7 @@
 
 What changed in each release. Cora updates itself; each update's notes are on its release page too.
 
-## Unreleased
+## 0.1.4
 
 - **Live explains.** For work that runs for minutes, Claude keeps a dashboard that updates in place as it works: tests
   passing, a build's stages, a deploy. Every HTML explain also gets Cora's colours, so it looks like part of Cora.
