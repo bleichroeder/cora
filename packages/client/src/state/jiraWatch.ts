@@ -88,7 +88,7 @@ export function applyJira(m: JiraMsg): void {
   setTimeout(() => dismissAlert(alert.id), ALERT_MS);
   if (!attentive() && loud.length) desktop?.notify(m.summary ? 'Jira' : alertTitle(loud), m.summary ?? (loud.length === 1 ? loud[0].summary : loud.map((e) => e.key).join(', ')), '', loud.length === 1 ? loud[0].link : undefined);
   const say = loud.filter((e) => e.level === 'say');
-  if ((say.length || (m.summary && events.some((e) => e.level === 'say'))) && useVoice.getState().settings.enabled) void speak(`cora-jira-${alert.id}`, spokenJira(say, m.summary), 400, true);
+  if ((say.length || (m.summary && events.some((e) => e.level === 'say'))) && useVoice.getState().settings.enabled && !useVoice.getState().settings.muted) void speak(`cora-jira-${alert.id}`, spokenJira(say, m.summary), 400, true);
 }
 
 export function dismissAlert(id: string): void {

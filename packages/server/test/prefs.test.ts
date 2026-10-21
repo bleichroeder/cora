@@ -266,6 +266,12 @@ describe("the browser's profiles", () => {
     expect(p.get().browser.sessions).toBeUndefined();
     expect(() => applyPatch(DEFAULT_SETTINGS, { browser: { profiles: [{ id: '../x', name: 'x' }] } })).toThrow(/id like chrome:Default/);
     expect(() => applyPatch(DEFAULT_SETTINGS, { browser: { profiles: [{ id: 'chrome:Default', name: 'A' }], sessions: 'edge:Default' } })).toThrow(/one of the profiles/);
+    // Cora's sign-ins moved to another profile: the one that had them gets its own
+    p.update({ browser: { profiles: [{ id: 'chrome:Default', name: 'Personal' }, { id: 'chrome:Profile 2', name: 'Work' }] } });
+    expect(p.get().browser.profiles!.map((x) => x.partition)).toEqual(['persist:web', 'persist:web-chrome-profile-2']);
+    p.update({ browser: { home: 'chrome:Profile 2' } });
+    expect(p.get().browser.profiles!.map((x) => x.partition)).toEqual(['persist:web-chrome-default', 'persist:web']);
+    expect(() => p.update({ browser: { home: 'edge:Default' } })).toThrow(/one of the profiles/);
     // none: as before (one profile, every browser's bookmarks)
     p.update({ browser: { profiles: [] } });
     expect(p.get().browser).toEqual({ chrome: true });

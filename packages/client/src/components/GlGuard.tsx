@@ -8,7 +8,11 @@ type GlEvent = { at: number; view: string; why: string };
 type GlState = { epoch: number; events: GlEvent[] };
 export const useGl = create<GlState>(() => ({ epoch: 0, events: [] }));
 
-const note = (view: string, why: string) => useGl.setState((s) => ({ events: [...s.events, { at: Date.now(), view, why }].slice(-20) }));
+const note = (view: string, why: string) => {
+  useGl.setState((s) => ({ events: [...s.events, { at: Date.now(), view, why }].slice(-20) }));
+  // and in the desktop app's log (it keeps Cora's errors), so how often the GPU lets the 3D views down can be counted
+  if (why !== 'you restarted it') console.error(`[3D] ${view}: ${why}`);
+};
 /** Tear the 3D views down and build them again (nothing else in Cora restarts). */
 export function restartGl(why = 'you restarted it'): void {
   note('all', why);
@@ -55,6 +59,9 @@ export function GlGuard({ name, children }: { name: string; children: (o: { key:
     gl.domElement.addEventListener(
       'webglcontextlost',
       (e) => {
+        // a canvas being taken down throws its context away itself (React Three Fiber's dispose): it's off the page by
+        // then, and not a failure. Counting it rebuilt the view for nothing, with a black flash while it did
+        if (!gl.domElement.isConnected) return;
         // ours to handle: rebuild with a fresh context rather than wait on this one
         e.preventDefault();
         recover('the graphics context was lost');

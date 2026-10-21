@@ -137,28 +137,51 @@ export const KEEP_LOGIN_DAYS = 30;
  * until the browser closes (GitLab's and Jira's sign-ins without "remember me") get an expiry instead, and the
  * cookie store is written out often so a crash or a forced restart doesn't lose a fresh sign-in.
  */
-function keepLogins(ses: Electron.Session) {
+export function keepLogins(ses: Electron.Session, quietMs = 1500) {
+  // Kept once it has settled, with its value then: a sign-in sets the same cookie several times in a row, and keeping
+  // each as it came could set an older one back after a newer (Google then turns the sign-in away as malformed)
+  const waiting = new Map<string, NodeJS.Timeout>();
   ses.cookies.on('changed', (_e, c, _cause, removed) => {
-    if (removed || !c.session || !c.domain) return;
+    if (!c.domain || !keepable(c.domain)) return;
+    const key = `${c.domain}|${c.path}|${c.name}`;
+    clearTimeout(waiting.get(key));
+    if (removed || !c.session) return void waiting.delete(key);
     const url = `${c.secure ? 'https' : 'http'}://${c.domain.replace(/^\./, '')}${c.path ?? '/'}`;
-    void ses.cookies
-      .set({
-        url,
-        name: c.name,
-        value: c.value,
-        ...(c.hostOnly ? {} : { domain: c.domain }),
-        path: c.path,
-        secure: c.secure,
-        httpOnly: c.httpOnly,
-        sameSite: c.sameSite,
-        expirationDate: Math.floor(Date.now() / 1000) + KEEP_LOGIN_DAYS * 86400,
-      })
-      .catch(() => {});
+    waiting.set(
+      key,
+      setTimeout(() => {
+        waiting.delete(key);
+        void ses.cookies
+          .get({ url, name: c.name })
+          .then((now) => {
+            const x = now.find((k) => k.domain === c.domain && k.path === c.path);
+            if (!x?.session) return;
+            return ses.cookies.set({
+              url,
+              name: x.name,
+              value: x.value,
+              ...(x.hostOnly ? {} : { domain: x.domain }),
+              path: x.path,
+              secure: x.secure,
+              httpOnly: x.httpOnly,
+              sameSite: x.sameSite,
+              expirationDate: Math.floor(Date.now() / 1000) + KEEP_LOGIN_DAYS * 86400,
+            });
+          })
+          .catch(() => {});
+      }, quietMs),
+    );
   });
   const flush = () => void ses.cookies.flushStore().catch(() => {});
   setInterval(flush, 10_000).unref?.();
   app.on('before-quit', flush);
 }
+
+/**
+ * Google's account cookies are left as they are: its sign-in already lasts (two years), and its session cookies are
+ * the steps of a sign-in in progress, which kept would get in the next one's way.
+ */
+export const keepable = (domain: string) => !/(^|\.)(google\.com|accounts\.youtube\.com|googleusercontent\.com)$/i.test(domain.replace(/^\./, ''));
 
 /** What a tool's pages may do that other pages may not. */
 const TOOL_PERMS = new Set(['notifications', 'media', 'display-capture']);

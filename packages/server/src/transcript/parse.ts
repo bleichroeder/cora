@@ -4,6 +4,8 @@ import type { NewEvent } from '@cora/shared';
 /** Per-file parsing state (one per transcript file). */
 export type ParseCtx = {
   lastTsByAgent: Map<string, number>;
+  /** your messages queued while Claude works, oldest first (a dequeue takes the oldest: it doesn't say which) */
+  queued: string[];
   seenMsgIds: Set<string>;
   tools: Map<string, { name: string; input: unknown; ts: number; agentId?: string }>;
   childByToolUse: Map<string, string>;
@@ -36,6 +38,7 @@ export type ParseResult = { events: NewEvent[]; meta: ParseMeta };
 
 export const newParseCtx = (): ParseCtx => ({
   lastTsByAgent: new Map(),
+  queued: [],
   seenMsgIds: new Set(),
   tools: new Map(),
   childByToolUse: new Map(),
@@ -278,17 +281,28 @@ function parseQueueOp(obj: any, ctx: ParseCtx): ParseResult {
   const content = obj.content;
   const sessionId: string = obj.sessionId ?? obj.session_id;
   const ts = Date.parse(obj.timestamp);
-  if (typeof content !== 'string' || !sessionId || Number.isNaN(ts)) return { events, meta };
-  // a message you sent while Claude was working: queued until Claude takes it ("remove"); taken mid-turn, it shows
-  // there, where Claude got it (Claude Code gives it the turn's prompt id: it isn't a turn of its own)
-  if (!content.startsWith('<') && !SYSTEM_INJECTED.test(content) && (obj.operation === 'enqueue' || obj.operation === 'remove')) {
+  if (!sessionId || Number.isNaN(ts)) return { events, meta };
+  // the next turn took the oldest queued message (its own prompt shows it): no longer waiting
+  if (obj.operation === 'dequeue') {
+    const id = ctx.queued.shift();
+    if (id) events.push({ sessionId, agentId: 'main', source: 'transcript', kind: 'prompt', icon: EVENT_ICON.prompt, id, ts, queue: 'delivered' });
+    return { events, meta };
+  }
+  if (typeof content !== 'string') return { events, meta };
+  // a message you sent while Claude was working: queued until Claude takes it ("remove"), or you take it back into the
+  // input ("popAll"); taken mid-turn, it shows there, where Claude got it (Claude Code gives it the turn's prompt id:
+  // it isn't a turn of its own)
+  if (!content.startsWith('<') && !SYSTEM_INJECTED.test(content) && ['enqueue', 'remove', 'popAll'].includes(obj.operation)) {
     const id = `queued:${hashText(content)}`;
     const base = { sessionId, agentId: 'main', source: 'transcript' as const, kind: 'prompt' as const, icon: EVENT_ICON.prompt, text: content };
-    if (obj.operation === 'enqueue') events.push({ ...base, id, ts, queue: 'waiting' });
-    else {
-      events.push({ ...base, id, ts, queue: 'delivered' });
-      if (obj.reason === 'absorbed_mid_turn') events.push({ ...base, id: `prompt:mid:${hashText(content)}:${ts}`, ts, midTurn: true });
+    if (obj.operation === 'enqueue') {
+      events.push({ ...base, id, ts, queue: 'waiting' });
+      ctx.queued.push(id);
+      return { events, meta };
     }
+    ctx.queued = ctx.queued.filter((q) => q !== id);
+    events.push({ ...base, id, ts, queue: 'delivered' });
+    if (obj.operation === 'remove' && obj.reason === 'absorbed_mid_turn') events.push({ ...base, id: `prompt:mid:${hashText(content)}:${ts}`, ts, midTurn: true });
     return { events, meta };
   }
   if (obj.operation !== 'enqueue') return { events, meta };

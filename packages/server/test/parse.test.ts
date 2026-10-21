@@ -179,6 +179,12 @@ describe('parseLine', () => {
     // taken as a turn of its own (the turn's own prompt shows it): only the queue entry ends
     const own = parseLine({ type: 'queue-operation', operation: 'remove', timestamp: iso(9500), sessionId: SID, content: 'next thing' }, ctx).events;
     expect(own).toEqual([expect.objectContaining({ queue: 'delivered', text: 'next thing' })]);
+    // the next turn takes the oldest (dequeue names none); taken back into the input (popAll): no longer waiting
+    const a = parseLine({ type: 'queue-operation', operation: 'enqueue', timestamp: iso(9700), sessionId: SID, content: 'first' }, ctx).events[0];
+    parseLine({ type: 'queue-operation', operation: 'enqueue', timestamp: iso(9710), sessionId: SID, content: 'second' }, ctx);
+    expect(parseLine({ type: 'queue-operation', operation: 'dequeue', timestamp: iso(9800), sessionId: SID }, ctx).events).toEqual([expect.objectContaining({ id: a.id, queue: 'delivered' })]);
+    expect(parseLine({ type: 'queue-operation', operation: 'popAll', timestamp: iso(9900), sessionId: SID, content: 'second' }, ctx).events).toEqual([expect.objectContaining({ queue: 'delivered', text: 'second' })]);
+    expect(parseLine({ type: 'queue-operation', operation: 'dequeue', timestamp: iso(9950), sessionId: SID }, ctx).events).toEqual([]);
     // system messages that queue (a task notification, a hand-back) aren't yours
     expect(parseLine({ type: 'queue-operation', operation: 'enqueue', timestamp: iso(9600), sessionId: SID, content: '<task-notification>\n<task-id>x</task-id>\n</task-notification>' }, ctx).events).toEqual([]);
   });

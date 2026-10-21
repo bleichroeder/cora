@@ -125,6 +125,11 @@ export type VoiceSettings = {
   read: VoiceRead;
   /** reading full replies stops after about this many characters ("More in the transcript.") */
   cap: number;
+  /**
+   * the transcript's speaker button: nothing is said on its own (replies, finished commands, pipelines, failures, "needs
+   * you", Cora's own news); what you click, and Cora answering you, still are
+   */
+  muted?: boolean;
   /** say it out loud when a session needs a permission decision */
   announce: boolean;
   /** say it when a background command finishes */

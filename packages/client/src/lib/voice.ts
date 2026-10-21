@@ -489,26 +489,14 @@ setInterval(() => {
   voiceLevels.speak = outAn && voiceLevels.speaking ? voiceLevels.speak * 0.45 + rms(outAn) * 0.55 : voiceLevels.speak * 0.6;
 }, 33);
 
-/** The read-aloud mode you had before turning automatic reading off (it comes back when you turn it on). */
-const LAST_READ = 'cora.readAloud.last';
-/**
- * Automatic reading on or off, from the transcript's speaker button: off is Settings › Voice › Read aloud › Only when
- * I click; on is what it was before (short summaries, or full replies). Null: done; else why not.
- */
-export async function setReadAloud(on: boolean): Promise<string | null> {
-  const cur = useVoice.getState().settings.read;
-  let back: VoiceSettings['read'] = 'summaries';
-  try {
-    if (!on && cur !== 'buttons') localStorage.setItem(LAST_READ, cur);
-    const was = localStorage.getItem(LAST_READ);
-    if (was === 'summaries' || was === 'full') back = was;
-  } catch {
-    /* not remembered: summaries */
-  }
-  const read = on ? back : 'buttons';
-  const r = await fetch('/api/settings', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ voice: { read } }) }).catch(() => null);
+/** Voice updates off (or on again): nothing said on its own while off (Settings › Voice says what's said when on). */
+export async function setMuted(muted: boolean): Promise<string | null> {
+  useVoice.setState({ settings: { ...useVoice.getState().settings, muted } });
+  if (muted) stopSpeaking();
+  const r = await fetch('/api/settings', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ voice: { muted } }) }).catch(() => null);
   const j = r ? await r.json().catch(() => ({})) : {};
   if (!r?.ok) return j.error ?? "Couldn't change it";
   if (j.voice) useVoice.setState({ settings: { ...DEFAULT_VOICE, ...j.voice } });
   return null;
 }
+

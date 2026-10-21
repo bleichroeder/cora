@@ -54,6 +54,20 @@ export function BrowserProfileRows({ server, save }: { server: Settings; save(p:
         </div>
       </Row>
       {mine.length > 1 ? (
+        <Row
+          label="Cora's sign-ins"
+          hint="The profile that has the sign-ins you made in Cora before profiles (GitLab, Jira, Slack…), which Tools use too. Move them, and the profile that had them gets its own (already open pages switch when Cora restarts)."
+        >
+          <select className="set-input" value={home?.id ?? mine[0].id} onChange={(e) => void put({ home: e.target.value })}>
+            {mine.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </select>
+        </Row>
+      ) : null}
+      {mine.length > 1 ? (
         <Row label="Sessions use" hint="The profile a session's browser signs in with and suggests from.">
           <select className="set-input" value={server.browser?.sessions ?? home?.id ?? mine[0].id} onChange={(e) => void put({ sessions: e.target.value })}>
             {mine.map((p) => (

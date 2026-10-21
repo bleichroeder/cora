@@ -4,6 +4,10 @@ What changed in each release. Cora updates itself; each update's notes are on it
 
 ## Unreleased
 
+- **The speaker under the transcript mutes all voice updates**, not just replies: finished commands, pipelines,
+  failures, "needs you" and Cora's own news are quiet too while it's off.
+- **Fewer 3D restarts and black flashes.** A 3D view being closed (leaving the overview, restarting it by hand) no
+  longer counts as the graphics failing and rebuilds the scene for nothing. Real restarts are written to Cora's log.
 - **Answer from anywhere.** While you're away, everything that waits for your OK comes to your phone through Cora's
   Slack bot: a session's Slack drafts (**Send** / **Discard**) and Cora's own cards (**Yes** / **No**, or its suggested
   answers), as well as permission prompts. What was already waiting when you left comes then. Away mode counts as away.
@@ -17,6 +21,10 @@ What changed in each release. Cora updates itself; each update's notes are on it
 - **Browser profiles.** Bring in your Chrome and Edge profiles (Settings › Tools): each has its own sign-ins, bookmarks
   bar and tabs, and Cora's Browser switches between them like Chrome. Sessions use the one you pick.
 - **Home** in a Tool's header takes it back to its page.
+- **Signing in with Google in Cora's browser** works again: staying signed in no longer sets a sign-in's cookies back
+  to older values mid-way (Google answered "400, malformed").
+- **Cora's sign-ins** (Settings › Tools › Cora's browser): pick the profile that keeps the sign-ins Cora had before
+  profiles.
 - **Your GitLab to-dos.** MRs and issues assigned to you, review requests, mentions and approvals needed come into
   the Inbox and to Cora, and to your phone while you're away, as Jira tickets do.
 - **Messages you send while Claude works** show as **queued** under the transcript until Claude takes them, then where

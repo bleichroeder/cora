@@ -165,7 +165,7 @@ export function useVoiceAutomation(): void {
         const f = st.focus;
         const was = f ? prevSessions[f]?.state : undefined;
         prevSessions = st.sessions;
-        if (ready && f && v.settings.read === 'full' && (was === 'working' || was === 'thinking') && st.sessions[f]?.state === 'idle') {
+        if (ready && f && v.settings.read === 'full' && !v.settings.muted && (was === 'working' || was === 'thinking') && st.sessions[f]?.state === 'idle') {
           // the turn's final reply from main: the last main step with text, if it's recent
           const steps = buildSteps(sessionEvents(f), 'all');
           const last = [...steps].reverse().find((s) => s.agentId === 'main' && s.text);
@@ -185,8 +185,8 @@ export function useVoiceAutomation(): void {
           for (const c of voiceCues(evs, since, cued)) {
             if (!ready) continue;
             if (c.kind === 'said') {
-              if (v.settings.read === 'summaries') enqueue({ id: `said:${c.id}`, text: saidLine(c.text, sid === st.focus ? null : where), group: sid, at: Date.now(), sid });
-            } else if (v.settings.announceFailures && sid === st.focus && Date.now() - c.e.ts < 20_000 && Date.now() - lastFail > 20_000) {
+              if (v.settings.read === 'summaries' && !v.settings.muted) enqueue({ id: `said:${c.id}`, text: saidLine(c.text, sid === st.focus ? null : where), group: sid, at: Date.now(), sid });
+            } else if (v.settings.announceFailures && !v.settings.muted && sid === st.focus && Date.now() - c.e.ts < 20_000 && Date.now() - lastFail > 20_000) {
               // one at a time: a burst of failures is said once
               lastFail = Date.now();
               enqueue({ id: c.id, text: failureAnnouncement(c.e, where), group: 'fail', at: Date.now() });
@@ -195,7 +195,7 @@ export function useVoiceAutomation(): void {
           const recent = evs.slice(-30).filter((e) => e.kind === 'task' && e.toolUseId && !told.has(e.id));
           for (const e of recent) {
             told.add(e.id);
-            if (!ready || !v.settings.announceTasks || v.ptt.phase !== 'idle' || Date.now() - e.ts > 20_000) continue;
+            if (!ready || !v.settings.announceTasks || v.settings.muted || v.ptt.phase !== 'idle' || Date.now() - e.ts > 20_000) continue;
             const t = backgroundTasks(evs).find((x) => x.key === e.toolUseId);
             if (t && t.endedAt != null) void speak(`task:${e.id}`, taskAnnouncement(t, where), 400, true, sid);
           }
@@ -204,7 +204,7 @@ export function useVoiceAutomation(): void {
       if (st.pending !== prevPending) {
         const before = new Set(prevPending.map((p) => p.id));
         prevPending = st.pending;
-        if (!ready || !v.settings.announce || v.ptt.phase !== 'idle') return;
+        if (!ready || !v.settings.announce || v.settings.muted || v.ptt.phase !== 'idle') return;
         const fresh = st.pending.find((p) => !before.has(p.id));
         if (!fresh) return;
         const s = st.sessions[fresh.sessionId];

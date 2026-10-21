@@ -95,8 +95,10 @@ running.
 | **Short summaries** (the default) | At the end of each turn, Claude says a sentence or two, written to be heard. From any session; one you're not looking at is named first ("In app-api: …"). Applies to sessions started after you choose it. |
 | **Full replies** | Each finished reply in the session you're looking at, with code left out. **Read up to** sets how much: **~1 paragraph**, **~2 paragraphs** or **~whole reply**. |
 
-The speaker toggle in the live activity, under the transcript, turns automatic reading off and back on for every
-session. Speaking over a reply, or pressing `Esc`, stops it.
+The speaker toggle in the live activity, under the transcript, mutes voice updates for every session: nothing is said
+on its own (replies, the announcements below, Cora's own news) until you turn it back on. A reply's speaker still
+reads it when you click, and Cora still answers when you talk to it. Speaking over a reply, or pressing `Esc`, stops
+it.
 
 ### Announcements
 

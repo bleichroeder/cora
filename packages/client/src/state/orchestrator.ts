@@ -165,7 +165,7 @@ export function runUi(cmd: UiCommand): void {
       return;
     case 'notify':
       if (!attentive()) desktop?.notify('Cora', cmd.text, '');
-      if (st.prefs && useVoice.getState().settings.enabled) void speak(`cora-notify-${Date.now()}`, cmd.text, 600, true);
+      if (st.prefs && useVoice.getState().settings.enabled && !useVoice.getState().settings.muted) void speak(`cora-notify-${Date.now()}`, cmd.text, 600, true);
       return;
   }
 }

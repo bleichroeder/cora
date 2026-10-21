@@ -32,7 +32,7 @@ export function browserProfiles(raw: unknown, cur: BrowserProfile[] | undefined,
   return out;
 }
 
-type Patch = { explains?: Partial<Settings['explains']>; retentionDays?: number; presets?: unknown; voice?: Partial<VoiceSettings>; autoName?: boolean; orchestrator?: Partial<Omit<OrchestratorSettings, 'mandate'>> & { mandate?: Partial<OrchestratorSettings['mandate']> }; jira?: { watch?: Partial<Omit<JiraWatchSettings, 'kinds'>> & { kinds?: Partial<JiraWatchSettings['kinds']> }; ticket?: Partial<TicketStart> }; gitlab?: { host?: string; todos?: unknown }; slackBot?: Partial<Omit<SlackBotSettings, 'ping' | 'quiet'>> & { ping?: Partial<SlackBotSettings['ping']>; quiet?: Partial<SlackBotSettings['quiet']> }; slack?: { follow?: unknown; sign?: unknown }; browser?: { chrome?: unknown; profiles?: unknown; sessions?: unknown }; onepassword?: { on?: unknown; otp?: unknown; tools?: unknown; suggest?: unknown }; setup?: { skipped?: unknown; seen?: unknown } };
+type Patch = { explains?: Partial<Settings['explains']>; retentionDays?: number; presets?: unknown; voice?: Partial<VoiceSettings>; autoName?: boolean; orchestrator?: Partial<Omit<OrchestratorSettings, 'mandate'>> & { mandate?: Partial<OrchestratorSettings['mandate']> }; jira?: { watch?: Partial<Omit<JiraWatchSettings, 'kinds'>> & { kinds?: Partial<JiraWatchSettings['kinds']> }; ticket?: Partial<TicketStart> }; gitlab?: { host?: string; todos?: unknown }; slackBot?: Partial<Omit<SlackBotSettings, 'ping' | 'quiet'>> & { ping?: Partial<SlackBotSettings['ping']>; quiet?: Partial<SlackBotSettings['quiet']> }; slack?: { follow?: unknown; sign?: unknown }; browser?: { chrome?: unknown; profiles?: unknown; sessions?: unknown; home?: unknown }; onepassword?: { on?: unknown; otp?: unknown; tools?: unknown; suggest?: unknown }; setup?: { skipped?: unknown; seen?: unknown } };
 
 const num = (v: unknown, name: string, lo: number, hi: number) => {
   const n = Number(v);
@@ -86,6 +86,7 @@ function voicePatch(cur: VoiceSettings, v: Partial<VoiceSettings>): VoiceSetting
     next.front = v.front;
   }
   if (v.endOnSilence !== undefined) next.endOnSilence = Math.round(num(v.endOnSilence, 'endOnSilence', 0, 5000));
+  if (v.muted !== undefined) next.muted = Boolean(v.muted);
   if (v.announce !== undefined) next.announce = Boolean(v.announce);
   if (v.announceTasks !== undefined) next.announceTasks = Boolean(v.announceTasks);
   if (v.announceFailures !== undefined) next.announceFailures = Boolean(v.announceFailures);
@@ -291,10 +292,16 @@ export function applyPatch(cur: Settings, patch: Patch): Settings {
     next.browser = { ...next.browser, chrome: patch.browser.chrome };
   }
   // the browser's profiles (your Chrome / Edge ones you brought in), and the one sessions use
-  if (patch.browser?.profiles !== undefined || patch.browser?.sessions !== undefined) {
+  if (patch.browser?.profiles !== undefined || patch.browser?.sessions !== undefined || patch.browser?.home !== undefined) {
     const sessions = patch.browser.sessions !== undefined ? patch.browser.sessions : next.browser.sessions;
     if (sessions !== undefined && sessions !== null && typeof sessions !== 'string') throw new Error('browser.sessions must be a profile id');
-    const profiles = patch.browser.profiles !== undefined ? browserProfiles(patch.browser.profiles, next.browser.profiles, sessions || undefined) : (next.browser.profiles ?? []);
+    let profiles = patch.browser.profiles !== undefined ? browserProfiles(patch.browser.profiles, next.browser.profiles, sessions || undefined) : (next.browser.profiles ?? []);
+    // which profile has the sign-ins Cora had before profiles (and Tools use): moved, the one that had them gets its own
+    if (patch.browser.home !== undefined) {
+      const home = patch.browser.home;
+      if (typeof home !== 'string' || !profiles.some((p) => p.id === home)) throw new Error('browser.home must be one of the profiles');
+      profiles = profiles.map((p) => ({ ...p, partition: p.id === home ? HOME_PARTITION : p.partition === HOME_PARTITION ? partitionOf(p.id) : p.partition }));
+    }
     const kept = !!sessions && profiles.some((p) => p.id === sessions);
     // asked for one that isn't there: refused; the one it was, gone with its profile: sessions go back to the default
     if (sessions && !kept && patch.browser.sessions !== undefined) throw new Error('browser.sessions must be one of the profiles');

@@ -1,22 +1,22 @@
-import { setReadAloud, useVoice } from '../lib/voice';
+import { setMuted, useVoice } from '../lib/voice';
 import { Icon } from './Icon';
 
 /**
- * Automatic reading on or off (Settings › Voice › Read aloud), for every session: on, replies (their short summaries,
- * or the whole reply) are read as they come; off, only when you click a reply's speaker.
+ * Voice updates on or off, for every session (the speaker by the transcript): off, nothing is said on its own: no
+ * replies, finished commands, pipelines, failures, "needs you" or Cora's own news. A reply's speaker still reads it
+ * when you click, and Cora still answers when you talk to it. What's said when it's on is in Settings › Voice.
  */
 export function ReadAloudToggle() {
   const show = useVoice((s) => s.settings.enabled && !!s.key?.set);
-  const read = useVoice((s) => s.settings.read);
+  const muted = useVoice((s) => !!s.settings.muted);
   if (!show) return null;
-  const on = read !== 'buttons';
   return (
     <button
-      className={`act-read${on ? ' on' : ''}`}
-      title={on ? `Reading replies aloud (${read === 'full' ? 'full replies' : 'short summaries'}): click to stop` : 'Replies are read only when you click their speaker: click to read them as they come'}
-      onClick={() => void setReadAloud(!on)}
+      className={`act-read${muted ? '' : ' on'}`}
+      title={muted ? 'Voice updates are off (replies, commands, pipelines, "needs you"): click to turn them on' : "Voice updates are on: click to mute them (a reply's speaker still reads it when you click)"}
+      onClick={() => void setMuted(!muted)}
     >
-      <Icon name={on ? 'Volume2' : 'VolumeX'} size={13} />
+      <Icon name={muted ? 'VolumeX' : 'Volume2'} size={13} />
     </button>
   );
 }

@@ -18,7 +18,7 @@ export function useCiAlerts(): void {
       if (st.pipelines === prev.pipelines) return;
       for (const { p, sessionId: sid } of finishesToTell(prev.pipelines, st.pipelines, st.links, useBrain.getState().focus, told)) {
         const v = useVoice.getState();
-        if (v.settings.enabled && v.key?.set && v.settings.announcePipelines !== false && v.ptt.phase === 'idle') void speak(`ci:${p.key}`, ciAnnouncement(p), 400, true);
+        if (v.settings.enabled && v.key?.set && !v.settings.muted && v.settings.announcePipelines !== false && v.ptt.phase === 'idle') void speak(`ci:${p.key}`, ciAnnouncement(p), 400, true);
         if (desktop && useBrain.getState().prefs.notifyPipelines !== false && !attentive()) {
           const fs = failedStage(p.stages);
           desktop.notify(`Pipeline ${ciLabel(p.status)} · ${ciRepoName(p.project)}`, `#${p.id} on ${ciRef(p.ref)}${fs ? ` failed at ${fs.name}` : ''}`, sid);

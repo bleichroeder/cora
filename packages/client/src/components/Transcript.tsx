@@ -212,12 +212,17 @@ function StepView({ step, sessionId, hosted, bare }: { step: Step; sessionId: st
 
 /** Messages you sent while Claude was working that it hasn't taken yet: pinned under the transcript until it does. */
 function Queued({ sessionId, version }: { sessionId: string; version: number | undefined }) {
+  // only while Claude is mid-turn: idle, it takes what you send at once, so nothing can still be waiting
+  const midTurn = useBrain((s) => {
+    const st = s.sessions[sessionId]?.state;
+    return st === 'working' || st === 'thinking' || st === 'needs-you';
+  });
   const waiting = useMemo(
     () => sessionEvents(sessionId).filter((e) => e.kind === 'prompt' && e.queue === 'waiting'),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [sessionId, version],
   );
-  if (!waiting.length) return null;
+  if (!midTurn || !waiting.length) return null;
   return (
     <div className="queued" title="Claude Code holds these until Claude is ready for them: at its next step, or when its turn ends">
       {waiting.map((e) => (

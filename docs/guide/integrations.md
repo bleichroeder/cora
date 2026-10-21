@@ -389,7 +389,8 @@ Chrome and Edge profiles to bring in (any number). Each becomes a profile of Cor
 
 Switch with the profile button (its initial) at the end of the Browser's address bar. **Sessions use** picks the profile a session's
 browser signs in with (sessions don't switch: most work in one). One profile keeps the sign-ins Cora had before you
-brought profiles in, and Tools keep using those. With no profiles ticked, Cora's browser is one profile with all your
+brought profiles in, and Tools keep using those: pick which under **Cora's sign-ins** (the profile that had them gets its
+own). With no profiles ticked, Cora's browser is one profile with all your
 bookmarks, as before.
 
 ### Pages sessions open
