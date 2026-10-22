@@ -54,6 +54,8 @@ const hideWeb = (sid: string | null) => {
 
 /** Per-viewer UI preferences (server-side settings live in /api/settings). */
 export type UiPrefs = {
+  /** the scene area in 3D (off: the live board, flat, no graphics engine; the overview shows its grid) */
+  scene3d?: boolean;
   /** collapse main's replies in hosted sessions (the terminal shows them too) */
   collapseHosted: boolean;
   /** terminal shows only Claude's input area, growing for menus and dialogs (where you type in the terminal) */

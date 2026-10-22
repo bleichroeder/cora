@@ -380,6 +380,12 @@ export function SettingsModal() {
                   <Toggle label="Drifting particles" hint="The motes that drift around your agents (they also turn off on their own when the scene needs to save effort)." checked={space.motes} onChange={(motes) => setSpace({ motes })} />
                 </Group>
                 <Toggle label="Flowing tubes" hint="Prototype: tool calls as liquid tubes with light pulsing down them while they run. Off: lines with a travelling comet." checked={prefs.flowLinks} onChange={(v) => ui({ flowLinks: v })} />
+                <Toggle
+                  label="3D scene"
+                  hint="Off: the scene area becomes a flat live board (each agent and what it's doing now, what they touch, the explains) with no graphics engine, and the overview shows its grid. The transcript, timeline and browser don't change."
+                  checked={prefs.scene3d !== false}
+                  onChange={(v) => ui({ scene3d: v })}
+                />
                 <Row label="3D engine" hint="If the 3D view is blank or frozen: tears it down and builds it again. Nothing else restarts. (It also restarts itself when the graphics process resets.)">
                   <GlRestart />
                 </Row>

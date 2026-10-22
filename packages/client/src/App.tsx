@@ -18,6 +18,7 @@ import { setupFirstRun } from '@cora/shared';
 import { Galaxy } from './galaxy/Galaxy';
 import { UsageStrip } from './components/UsageStrip';
 import { Scene } from './scene/Scene';
+import { LiveBoard } from './components/LiveBoard';
 import { ago, isDismissed, plainName, prettyModel, sessionColor, sessionName, tokens } from './lib/format';
 import { contextMax } from './scene/derive';
 import { Icon } from './components/Icon';
@@ -162,6 +163,7 @@ function Focus({ sessionId }: { sessionId: string }) {
   const diffOpen = useBrain((s) => s.diff?.sessionId === sessionId);
   const diffWide = useBrain((s) => s.diffWide);
   // a docked browser takes the right of the scene area and the scene fits itself into the rest
+  const scene3d = useBrain((s) => s.prefs.scene3d !== false);
   const sceneInset = useWeb((w) => {
     const s = w.sessions[sessionId];
     return desktop?.browser && s?.shown && s.active && !w.wide && w.split < 1 ? `${Math.round(w.split * 1000) / 10}%` : 0;
@@ -183,7 +185,7 @@ function Focus({ sessionId }: { sessionId: string }) {
             <Viewer p={viewer} />
           ) : (
             <div className="scene-box" style={{ right: sceneInset }}>
-              <Scene sessionId={sessionId} />
+              {scene3d ? <Scene sessionId={sessionId} /> : <LiveBoard sessionId={sessionId} />}
             </div>
           )}
           <NeedsYou sessionId={sessionId} />
@@ -533,24 +535,27 @@ export function App() {
 /** The overview (G): the card grid or the galaxy, switchable and remembered. */
 function Overview() {
   const style = useBrain((s) => s.prefs.overviewStyle);
+  const scene3d = useBrain((s) => s.prefs.scene3d !== false);
   const setPrefs = useBrain((s) => s.setPrefs);
   return (
     <div className="overview">
       <div className="ov-head">
         <div className="ov-switch seg">
-          <button className={`seg-b${style === 'grid' ? ' on' : ''}`} onClick={() => setPrefs({ overviewStyle: 'grid' })}>
+          <button className={`seg-b${style === 'grid' || (style === 'galaxy' && !scene3d) ? ' on' : ''}`} onClick={() => setPrefs({ overviewStyle: 'grid' })}>
             <Icon name="LayoutGrid" size={13} /> Grid
           </button>
-          <button className={`seg-b${style === 'galaxy' ? ' on' : ''}`} onClick={() => setPrefs({ overviewStyle: 'galaxy' })}>
-            <Icon name="Orbit" size={13} /> Galaxy
-          </button>
+          {scene3d ? (
+            <button className={`seg-b${style === 'galaxy' ? ' on' : ''}`} onClick={() => setPrefs({ overviewStyle: 'galaxy' })}>
+              <Icon name="Orbit" size={13} /> Galaxy
+            </button>
+          ) : null}
           <button className={`seg-b${style === 'deploys' ? ' on' : ''}`} onClick={() => setPrefs({ overviewStyle: 'deploys' })}>
             <Icon name="Rocket" size={13} /> Deploys
           </button>
         </div>
         <UsageStrip />
       </div>
-      <div className="ov-body">{style === 'galaxy' ? <Galaxy /> : style === 'deploys' ? <DeploysView /> : <GridOverview />}</div>
+      <div className="ov-body">{style === 'galaxy' && scene3d ? <Galaxy /> : style === 'deploys' ? <DeploysView /> : <GridOverview />}</div>
     </div>
   );
 }

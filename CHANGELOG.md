@@ -4,6 +4,8 @@ What changed in each release. Cora updates itself; each update's notes are on it
 
 ## Unreleased
 
+- **3D off: the live board.** Settings › Scene › 3D scene off swaps the scene for a flat board of each agent and what
+  it's doing now, what they're touching and the explains, with no graphics engine.
 - **The speaker under the transcript mutes all voice updates**, not just replies: finished commands, pipelines,
   failures, "needs you" and Cora's own news are quiet too while it's off.
 - **Fewer 3D restarts and black flashes.** A 3D view being closed (leaving the overview, restarting it by hand) no

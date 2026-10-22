@@ -70,6 +70,21 @@ The scene takes a moment to prepare its graphics the first time it opens. While 
 scene" veil covers it, and the rest of Cora stays fully usable. If the 3D view ever looks blank or frozen, **Restart
 the 3D view** in **Settings › Scene** rebuilds it without touching anything else.
 
+### With 3D off: the live board
+
+**Settings › Scene › 3D scene** off swaps the scene for a flat **live board**, with no graphics engine (on a laptop
+whose graphics struggle, or if you'd just rather):
+
+- **Agents**: one row each, helpers under the agent that started them: what it's doing now (the tool and its target,
+  with a timer), its last line (or, finished, its report), a bar of its calls over the last two minutes, and how many
+  files it touched. "Waiting on the model" counts the agents thinking.
+- **Touching**: the files (with who touched each, what changed and **diff**), web pages and searches, shell commands
+  and other tools of the last ten minutes, newest first.
+- **Explains**: the session's explains; click one to open it.
+
+The overview shows its grid (the galaxy is 3D too). The transcript, timeline, browser and everything else stay the
+same.
+
 ## The transcript
 
 The **Transcript** tab is the written record of the session, step by step and agent by agent:
