@@ -422,6 +422,21 @@ function wireIpc() {
   });
   // a new version waiting (installed Cora): the dashboard offers the restart
   ipcMain.handle('ab:update-ready', (e) => (win && e.sender === win.webContents ? pendingUpdate : null));
+  // what this copy of Cora is (Settings › Updates & security)
+  // a small picture of part of the dashboard (the session switcher's previews): a JPEG, at most 560 px wide
+  ipcMain.handle('ab:snap', async (e, r: { x: number; y: number; width: number; height: number }) => {
+    if (!win || e.sender !== win.webContents || !r || ![r.x, r.y, r.width, r.height].every((n) => Number.isFinite(n))) return null;
+    const rect = { x: Math.max(0, Math.round(r.x)), y: Math.max(0, Math.round(r.y)), width: Math.max(1, Math.round(r.width)), height: Math.max(1, Math.round(r.height)) };
+    try {
+      const img = await win.webContents.capturePage(rect);
+      if (img.isEmpty()) return null;
+      const small = img.getSize().width > 560 ? img.resize({ width: 560, quality: 'good' }) : img;
+      return `data:image/jpeg;base64,${small.toJPEG(72).toString('base64')}`;
+    } catch {
+      return null;
+    }
+  });
+  ipcMain.handle('ab:app-info', (e) => (win && e.sender === win.webContents ? { version: app.getVersion(), packaged: app.isPackaged, electron: process.versions.electron, chrome: process.versions.chrome } : null));
   // an explain saved as a file (Documents\Cora\Explains), shown selected in Explorer: its path, or why not
   ipcMain.handle('ab:save-explain', (e, m: { title?: unknown; ext?: unknown; content?: unknown }) => {
     if (!win || e.sender !== win.webContents) return { error: 'not allowed' };

@@ -3,6 +3,7 @@ import type { InboxSource, SetupItem, SetupNeed } from '@cora/shared';
 import { finishFirstRun, hooksPreview, loadSetup, runNeed, saveVoiceKey, skipItem, useSetup } from '../state/setup';
 import { openSettings } from './SettingsModal';
 import { BrandIcon, BRAND_COLOR } from './BrandIcon';
+import { CoraMark } from './CoraEye';
 import { Icon } from './Icon';
 import './setup.css';
 
@@ -200,7 +201,9 @@ export function SetupView() {
       {/* the window has no title bar of its own: this strip moves it (Windows' buttons sit at its right end) */}
       <div className="su-drag" />
       <aside className="su-side">
-        <span className="su-lens" />
+        <span className="su-orb">
+          <CoraMark state="idle" size={96} live />
+        </span>
         <h2>Let's set Cora up</h2>
         <p className="lead">Two things are required. The rest are features: set up the ones you want now, or later from Settings › Setup.</p>
         <div className="su-prog">

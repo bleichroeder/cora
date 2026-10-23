@@ -107,11 +107,22 @@ export function watchPresence(): () => void {
     last = now;
     void post('/api/orchestrator/presence', {});
   };
+  // opening Cora (or coming back to its window) counts as being here, not only clicking or typing: the morning's
+  // catch-up comes when you sit down, without having to touch anything first
+  const looking = () => document.visibilityState === 'visible' && document.hasFocus() && seen();
   window.addEventListener('keydown', seen, true);
   window.addEventListener('pointerdown', seen, true);
+  window.addEventListener('focus', looking);
+  document.addEventListener('visibilitychange', looking);
+  // and once Cora's status is known (at start it isn't yet)
+  const off = useOrch.subscribe((st, prev) => st.status?.enabled && !prev.status?.enabled && looking());
+  looking();
   return () => {
     window.removeEventListener('keydown', seen, true);
     window.removeEventListener('pointerdown', seen, true);
+    window.removeEventListener('focus', looking);
+    document.removeEventListener('visibilitychange', looking);
+    off();
   };
 }
 

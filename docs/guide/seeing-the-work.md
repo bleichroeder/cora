@@ -92,10 +92,13 @@ card moves into it), then it goes back. Before Claude has asked for anything, it
 failing or running, a deploy rolling out, the pipeline, a live explain, browsing, edits, background commands (holding
 each for a while, and never a panel that's already on the page). It says what it shows and why; pin it to keep it.
 
-More panels, from **+ Panel** (grouped as in its menu):
+More panels, from **+ Panel** (grouped as in its menu, each with its icon and what it shows; type to find one):
 
-- **This session:** **Goal** (what it was asked first, and the latest ask) and **Context** (how full the context
-  window is, a line of how it filled, and at the recent rate about when it fills).
+- **This session:** **Goal** (what it was asked first, and the latest ask), **Context** (how full the context
+  window is, a line of how it filled, and at the recent rate about when it fills), **Recap** (Claude Code's recaps,
+  newest first) and **Memes** (a wall of memes and GIFs the session posts about what's happening, just for fun, newest first;
+  click one to see it large. Claude can also draw its own, which are shown only and never saved. Turn them on in
+  **Settings › Sessions › Memes**; GIFs need a Giphy key there).
 - **Code:** **Changes** (every file it changed with +/−; pick one for its change over the session, or open it in the
   diff viewer), **Git** (the branch, what's uncommitted, commits made and whether they're pushed), **Tests** (each test
   run's passed and failed, as a bar per run) and **Background** (commands running in the background, with the last
@@ -108,7 +111,7 @@ More panels, from **+ Panel** (grouped as in its menu):
   from this session, and a line to jot one down), **All sessions** (each one and what it's doing; click to go there)
   and **Usage** (your plan's limits and extra usage, as `/usage` shows them).
 - **Tools:** **Terminal** (the session's terminal or a shell, live, to watch; type in the terminal pane) and
-  **Browser** (the session's browser, laid over the panel and following it as you move it; its pages never reload).
+  **Browser** (a browser of its own, with its own tabs and profile switcher; the session's browser keeps its place).
 
 The board is panels on a grid that fills the area, yours to arrange; it keeps its shape as the window or the viewer
 beside it changes size (narrower than about 560 px, the panels stack in one column):

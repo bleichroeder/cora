@@ -76,7 +76,6 @@ kbd { font: 10px var(--mono); border: 1px solid #334155; border-radius: 3px; pad
 .ri .s.y { color: #fcd34d; }
 .ri .s.rr { color: #fca5a5; }
 .ri .fp { display: flex; gap: 2px; margin-left: 14px; }
-.more-old { color: #475569; font: 11px var(--mono); padding: 4px; }
 .dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; flex: none; }
 .dot.g { background: #22c55e; box-shadow: 0 0 6px #22c55e; }
 .dot.a { background: var(--amber); box-shadow: 0 0 6px var(--amber); }

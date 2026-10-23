@@ -31,6 +31,8 @@ export type PanelKind =
   | 'notes'
   | 'sessions'
   | 'usage'
+  | 'recap'
+  | 'memes'
   | 'explain';
 export type BoardItem = {
   id: string;
@@ -59,6 +61,15 @@ export const ROWS = 12;
 export const MIN_W = 2;
 export const MIN_H = 2;
 
+/** Each panel's icon (Lucide) in the + Panel menu and its header. */
+export const PANEL_ICON: Record<Exclude<PanelKind, 'explain'>, string> = {
+  spotlight: 'Sparkles', agents: 'Bot', touching: 'Activity', tasks: 'ListChecks', explains: 'FileText', goal: 'Target', memes: 'Laugh', recap: 'ScrollText', context: 'Gauge',
+  changes: 'FileDiff', git: 'GitBranch', tests: 'FlaskConical', background: 'Loader',
+  pipeline: 'GitPullRequest', deploys: 'Rocket', ticket: 'Ticket',
+  needs: 'Hand', mentions: 'AtSign', notes: 'NotebookPen', usage: 'ChartPie', sessions: 'LayoutList',
+  terminal: 'SquareTerminal', browser: 'Globe',
+};
+
 /** Where a panel sits in the + Panel menu. */
 export const PANEL_GROUPS = ['This session', 'Code', 'Delivery', 'Around you', 'Tools'] as const;
 export type PanelGroup = (typeof PANEL_GROUPS)[number];
@@ -71,6 +82,8 @@ export const PANELS: Record<Exclude<PanelKind, 'explain'>, { name: string; hint:
   tasks: { name: 'Tasks', hint: "Claude's task list", group: 'This session', size: [4, 4] },
   explains: { name: 'Explains', hint: "This session's explains, with previews", group: 'This session' },
   goal: { name: 'Goal', hint: 'What the session was asked, and the latest ask', group: 'This session', size: [5, 4] },
+  memes: { name: 'Memes', hint: "Memes and GIFs the session posts about what's happening (turn them on in Settings › Sessions)", group: 'This session', size: [4, 6] },
+  recap: { name: 'Recap', hint: "Claude Code's recaps of the session, newest first: where it stands, what's next", group: 'This session', size: [5, 6] },
   context: { name: 'Context', hint: 'How full the context window is, and how fast it fills', group: 'This session', size: [4, 4] },
   changes: { name: 'Changes', hint: 'Files changed this session, with their diffs', group: 'Code', size: [7, 7] },
   git: { name: 'Git', hint: 'The branch, uncommitted files, commits made', group: 'Code', size: [5, 6] },
@@ -85,7 +98,7 @@ export const PANELS: Record<Exclude<PanelKind, 'explain'>, { name: string; hint:
   usage: { name: 'Usage', hint: "Your plan's limits, as /usage shows them, and extra usage", group: 'Around you', size: [5, 6] },
   sessions: { name: 'All sessions', hint: "Every session and what it's doing; click one to go there", group: 'Around you', size: [5, 7] },
   terminal: { name: 'Terminal', hint: "The session's terminal or a shell, live (to watch; type in the terminal pane)", group: 'Tools', size: [7, 7] },
-  browser: { name: 'Browser', hint: "The session's browser, in a panel", group: 'Tools', size: [7, 8] },
+  browser: { name: 'Browser', hint: 'A browser of its own, with its own tabs and profiles', group: 'Tools', size: [7, 8] },
 };
 
 export const DEFAULT_BOARD: BoardItem[] = [

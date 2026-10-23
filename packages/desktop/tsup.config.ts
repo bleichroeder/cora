@@ -15,7 +15,8 @@ function copyFonts() {
 
 export default defineConfig([
   {
-    entry: { main: 'src/main.ts', preload: 'src/preload.ts' },
+    // webChrome: what every page in Cora's browser runs first (chromeIdentity.ts)
+    entry: { main: 'src/main.ts', preload: 'src/preload.ts', webChrome: 'src/webChrome.ts' },
     format: ['cjs'],
     platform: 'node',
     target: 'node22',

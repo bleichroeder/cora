@@ -19,6 +19,7 @@ import {
   keepBoards,
   normalize,
   pageCount,
+  PANEL_ICON,
   popExplain,
   removePage,
   removePanel,
@@ -30,6 +31,7 @@ import {
   type Drop,
   type SessionBoard,
 } from '../lib/boardLayout';
+import { fitGrid } from '../lib/fitGrid';
 import { liveKey, loadLiveData, useLiveData } from '../state/liveExplains';
 import { explainShim, themeVars } from '../lib/explainShim';
 import { fetchToolDetail } from '../state/ws';
@@ -39,6 +41,7 @@ import { maskSecrets } from '../lib/mask';
 import { explainFrom, looksLikeHtmlDoc, sandboxedHtml, type Explain } from './Viewer';
 import { Icon } from './Icon';
 import { MorePanel } from './board/panels';
+import { SessionBrowserDock } from './board/ToolPanels';
 import { SpotlightPanel } from './board/Spotlight';
 import type { Spot } from '../lib/spotlight';
 import type { PanelKind } from '../lib/boardLayout';
@@ -485,6 +488,9 @@ export function LiveBoard({ sessionId }: { sessionId: string }) {
   );
 }
 
+/** Each group's tint in the + Panel menu. */
+const GROUP_TINT: Record<string, string> = { 'This session': 'var(--cora)', Code: '#a78bfa', Delivery: '#fb923c', 'Around you': '#38bdf8', Tools: '#34d399' };
+
 /** Add a panel: the ones not on the board, and this session's explains (popped out); or put the board back as it was. */
 function AddMenu({
   items,
@@ -514,40 +520,65 @@ function AddMenu({
       window.removeEventListener('keydown', esc, true);
     };
   }, [onClose]);
+  const [q, setQ] = useState('');
+  const words = q.trim().toLowerCase();
+  const fits = (k: Exclude<PanelKind, 'explain'>) => !words || `${PANELS[k].name} ${PANELS[k].hint} ${PANELS[k].group}`.toLowerCase().includes(words);
+  const list = explains.filter((x) => !words || x.title.toLowerCase().includes(words));
   return (
-    <div className="bd-menu" ref={box} role="menu">
-      {PANEL_GROUPS.map((g) => (
-        <Fragment key={g}>
-          <div className="mh">{g}</div>
-          {(Object.keys(PANELS) as Array<keyof typeof PANELS>)
-            .filter((k) => PANELS[k].group === g)
-            .map((k) => {
-              const on = items.some((p) => p.k === k);
-              return (
-                <button key={k} disabled={on} onClick={() => onPick(addPanel(items, k))} title={PANELS[k].hint}>
-                  {PANELS[k].name}
-                  <span className="d">{on ? 'on the board' : PANELS[k].hint}</span>
-                </button>
-              );
-            })}
-        </Fragment>
-      ))}
-      {explains.length ? <div className="mh">Explains · pop one out</div> : null}
-      {explains.map((x) => {
-        const on = items.some((p) => p.k === 'explain' && p.title === x.title);
-        return (
-          <button key={x.title} disabled={on} onClick={() => onPop(x.title)}>
-            {x.title}
-            <span className="d">{on ? 'on the board' : x.format === 'html' ? 'page' : 'document'}</span>
-          </button>
-        );
-      })}
+    <div className="bd-menu wide" ref={box} role="menu">
+      <label className="bd-mq">
+        <Icon name="Search" size={13} />
+        <input autoFocus value={q} placeholder="Find a panel" onChange={(e) => setQ(e.target.value)} />
+      </label>
+      <div className="bd-mbody">
+        {PANEL_GROUPS.map((g) => {
+          const ks = (Object.keys(PANELS) as Array<Exclude<PanelKind, 'explain'>>).filter((k) => PANELS[k].group === g && fits(k));
+          if (!ks.length) return null;
+          return (
+            <Fragment key={g}>
+              <div className="mh">{g}</div>
+              <div className="bd-mgrid" style={{ ['--gt' as never]: GROUP_TINT[g] }}>
+                {ks.map((k) => {
+                  const on = items.some((p) => p.k === k);
+                  return (
+                    <button key={k} className="bd-mt" disabled={on} onClick={() => onPick(addPanel(items, k))}>
+                      <span className="ic">
+                        <Icon name={PANEL_ICON[k]} size={15} />
+                      </span>
+                      <span className="tx">
+                        <b>
+                          {PANELS[k].name}
+                          {on ? <em>On the board</em> : null}
+                        </b>
+                        <span>{PANELS[k].hint}</span>
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </Fragment>
+          );
+        })}
+        {list.length ? <div className="mh">Explains · pop one out</div> : null}
+        {list.map((x) => {
+          const on = items.some((p) => p.k === 'explain' && p.title === x.title);
+          return (
+            <button key={x.title} className="bd-mx" disabled={on} onClick={() => onPop(x.title)}>
+              <Icon name={x.format === 'html' ? 'Monitor' : 'FileText'} size={13} />
+              <span className="t">{x.title}</span>
+              <span className="d">{on ? 'on the board' : x.format === 'html' ? 'page' : 'document'}</span>
+            </button>
+          );
+        })}
+      </div>
       <div className="sep" />
-      <button onClick={onTemplate}>
+      <button className="bd-mx" onClick={onTemplate}>
+        <Icon name="LayoutTemplate" size={13} />
         Use for new sessions
         <span className="d">new sessions start with this layout</span>
       </button>
-      <button onClick={onReset}>
+      <button className="bd-mx" onClick={onReset}>
+        <Icon name="RotateCcw" size={13} />
         Reset this board
         <span className="d">to the layout new sessions start with</span>
       </button>
@@ -655,6 +686,8 @@ function SpotBody({ spot, sessionId, data }: { spot: Spot; sessionId: string; da
   if (spot.k === 'touching') return <TouchingBody data={data} sessionId={sessionId} />;
   if (spot.k === 'tasks') return <TasksBody data={data} />;
   if (spot.k === 'explain') return <ExplainBody sessionId={sessionId} title={spot.title ?? ''} />;
+  // what Claude is browsing: the session's own browser (the board's Browser panel is a browser of its own)
+  if (spot.k === 'browser') return <SessionBrowserDock sessionId={sessionId} />;
   return <MorePanel k={spot.k as PanelKind} sessionId={sessionId} data={data} />;
 }
 
@@ -732,12 +765,36 @@ function ExplainsBody({ data, onPop, out, page, onGo }: { data: BoardData; onPop
           <input value={q} placeholder={`Filter ${explains.length} explains`} onChange={(e) => setQ(e.target.value)} />
         </label>
       ) : null}
-      <div className="lb-cards">
+      <CardGrid n={list.length}>
         {list.map((x) => (
           <ExplainCard key={x.title} x={x} data={data} out={out.get(x.title)} here={page} onGo={onGo} onPop={() => onPop(x.title)} />
         ))}
         {!list.length ? <div className="lb-empty">None called that.</div> : null}
-      </div>
+      </CardGrid>
+    </div>
+  );
+}
+
+/** A card: its preview (16 by 10) and its caption (one line of title, one of who and when). */
+const CARD = { gap: 10, min: 130, max: 300, aspect: 10 / 16, extra: 53 };
+
+/** The cards, sized to the panel: as big as they can be with all of them showing; it scrolls only when they can't. */
+function CardGrid({ n, children }: { n: number; children: React.ReactNode }) {
+  const box = useRef<HTMLDivElement>(null);
+  const [size, setSize] = useState<{ w: number; h: number } | null>(null);
+  useLayoutEffect(() => {
+    const el = box.current;
+    if (!el) return;
+    const read = () => setSize((cur) => (cur && cur.w === el.clientWidth && cur.h === el.clientHeight ? cur : { w: el.clientWidth, h: el.clientHeight }));
+    const ro = new ResizeObserver(read);
+    ro.observe(el);
+    read();
+    return () => ro.disconnect();
+  }, []);
+  const cols = size && n ? fitGrid(n, size.w, size.h, CARD) : null;
+  return (
+    <div className="lb-cards" ref={box} style={cols ? { gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` } : undefined}>
+      {children}
     </div>
   );
 }
@@ -750,6 +807,7 @@ function ExplainCard({ x, data, out, here, onGo, onPop }: { x: BoardExplain; dat
   const when = x.versions > 1 ? `First written ${clock(x.first)} · this version ${clock(x.ts)} (${x.versions} versions)` : `Written ${clock(x.ts)}`;
   return (
     <div className="lb-card" ref={box}>
+      {/* the preview, with what's on it: Live (top left); in the top right, where its own panel is, or Pop out (on hover) */}
       <div className="lb-pv" onClick={open} title="Open in the viewer">
         {seen ? <ExplainPreview x={x} /> : null}
         {x.live ? (
@@ -757,6 +815,19 @@ function ExplainCard({ x, data, out, here, onGo, onPop }: { x: BoardExplain; dat
             <i /> Live
           </span>
         ) : null}
+        {out === here ? (
+          <span className="lb-chip" title="It has a panel of its own on this page">
+            <Icon name="Check" size={11} /> On the board
+          </span>
+        ) : out != null ? (
+          <button className="lb-chip" onClick={(e) => (e.stopPropagation(), onGo(out))} title="It has a panel of its own there: go to it">
+            Page {out + 1} <Icon name="ArrowRight" size={11} />
+          </button>
+        ) : (
+          <button className="lb-pop" onClick={(e) => (e.stopPropagation(), onPop())} title="Pop it out into a panel of its own" aria-label="Pop out">
+            <Icon name="SquareArrowOutUpRight" size={13} />
+          </button>
+        )}
       </div>
       <div className="meta">
         <button className="t" onClick={open} title={x.title}>
@@ -764,27 +835,11 @@ function ExplainCard({ x, data, out, here, onGo, onPop }: { x: BoardExplain; dat
         </button>
         <div className="sub" title={when}>
           <Icon name={x.format === 'html' ? 'Monitor' : 'FileText'} size={11} className="f" />
-          <span>{x.format === 'html' ? 'Page' : 'Doc'} ·</span>
           <i style={{ background: data.color[x.agentId] ?? 'var(--ink4)' }} />
           <span className="who">{who}</span>
-          <span>· {ago(data.now - x.ts)} ago</span>
+          <span className="ago">{ago(data.now - x.ts)} ago</span>
           {x.versions > 1 ? <span className="v">v{x.versions}</span> : null}
         </div>
-      </div>
-      <div className="acts">
-        {out === here ? (
-          <span className="on" title="It has a panel of its own on this page">
-            <Icon name="Check" size={11} /> On the board
-          </span>
-        ) : out != null ? (
-          <button className="lb-pop" onClick={() => onGo(out)} title="It has a panel of its own there: go to it">
-            <Icon name="ArrowRight" size={11} /> On page {out + 1}
-          </button>
-        ) : (
-          <button className="lb-pop" onClick={onPop} title="Pop it out into a panel of its own">
-            <Icon name="SquareArrowOutUpRight" size={11} /> Pop out
-          </button>
-        )}
       </div>
     </div>
   );

@@ -5,7 +5,7 @@
 .su-drag { position: absolute; top: 0; left: 0; right: 0; height: var(--hdr, 40px); z-index: 2; -webkit-app-region: drag; }
 .su-side { display: flex; flex-direction: column; padding: 48px 26px 24px; border-right: 1px solid var(--hair); background: radial-gradient(260px 200px at 50% 120px, color-mix(in srgb, var(--cora) 10%, transparent), transparent 72%), var(--nav); -webkit-app-region: drag; }
 .su-side > * { -webkit-app-region: no-drag; }
-.su-lens { width: 76px; height: 76px; margin: 6px auto 16px; border-radius: 50%; background: radial-gradient(circle, var(--cora-hi) 0 10px, var(--cora-dim) 11px 23px, #05080d 25px 31px, #5b6675 32px 35px, #2a313b 36px); box-shadow: 0 0 28px color-mix(in srgb, var(--cora) 32%, transparent); }
+.su-orb { display: flex; justify-content: center; margin: 0 auto 10px; }
 .su-side h2 { margin: 0; text-align: center; font: 600 18px var(--ui); }
 .su-side .lead { margin: 8px 6px 22px; text-align: center; color: var(--ink3); font-size: 12.5px; line-height: 1.55; }
 .su-prog { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 12px; background: var(--raise); box-shadow: inset 0 0 0 1px var(--hair); }

@@ -1,4 +1,6 @@
 import { EVENT_ICON, PRESENT_TOOL, iconFor, isShell, summarizeTool, SLACK_SEND_TOOL, TODO_PINGS, todoWhy, type JiraMsg, type OrchestratorStatus } from '@cora/shared';
+import { GitlabIssues } from './gitlabIssues';
+import { Memes } from './memes';
 import { LiveExplains } from './liveExplains';
 import { Environments, envLine } from './environments';
 import { homedir } from 'node:os';
@@ -12,7 +14,7 @@ import { Voice, type Fetch } from './voice';
 import { VoiceFront } from './voiceFront';
 import { Gmail } from './gmail';
 import { connectedMcp } from './mcpServers';
-import { setGitlabHost } from './gitlabHost';
+import { gitlabHost, setGitlabHost } from './gitlabHost';
 import { resolveTicketStart, ticketFirstPrompt } from './ticketStart';
 import { MailWatches } from './mailWatches';
 import { runWatch, type WatchRunDeps } from './mailWatchRun';
@@ -261,6 +263,10 @@ export async function startServer(config: Config, opts: { tail?: boolean; listen
     log: (m) => console.log(`  ${m}`),
   });
   live.setBot(bot);
+  // the Meme panel's memes and GIFs (a session's own)
+  const memes = new Memes({ dataDir: config.dbPath === ':memory:' ? null : config.dataDir, onPost: (sessionId) => hub.publishMeme(sessionId) });
+  // GitLab issues (to start sessions from them): read with glab
+  const gitlabIssues = new GitlabIssues();
   const o = (orch = new OrchestratorManager({
     dataDir: config.dataDir,
     rehome: (from, to) => live.rehome(from, to),
@@ -275,6 +281,11 @@ export async function startServer(config: Config, opts: { tail?: boolean; listen
       return ticketFirstPrompt(use, { key: e.key, summary: e.summary, url: e.link, ...jira.ticket(e.key) }, true);
     },
     jiraAssigned: (key) => jira.recent(KEEP_MS, ['assigned']).find((e) => e.key === key),
+    issueFolder: (project, folders) => gitlabIssues.folderFor(project, folders),
+    gitlabIssue: async (project, iid) => {
+      const r = await gitlabIssues.one(project, iid);
+      return r.ok ? r.issue : null;
+    },
     told: (t) => void inbox.add(fromCora(t)),
     prompts: (sid) => store.promptCount(sid),
     projectsDir: config.projectsDir,
@@ -334,6 +345,8 @@ export async function startServer(config: Config, opts: { tail?: boolean; listen
     path: config.dbPath === ':memory:' ? null : join(config.dataDir, 'jira-projects.json'),
     store,
     set: (sid, ticket) => registry.updateSessionMeta(sid, { ticket }),
+    setIssue: (sid, issue) => registry.updateSessionMeta(sid, { issue }),
+    gitlabHost,
   });
   const pipeline = createPipeline(store, registry, hub, pending, {
     ignoreDir: namer.dir,
@@ -431,6 +444,7 @@ export async function startServer(config: Config, opts: { tail?: boolean; listen
       for (const t of list) inbox.add(fromGitlabTodo(t));
       for (const t of list) if (TODO_PINGS.has(t.action)) bot?.alert({ kind: 'ticket', key: `gl:${t.id}`, text: `${t.who}: ${todoWhy(t.action)} · ${ciRepoName(t.project)} ${t.ref} ${t.title} ${t.link}` });
       orch?.gitlabNotes(list);
+      orch?.issueTodos(list);
     },
     log: (m) => console.log(`  gitlab to-dos: ${m}`),
   });
@@ -502,7 +516,7 @@ export async function startServer(config: Config, opts: { tail?: boolean; listen
     ...(opts.draftRun ? { run: opts.draftRun } : {}),
   });
   if (config.dbPath !== ':memory:' && opts.ci) deploys.start();
-  const app = await buildApp({ config, store, hub, pipeline, pending, ptys, live: liveExplains, registry, prefs, voice, voiceFront, gmail, mailWatches, namer, tickets, jira, environments, deploys, notes, drafts, bot, inbox, ...(opts.claudeSettingsFile ? { claudeSettingsFile: opts.claudeSettingsFile } : {}), ...(opts.setupChecks ? { setupChecks: opts.setupChecks } : {}), onShutdown: opts.onShutdown, ci: () => ci, slack: { slack, outbox, live, cwdOf: (sid) => store.getSession(sid)?.cwd }, security: security ?? undefined, orchestrator: o });
+  const app = await buildApp({ config, store, hub, pipeline, pending, ptys, live: liveExplains, registry, prefs, voice, voiceFront, gmail, mailWatches, namer, tickets, jira, environments, deploys, notes, drafts, bot, inbox, ...(opts.claudeSettingsFile ? { claudeSettingsFile: opts.claudeSettingsFile } : {}), ...(opts.setupChecks ? { setupChecks: opts.setupChecks } : {}), onShutdown: opts.onShutdown, ci: () => ci, slack: { slack, outbox, live, cwdOf: (sid) => store.getSession(sid)?.cwd }, security: security ?? undefined, orchestrator: o, gitlabIssues, memes });
 
   let tailer: Tailer | undefined;
   if (opts.tail !== false) {
@@ -524,6 +538,7 @@ export async function startServer(config: Config, opts: { tail?: boolean; listen
     store.prune(Date.now() - prefs.get().retentionDays * 86400_000);
     pruneAttachments(config.dataDir);
     liveExplains.prune(Date.now() - prefs.get().retentionDays * 86400_000);
+    memes.prune(Date.now() - prefs.get().retentionDays * 86400_000);
   };
   const pruner = setInterval(prune, 3600_000);
   prune();

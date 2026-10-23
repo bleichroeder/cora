@@ -18,9 +18,10 @@ export function parseTicketInput(text: string, site?: string | null): { key: str
  * the rest is the summary; otherwise it's the name (your alias, the auto name…). When the name already has the key
  * in it, there's no separate chip: the name's own chip is the one.
  */
-export function ticketLabel(s: Pick<SessionInfo, 'id' | 'alias' | 'autoName' | 'title' | 'project' | 'ticket'>): { key: string | null; text: string } {
+export function ticketLabel(s: Pick<SessionInfo, 'id' | 'alias' | 'autoName' | 'title' | 'project' | 'ticket' | 'issue'>): { key: string | null; text: string } {
   const t = s.ticket;
-  if (!t) return { key: null, text: sessionName(s) };
+  // about a GitLab issue: named after it (its chip beside the folder says which)
+  if (!t) return { key: null, text: !s.alias && s.issue?.title ? s.issue.title : sessionName(s) };
   const text = !s.alias && t.summary ? t.summary : plainName(s);
   return new RegExp(`(^|[^A-Z0-9_-])${t.key}(?![0-9])`).test(text) ? { key: null, text } : { key: t.key, text };
 }

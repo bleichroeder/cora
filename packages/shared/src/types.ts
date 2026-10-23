@@ -88,7 +88,26 @@ export type SessionInfo = {
    * one of the site's projects). Null: cleared (and not looked for again).
    */
   ticket?: SessionTicket | null;
+  /** Claude Code's latest recap of it (written when you come back after a while away): where it stands, what's next */
+  recap?: { text: string; at: number } | null;
+  /** the GitLab issue it's about (its first message linked to it). Null: cleared. */
+  issue?: import('./gitlabIssue').SessionIssue | null;
 };
+
+/** One of Claude Code's recaps of a session (`away_summary` in its transcript): kept as long as Cora keeps history. */
+export type Recap = { id: string; sessionId: string; at: number; text: string };
+/**
+ * A recap's text as it reads: without Claude Code's note on turning them off, and without Cora's markup that it copied
+ * from the session's own replies (it writes them in their style: a `<!-- say: … -->` line, explain markers).
+ */
+export const recapText = (s: string) =>
+  s
+    .replace(/<!--[\s\S]*?(-->|$)/g, ' ')
+    .replace(/\s*\(disable recaps in \/config\)\s*/gi, ' ')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .replace(/ {2,}/g, ' ')
+    .trim();
 
 /**
  * A session's ticket. `site`: the Jira it came from when that was a link (else the one Cora uses). `summary`: the
@@ -175,6 +194,32 @@ export const takesTags = (model: string) => /^eleven_v[34]/.test(model);
 /** Does it take the style setting? v2 and v3 models; v4 goes by tags instead. */
 export const takesStyle = (model: string) => !/^eleven_v4/.test(model) && !/flash|turbo/.test(model);
 export const DELIVERY_MAX = 200;
+/**
+ * The direction as ElevenLabs can take it: one short audio tag of a few cues (`[calm, confident, warm]`). Audio tags are
+ * a few words; a whole description in brackets (sentences, a long list) gets read aloud. So: its phrases (split at
+ * commas and stops, without a leading "and" or "with"), the short ones, positive ones (a "never…" isn't a cue), as many
+ * as fit in 60 characters. Empty when nothing usable is left.
+ */
+export function directionTag(direction: string): string {
+  const cues: string[] = [];
+  let len = 0;
+  // by sentence (one saying what not to do is no cue), then by phrase
+  const phrases = direction
+    .replace(/[[\]]/g, ' ')
+    .split(/[.;:!?\n]+/)
+    .filter((x) => !/^\s*(never|not|no|don't|do not|avoid)\b/i.test(x))
+    .flatMap((x) => x.split(','));
+  for (const raw of phrases) {
+    let p = raw.replace(/[^A-Za-z '-]/g, ' ').replace(/\s+/g, ' ').trim();
+    while (/^(and|with|but|or|also|yet)\s/i.test(p)) p = p.replace(/^\S+\s+/, '');
+    if (!p || p.split(' ').length > 4) continue;
+    const add = (cues.length ? 2 : 0) + p.length;
+    if (len + add > 60) break;
+    cues.push(p);
+    len += add;
+  }
+  return cues.length ? `[${cues.join(', ')}]` : '';
+}
 export const PRONOUNCE_MAX = 60;
 /** The text-to-speech models offered in Settings, fastest first; any other `eleven_…` ID also works. */
 export const VOICE_MODELS: Array<{ id: string; name: string; note: string }> = [
@@ -222,13 +267,15 @@ export type Settings = {
   voice: VoiceSettings;
   /** name new sessions from their first prompt (a quick Haiku call through the user's Claude Code login) */
   autoName: boolean;
+  /** memes and GIFs sessions post to the Meme panel (off unless the user turns them on) */
+  memes?: { mode: import('./memes').MemeMode };
   /** the Cora Orchestrator (off by default) */
   orchestrator: import('./orchestrator').OrchestratorSettings;
   /** Jira: watching it for you (off by default) */
   jira: { watch: import('./jiraWatch').JiraWatchSettings; /** how ticket sessions start */ ticket: import('./jira').TicketStart };
   /** where pipelines and deploys are read from (glab's host) */
   /** `todos`: your GitLab to-dos (assigned, review requested, mentions…) come into the Inbox */
-  gitlab: { host: string; todos: boolean };
+  gitlab: { host: string; todos: boolean; /** an issue assigned to you: tell, offer to start it, or start it */ start?: import('./gitlabIssue').IssueStartMode };
   /** Cora's own Slack bot: messages while you're away, approvals, instructions */
   slackBot: import('./slackBot').SlackBotSettings;
   /** Slack in Cora's Inbox: the channels you follow (only what touches you there) */
@@ -250,9 +297,10 @@ export const DEFAULT_SETTINGS: Settings = {
   presets: [],
   voice: DEFAULT_VOICE,
   autoName: false,
+  memes: { mode: 'off' },
   orchestrator: { enabled: false, model: 'opus', speak: true, mandate: { repos: [], deploy: false, slack: [] }, budget: 5_000_000, events: 'important', briefs: 'welcome' },
   jira: { watch: DEFAULT_JIRA_WATCH, ticket: DEFAULT_TICKET_START },
-  gitlab: { host: 'gitlab.com', todos: true },
+  gitlab: { host: 'gitlab.com', todos: true, start: 'offer' },
   slackBot: DEFAULT_SLACK_BOT,
   slack: { follow: [], sign: ':cora:' },
   browser: { chrome: true },
@@ -406,6 +454,8 @@ export type ServerMsg =
   | import('./orchestrator').OrchMsg
   | import('./orchestrator').UiCommandMsg
   | ExplainDataMsg
+  /** a session posted to the Meme panel */
+  | { t: 'meme'; sessionId: string }
   | { t: 'snapshot'; sessions: SessionInfo[]; agents: AgentInfo[]; pending: PendingRequest[]; terminals: TerminalInfo[]; lastSeq: number; recent: Record<string, BrainEvent[]> }
   | { t: 'terminals'; terminals: TerminalInfo[] }
   | { t: 'events'; events: BrainEvent[] }

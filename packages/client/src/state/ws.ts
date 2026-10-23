@@ -1,4 +1,5 @@
 import { applyJira } from './jiraWatch';
+import { memePosted } from '../components/board/memeNews';
 import { applyInbox } from './inbox';
 import { create } from 'zustand';
 import { MAX_REPLAY, type LaunchOptions, type BrainEvent, type HistoryItem, type PendingDecision, type ServerMsg, type TerminalInfo, type ClaudeMode } from '@cora/shared';
@@ -92,6 +93,9 @@ function open() {
         break;
       case 'explain-data':
         applyExplainData(msg);
+        break;
+      case 'meme':
+        memePosted(msg.sessionId);
         break;
     }
   };

@@ -1,0 +1,48 @@
+/* the Meme panel: a wall of the latest posts (newest first, as big as fits); one, large, when you click it */
+.mm-img { display: block; max-width: 100%; max-height: 100%; border-radius: 6px; object-fit: contain; }
+.mm-meme { position: relative; display: inline-grid; max-width: 100%; max-height: 100%; container-type: inline-size; }
+.mm-meme .mm-img { grid-area: 1 / 1; }
+.mm-cap { position: absolute; left: 4%; right: 4%; color: #fff; font: 900 clamp(8px, 8cqw, 46px)/1.05 Impact, 'Anton', 'Arial Black', sans-serif; letter-spacing: .01em; text-align: center; text-transform: uppercase; overflow-wrap: anywhere; -webkit-text-stroke: clamp(1px, .45cqw, 3px) #000; paint-order: stroke fill; text-shadow: 0 0 2px #000; pointer-events: none; }
+.mm-cap.top { top: 3%; }
+.mm-cap.bottom { bottom: 3%; }
+
+.live-board .mm-wall { position: relative; height: 100%; overflow: hidden; background: radial-gradient(circle at 30% 20%, color-mix(in srgb, var(--cora) 6%, transparent), transparent 60%); }
+/* a sticker: the picture in a white sticker border, at its own slant, a shadow under it */
+.live-board .mm-sticker { position: absolute; display: block; padding: 5px; border: 0; border-radius: 10px; background: #f8fafc; box-shadow: 0 6px 18px rgba(0, 0, 0, .45), 0 1px 0 rgba(255, 255, 255, .6) inset; transform: rotate(var(--tilt)); cursor: zoom-in; transition: transform .15s, box-shadow .15s; }
+.live-board .mm-sticker > .mm-img, .live-board .mm-sticker > .mm-meme { display: block; width: 100%; max-width: none; max-height: none; border-radius: 6px; }
+.live-board .mm-sticker > .mm-meme .mm-img { width: 100%; max-width: none; max-height: none; }
+.live-board .mm-sticker:hover { z-index: 50 !important; transform: rotate(var(--tilt)) scale(1.04) translateY(-3px); box-shadow: 0 12px 28px rgba(0, 0, 0, .55); }
+.live-board .mm-sticker.newest { box-shadow: 0 8px 22px rgba(0, 0, 0, .5), 0 0 0 2px color-mix(in srgb, var(--cora) 55%, transparent); }
+/* a new one comes in from above and slaps down */
+.live-board .mm-sticker.slap { animation: mm-slap .55s cubic-bezier(.2, 1.4, .35, 1) both; }
+@keyframes mm-slap { 0% { opacity: 0; transform: rotate(calc(var(--tilt) * -2)) scale(1.9) translateY(-30px); } 60% { opacity: 1; transform: rotate(calc(var(--tilt) * 1.15)) scale(.96); } 100% { transform: rotate(var(--tilt)) scale(1); } }
+.live-board .mm-older { position: absolute; right: 8px; bottom: 6px; z-index: 60; padding: 1px 7px; border-radius: 6px; background: color-mix(in srgb, var(--nav) 80%, transparent); color: var(--ink4); font: 500 10px var(--ui); }
+@media (prefers-reduced-motion: reduce) { .live-board .mm-sticker.slap { animation: none; } }
+
+.live-board .lb-memes.one { display: flex; flex-direction: column; height: 100%; min-height: 0; outline: none; }
+.live-board .lb-memes.one .mm-main { flex: 1; min-height: 0; display: grid; place-items: center; padding: 10px 12px 6px; border: 0; background: none; overflow: hidden; cursor: zoom-out; }
+.live-board .lb-memes.one .mm-main > .mm-img, .live-board .lb-memes.one .mm-main > .mm-meme { max-width: 100%; max-height: 100%; }
+.live-board .mm-why { display: flex; align-items: baseline; gap: 8px; min-width: 0; padding: 4px 14px 10px; color: var(--ink2); font: 400 12px/1.4 var(--ui); }
+.live-board .mm-why > span:first-child { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.live-board .mm-tag { flex: none; padding: 0 6px; border-radius: 5px; background: var(--raise); color: var(--ink4); font: 500 10px var(--ui); }
+.live-board .mm-when { flex: none; color: var(--ink4); font: 400 10.5px var(--code); }
+.live-board .mm-giphy { flex: none; padding: 0; border: 0; background: none; color: var(--ink4); font: 600 9.5px var(--ui); letter-spacing: .08em; cursor: pointer; }
+.live-board .mm-giphy:hover { color: var(--ink2); }
+
+.live-board .mm-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; height: 100%; padding: 16px; text-align: center; }
+.live-board .mm-guy { width: 92px; height: 92px; overflow: visible; }
+.mm-guy .mm-body { transform-origin: 60px 100px; animation: mm-bob 4.8s ease-in-out infinite; }
+.mm-guy .mm-shadow { fill: rgba(0, 0, 0, .35); animation: mm-shadow 4.8s ease-in-out infinite; transform-origin: 60px 108px; }
+.mm-guy .mm-brow, .mm-guy .mm-grin { fill: none; stroke: #0b0f17; stroke-width: 3.2; stroke-linecap: round; }
+.mm-guy .mm-eye { fill: #0b0f17; }
+.mm-guy .s0 { stop-color: color-mix(in srgb, var(--cora) 35%, #fff); }
+.mm-guy .s1 { stop-color: color-mix(in srgb, var(--cora) 60%, #1b2230); }
+.mm-guy .mm-shades rect { fill: #05070b; }
+.mm-guy .mm-shades .glint { fill: #fff; opacity: .85; }
+/* deal with it: the shades come down, sit a while, go back up */
+.mm-guy .mm-shades { animation: mm-shades 4.8s cubic-bezier(.3, .7, .3, 1) infinite; }
+@keyframes mm-shades { 0%, 18% { transform: translateY(-70px); opacity: 0; } 34% { transform: translateY(0); opacity: 1; } 38% { transform: translateY(-3px); } 42%, 82% { transform: translateY(0); opacity: 1; } 96%, 100% { transform: translateY(-70px); opacity: 0; } }
+@keyframes mm-bob { 0%, 100% { transform: translateY(0) rotate(0); } 36% { transform: translateY(1px) rotate(-3deg); } 60% { transform: translateY(-2px) rotate(2deg); } }
+@keyframes mm-shadow { 0%, 100% { transform: scaleX(1); } 60% { transform: scaleX(.9); } }
+@media (prefers-reduced-motion: reduce) { .mm-guy .mm-body, .mm-guy .mm-shades, .mm-guy .mm-shadow { animation: none; } }
+.live-board .mm-empty p { max-width: 280px; margin: 0; color: var(--ink3); font: 400 12px/1.5 var(--ui); }

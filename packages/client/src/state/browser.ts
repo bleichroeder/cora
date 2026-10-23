@@ -30,6 +30,10 @@ export const browserProfiles = (): BrowserProfile[] => useBrowserSettings.getSta
 export const browserGroup = (profile: string) => (profile ? `${BROWSER_ID}:${profile}` : BROWSER_ID);
 /** Every group the Browser's tabs live in. */
 export const isBrowserGroup = (g: string) => g === BROWSER_ID || g.startsWith(`${BROWSER_ID}:`);
+/** A board Browser panel's own tabs (a browser of its own, apart from the session's): per session and profile. */
+const PANEL = 'cora:panel:';
+export const panelGroup = (sessionId: string, profile: string) => `${PANEL}${sessionId}:${profile}`;
+export const isPanelGroup = (g: string) => g.startsWith(PANEL);
 
 /** A profile's sign-ins (its webviews' partition); without profiles, or one not found, the browser's own. */
 export const partitionFor = (profile: string | undefined) => browserProfiles().find((p) => p.id === profile)?.partition ?? HOME_PARTITION;
@@ -41,7 +45,7 @@ export const sessionsProfile = (): string => {
 };
 
 /** Whose bookmarks and history a tab group shows: a Browser profile's, or for a session's tabs, the sessions' profile. */
-export const profileOfGroup = (g: string): string => (isBrowserGroup(g) ? (g === BROWSER_ID ? '' : g.slice(BROWSER_ID.length + 1)) : sessionsProfile());
+export const profileOfGroup = (g: string): string => (isBrowserGroup(g) ? (g === BROWSER_ID ? '' : g.slice(BROWSER_ID.length + 1)) : isPanelGroup(g) ? g.slice(g.lastIndexOf(':') + 1) : sessionsProfile());
 /** A tab group's sign-ins: its profile's (a page keeps the ones it was made with). */
 export const partitionOfGroup = (g: string): string => partitionFor(profileOfGroup(g));
 
@@ -53,6 +57,27 @@ const saved = () => {
     return '';
   }
 };
+
+/** The profile each session's Browser panel is on (kept across restarts). */
+const PANEL_KEY = 'cora.panel.profile';
+export const usePanelProfile = create<{ by: Record<string, string>; set(sessionId: string, id: string): void }>((set, get) => ({
+  by: (() => {
+    try {
+      return JSON.parse(localStorage.getItem(PANEL_KEY) ?? '{}') as Record<string, string>;
+    } catch {
+      return {};
+    }
+  })(),
+  set: (sessionId, id) => {
+    const by = { ...get().by, [sessionId]: id };
+    set({ by });
+    try {
+      localStorage.setItem(PANEL_KEY, JSON.stringify(by));
+    } catch {
+      /* this time only */
+    }
+  },
+}));
 
 /** The profile Cora's Browser is on (kept across restarts). */
 export const useBrowserProfile = create<{ id: string; set(id: string): void }>((set) => ({

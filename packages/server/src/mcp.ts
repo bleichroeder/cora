@@ -1,11 +1,12 @@
 import type { FastifyInstance } from 'fastify';
 import { envLine, type Environments } from './environments';
 import type { Deploys } from './deploys';
+import { matchTemplate, type Memes } from './memes';
 import { NoteError, type Notes } from './notes';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { z } from 'zod';
-import { AGENT_HEADER, MCP_SERVER, SESSION_HEADER, deploysText, parseSlackLink, speaksSummaries, type Settings, ATTACH_MAX, type SlackAttachment, type UiCommand } from '@cora/shared';
+import { SVG_MAX, svgProblem, AGENT_HEADER, MCP_SERVER, SESSION_HEADER, deploysText, parseSlackLink, speaksSummaries, type Settings, ATTACH_MAX, type SlackAttachment, type UiCommand } from '@cora/shared';
 import { hookToken, sameSecret } from './config';
 import { SlackError, type Outbox, type Slack, hitLine, isImage } from './slack';
 import type { SlackLive } from './slackLive';
@@ -44,7 +45,7 @@ const OTHERS_LOCKED = new Set(['open_tab', 'notes_add', 'gmail_watch', 'gmail_un
 /** Live explains, as the MCP server needs them. */
 export type McpLive = { start(sessionId: string, title: string): { slug: string; dir: string; page: string; data: string } };
 
-function buildServer(settings: Settings, sessionId: string | null, s?: McpSlack, orch?: McpOrchestrator, env?: Environments, deploys?: Deploys, notes?: McpNotes, mail?: McpGmail, /** the caller proved it's Cora's agent */ proven = false, /** drives the dashboards (open_tab) */ ui?: (cmd: UiCommand) => void, live?: McpLive): McpServer {
+function buildServer(settings: Settings, sessionId: string | null, s?: McpSlack, orch?: McpOrchestrator, env?: Environments, deploys?: Deploys, notes?: McpNotes, mail?: McpGmail, /** the caller proved it's Cora's agent */ proven = false, /** drives the dashboards (open_tab) */ ui?: (cmd: UiCommand) => void, live?: McpLive, memes?: Memes): McpServer {
   // a session id alone says nothing: only Cora's own agent (with its own key) is Cora (docs/audit-2026-10-20.md S3)
   const asCora = (sid: string | null): sid is string => !!(proven && orch && sid && orch.isAgent(sid));
   const mode = settings.explains.mode;
@@ -96,7 +97,7 @@ function buildServer(settings: Settings, sessionId: string | null, s?: McpSlack,
           'It shows only if the user has a Spotlight on their board; nothing comes back.',
         ].join(' '),
         inputSchema: {
-          panel: z.enum(['pipeline', 'deploys', 'tests', 'changes', 'background', 'browser', 'ticket', 'git', 'terminal', 'context', 'explain']).describe('What to show'),
+          panel: z.enum(['pipeline', 'deploys', 'tests', 'changes', 'background', 'browser', 'ticket', 'git', 'terminal', 'context', 'explain', 'recap']).describe('What to show'),
           explain: z.string().max(120).optional().describe("For panel 'explain': the explain's title"),
           reason: z.string().max(80).optional().describe('A few words on why, shown with it (e.g. "Deploying 2.4 to staging")'),
         },
@@ -104,6 +105,60 @@ function buildServer(settings: Settings, sessionId: string | null, s?: McpSlack,
       async ({ panel, explain }) => {
         if (panel === 'explain' && !explain) return fail("Say which explain: its title in 'explain'.");
         return { content: [{ type: 'text', text: `Asked Cora to show ${panel === 'explain' ? `"${explain}"` : `the ${panel}`} in the user's Spotlight (it shows if they have one on their board).` }] };
+      },
+    );
+  // The Meme panel (when the user wants memes): a meme from a popular template with the session's captions, or a GIF
+  // from Giphy (with the user's key). Kept for the session; the panel shows them.
+  if (memes && sessionId && !asCora(sessionId) && (settings.memes?.mode ?? 'off') !== 'off')
+    server.registerTool(
+      'meme',
+      {
+        title: 'Post a meme or a GIF to the Meme panel',
+        description: [
+          "Post a meme or a GIF about what's happening in this session to the user's Meme panel (just for fun).",
+          "A meme: `template` (a popular meme's name, e.g. \"Distracted Boyfriend\", \"This Is Fine\", \"Drake Hotline Bling\", \"Two Buttons\", \"Change My Mind\", \"Expanding Brain\", \"Batman Slapping Robin\", \"Woman Yelling At Cat\") with `top` and `bottom` text.",
+          'A GIF: `gif`, a few words to search for (e.g. "celebration", "facepalm", "this is fine fire").',
+          'Or draw your own: `svg`, one whole SVG (viewBox="0 0 600 400"; at most 30 KB; no scripts, links or outside images or fonts: draw everything). Make it a real meme about this moment: a two-panel comic, a joke chart, a character reacting, a fake error dialog, your own take on a classic format. Big bold readable text, colours that work on a dark background. It is shown in the panel only (never saved).',
+          '`why`: one short line on what it is about.',
+        ].join(' '),
+        inputSchema: {
+          template: z.string().max(80).optional().describe("A meme template's name"),
+          top: z.string().max(100).optional().describe("The meme's top text"),
+          bottom: z.string().max(100).optional().describe("The meme's bottom text"),
+          gif: z.string().max(60).optional().describe('Instead of a meme: words to find a GIF with'),
+          svg: z.string().max(SVG_MAX).optional().describe('Instead: a meme you drew, as one whole SVG'),
+          why: z.string().max(120).optional().describe('One short line on what it is about'),
+        },
+      },
+      async ({ template, top, bottom, gif, svg, why }) => {
+        if ([template, gif, svg].filter(Boolean).length !== 1) return fail('Give one of: a `template` (with top and bottom text), a `gif` to search for, or an `svg` you drew.');
+        if (svg) {
+          const bad = svgProblem(svg);
+          if (bad) return fail(`Cora can't show that SVG: ${bad}`);
+          memes.post(sessionId, { kind: 'svg', url: '', svg: svg.trim(), ...(why ? { why } : {}) });
+          return { content: [{ type: 'text', text: 'Posted your meme to the Meme panel (shown there only; never saved).' }] };
+        }
+        if (gif) {
+          try {
+            const g = await memes.gif(gif);
+            if (!g) return fail(`No GIF found for "${gif}": try other words, or make a meme.`);
+            memes.post(sessionId, { kind: 'gif', url: g.url, query: gif, page: g.page, ...(why ? { why } : {}) });
+            return { content: [{ type: 'text', text: `Posted a GIF for "${gif}" to the Meme panel.` }] };
+          } catch (e) {
+            const m = (e as Error).message;
+            return fail(m === 'no-key' ? "GIFs aren't set up (the user hasn't given Cora a Giphy key): make a meme from a template instead." : m === 'bad-key' ? "Giphy turned the user's key away: make a meme instead." : `Couldn't reach Giphy (${m}): make a meme instead.`);
+          }
+        }
+        let list;
+        try {
+          list = await memes.templates();
+        } catch (e) {
+          return fail(`Couldn't get the meme templates (${(e as Error).message}).`);
+        }
+        const t = matchTemplate(list, template!);
+        if (!t) return fail(`No template called "${template}". Some popular ones: ${list.slice(0, 25).map((x) => x.name).join(', ')}.`);
+        memes.post(sessionId, { kind: 'meme', url: t.url, template: t.name, ...(top ? { top } : {}), ...(bottom ? { bottom } : {}), ...(why ? { why } : {}) });
+        return { content: [{ type: 'text', text: `Posted "${t.name}" to the Meme panel${t.boxes > 2 ? ` (it has ${t.boxes} text boxes; Cora shows top and bottom)` : ''}.` }] };
       },
     );
   // A live explain: a page the session writes once and data it keeps current while it works (not Cora's agent: it
@@ -689,13 +744,13 @@ function registerSlack(server: McpServer, sessionId: string | null, { slack, out
  * Streamable-HTTP MCP endpoint (stateless: a fresh server per request). The tool itself has no side effects:
  * the document travels in the tool call, which lands in the transcript, and the UI renders it from there.
  */
-export function registerMcp(app: FastifyInstance, token: string, getSettings: () => Settings, slack?: McpSlack, orch?: McpOrchestrator, env?: Environments, deploys?: Deploys, notes?: McpNotes, mail?: McpGmail, /** Cora's agent's own key (Cora passes its own; tests use the hook token) */ agentToken: string = token, /** drives the dashboards (open_tab) */ ui?: (cmd: UiCommand) => void, /** live explains */ live?: McpLive): void {
+export function registerMcp(app: FastifyInstance, token: string, getSettings: () => Settings, slack?: McpSlack, orch?: McpOrchestrator, env?: Environments, deploys?: Deploys, notes?: McpNotes, mail?: McpGmail, /** Cora's agent's own key (Cora passes its own; tests use the hook token) */ agentToken: string = token, /** drives the dashboards (open_tab) */ ui?: (cmd: UiCommand) => void, /** live explains */ live?: McpLive, /** the Meme panel */ memes?: Memes): void {
   app.post('/mcp', async (req, reply) => {
     if (!sameSecret(hookToken(req), token)) return reply.code(401).send({ error: 'bad token' });
     // sessions launched here say who they are (older ones don't: their drafts are matched to them by their events)
     const sid = req.headers[SESSION_HEADER];
     const proven = !!agentToken && sameSecret(req.headers[AGENT_HEADER], agentToken);
-    const server = buildServer(getSettings(), typeof sid === 'string' && /^[\w-]{8,80}$/.test(sid) ? sid : null, slack, orch, env, deploys, notes, mail, proven, ui, live);
+    const server = buildServer(getSettings(), typeof sid === 'string' && /^[\w-]{8,80}$/.test(sid) ? sid : null, slack, orch, env, deploys, notes, mail, proven, ui, live, memes);
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
     reply.hijack();
     reply.raw.on('close', () => {

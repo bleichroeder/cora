@@ -1,0 +1,34 @@
+/* Claude Code's recaps, as the CLI shows them (※ recap): quiet, Claude's words, the mark in your Cora colour */
+.rc-k { display: inline-flex; flex: none; align-items: center; gap: 5px; color: var(--ink4); font: 500 10.5px var(--code); letter-spacing: .04em; }
+.rc-k i { color: color-mix(in srgb, var(--cora) 75%, var(--ink3)); font-style: normal; font-size: 12px; }
+.rc-when { flex: none; color: var(--ink4); font: 400 10.5px var(--code); white-space: nowrap; }
+
+/* between the transcript and the composer: the latest, one line (click: all of it) */
+.rightcol > .rc-pane { position: relative; display: grid; grid-template-rows: minmax(0, 1fr); grid-template-columns: minmax(0, 1fr); min-width: 0; min-height: 0; }
+.rc-pane > * { min-width: 0; min-height: 0; }
+.rc-pane > .recap-bar { position: absolute; left: 12px; right: 12px; bottom: 10px; z-index: 3; }
+/* the transcript's end scrolls clear of it */
+.rc-pane:has(> .recap-bar) .journal .feed { padding-bottom: 96px; }
+.recap-bar { display: flex; align-items: baseline; gap: 10px; padding: 8px 8px 8px 12px; border-radius: 10px; background: color-mix(in srgb, var(--cora) 6%, var(--raise)); box-shadow: inset 0 0 0 1px var(--hair2), inset 2px 0 0 color-mix(in srgb, var(--cora) 55%, transparent), 0 10px 28px rgba(0, 0, 0, .45); animation: rc-in .25s cubic-bezier(.2, .7, .2, 1); }
+.recap-bar .rc-t { flex: 1; min-width: 0; padding: 0; border: 0; background: none; color: var(--ink2); font: 400 12.5px/1.5 var(--ui); text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+.recap-bar.open .rc-t { white-space: normal; }
+.recap-bar .rc-t:hover { color: var(--ink); }
+.recap-bar .rc-x { align-self: center; display: inline-grid; place-items: center; flex: none; width: 22px; height: 22px; padding: 0; border: 0; border-radius: 6px; background: none; color: var(--ink4); cursor: pointer; }
+.recap-bar .rc-x:hover { background: var(--raise2); color: var(--ink); }
+@keyframes rc-in { from { opacity: 0; transform: translateY(4px); } }
+
+/* the board's Recap panel: the story of the work, newest first */
+.live-board .lb-recaps { display: flex; flex-direction: column; padding: 4px 0; }
+.live-board .lb-rc { padding: 10px 14px; border-bottom: 1px solid var(--hair); }
+.live-board .lb-rc:last-child { border-bottom: 0; }
+.live-board .lb-rc .rc-h { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 4px; }
+.live-board .lb-rc p { margin: 0; color: var(--ink3); font: 400 12.5px/1.55 var(--ui); }
+.live-board .lb-rc.latest p { color: var(--ink); }
+
+/* hovering a session in the nav: its latest, beside the nav (as Cora's cards are), pointing at its row */
+.recap-peek { position: fixed; z-index: 61; width: 360px; padding: 11px 13px 12px; border-radius: 12px; background: var(--raise); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cora) 35%, transparent), 0 16px 40px rgba(0, 0, 0, .6); pointer-events: none; animation: rc-in .18s cubic-bezier(.2, .7, .2, 1); }
+.recap-peek::before { content: ''; position: absolute; left: -6px; top: var(--arrow, 20px); width: 10px; height: 10px; background: var(--raise); transform: rotate(45deg); box-shadow: -1px 1px 0 0 color-mix(in srgb, var(--cora) 35%, transparent); }
+.recap-peek .rc-h { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 5px; }
+.recap-peek p { margin: 0; color: var(--ink2); font: 400 12.5px/1.55 var(--ui); }
+
+@media (prefers-reduced-motion: reduce) { .recap-bar, .recap-peek { animation: none; } }

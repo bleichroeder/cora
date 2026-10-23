@@ -156,3 +156,15 @@ describe('recent picks and folders', () => {
     expect(f).toEqual(['c:/code/cora/', 'C:\\Code\\other']);
   });
 });
+
+describe('rank: sessions as the nav groups them', () => {
+  it('lists working, then idle (then commands), with ended ones apart, near the bottom', () => {
+    const e: Entry[] = [
+      { id: 'session:w', group: 'session', label: 'working one' },
+      { id: 'session:i', group: 'idle', label: 'idle one' },
+      { id: 'session:e', group: 'ended', label: 'ended one' },
+      { id: 'cmd:x', group: 'command', label: 'a command', featured: true },
+    ];
+    expect(rank(e, '', { recent: [] }).map((g) => g.id)).toEqual(['session', 'idle', 'command', 'ended']);
+  });
+});

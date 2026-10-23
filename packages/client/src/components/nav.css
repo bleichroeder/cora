@@ -73,8 +73,6 @@
 .rail .jchip.bare.j-progress { color: color-mix(in srgb, #8ab4f8 80%, var(--ink3)); }
 .rail .jchip.bare.j-done { color: color-mix(in srgb, var(--work) 70%, var(--ink3)); }
 .rail .jchip.bare:hover { color: var(--ink); background: none; text-decoration: underline; }
-.rail .more-old { display: inline-flex; align-items: center; gap: 5px; margin: 4px 8px; padding: 2px 0; border: 0; background: none; color: var(--ink4); font: 500 11px var(--ui); cursor: pointer; }
-.rail .more-old:hover { color: var(--ink2); }
 
 /* Tools and the footer: the same surfaces, hairlines and type; labels kept */
 .rail .rail-tools { padding: 10px 12px 12px; border-top-color: var(--hair2); }
@@ -145,9 +143,19 @@
 .rail .rt-fin { padding-left: 12px; }
 /* installed Cora: a new version is waiting for a restart */
 .rail-foot .rf-update { color: var(--cora); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cora) 40%, transparent); background: color-mix(in srgb, var(--cora) 10%, var(--raise)); }
+/* a new version waiting adds a row: the footer grows for it rather than spilling over the sessions above */
+.rail .rail-foot:has(.rf-update) { height: auto; padding-top: 10px; padding-bottom: 10px; }
 
 /* the sessions' section: a heading like Tools', with Resume and Search beside it, then New session */
 .rail .rail-sessions { padding: 2px 12px 10px; }
 .rail .ses-head { margin: 0 0 8px 2px; }
 .rail .btn.ses-new { display: flex; width: 100%; height: 32px; align-items: center; justify-content: center; gap: 6px; padding: 0 8px; border: 0; border-radius: 8px; background: color-mix(in srgb, var(--work) 14%, var(--raise)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--work) 40%, transparent); color: #d9fbe9; font: 600 12.5px var(--ui); }
 .rail .btn.ses-new:hover { background: color-mix(in srgb, var(--work) 20%, var(--raise)); }
+
+/* a session about a GitLab issue: its #number beside the folder (as a ticket's key is), opening it */
+.rail .gl-chip { flex: none; color: color-mix(in srgb, #fc6d26 70%, var(--ink3)); font: 500 10px/14px var(--code); letter-spacing: .02em; cursor: pointer; }
+.rail .gl-chip:hover { color: var(--ink); text-decoration: underline; }
+/* in the session's header: GitLab's mark, the number and the issue's title */
+.gl-chip.head { display: inline-flex; align-items: center; gap: 6px; min-width: 0; max-width: 340px; height: 24px; padding: 0 9px; border-radius: 7px; background: var(--raise); box-shadow: inset 0 0 0 1px var(--hair); color: color-mix(in srgb, #fc6d26 80%, var(--ink2)); font: 500 11.5px var(--code); cursor: pointer; }
+.gl-chip.head:hover { box-shadow: inset 0 0 0 1px color-mix(in srgb, #fc6d26 45%, transparent); }
+.gl-chip.head .gl-t { min-width: 0; overflow: hidden; color: var(--ink2); font: 400 12px var(--ui); text-overflow: ellipsis; white-space: nowrap; }

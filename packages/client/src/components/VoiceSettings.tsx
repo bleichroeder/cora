@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { DEFAULT_VOICE, VOICE_MODELS, type Settings, type VoiceSettings, takesTags, takesStyle, DELIVERY_MAX, PRONOUNCE_MAX } from '@cora/shared';
+import { DEFAULT_VOICE, VOICE_MODELS, type Settings, type VoiceSettings, directionTag, takesTags, takesStyle, DELIVERY_MAX, PRONOUNCE_MAX } from '@cora/shared';
 import { speak, stopSpeaking, useVoice, SILENCE_MS } from '../lib/voice';
 import { useWake } from '../lib/wake/controller';
 import { Icon } from './Icon';
@@ -248,17 +248,26 @@ function HowItsSaid({ v, save }: { v: VoiceSettings; save: (p: Partial<VoiceSett
     setFrom('');
     setTo('');
   };
+  // what ElevenLabs gets (a few cues as one tag) when that isn't simply what's typed: a description would be read aloud
+  const sent = (text: string) => {
+    const tag = directionTag(text);
+    const plain = text.trim().replace(/^\[|\]$/g, '').trim();
+    return !tags || !plain || tag === `[${plain}]` ? null : <span className="vdir-sent">{tag ? <>Sent as <code>{tag}</code>: a few words work best</> : 'Nothing usable: a few words, like [calm, warm]'}</span>;
+  };
   const field = (value: string | null, saved: string | undefined, set: (s: string | null) => void, key: 'delivery' | 'coraDelivery', ph: string) => (
-    <input
-      className="set-input"
-      value={value ?? saved ?? ''}
-      placeholder={ph}
-      maxLength={DELIVERY_MAX}
-      spellCheck={false}
-      onChange={(e) => set(e.target.value)}
-      onBlur={() => value != null && (void save({ [key]: value }), set(null))}
-      onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
-    />
+    <span className="vdir">
+      <input
+        className="set-input"
+        value={value ?? saved ?? ''}
+        placeholder={ph}
+        maxLength={DELIVERY_MAX}
+        spellCheck={false}
+        onChange={(e) => set(e.target.value)}
+        onBlur={() => value != null && (void save({ [key]: value }), set(null))}
+        onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
+      />
+      {sent(value ?? saved ?? '')}
+    </span>
   );
   // its rows (the page's Group around them is what sets them apart)
   return (
@@ -267,7 +276,7 @@ function HowItsSaid({ v, save }: { v: VoiceSettings; save: (p: Partial<VoiceSett
         label="Direction"
         hint={
           tags
-            ? 'In front of every line, in ElevenLabs\u2019 audio tags: how it sounds. Spoken lines may add their own, like [laughs].'
+            ? 'A few words on how it sounds, like [calm, warm, a little dry]: sent as an ElevenLabs audio tag in front of every line (a whole description would be read aloud). Spoken lines may add their own, like [laughs].'
             : 'Needs a v3 or v4 model (see Model above): Flash doesn\u2019t follow direction. Kept for when you switch.'
         }
       >

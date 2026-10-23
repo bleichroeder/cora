@@ -64,6 +64,11 @@ export function createPipeline(store: Store, registry: Registry, hub: Hub, pendi
           if (r.meta.model) meta.model = r.meta.model;
           meta.transcriptPath = file;
         }
+        if (r.meta.recap && info.agentId === 'main') {
+          store.addRecap({ ...r.meta.recap, sessionId: info.sessionId });
+          const cur = store.getSession(info.sessionId)?.recap;
+          if (!cur || cur.at < r.meta.recap.at) meta.recap = { text: r.meta.recap.text, at: r.meta.recap.at };
+        }
         if (Object.keys(meta).length) registry.updateSessionMeta(info.sessionId, meta);
         ingestEvents(r.events);
         if (r.meta.command && info.agentId === 'main') opts.onCommand?.(info.sessionId, r.meta.command);

@@ -1,4 +1,4 @@
-import { EVENT_ICON, PRESENT_TOOL, iconFor, splitExplains, splitSay, summarizeTool, resultText } from '@cora/shared';
+import { EVENT_ICON, PRESENT_TOOL, iconFor, recapText, splitExplains, splitSay, summarizeTool, resultText } from '@cora/shared';
 import type { NewEvent } from '@cora/shared';
 
 /** Per-file parsing state (one per transcript file). */
@@ -32,6 +32,8 @@ export type ParseMeta = {
    * prompt is, when hooks are on), but it's what finds the ticket of a session that only has its transcript.
    */
   command?: { id: string; text: string; ts: number };
+  /** Claude Code's recap of the session (`away_summary`): where it stands, what's next */
+  recap?: { id: string; text: string; at: number };
 };
 
 export type ParseResult = { events: NewEvent[]; meta: ParseMeta };
@@ -122,6 +124,7 @@ export function parseLine(obj: any, ctx: ParseCtx): ParseResult {
   if (type === 'system') {
     if (obj.subtype === 'compact_boundary') events.push({ ...base, id: obj.uuid, kind: 'compact', icon: EVENT_ICON.compact });
     else if (obj.subtype === 'turn_duration') events.push({ ...base, id: obj.uuid, kind: 'turn_end', icon: EVENT_ICON.turn_end, durationMs: obj.durationMs });
+    else if (obj.subtype === 'away_summary' && typeof obj.content === 'string' && recapText(obj.content)) meta.recap = { id: String(obj.uuid ?? `${sessionId}:${ts}`), text: recapText(obj.content), at: ts };
     return { events, meta };
   }
 

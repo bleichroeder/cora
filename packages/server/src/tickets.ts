@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { ISSUE_KEY_RE, isJiraHost, ticketInPrompt, type SessionTicket } from '@cora/shared';
+import { ISSUE_KEY_RE, isJiraHost, issueInPrompt, issueTitleInPrompt, ticketInPrompt, type SessionIssue, type SessionTicket } from '@cora/shared';
 import type { Store } from './store';
 import { writeFileAtomic } from './fsx';
 
@@ -30,7 +30,7 @@ export function checkSummary(s: unknown): string | null {
 export class Tickets {
   private projects = new Set<string>();
 
-  constructor(private o: { path: string | null; store: Store; set(sessionId: string, t: SessionTicket): void }) {
+  constructor(private o: { path: string | null; store: Store; set(sessionId: string, t: SessionTicket): void; setIssue?(sessionId: string, i: SessionIssue): void; gitlabHost?(): string }) {
     try {
       if (o.path) for (const k of JSON.parse(readFileSync(o.path, 'utf8')).projects ?? []) if (PROJECT_KEY_RE.test(k)) this.projects.add(k);
     } catch {
@@ -82,10 +82,19 @@ export class Tickets {
     if (!s || s.ticket !== undefined) return null;
     const first = this.o.store.firstPrompt(sessionId);
     if (first && first.id !== id && first.ts < ts) return null;
+    this.considerIssue(sessionId, text);
     const t = ticketInPrompt(text, this.known);
     if (!t) return null;
     const ticket = { key: t.key, site: t.site ?? null, summary: null };
     this.o.set(sessionId, ticket);
     return ticket;
+  }
+
+  /** The session's first message links to a GitLab issue (Cora's issue prompt does): that's its issue. */
+  private considerIssue(sessionId: string, text: string): void {
+    const host = this.o.gitlabHost?.();
+    if (!host || !this.o.setIssue || this.o.store.getSession(sessionId)?.issue !== undefined) return;
+    const i = issueInPrompt(text, host);
+    if (i) this.o.setIssue(sessionId, { project: i.project, iid: i.iid, url: i.url, title: issueTitleInPrompt(text) });
   }
 }

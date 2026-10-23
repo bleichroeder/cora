@@ -99,7 +99,7 @@ export type Approval = {
   sessionId?: string;
   cwd?: string;
   /** a start on a Jira ticket assigned to you: the ticket, and the folders it could start in (you can pick another) */
-  ticket?: { key: string; summary: string; who: string };
+  ticket?: { key: string; summary: string; who: string; /** a GitLab issue (`group/project#123`), not a Jira ticket */ source?: 'jira' | 'gitlab' };
   folders?: StartFolder[];
   createdAt: number;
   /** the agent is still waiting for your answer (after a while it's told this is waiting for you) */
@@ -148,6 +148,7 @@ export type UiCommandMsg = { t: 'ui'; cmd: UiCommand };
 /** The agent's MCP tools (without the mcp__cora__ prefix). */
 export const ORCH_TOOLS = [
   'sessions',
+  'recaps',
   'jira_inbox',
   'jira_start',
   'session',

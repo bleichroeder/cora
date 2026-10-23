@@ -1,4 +1,4 @@
-import { FAM } from '@cora/shared';
+import { FAM, recapText } from '@cora/shared';
 import { sessionEvents, useBrain } from '../state/store';
 import { agentColor, ago, currentAction, isDismissed, sessionColor, sessionName, shortCwd } from '../lib/format';
 import { sortedSessions } from './SessionRail';
@@ -77,7 +77,7 @@ export function GridOverview() {
               ) : (
                 <span className="oc-act quiet">{s.state === 'idle' ? `Idle · ${ago(s.lastTs)}` : s.state === 'thinking' ? 'Thinking' : 'Working'}</span>
               )}
-              <span className="oc-say">{lastSay?.text ?? s.title ?? shortCwd(s.cwd)}</span>
+              <span className={`oc-say${s.recap ? ' recap' : ''}`} title={s.recap ? `Recap, ${ago(s.recap.at)} ago` : undefined}>{(s.recap ? recapText(s.recap.text) : "") || (lastSay?.text ?? s.title ?? shortCwd(s.cwd))}</span>
             </div>
           </button>
         );

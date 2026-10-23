@@ -4,10 +4,13 @@
  * scattered subsequence matches nearly any long reply.
  */
 
-export type GroupId = 'recent' | 'session' | 'older' | 'new' | 'transcript' | 'explain' | 'note' | 'command';
+export type GroupId = 'recent' | 'session' | 'idle' | 'ended' | 'older' | 'new' | 'transcript' | 'explain' | 'note' | 'command';
 export const GROUP_LABEL: Record<GroupId, string> = {
   recent: 'Recent',
-  session: 'Sessions',
+  // sessions as the nav groups them: working (and needing you), idle, then ended and removed ones
+  session: 'Working',
+  idle: 'Idle',
+  ended: 'Ended',
   older: 'Older sessions',
   new: 'New session',
   transcript: 'In transcripts',
@@ -117,9 +120,11 @@ export type RankOptions = {
   /** most shown per group */
   caps?: Partial<Record<GroupId, number>>;
 };
-const CAPS: Record<GroupId, number> = { recent: 6, session: 8, older: 5, new: 4, transcript: 8, explain: 5, note: 6, command: 7 };
+const CAPS: Record<GroupId, number> = { recent: 6, session: 8, idle: 8, ended: 5, older: 5, new: 4, transcript: 8, explain: 5, note: 6, command: 7 };
+/** The sessions' groups: listed with no query too. */
+const SESSION_GROUPS = new Set<GroupId>(['session', 'idle', 'ended']);
 /** Group order with no query: what you most likely want first. */
-const IDLE_ORDER: GroupId[] = ['recent', 'session', 'command', 'new', 'explain', 'note', 'older', 'transcript'];
+const IDLE_ORDER: GroupId[] = ['recent', 'session', 'idle', 'command', 'new', 'explain', 'note', 'ended', 'older', 'transcript'];
 
 /**
  * Score, group and cap. With a query, groups come in order of their best item (so Enter takes the best match
@@ -148,7 +153,7 @@ export function rank<E extends Entry>(entries: E[], query: string, o: RankOption
       add('recent', { e, score: 0, labelHits: [], detailHits: [] });
     }
     for (const e of entries) {
-      if (picked.has(e.id) || (e.group !== 'session' && !e.featured)) continue;
+      if (picked.has(e.id) || (!SESSION_GROUPS.has(e.group) && !e.featured)) continue;
       add(e.group, { e, score: e.boost ?? 0, labelHits: [], detailHits: [] });
     }
     return IDLE_ORDER.filter((g) => by.has(g)).map((g) => ({ id: g, items: by.get(g)!.sort((a, b) => b.score - a.score).slice(0, caps[g]) }));

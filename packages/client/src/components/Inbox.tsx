@@ -148,6 +148,9 @@ function Detail({ i, readAt }: { i: InboxItem; readAt: number | null }) {
   const start = () => {
     const cwd = session?.cwd;
     if (i.source === 'jira') return openNewSession(cwd, 'jira', { ticket: { key: i.key.replace(/^jira:/, '') } });
+    // a GitLab to-do about an issue: started from the issue itself
+    const gl = i.source === 'gitlab' ? /^gl:(.+)#(\d+)$/.exec(i.key) : null;
+    if (gl) return openNewSession(cwd, 'gitlab', { issue: { project: gl[1], iid: Number(gl[2]) } });
     openNewSession(cwd, 'blank', { brief: sessionBrief(i) });
   };
   const open = () => {

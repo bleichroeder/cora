@@ -1,8 +1,9 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { create } from 'zustand';
 import { useWeb } from '../state/web';
 import { browserDockOf, useBoardDock } from '../state/boardDock';
 import { useTools } from '../state/tools';
-import { BROWSER_ID, browserGroup, partitionOfGroup, profileOfGroup, useBrowserProfile, useBrowserSettings } from '../state/browser';
+import { BROWSER_ID, browserGroup, panelGroup, partitionOfGroup, profileOfGroup, useBrowserProfile, useBrowserSettings, usePanelProfile } from '../state/browser';
 import { openSettings } from './SettingsModal';
 import { hostOf, openOpMenu, useOp } from '../state/onepassword';
 import './onepassword.css';
@@ -199,7 +200,8 @@ function BrowserView({ group, shown, keys, buttons, intro }: { group: string; sh
       if (k === 't' && !e.shiftKey) useWeb.getState().newTab(group);
       else if (k === 'l' && !e.shiftKey) input.current?.focus();
       else if (k === 'f' && !e.shiftKey) openFind(group);
-      else if (k === 'tab') useWeb.getState().cycle(group, e.shiftKey ? -1 : 1);
+      // (only while you're in the browser: elsewhere Ctrl+Tab switches sessions)
+      else if (k === 'tab' && t?.closest?.('.web-pane')) useWeb.getState().cycle(group, e.shiftKey ? -1 : 1);
       else return;
       e.preventDefault();
     };
@@ -571,6 +573,8 @@ export function WebPane({ view, sessionId }: { view: React.RefObject<HTMLDivElem
   const shown = !!s?.shown && !!active;
   // the Browser tool in the drawer, in front of it, takes the browser shortcuts
   const behind = useTools((t) => t.open === BROWSER_ID);
+  // (you're in this session's Browser panel: the shortcuts are the panel's)
+  const panelIn = usePanelIn((p) => p.sid === sessionId);
   const [rect, setRect] = useState<React.CSSProperties>({});
   const [dragging, setDragging] = useState(false);
   // a Browser panel on the live board: laid over it, following it as it moves and resizes (never moved itself)
@@ -654,7 +658,7 @@ export function WebPane({ view, sessionId }: { view: React.RefObject<HTMLDivElem
       <BrowserView
         group={sessionId}
         shown={shown}
-        keys={!behind}
+        keys={!behind && !panelIn}
         intro="Each session keeps its own tabs. Links you click in the app open here (Ctrl+click uses your usual browser); sign in to a site once and every session's tabs share it."
         buttons={
           <>
@@ -681,7 +685,7 @@ export function BrowserTool({ visible }: { visible: boolean }) {
   const profiles = useBrowserSettings((b) => b.profiles);
   const picked = useBrowserProfile((p) => p.id);
   const sessions = useBrowserSettings((b) => b.sessions);
-  const profile = !profiles.length ? '' : profiles.some((p) => p.id === picked) ? picked : (profiles.find((p) => p.id === sessions) ?? profiles.find((p) => p.partition === 'persist:web') ?? profiles[0]).id;
+  const profile = !profiles.length ? '' : profiles.some((p) => p.id === picked) ? picked : defaultProfile(profiles, sessions);
   const group = browserGroup(profile);
   const n = useWeb((w) => w.sessions[group]?.tabs.length ?? 0);
   const active = useWeb((w) => !!w.sessions[group]?.active);
@@ -702,7 +706,51 @@ export function BrowserTool({ visible }: { visible: boolean }) {
         shown={visible && active}
         keys={visible}
         intro="Cora's own browser: its tabs belong to no session. Links with nowhere better to go open here (an Inbox item with no Tool for its site). Sign in to a site once and every tab of this profile shares it."
-        buttons={profiles.length > 1 ? <ProfileSwitch profiles={profiles} current={profile} /> : null}
+        buttons={profiles.length > 1 ? <ProfileSwitch profiles={profiles} current={profile} pick={(id) => useBrowserProfile.getState().set(id)} groupOf={browserGroup} /> : null}
+      />
+    </div>
+  );
+}
+
+/** The profile a list of profiles defaults to: the one sessions use, else the browser's own, else the first. */
+const defaultProfile = (profiles: Array<{ id: string; partition: string }>, sessions?: string) => (profiles.find((p) => p.id === sessions) ?? profiles.find((p) => p.partition === 'persist:web') ?? profiles[0]).id;
+
+/**
+ * A Browser panel on the live board: a browser of its own, apart from the session's (which keeps its place and still
+ * gets the links you open and Claude's tabs). Its own tabs, with a profile switcher like Chrome's (each profile's tabs
+ * kept as they were). Its shortcuts are live while you're in it.
+ */
+/** The session whose Browser panel you're in: its shortcuts are the panel's then, not the session browser's. */
+const usePanelIn = create<{ sid: string | null }>(() => ({ sid: null }));
+
+export function PanelBrowser({ sessionId }: { sessionId: string }) {
+  const profiles = useBrowserSettings((b) => b.profiles);
+  const sessions = useBrowserSettings((b) => b.sessions);
+  const picked = usePanelProfile((p) => p.by[sessionId]);
+  const profile = !profiles.length ? '' : picked && profiles.some((p) => p.id === picked) ? picked : defaultProfile(profiles, sessions);
+  const group = panelGroup(sessionId, profile);
+  const n = useWeb((w) => w.sessions[group]?.tabs.length ?? 0);
+  const active = useWeb((w) => !!w.sessions[group]?.active);
+  // it always has a tab: a new one to start, and again after its last is closed
+  useEffect(() => {
+    if (!n) useWeb.getState().newTab(group);
+  }, [n, group]);
+  const [inside, setIn] = useState(false);
+  const setInside = (on: boolean) => (setIn(on), usePanelIn.setState({ sid: on ? sessionId : null }));
+  useEffect(() => () => usePanelIn.setState((p) => (p.sid === sessionId ? { sid: null } : p)), [sessionId]);
+  return (
+    <div
+      className="web-pane panel-browser"
+      onPointerDownCapture={() => setInside(true)}
+      onFocusCapture={() => setInside(true)}
+      onBlurCapture={(e) => !e.currentTarget.contains(e.relatedTarget as Node | null) && setInside(false)}
+    >
+      <BrowserView
+        group={group}
+        shown={active}
+        keys={inside}
+        intro="This panel's own browser: its tabs are apart from the session's (links you open and Claude's tabs go there). Pick a profile to browse as; each keeps its own tabs and sign-ins."
+        buttons={profiles.length > 1 ? <ProfileSwitch profiles={profiles} current={profile} pick={(id) => usePanelProfile.getState().set(sessionId, id)} groupOf={(id) => panelGroup(sessionId, id)} /> : null}
       />
     </div>
   );
@@ -713,7 +761,7 @@ const AVATAR = ['#f472b6', '#38bdf8', '#a78bfa', '#34d399', '#fbbf24', '#fb923c'
 const avatarOf = (id: string) => AVATAR[[...id].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7) % AVATAR.length];
 
 /** Chrome's profile button: who you're browsing as; pick another (its tabs come back as they were). */
-function ProfileSwitch({ profiles, current }: { profiles: Array<{ id: string; name: string }>; current: string }) {
+function ProfileSwitch({ profiles, current, pick, groupOf }: { profiles: Array<{ id: string; name: string }>; current: string; pick(id: string): void; groupOf(id: string): string }) {
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLSpanElement>(null);
   const me = profiles.find((p) => p.id === current);
@@ -729,7 +777,7 @@ function ProfileSwitch({ profiles, current }: { profiles: Array<{ id: string; na
     };
   }, [open]);
   const web = useWeb();
-  const count = (id: string) => web.sessions[browserGroup(id)]?.tabs.filter((t) => web.tabs[t]?.url).length ?? 0;
+  const count = (id: string) => web.sessions[groupOf(id)]?.tabs.filter((t) => web.tabs[t]?.url).length ?? 0;
   return (
     <span className="web-prof" ref={box}>
       <button className={`web-prof-b${open ? ' on' : ''}`} title={`${me?.name ?? 'You'}: switch profile`} onClick={() => setOpen(!open)}>
@@ -741,7 +789,7 @@ function ProfileSwitch({ profiles, current }: { profiles: Array<{ id: string; na
         <div className="web-prof-menu" role="menu">
           <div className="wpm-h">Profiles</div>
           {profiles.map((p) => (
-            <button key={p.id} role="menuitemradio" aria-checked={p.id === current} className={p.id === current ? 'on' : ''} onClick={() => (useBrowserProfile.getState().set(p.id), setOpen(false))}>
+            <button key={p.id} role="menuitemradio" aria-checked={p.id === current} className={p.id === current ? 'on' : ''} onClick={() => (pick(p.id), setOpen(false))}>
               <span className="web-av" style={{ background: avatarOf(p.id) }}>
                 {p.name.slice(0, 1).toUpperCase()}
               </span>

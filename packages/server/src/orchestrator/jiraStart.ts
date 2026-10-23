@@ -124,7 +124,7 @@ export class JiraStarts {
     }
     const why = p.why?.trim() || cands.find((c) => norm(c.cwd) === norm(cwd))?.why || "Cora's pick";
     const folders = [{ cwd, why }, ...cands.filter((c) => norm(c.cwd) !== norm(cwd))].slice(0, MAX_FOLDERS);
-    const open = this.d.approvals.list().find((a) => a.ticket?.key === key);
+    const open = this.d.approvals.list().find((a) => a.ticket?.key === key && a.ticket.source !== 'gitlab');
     if (open && !this.d.userTurn()) return { ok: true, text: `Its card is already waiting on the user.` };
     // the user asked for it in their own words: that's the OK
     if (open) await this.d.approvals.decide(open.id, { ok: false });
@@ -173,13 +173,13 @@ export class JiraStarts {
 
   /** Tickets with a start card up. */
   offered(): string[] {
-    return this.d.approvals.list().flatMap((a) => (a.ticket ? [a.ticket.key] : []));
+    return this.d.approvals.list().flatMap((a) => (a.ticket && a.ticket.source !== 'gitlab' ? [a.ticket.key] : []));
   }
 
   /** The watcher's word on which offered tickets are still yours: the others' cards go. */
   still(keys: string[]): void {
     for (const a of this.d.approvals.list()) {
-      if (!a.ticket || keys.includes(a.ticket.key)) continue;
+      if (!a.ticket || a.ticket.source === 'gitlab' || keys.includes(a.ticket.key)) continue;
       this.d.note(`${a.ticket.key} isn't assigned to the user any more: its start card is gone.`);
       void this.d.approvals.decide(a.id, { ok: false });
     }

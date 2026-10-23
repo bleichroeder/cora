@@ -1,4 +1,5 @@
 import type { SessionInfo, SessionState } from '@cora/shared';
+import { isDismissed } from './format';
 import { useBrain } from '../state/store';
 
 /**
@@ -10,6 +11,14 @@ export const GROUPS: Array<{ title: string; states: SessionState[] }> = [
   { title: 'idle', states: ['idle'] },
   { title: 'ended', states: ['ended'] },
 ];
+/** How long an ended session stays in the list (then it's in Resume, with everything else from before). */
+export const ENDED_KEEP_MS = 4 * 3600_000;
+/**
+ * In the session list: not removed, and live or ended within the last few hours. The session you're looking at stays
+ * listed whatever its age (you went to it, from Resume or the palette).
+ */
+export const inList = (s: SessionInfo, now: number, focus: string | null): boolean =>
+  !isDismissed(s) && (s.state !== 'ended' || now - s.lastTs < ENDED_KEEP_MS || s.id === focus);
 const RANK: Record<SessionState, number> = { 'needs-you': 0, working: 0, thinking: 0, idle: 1, ended: 2 };
 export const sameGroup = (a: SessionInfo, b: SessionInfo) => RANK[a.state] === RANK[b.state];
 

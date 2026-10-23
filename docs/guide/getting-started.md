@@ -78,6 +78,7 @@ follows them live. You can bring any of them into Cora with **Resume**. See [Ses
 
 New versions download in the background. When one is ready, **Restart to update** appears at the bottom of the left
 nav (and in the tray menu). Cora restarts on the new version; sessions running in Cora keep running and reconnect.
+**Settings › Updates & security** shows the version you're on and the latest release.
 
 ## The window and the tray
 

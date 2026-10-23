@@ -2,6 +2,46 @@
 
 What changed in each release. Cora updates itself; each update's notes are on its release page too.
 
+## 0.1.6
+
+- **Memes.** A board panel the session fills itself: a wall of memes from popular templates captioned by Claude,
+  GIFs (with your Giphy key), and memes Claude draws itself (kept in memory only, never on disk), when something
+  happens. Off until you turn it on (Settings › Sessions › Memes).
+- **+ Panel is readable:** each panel with its icon and two lines on what it shows, grouped and tinted, with a search.
+- **Session switcher:** Ctrl+Tab, or Alt+← / Alt+→, as Windows' Alt+Tab, with a picture of each session as you last
+  saw it. The palette groups sessions as the nav does.
+- **GitLab:** its own Settings page (connected or not), and an issue assigned to you can be offered or started.
+- **Start a session from a GitLab issue.** New session › **From a GitLab issue** lists your open issues (or take a
+  pasted link), starts in your checkout of its project, and begins with the issue summed up and the code diagnosed,
+  changing nothing until you say. The session is named after it, with its `#number` to open it; GitLab to-dos about
+  issues start the same way from the Inbox.
+- **The board's Browser panel is a browser of its own**, with its own tabs and profile switcher; the session's browser
+  keeps its place and its links.
+- **Recaps.** Claude Code's recaps (the "where it stands, what's next" it writes when you come back to a session) are
+  kept as long as Cora keeps history. The latest shows between the transcript and the composer, on the session's
+  Overview card, and beside the nav when you rest on a session; the board has a **Recap** panel (and the Spotlight
+  shows a fresh one). Cora starts its briefs and wrap-ups from them.
+- **The morning brief comes when you open Cora**, not at your first click, and isn't lost when Cora is still starting.
+- **Voice direction** goes to ElevenLabs as a short audio tag (a whole description was sometimes read aloud);
+  Settings shows what's sent.
+- **Google sign-in works in Cora's browser.** It shows itself as Chrome does (Electron 44 had left Chrome out of its
+  user agent, and Google turned it away as an embedded browser), so each profile can sign in to Google.
+- **Settings › Updates & security.** An installed Cora shows the version you're on, the latest release (with its
+  notes), what it runs on (Electron, Chromium, Node.js) and **Restart to update** when one is ready: security fixes
+  come with Cora's updates. Running from source, the page says its checks are about your checkout, and that a fix
+  reaches installed copies when you publish a release.
+- **A simpler session list.** It holds what's open: Working, Idle, and what ended in the last four hours. Older
+  sessions and ones you removed are in **Resume**, which can now **View** one without resuming it and marks the ones
+  you removed. No more **Show earlier** or hidden group.
+- **Nothing open, nothing shown.** End or remove the session you're watching and Cora moves to a live one, or says
+  **Nothing open** when there's none, instead of keeping the last transcript up.
+- **First run.** A new install goes straight to setting Cora up (no flash of the app first), with Cora's orb on it;
+  **Restart to update** no longer covers the sessions in the nav.
+- **Starting up** shows Cora's live orb, in your colour, with what it's waiting on.
+- **Nothing open** is a page in your colour: Cora's orb, New session, and your last few sessions a click away.
+- **Explains panel:** its cards size themselves to fit the panel (no scrolling when they can fit), with Pop out on
+  each card's corner.
+
 ## 0.1.5
 
 - **Switching sessions is calmer:** the new one fades in, with no zoom.

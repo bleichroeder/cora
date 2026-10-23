@@ -20,3 +20,5 @@ export * from './onepassword';
 export * from './explains';
 export * from './gitlabTodos';
 export * from './accountUsage';
+export * from './gitlabIssue';
+export * from './memes';

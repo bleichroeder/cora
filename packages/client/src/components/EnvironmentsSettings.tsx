@@ -97,29 +97,80 @@ export function EnvironmentsSection({ server, save }: { server?: Settings | null
           </button>
         </Row>
       </Group>
-      {server && save ? (
-        <Group label="Pipelines and Deploys">
-          <DeploysRows server={server} save={save} />
-        </Group>
-      ) : null}
     </Section>
   );
 }
 
-/** Where pipelines and Deploys read from (GitLab) (a Group's rows). */
-function DeploysRows({ server, save }: { server: Settings; save(p: object): Promise<string | null | void> }) {
+/**
+ * Settings › GitLab: which GitLab (pipelines, merge requests and Deploys read from it), your to-dos into the Inbox,
+ * and what happens when an issue is assigned to you. All through the glab CLI; Cora never changes anything there.
+ */
+export function GitlabSection({ server, save }: { server?: Settings | null; save(p: object): Promise<string | null | void> }) {
+  return (
+    <Section id="gitlab" title="GitLab" intro="Pipelines, merge requests, Deploys, your to-dos and issues, read with the glab CLI (it must be signed in: glab auth login). Cora never changes anything in GitLab.">
+      {server ? <GitlabRows server={server} save={save} /> : null}
+    </Section>
+  );
+}
+
+/** GitLab as Cora reaches it (glab signed in, as whom; or why not). */
+export type GitlabStatus = { state: 'connected' | 'signed-out' | 'no-glab' | 'offline' | 'error'; host: string; user?: string; name?: string; error?: string };
+export const fetchGitlabStatus = (force = false): Promise<GitlabStatus | null> =>
+  fetch(`/api/gitlab/status${force ? '?force=1' : ''}`)
+    .then((r) => (r.ok ? (r.json() as Promise<GitlabStatus>) : null))
+    .catch(() => null);
+
+/** GitLab's rows: its site, your to-dos, an issue assigned to you. */
+function GitlabRows({ server, save }: { server: Settings; save(p: object): Promise<string | null | void> }) {
   const [host, setHost] = useState(server.gitlab?.host ?? 'gitlab.com');
   const [err, setErr] = useState<string | null>(null);
+  // who glab is signed in as there (asked again after the site changes, or on Check again)
+  const [st, setSt] = useState<GitlabStatus | null>(null);
+  const [checking, setChecking] = useState(false);
+  const check = async (force = false) => {
+    setChecking(true);
+    const s = await fetchGitlabStatus(force);
+    setSt(s);
+    setChecking(false);
+  };
+  useEffect(() => void check(), []);
   const saveHost = async () => {
     const h = host.trim().toLowerCase();
     if (!h || h === server.gitlab?.host) return;
     setErr(null);
     const e = await save({ gitlab: { host: h } }).catch((x: Error) => x.message);
     if (e) setErr(`Couldn't save it: ${e}`);
+    else void check(true);
   };
   return (
     <>
-      <Row label="GitLab" hint="Where pipelines and Deploys read from. glab must be signed in to it (glab auth login).">
+      <Row
+        label={
+          <span className="env-name">
+            <span className={`dl-glyph ${st?.state === 'connected' ? 'ok' : st ? 'idle' : 'run'}`} />
+            Connection
+          </span>
+        }
+        hint={
+          !st
+            ? 'Checking…'
+            : st.state === 'connected'
+              ? `Signed in to ${st.host}${st.user ? ` as @${st.user}` : ''} (glab).`
+              : st.state === 'signed-out'
+                ? `glab isn't signed in to ${st.host}: run glab auth login${st.host === 'gitlab.com' ? '' : ` --hostname ${st.host}`} in a terminal, then Check again.`
+                : st.state === 'no-glab'
+                  ? "GitLab is read with the glab CLI, and it isn't installed (or isn't on the PATH)."
+                  : st.state === 'offline'
+                    ? `${st.host} is out of reach (the VPN?).`
+                    : (st.error ?? 'glab failed')
+        }
+      >
+        <span className="dim">{st?.state === 'connected' ? 'connected' : st ? 'not connected' : '…'}</span>
+        <button className="btn" disabled={checking} onClick={() => void check(true)}>
+          <Icon name="RefreshCw" size={12} /> {checking ? 'Checking…' : 'Check again'}
+        </button>
+      </Row>
+      <Row label="Site" hint="Where pipelines, merge requests, Deploys and issues are read from. glab must be signed in to it (glab auth login).">
         <input className="set-input code" style={{ width: 220 }} value={host} spellCheck={false} placeholder="gitlab.com" onChange={(e) => setHost(e.target.value)} onBlur={() => void saveHost()} onKeyDown={(e) => e.key === 'Enter' && void saveHost()} />
       </Row>
       <Toggle
@@ -128,6 +179,18 @@ function DeploysRows({ server, save }: { server: Settings; save(p: object): Prom
         checked={server.gitlab?.todos !== false}
         onChange={(on) => void save({ gitlab: { todos: on } })}
       />
+      <Row
+        label="When an issue is assigned to you"
+        hint={
+          (server.gitlab?.start ?? 'offer') === 'tell'
+            ? 'It comes into the Inbox (with your to-dos on); start it from there.'
+            : (server.gitlab?.start ?? 'offer') === 'offer'
+              ? 'A card offers to start it in your checkout of its project (pick another folder if you like). Needs Cora on.'
+              : 'It starts by itself in your checkout of its project, in plan mode: it sums the issue up and diagnoses it, then waits for you. At most 2 at a time; beyond that, or with no checkout, it offers instead. Needs Cora on.'
+        }
+      >
+        <Choice value={server.gitlab?.start ?? 'offer'} onChange={(v) => void save({ gitlab: { start: v } })} options={[['tell', 'Just tell me'], ['offer', 'Offer to start it'], ['auto', 'Start it on its own']]} />
+      </Row>
       {err ? <div className="ny-err">{err}</div> : null}
     </>
   );

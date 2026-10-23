@@ -7,13 +7,14 @@ To see what a session is doing while it works, read [Seeing the work](seeing-the
 
 ## The session list
 
-The list on the left holds every session Cora knows about, in three groups:
+The list on the left holds what's open: every live session, and the ones that ended in the last few hours. It has
+three groups:
 
 | Group | What it means |
 |---|---|
 | **Working** | Claude is busy: thinking, running tools, or waiting on a subagent. A session that **needs you** stays here too, lit red. |
 | **Idle** | Claude finished its turn and is waiting for you to say something. A session also goes idle after ten minutes with no activity. |
-| **Ended** | Claude Code has quit, or the session has been silent for 30 minutes and isn't running in Cora. |
+| **Ended** | Claude Code has quit, or the session has been silent for 30 minutes and isn't running in Cora. It stays here for four hours, then leaves the list by itself. |
 
 **Needs you** means Claude is stopped on something only you can answer: a permission prompt ("may I run this
 command?"), a question with options, or a form from one of its tools. It isn't a group of its own. The session keeps
@@ -23,10 +24,14 @@ Each group heading shows a count. Next to it:
 
 - A **red count** is how many sessions need you. Click it to go to the first one.
 - A **blue count** on **Idle** is how many finished while you were looking elsewhere. Click it to go to the newest.
-- **clear** on **Ended** hides every ended session.
+- **clear** on **Ended** takes every ended session off the list.
 
 **Idle** and **Ended** fold away when you click their heading, and Cora remembers which you folded. **Ended** starts
-folded and shows only the last hour; **+ N older** shows the rest.
+folded.
+
+Everything else, older sessions and ones you removed, is in **Resume** (see [Resume and fork](#resume-and-fork)): the
+list is what's open, and Resume is the past. When nothing is open, the main view says so instead of showing the last
+session you looked at.
 
 New sessions appear on their own, including ones you start in any other terminal: Cora reads Claude Code's
 transcripts, and with Cora's hooks installed it follows each session live and receives its permission prompts (see
@@ -54,6 +59,18 @@ The order is yours, and nothing reshuffles by itself. Drag a row to move it with
 **Move down** in its right-click menu. New sessions you haven't placed go below the ones you have. Ended sessions are
 history, so they're always newest first.
 
+### Recaps
+
+When you come back to a session after a while away, Claude Code writes a short **recap**: where it stands and what's
+next. Cora keeps them (as long as it keeps history) and shows the latest:
+
+- between the transcript and the composer (**※ recap**). Click it for all of it, **×** to put it away until the next.
+- on the session's card in the **Overview**, as its summary.
+- beside the nav when you rest the pointer on a session.
+
+The board's **Recap** panel lists them all, newest first. Cora's briefs start from them. Recaps come from Claude Code;
+turn them off there (`/config`) if you don't want them.
+
 ## Naming, colours and the right-click menu
 
 Right-click any session for its menu:
@@ -65,7 +82,7 @@ Right-click any session for its menu:
 - **Move up** and **Move down.**
 - **Not about ACME-123.** Shown when Cora linked the session to a ticket that isn't really its subject: the ticket card
   goes, and the session is no longer named after it.
-- **Remove from the list**, or **Show in the list again** for one you removed.
+- **Remove from the list.**
 - **End session…** for a session that's still running.
 
 To name every new session automatically from its first prompt, turn on **Name new sessions** in **Settings ›
@@ -73,16 +90,14 @@ Sessions**. It costs a little (one short call per session), and a name you give 
 
 ## Removing sessions from the list
 
-Removing a session hides it; nothing is deleted. Its transcript stays on disk, and you can
-[resume it](#resume-and-fork) any time.
+Removing a session takes it off the list; nothing is deleted. Its transcript stays on disk, and **Resume** still has
+it (marked *removed from the list*), to view, resume or fork.
 
-- **×** on an ended session, or **Remove from the list** in its menu, hides it.
-- **clear** on the **Ended** heading, or **Clear ended** in **Settings › Sessions**, hides all ended sessions at once.
-- A hidden session comes back by itself if it gets new activity.
-- When you've hidden some, **N dismissed · show** appears under the list. Click it to see them again (faded), and
-  **hide dismissed** to put them away.
+- **×** on an ended session, or **Remove from the list** in its menu, takes it off.
+- **clear** on the **Ended** heading, or **Clear ended** in **Settings › Sessions**, takes all ended sessions off at once.
+- A removed session comes back by itself if it gets new activity.
 
-A session that's running in Cora can't be hidden: end it first.
+A session that's running in Cora can't be removed: end it first.
 
 ## Ending a session
 
@@ -100,7 +115,7 @@ Ending a session never deletes it. Its history stays, and you can resume it late
 ## Starting a new session
 
 Click **New** at the top of the list (or choose **New session…** in the command palette, or in the tray menu). The
-**New session** dialog has two tabs: **Blank** and **From a Jira ticket**.
+**New session** dialog has three tabs: **Blank**, **From a Jira ticket** and **From a GitLab issue**.
 
 ### Folder
 
@@ -138,6 +153,16 @@ starts on that ticket: with your own `/jira` command when you have one, or with 
 ticket for Claude. **Settings › Jira** decides which. Listing your open issues needs the desktop app and a Jira
 sign-in; pasting a key always works. See [Integrations](integrations.md).
 
+### From a GitLab issue
+
+On the **From a GitLab issue** tab, pick one of your open issues (assigned to you, in any project) or paste an issue
+link or a reference (`group/project#123`). Cora reads the issue with `glab` and picks the folder that's your checkout of
+its project, when one of your recent folders is. The session starts with Cora's issue prompt: the issue's details
+(its description quoted as information, not instructions), then *sum it up, diagnose the code with file paths and
+lines, and change nothing until you say how to proceed*. The session is named after the issue, with its `#number`
+beside the folder (and in the header) to open it. A GitLab to-do about an issue in the Inbox starts the same way.
+Listing issues needs `glab` signed in to your GitLab (Settings › GitLab).
+
 You can also start a session from something in Cora's Inbox, with a first message already written for you to edit.
 See [Cora, the assistant](cora.md).
 
@@ -146,6 +171,7 @@ See [Cora, the assistant](cora.md).
 Every Claude Code session is saved on disk, so you can always pick one up again. Click **Resume** at the top of the
 list to open **Resume a session**. It lists your recent sessions under **Today**, **Yesterday** and **Earlier**.
 
+- **View** (for a session Cora still has: one from the last day) shows it here without resuming it.
 - **Resume** continues the conversation in Cora, with all its history. Make sure it isn't open in another terminal
   first: one conversation running in two places splits in two.
 - **Fork** starts a copy that goes its own way. The original is left as it was.
@@ -176,7 +202,7 @@ almost everything in Cora.
 
 | Group | What you find |
 |---|---|
-| **Sessions** | The sessions in your list, with their state. |
+| **Working**, **Idle**, **Ended** | Your sessions, grouped as the nav groups them. Ended and removed ones come last, so the live ones are easy to reach. (To flick between live ones, `Ctrl+Tab` is quicker.) |
 | **Older sessions** | Saved sessions that aren't in your list, ready to resume. |
 | **New session** | Your starters, and "New session in …" for your recent folders. |
 | **In transcripts** | Lines from your sessions' transcripts (type three letters or more). |
@@ -308,6 +334,7 @@ of the desktop app.
 | Key | Where | Does |
 |---|---|---|
 | `Ctrl+K` | Anywhere | Open the command palette |
+| `Ctrl+Tab` (hold `Ctrl`), or `Alt+←` `Alt+→` (hold `Alt`) | Anywhere (in the browser, `Ctrl+Tab` is its tabs) | Switch sessions: your live sessions line up as previews; `→` or `Tab` steps on (the last one first), `←` or `Shift+Tab` back, let go to go there; `Esc` cancels |
 | `G` | Not typing | Open or close the overview |
 | `` Ctrl+Shift+` `` | A session | New shell tab |
 | `Enter` / `Ctrl+Enter` | Composer | Send (as set in **Settings › Terminal**) |

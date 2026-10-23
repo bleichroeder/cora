@@ -41,6 +41,10 @@ export const SPEAK_TOOL = 'mcp__cora__speak';
 export const ENV_TOOL = 'mcp__cora__environment';
 /** What each environment runs, newest builds, a ticket's journey: read-only, for every session. */
 export const DEPLOYS_TOOL = 'mcp__cora__deploys';
+/** a session's meme or GIF for the board's Meme panel */
+export const MEME_TOOL = 'mcp__cora__meme';
+/** Where Cora's releases are published (its updater reads them; Settings shows the latest). */
+export const CORA_RELEASES = { owner: 'bleichroeder', repo: 'cora' };
 
 /** What Cora answers to /api/hello?n=<nonce>: proof it holds Cora's key, without sending it (audit S17). */
 export const HELLO_PREFIX = 'cora-hello:';

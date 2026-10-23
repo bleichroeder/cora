@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { EFFORTS, PERMISSION_MODES, coraTicketPrompt, issueUrl, jiraPrompt, type HistoryItem, type LaunchOptions, type LaunchPreset, type PermissionMode, type Settings } from '@cora/shared';
+import { EFFORTS, PERMISSION_MODES, coraIssuePrompt, coraTicketPrompt, issueUrl, jiraPrompt, type HistoryItem, type LaunchOptions, type LaunchPreset, type PermissionMode, type Settings } from '@cora/shared';
 import { useBrain } from '../state/store';
 import { fetchDirs, fetchHistory, launchTerminal } from '../state/ws';
-import { ago, hashColor, shortCwd } from '../lib/format';
+import { ago, hashColor, isDismissed, shortCwd } from '../lib/format';
+import { showSession } from './SessionMenu';
 import { Icon } from './Icon';
 import { TicketPicker, type PickedTicket } from './TicketPicker';
+import { IssuePicker, fetchIssue, type PickedIssue } from './IssuePicker';
 import { jiraSite, lookupIssue } from '../state/jira';
 import './dialogs.css';
 
@@ -74,14 +76,16 @@ async function savePresets(presets: LaunchPreset[]): Promise<{ ok: boolean; erro
 
 /** The folder the next New session dialog starts in (the command palette's "pick options" for a folder), and its tab. */
 let startIn: string | null = null;
-let startTab: 'blank' | 'jira' = 'blank';
-/** a ticket picked already, or a first message (Start a session from the Inbox) */
+let startTab: 'blank' | 'jira' | 'gitlab' = 'blank';
+/** a ticket or an issue picked already, or a first message (Start a session from the Inbox) */
 let startTicket: PickedTicket | null = null;
+let startIssue: PickedIssue | null = null;
 let startBrief: string | null = null;
-export function openNewSession(cwd?: string, tab: 'blank' | 'jira' = 'blank', o: { ticket?: PickedTicket; brief?: string } = {}) {
+export function openNewSession(cwd?: string, tab: 'blank' | 'jira' | 'gitlab' = 'blank', o: { ticket?: PickedTicket; issue?: PickedIssue; brief?: string } = {}) {
   startIn = cwd ?? null;
   startTab = tab;
   startTicket = o.ticket ?? null;
+  startIssue = o.issue ?? null;
   startBrief = o.brief ?? null;
   useBrain.getState().setModal('new-session');
 }
@@ -124,13 +128,32 @@ export function NewSessionModal() {
     return b;
   });
   const fromTicket = tab === 'jira';
+  // From a GitLab issue: Cora's first message from the issue as glab reads it, in the folder that's its project's checkout
+  const fromIssue = tab === 'gitlab';
+  const [issue, setIssue] = useState<PickedIssue | null>(() => {
+    const i = startIssue;
+    startIssue = null;
+    return i;
+  });
+  const [gitlabHost, setGitlabHost] = useState('');
 
   useEffect(() => {
     void fetch('/api/settings')
       .then((r) => r.json())
-      .then((s: Settings) => setPresets(s.presets ?? []))
+      .then((s: Settings) => (setPresets(s.presets ?? []), setGitlabHost(s.gitlab?.host ?? 'gitlab.com')))
       .catch(() => {});
   }, []);
+  // an issue picked: start in your checkout of its project, when one of your folders is
+  useEffect(() => {
+    if (!fromIssue || !issue) return;
+    let live = true;
+    void fetch('/api/gitlab/issue-folder', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ project: issue.project, folders: recent }) })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j: { folder: string | null } | null) => live && j?.folder && setPath(j.folder))
+      .catch(() => {});
+    return () => void (live = false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fromIssue, issue?.project]);
   useEffect(() => {
     const t = setTimeout(() => void fetchDirs(path).then(setListing), 200);
     return () => clearTimeout(t);
@@ -138,12 +161,22 @@ export function NewSessionModal() {
 
   const launch = async (cwd: string, options: LaunchOptions) => {
     if (fromTicket && !ticket) return setErr('Pick a ticket first (or paste its key).');
+    if (fromIssue && !issue) return setErr('Pick an issue first (or paste its link).');
     // one session per press: Enter held, or a double-click, waits for the first
     if (starting.current) return;
     starting.current = true;
     setBusy(true);
     setErr(null);
-    const first = fromTicket && ticket ? await ticketStart(ticket) : brief?.trim() ? { brief: brief.trim() } : {};
+    let first: { prompt: string } | { brief: string } | Record<string, never> = {};
+    if (fromIssue && issue) {
+      const r = await fetchIssue(issue);
+      if (!r.ok) {
+        starting.current = false;
+        setBusy(false);
+        return setErr(`Couldn't read ${issue.project}#${issue.iid}: ${r.error}`);
+      }
+      first = { brief: coraIssuePrompt(r.issue) };
+    } else first = fromTicket && ticket ? await ticketStart(ticket) : brief?.trim() ? { brief: brief.trim() } : {};
     const r = await launchTerminal({ mode: 'new', cwd, options, ...first }).finally(() => (starting.current = false));
     setBusy(false);
     if (!r.ok) setErr(r.error);
@@ -177,11 +210,14 @@ export function NewSessionModal() {
       onClose={close}
       extra={
         <div className="seg" role="tablist">
-          <button role="tab" aria-selected={!fromTicket} className={`seg-b${fromTicket ? '' : ' on'}`} onClick={() => setTab('blank')}>
+          <button role="tab" aria-selected={tab === 'blank'} className={`seg-b${tab === 'blank' ? ' on' : ''}`} onClick={() => setTab('blank')}>
             <Icon name="SquareTerminal" size={13} /> Blank
           </button>
           <button role="tab" aria-selected={fromTicket} className={`seg-b${fromTicket ? ' on' : ''}`} onClick={() => setTab('jira')}>
             <Icon name="Ticket" size={13} /> From a Jira ticket
+          </button>
+          <button role="tab" aria-selected={fromIssue} className={`seg-b${fromIssue ? ' on' : ''}`} onClick={() => setTab('gitlab')}>
+            <Icon name="CircleDot" size={13} /> From a GitLab issue
           </button>
         </div>
       }
@@ -200,13 +236,18 @@ export function NewSessionModal() {
           )}
           <span className="spacer" />
           <button className="btn ghost" onClick={close}>Cancel</button>
-          <button className="btn allow" disabled={busy || !!listing?.error || (fromTicket && !ticket)} onClick={() => void launch(folder, opts)} title={fromTicket && ticket ? `Starts Claude in ${folder} on ${ticket.key}` : `Starts Claude in ${folder}`}>
-            <Icon name="Play" size={13} /> {fromTicket ? (ticket ? `Start ${ticket.key} in ${here}` : 'Pick a ticket') : `Start in ${here}`}
+          <button
+            className="btn allow"
+            disabled={busy || !!listing?.error || (fromTicket && !ticket) || (fromIssue && !issue)}
+            onClick={() => void launch(folder, opts)}
+            title={fromTicket && ticket ? `Starts Claude in ${folder} on ${ticket.key}` : fromIssue && issue ? `Starts Claude in ${folder} on ${issue.project}#${issue.iid}` : `Starts Claude in ${folder}`}
+          >
+            <Icon name="Play" size={13} /> {fromTicket ? (ticket ? `Start ${ticket.key} in ${here}` : 'Pick a ticket') : fromIssue ? (issue ? `Start #${issue.iid} in ${here}` : 'Pick an issue') : `Start in ${here}`}
           </button>
         </>
       }
     >
-      {!fromTicket && brief != null ? (
+      {tab === 'blank' && brief != null ? (
         <>
           <div className="dlg-gl">First message</div>
           <textarea className="ns-brief" value={brief} rows={6} onChange={(e) => setBrief(e.target.value)} placeholder="What should it do?" autoFocus />
@@ -216,6 +257,12 @@ export function NewSessionModal() {
         <>
           <div className="dlg-gl">Ticket</div>
           <TicketPicker picked={ticket} onPick={setTicket} onStart={() => !busy && !listing?.error && void launch(folder, opts)} />
+        </>
+      ) : null}
+      {fromIssue ? (
+        <>
+          <div className="dlg-gl">Issue</div>
+          <IssuePicker host={gitlabHost} picked={issue} onPick={setIssue} onStart={() => !busy && !listing?.error && void launch(folder, opts)} />
         </>
       ) : null}
       {presets.length ? (
@@ -397,6 +444,9 @@ export function HistoryModal() {
   ].filter((g) => g.rows.length);
   const flat = groups.flatMap((g) => g.rows);
   const at = Math.min(sel, Math.max(0, flat.length - 1));
+  const known = useBrain((s) => s.sessions);
+  // read one Cora still has, without resuming it: it's back in the list while you look
+  const view = (sid: string) => (showSession(sid), close());
   useEffect(() => setSel(0), [q]);
   // braces, not an arrow's value: scrollIntoView returns a promise in newer Chromium, and an effect may only return its clean-up
   useEffect(() => {
@@ -488,10 +538,16 @@ export function HistoryModal() {
                     <b className={title ? '' : 'un'}>{title || <>Untitled <code>{h.sessionId.slice(0, 8)}</code></>}</b>
                     <span>
                       {shortCwd(h.cwd)} · {ago(h.mtime)} ago
+                      {known[h.sessionId] && isDismissed(known[h.sessionId]) ? <em className="hs-tag">removed from the list</em> : null}
                     </span>
                     {h.snippet ? <span className="hs-snip">…{h.snippet}…</span> : null}
                   </span>
                   <span className="hs-a">
+                    {known[h.sessionId] ? (
+                      <button className="btn ghost" onClick={() => view(h.sessionId)} title="Read it here without resuming it">
+                        <Icon name="Eye" size={12} /> View
+                      </button>
+                    ) : null}
                     <button className="btn allow" disabled={!h.cwd} onClick={() => void go(h, 'resume')} title="Make sure it isn't open in another terminal">
                       <Icon name="Play" size={12} /> Resume
                     </button>

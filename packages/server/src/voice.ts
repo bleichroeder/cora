@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { readFileSync, rmSync } from 'node:fs';
-import { DEFAULT_VOICE, type VoiceKeyInfo, type VoiceSettings, takesTags, takesStyle } from '@cora/shared';
+import { DEFAULT_VOICE, type VoiceKeyInfo, type VoiceSettings, directionTag, takesTags, takesStyle } from '@cora/shared';
 import { writeFileAtomic } from './fsx';
 import { readSecret, writeSecret } from './secrets';
 
@@ -191,6 +191,7 @@ export function spokenText(text: string, v: Pick<VoiceSettings, 'model' | 'deliv
     t = t.replace(new RegExp(`(?<![\\w-])${esc}(?![\\w-])`, 'gi'), p.to);
   }
   if (!takesTags(v.model)) return t.replace(TAG, '').replace(/ {2,}/g, ' ').trim();
-  const d = ((cora && v.coraDelivery?.trim()) || v.delivery?.trim() || '').replace(/^\[|\]$/g, '').trim();
-  return d ? `[${d}] ${t}` : t;
+  // as a proper audio tag (a few words): a description in brackets would be read aloud
+  const d = directionTag((cora && v.coraDelivery?.trim()) || v.delivery?.trim() || '');
+  return d ? `${d} ${t}` : t;
 }

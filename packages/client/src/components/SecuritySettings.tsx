@@ -38,15 +38,16 @@ function Bad({ children, level = 'high' }: { children: React.ReactNode; level?: 
   );
 }
 
-/** Settings → Security: Electron, Node.js and npm packages, and what to do about each. */
+/** Settings → Updates & security: Electron, Node.js and npm packages, and what to do about each. */
 export function SecuritySection() {
   const r = useSecurity((s) => s.report);
   // the installed app doesn't check: Electron, Node and the packages come with Cora's updates
   const [off, setOff] = useState(false);
+  const [node, setNode] = useState<string | null>(null);
   useEffect(() => {
     void fetch('/api/security')
       .then((x) => (x.ok ? x.json() : null))
-      .then((j: { off?: boolean } | null) => setOff(!!j?.off))
+      .then((j: { off?: boolean; node?: string } | null) => (setOff(!!j?.off), setNode(j?.node ?? null)))
       .catch(() => {});
   }, []);
   const [busy, setBusy] = useState(false);
@@ -64,20 +65,18 @@ export function SecuritySection() {
   const e = r?.electron;
   const n = r?.node;
   const npm = r?.npm;
-  if (off)
-    return (
-      <Section id="security" title="Security" intro="What Cora runs on (Electron, Node.js and its packages) gets its security fixes through Cora's updates.">
-        <Row label="Updates" hint="When a new version is ready, Restart to update shows at the bottom of the left nav and in the tray menu. Your sessions keep running.">
-          <span className="dim">automatic</span>
-        </Row>
-      </Section>
-    );
+  if (off) return <UpdatesSection node={node} />;
 
   return (
     <Section
       id="security"
-      title="Security"
-      intro={<>Is what Cora runs on still getting security fixes? Checked when Cora starts and twice a day. Electron security patches install by themselves the next time Cora starts; anything bigger shows here, with a way to have Claude fix it.</>}
+      title="Updates & security"
+      intro={
+        <>
+          This copy of Cora runs from source (a development checkout), so these checks are about the checkout: is what it runs on still getting security fixes? Checked when Cora starts and twice a day. Electron
+          patches install by themselves the next time Cora starts; anything bigger shows here, with a way to have Claude fix it in the checkout. Installed copies get a fix when you publish a Cora release.
+        </>
+      }
     >
       <Row label="Checked" hint={r?.checking || busy ? 'checking…' : undefined}>
         <span className="dim">{r ? `${ago(r.checkedAt)}` : 'not yet'}</span>
@@ -190,13 +189,70 @@ export function SecuritySection() {
   );
 }
 
+type Release = { version: string; url: string; publishedAt?: string } | { error: string };
+
+/**
+ * Settings › Updates & security in an installed Cora: the version it is, the latest release, and Restart to update once
+ * one has downloaded (Cora checks every few hours and downloads it in the background); what it runs on comes with them.
+ */
+function UpdatesSection({ node }: { node: string | null }) {
+  const [info, setInfo] = useState<{ version: string; electron: string; chrome: string } | null>(null);
+  const [latest, setLatest] = useState<Release | null>(null);
+  const [ready, setReady] = useState<string | null>(null);
+  useEffect(() => {
+    void desktop?.appInfo?.().then((i) => i && setInfo(i));
+    void fetch('/api/cora-release')
+      .then((x) => (x.ok ? x.json() : null))
+      .then((j: Release | null) => j && setLatest(j))
+      .catch(() => {});
+    void desktop?.updateReady?.().then(setReady);
+    return desktop?.onUpdate?.(setReady);
+  }, []);
+  const v = info?.version;
+  const newest = latest && 'version' in latest ? latest.version : null;
+  const behind = !!(v && newest && compareVersions(newest, v) > 0);
+  return (
+    <Section id="security" title="Updates & security" intro="Cora keeps itself up to date: new versions download in the background and install when you restart it (your sessions keep running). Security fixes to what Cora runs on (Electron, Chromium, Node.js and its packages) come with them.">
+      <Row label="Cora" hint={latest && 'error' in latest ? `Couldn't see the latest release: ${latest.error}` : newest ? `The latest release is ${newest}.` : undefined}>
+        {!v ? (
+          <span className="dim">…</span>
+        ) : ready ? (
+          <>
+            <Bad level="some">{v}: {ready} is ready</Bad>
+            {desktop?.restartApp ? (
+              <button className="btn" onClick={() => desktop!.restartApp!()} title="Installs it; your sessions keep running">
+                <Icon name="RotateCw" size={12} /> Restart to update
+              </button>
+            ) : null}
+          </>
+        ) : behind ? (
+          <Bad level="some">{v}: {newest} is out, downloading (it installs when you restart)</Bad>
+        ) : (
+          <Ok>{v}: up to date</Ok>
+        )}
+        {latest && 'url' in latest && latest.url ? (
+          <button className="btn ghost" onClick={() => desktop?.openExternal?.(latest.url)} title="What's in it">
+            <Icon name="ExternalLink" size={12} /> Release notes
+          </button>
+        ) : null}
+      </Row>
+      <Row label="Electron" hint="The desktop app and its built-in browser. Security fixes come with Cora's updates.">
+        <span className="dim">{info ? `${info.electron} (Chromium ${info.chrome})` : '…'}</span>
+      </Row>
+      <Row label="Node.js" hint="The server and the terminal host. Security fixes come with Cora's updates.">
+        <span className="dim">{node ?? '…'}</span>
+      </Row>
+    </Section>
+  );
+}
+
 /** The left nav's shield: only when the check found something (red when it matters). */
 export function SecurityBadge() {
   const r = useSecurity((s) => s.report);
   const level = securityLevel(r);
   if (!level) return null;
   return (
-    <button className={`rf-sec ${level}`} title={level === 'high' ? 'Security updates needed (Settings → Security)' : 'Security updates available (Settings → Security)'} onClick={() => openSettings('security')}>
+    <button className={`rf-sec ${level}`} title={level === 'high' ? 'Security updates needed (Settings → Updates & security)' : 'Security updates available (Settings → Updates & security)'} onClick={() => openSettings('security')}>
       <Icon name={level === 'high' ? 'ShieldAlert' : 'Shield'} size={14} />
     </button>
   );

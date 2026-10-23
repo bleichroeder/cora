@@ -60,32 +60,44 @@
 .live-board .lb-diff:hover { color: var(--ink); }
 
 /* explains: cards with a preview */
-.live-board .lb-exs { min-height: 100%; }
-.live-board .lb-q { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; gap: 7px; padding: 7px 12px; border-bottom: 1px solid var(--hair); background: var(--raise); color: var(--ink4); }
+/* the panel doesn't scroll: the filter is a header, and the cards fit under it (scrolling only when they can't) */
+.live-board .lb-exs { display: flex; flex-direction: column; height: 100%; }
+.live-board .lb-q { flex: none; display: flex; align-items: center; gap: 7px; padding: 7px 12px; border-bottom: 1px solid var(--hair); background: var(--raise); color: var(--ink4); }
 .live-board .lb-q input { flex: 1; min-width: 0; border: 0; outline: 0; background: none; color: var(--ink); font: 12.5px var(--ui); }
-.live-board .lb-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 10px; padding: 10px; }
-.live-board .lb-card { display: flex; flex-direction: column; min-width: 0; border-radius: 10px; background: var(--raise2); box-shadow: inset 0 0 0 1px var(--hair); overflow: hidden; transition: box-shadow .15s; }
-.live-board .lb-card:hover { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cora) 45%, transparent); }
+.live-board .lb-cards { flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); align-content: start; gap: 10px; padding: 10px; overflow-y: auto; }
+/* the card's outline is drawn over the preview (an inset outline under it is covered where the preview meets the edge) */
+.live-board .lb-card { position: relative; display: flex; flex-direction: column; min-width: 0; border-radius: 10px; background: var(--raise2); overflow: hidden; }
+.live-board .lb-card::after { content: ''; position: absolute; inset: 0; z-index: 3; border-radius: inherit; box-shadow: inset 0 0 0 1px var(--hair); pointer-events: none; transition: box-shadow .15s; }
+.live-board .lb-card:hover::after { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cora) 55%, transparent); }
 .live-board .lb-card .lb-pv { position: relative; display: block; width: 100%; aspect-ratio: 16 / 10; padding: 0; border: 0; border-bottom: 1px solid var(--hair); background: var(--nav); cursor: pointer; overflow: hidden; }
 .live-board .lb-card .lb-pv::after { content: ''; position: absolute; inset: auto 0 0; height: 35%; background: linear-gradient(transparent, color-mix(in srgb, var(--nav) 85%, transparent)); pointer-events: none; }
 .live-board .lb-thumb { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
 .live-board .lb-thumb .in { transform-origin: 0 0; overflow: hidden; background: var(--nav); }
 .live-board .lb-thumb .lb-doc { height: 100%; overflow: hidden; padding: 18px 24px; }
-.live-board .lb-card .lv { position: absolute; top: 7px; z-index: 1; display: inline-flex; align-items: center; gap: 4px; height: 18px; padding: 0 7px; border-radius: 9px; background: color-mix(in srgb, var(--nav) 82%, transparent); box-shadow: inset 0 0 0 1px var(--hair2); color: var(--ink3); font: 500 10px var(--code); backdrop-filter: blur(4px); }
-.live-board .lb-card .lv { right: 7px; color: var(--ink); }
+/* a small button the panels share (Pop out, Show more) */
+.live-board .lb-pop { display: inline-flex; flex: none; align-items: center; gap: 5px; padding: 2px 8px; border: 0; border-radius: 6px; background: var(--raise); box-shadow: inset 0 0 0 1px var(--hair2); color: var(--ink3); font: 500 11px var(--ui); cursor: pointer; }
+.live-board .lb-pop:hover { color: var(--ink); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cora) 50%, transparent); }
+/* on the preview: Live top left; its panel (a chip) or Pop out (a button, on hover) top right */
+.live-board .lb-card .lv, .live-board .lb-card .lb-chip, .live-board .lb-card .lb-pop { position: absolute; top: 8px; z-index: 2; display: inline-flex; align-items: center; gap: 4px; height: 22px; padding: 0 8px; border: 0; border-radius: 11px; background: color-mix(in srgb, var(--nav) 80%, transparent); box-shadow: inset 0 0 0 1px var(--hair2); color: var(--ink2); font: 500 10.5px var(--ui); backdrop-filter: blur(6px); }
+.live-board .lb-card .lv { left: 8px; color: var(--ink); font-family: var(--code); }
 .live-board .lb-card .lv i { width: 6px; height: 6px; border-radius: 50%; background: var(--cora); animation: lb-pulse 1.4s infinite; }
-.live-board .lb-card .meta { min-width: 0; padding: 8px 10px 4px; }
-.live-board .lb-card .t { display: -webkit-box; width: 100%; padding: 0; border: 0; background: none; color: var(--ink); font: 600 12.5px/1.35 var(--ui); text-align: left; cursor: pointer; overflow: hidden; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.live-board .lb-card .lb-chip { right: 8px; }
+.live-board .lb-card button.lb-chip { cursor: pointer; }
+.live-board .lb-card button.lb-chip:hover { color: var(--ink); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cora) 55%, transparent); }
+.live-board .lb-card .lb-pop { right: 8px; justify-content: center; width: 28px; height: 28px; padding: 0; border-radius: 8px; cursor: pointer; opacity: 0; transform: translateY(-2px); transition: opacity .15s, transform .15s, color .15s, box-shadow .15s, background .15s; }
+.live-board .lb-card:hover .lb-pop, .live-board .lb-card .lb-pop:focus-visible { opacity: 1; transform: none; }
+.live-board .lb-card .lb-pop:hover { color: var(--ink); background: color-mix(in srgb, var(--cora) 22%, var(--nav)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cora) 60%, transparent); }
+/* under it: the title (two lines at most), then what it is, who wrote it, when, and its versions */
+.live-board .lb-card .meta { display: flex; flex-direction: column; justify-content: center; gap: 4px; box-sizing: border-box; height: 52px; min-width: 0; padding: 0 11px; }
+.live-board .lb-card .t { display: block; width: 100%; padding: 0; border: 0; background: none; color: var(--ink); font: 600 12.5px/17px var(--ui); text-align: left; white-space: nowrap; text-overflow: ellipsis; cursor: pointer; overflow: hidden; }
 .live-board .lb-card .t:hover { color: var(--cora); }
-.live-board .lb-card .sub { display: flex; align-items: center; gap: 5px; min-width: 0; margin-top: 4px; color: var(--ink4); font: 400 10.5px var(--code); white-space: nowrap; }
+.live-board .lb-card .sub { display: flex; align-items: center; gap: 6px; min-width: 0; color: var(--ink4); font: 400 10.5px/14px var(--ui); white-space: nowrap; }
 .live-board .lb-card .sub .f { flex: none; }
 .live-board .lb-card .sub i { flex: none; width: 6px; height: 6px; border-radius: 50%; }
 .live-board .lb-card .sub .who { min-width: 0; overflow: hidden; color: var(--ink3); text-overflow: ellipsis; }
-.live-board .lb-card .sub .v { flex: none; margin-left: auto; padding: 0 5px; border-radius: 4px; background: var(--raise); color: var(--ink3); }
-.live-board .lb-card .acts { display: flex; align-items: center; padding: 4px 10px 9px; }
-.live-board .lb-card .on { display: inline-flex; align-items: center; gap: 4px; color: var(--ink4); font: 400 10.5px var(--code); }
-.live-board .lb-pop { display: inline-flex; flex: none; align-items: center; gap: 5px; padding: 2px 8px; border: 0; border-radius: 6px; background: var(--raise); box-shadow: inset 0 0 0 1px var(--hair2); color: var(--ink3); font: 500 11px var(--ui); cursor: pointer; }
-.live-board .lb-pop:hover { color: var(--ink); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cora) 50%, transparent); }
+.live-board .lb-card .sub .ago { flex: none; }
+.live-board .lb-card .sub .ago::before { content: '\00b7'; margin-right: 6px; }
+.live-board .lb-card .sub .v { flex: none; margin-left: auto; padding: 0 5px; border-radius: 4px; background: var(--raise); color: var(--ink3); font-family: var(--code); }
 
 /* the board: panels on a 12 by 12 grid (shares of the area), snapping as they're moved and resized */
 .live-board .bd-grid { position: relative; flex: 1; min-width: 0; min-height: 0; overflow: hidden; }
@@ -158,3 +170,27 @@
 .live-board .bd-tb.on { background: color-mix(in srgb, var(--cora) 16%, var(--raise)); color: var(--ink); }
 .live-board .bd-tb.drop { transform: scale(1.12); background: color-mix(in srgb, var(--cora) 30%, var(--raise)); color: var(--ink); }
 .live-board .bd-sep { width: 1px; height: 16px; margin: 0 3px; background: var(--hair2); }
+
+/* + Panel, readable: a search, then each group as a grid of tiles (its icon in the group's tint, its name, two lines on
+   what it shows; on the board already: dimmed and said so), explains to pop out, and the layout's actions */
+.live-board .bd-menu.wide { display: flex; flex-direction: column; width: min(620px, calc(100vw - 48px)); max-height: min(72vh, 680px); padding: 0; overflow: hidden; }
+.live-board .bd-mq { flex: none; display: flex; align-items: center; gap: 8px; height: 42px; padding: 0 14px; border-bottom: 1px solid var(--hair); color: var(--ink4); }
+.live-board .bd-mq input { flex: 1; min-width: 0; border: 0; outline: 0; background: none; color: var(--ink); font: 400 13px var(--ui); }
+.live-board .bd-mbody { flex: 1; min-height: 0; padding: 4px 8px 6px; overflow-y: auto; scrollbar-width: thin; }
+.live-board .bd-menu.wide .mh { padding: 10px 6px 6px; }
+.live-board .bd-mgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 4px; }
+.live-board .bd-menu .bd-mt { align-items: flex-start; gap: 11px; padding: 9px 10px; border-radius: 10px; }
+.live-board .bd-mt .ic { flex: none; display: grid; place-items: center; width: 32px; height: 32px; border-radius: 9px; background: color-mix(in srgb, var(--gt) 14%, var(--raise)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--gt) 30%, transparent); color: color-mix(in srgb, var(--gt) 80%, var(--ink)); }
+.live-board .bd-mt .tx { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.live-board .bd-mt .tx b { display: flex; align-items: center; gap: 7px; color: var(--ink); font: 600 12.5px/17px var(--ui); }
+.live-board .bd-mt .tx b em { padding: 0 6px; border-radius: 5px; background: var(--raise); color: var(--ink4); font: 500 10px/16px var(--ui); font-style: normal; }
+.live-board .bd-mt .tx > span { display: -webkit-box; overflow: hidden; color: var(--ink3); font: 400 11.5px/1.4 var(--ui); -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.live-board .bd-menu .bd-mt:hover:not(:disabled) { background: color-mix(in srgb, var(--gt) 9%, transparent); }
+.live-board .bd-menu .bd-mt:disabled { opacity: .5; }
+.live-board .bd-menu .bd-mx { gap: 9px; color: var(--ink2); }
+.live-board .bd-menu .bd-mx > svg { flex: none; color: var(--ink4); }
+.live-board .bd-menu .bd-mx .t { min-width: 0; overflow: hidden; color: var(--ink); text-overflow: ellipsis; white-space: nowrap; }
+.live-board .bd-menu.wide > .sep { margin: 0; }
+.live-board .bd-menu.wide > .bd-mx { margin: 0 8px; width: calc(100% - 16px); }
+.live-board .bd-menu.wide > .bd-mx:last-child { margin-bottom: 8px; }
+.live-board .bd-menu.wide > .sep + .bd-mx { margin-top: 6px; }

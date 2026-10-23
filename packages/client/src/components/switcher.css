@@ -1,0 +1,31 @@
+/* the session switcher (Ctrl+Tab, Alt+arrows), as Windows' Alt+Tab: one row of cards, each a picture of the session as
+   you last saw it (or where it stands, in words, until you've been in it), the picked one lifted and lit in its colour */
+.sw-scrim { position: fixed; inset: 0; z-index: 80; display: grid; place-items: center; padding: 16px; background: rgba(3, 5, 9, .45); animation: sw-in .12s ease-out; }
+.sw-box { display: flex; flex-direction: column; align-items: center; gap: 12px; max-width: calc(100vw - 32px); max-height: calc(100vh - 32px); padding: 18px 18px 14px; border-radius: 16px; background: color-mix(in srgb, var(--nav) 92%, transparent); box-shadow: inset 0 0 0 1px var(--hair2), 0 30px 80px rgba(0, 0, 0, .7); backdrop-filter: blur(14px); font-family: var(--ui); overflow: hidden; }
+.sw-row { display: flex; flex-wrap: nowrap; gap: 12px; max-width: 100%; overflow-x: auto; overflow-y: hidden; scrollbar-width: thin; padding: 6px 4px 8px; }
+
+.sw-card { position: relative; flex: none; display: flex; flex-direction: column; gap: 8px; box-sizing: border-box; padding: 10px; border: 0; border-radius: 12px; background: var(--raise); box-shadow: inset 0 0 0 1px var(--hair); color: var(--ink2); text-align: left; cursor: pointer; transition: transform .12s, box-shadow .12s, background .12s; }
+.sw-card.on { transform: translateY(-3px); background: color-mix(in srgb, var(--sc) 10%, var(--raise)); box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--sc) 70%, transparent), 0 12px 30px rgba(0, 0, 0, .45); }
+.sw-card.st-needs-you:not(.on) { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--need) 55%, transparent); }
+
+.sw-top { display: flex; align-items: center; gap: 9px; min-width: 0; }
+.sw-top .sw-tile { --tile-bg: var(--raise2); flex: none; }
+.sw-top b { min-width: 0; overflow: hidden; color: var(--ink); font: 600 12.5px/16px var(--ui); text-overflow: ellipsis; white-space: nowrap; }
+
+/* its picture (as you last saw it), or where it stands in words */
+.sw-pic { position: relative; display: block; aspect-ratio: 16 / 10; overflow: hidden; border-radius: 8px; background: var(--nav); box-shadow: inset 0 0 0 1px var(--hair); }
+.sw-pic img { display: block; width: 100%; height: 100%; object-fit: cover; object-position: top center; }
+.sw-prev { position: absolute; inset: 0; padding: 10px 11px; overflow: hidden; color: var(--ink3); font: 400 11.5px/1.5 var(--ui); display: -webkit-box; -webkit-line-clamp: 5; -webkit-box-orient: vertical; }
+.sw-card.on .sw-prev { color: var(--ink2); }
+
+.sw-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; padding-top: 7px; border-top: 1px solid var(--hair); }
+.sw-st { flex: none; color: var(--ink4); font: 500 10.5px var(--ui); }
+.sw-card.st-working .sw-st, .sw-card.st-thinking .sw-st { color: var(--work); }
+.sw-card.st-needs-you .sw-st { color: var(--need); }
+.sw-dir { min-width: 0; overflow: hidden; color: var(--ink4); font: 400 10.5px var(--code); text-overflow: ellipsis; white-space: nowrap; }
+
+.sw-name { max-width: 100%; overflow: hidden; color: var(--ink); font: 600 13px var(--ui); text-overflow: ellipsis; white-space: nowrap; }
+.sw-keys { color: var(--ink4); font: 400 10.5px var(--ui); }
+
+@keyframes sw-in { from { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .sw-scrim { animation: none; } .sw-card { transition: none; } }

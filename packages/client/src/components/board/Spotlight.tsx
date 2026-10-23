@@ -18,6 +18,7 @@ import type { BoardData } from '../LiveBoard';
 export function SpotlightPanel({ sessionId, data, item, onPage, onPin, render }: { sessionId: string; data: BoardData; item: BoardItem; onPage: Set<string>; onPin(pin?: string): void; render(spot: Spot): React.ReactNode }) {
   const version = useBrain((s) => s.versions[sessionId]);
   const needs = useBrain((s) => s.pending.filter((p) => p.sessionId === sessionId).length);
+  const recapAt = useBrain((s) => s.sessions[sessionId]?.recap?.at);
   const f = useFollowed(sessionId, 3600_000);
   const rolling = useDeploys((d) => {
     const j = d.s.journeys.find((x) => x.sessionId === sessionId);
@@ -66,6 +67,7 @@ export function SpotlightPanel({ sessionId, data, item, onPage, onPin, render }:
     deployRolling: rolling,
     ...(live ? { live: { title: live.title, at: live.ts } } : {}),
     background: data.d.tasks.filter((t) => t.status === 'running').length,
+    ...(recapAt ? { recapAt } : {}),
   };
   // what it shows, and since when (kept while the panel is up)
   const cur = useRef<{ spot: Spot; since: number } | null>(null);

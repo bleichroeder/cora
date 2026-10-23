@@ -34,7 +34,7 @@ describe('nothing workplace-specific: plain settings', () => {
     const file = join(mkdtempSync(join(tmpdir(), 'cora-preset-')), 'config.json');
     new Prefs(file).update({ gitlab: { host: 'GitLab.Acme.io' } });
     const again = new Prefs(file).get();
-    expect(again.gitlab).toEqual({ host: 'gitlab.acme.io', todos: true });
+    expect(again.gitlab).toEqual({ host: 'gitlab.acme.io', todos: true, start: 'offer' });
     expect(new Prefs(join(mkdtempSync(join(tmpdir(), 'cora-preset-')), 'config.json')).get()).toMatchObject({ gitlab: { host: 'gitlab.com' } });
   });
 

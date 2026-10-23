@@ -1,4 +1,6 @@
 import { createHmac } from 'node:crypto';
+import { GitlabIssues } from './gitlabIssues';
+import type { Memes } from './memes';
 import { existsSync, readFileSync } from 'node:fs';
 import { envLine, signature, type EnvLabel, type Environments } from './environments';
 import type { Deploys } from './deploys';
@@ -10,7 +12,7 @@ import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest }
 import cookie from '@fastify/cookie';
 import fastifyStatic from '@fastify/static';
 import websocket from '@fastify/websocket';
-import { INBOX_SOURCES, MAX_DRAFT_ASKS, ticketInPrompt, type TicketFacts, type PendingDecision, type SessionInfo, type SessionTicket, JIRA_EVENT_KINDS, type JiraEvent, type JiraEventKind, type JiraWatchStatus, HELLO_PREFIX, artifactUrl, BROWSER_PROFILE_ID } from '@cora/shared';
+import { INBOX_SOURCES, MAX_DRAFT_ASKS, ticketInPrompt, type TicketFacts, type PendingDecision, type SessionInfo, type SessionTicket, JIRA_EVENT_KINDS, type JiraEvent, type JiraEventKind, type JiraWatchStatus, HELLO_PREFIX, artifactUrl, BROWSER_PROFILE_ID, CORA_RELEASES } from '@cora/shared';
 import { checkOptions, checkPrompt, launchArgs } from './launch';
 import { checkSummary, checkTicket, type Tickets } from './tickets';
 import { summarizeUsage } from './usage';
@@ -65,6 +67,10 @@ import { join as joinPath } from 'node:path';
 const LAUNCH_ANSWER_MS = 40_000;
 
 export type AppDeps = {
+  /** GitLab issues (tests give their own) */
+  gitlabIssues?: GitlabIssues;
+  /** the Meme panel */
+  memes?: Memes;
   /** live explains: a session's page and data files */
   live?: import('./liveExplains').LiveExplains;
   /** your Chrome / Edge bookmarks and history (tests: a fake) */
@@ -285,6 +291,7 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
       sessions: () => store.listSessions(),
       session: (id) => (id ? (store.getSession(id) ?? undefined) : undefined),
       events: (id, limit) => store.eventsForSession(id, { limit }),
+      recaps: (since, sessionId) => store.recaps({ since, sessionId, limit: 300 }),
       explains: (sid) => store.listExplains(sid, 50),
       pending: () => pending.list(),
       terminals: () => ptys?.list() ?? [],
@@ -369,13 +376,15 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
       }
       case 'jira':
         return o.jiraStarts.startFromCard(r.event, chosen ?? r.cwd);
+      case 'issue':
+        return o.issueStarts.startFromCard(r, chosen ?? r.cwd);
       case 'mail':
         if (r.sessionId) return send(r.sessionId);
         if (r.cwd) return start(r.cwd);
         throw new Error('nothing to do');
     }
   });
-  registerMcp(app, config.hookToken, () => prefs.get(), d.slack, d.orchestrator ? { isAgent: (sid) => d.orchestrator!.isAgent(sid), deps: orchDeps, userTurn: () => d.orchestrator!.userTurn() } : undefined, d.environments, d.deploys, d.notes ? { notes: d.notes, nameOf: (sid) => { const s = store.getSession(sid); return s ? nameOf(s) : 'a session'; } } : undefined, d.gmail ? { gmail: d.gmail, ...(d.mailWatches ? { watches: d.mailWatches } : {}), nameOf: (sid) => { const s = store.getSession(sid); return s ? nameOf(s) : 'a session'; } } : undefined, config.agentToken, (cmd) => hub.publishUi({ t: 'ui', cmd }), d.live);
+  registerMcp(app, config.hookToken, () => prefs.get(), d.slack, d.orchestrator ? { isAgent: (sid) => d.orchestrator!.isAgent(sid), deps: orchDeps, userTurn: () => d.orchestrator!.userTurn() } : undefined, d.environments, d.deploys, d.notes ? { notes: d.notes, nameOf: (sid) => { const s = store.getSession(sid); return s ? nameOf(s) : 'a session'; } } : undefined, d.gmail ? { gmail: d.gmail, ...(d.mailWatches ? { watches: d.mailWatches } : {}), nameOf: (sid) => { const s = store.getSession(sid); return s ? nameOf(s) : 'a session'; } } : undefined, config.agentToken, (cmd) => hub.publishUi({ t: 'ui', cmd }), d.live, d.memes);
   // starting work from Jira launches the way the agent's start_session does
   d.orchestrator?.setLauncher((x) => orchDeps().launch(x));
 
@@ -558,7 +567,21 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
 
   // --- the security check: its last report; check again now ---------------------------------------------------
   // off in the installed app: its fixes come with Cora's updates
-  app.get('/api/security', { preHandler: requireUi }, async () => ({ report: d.security?.report ?? null, off: !d.security }));
+  app.get('/api/security', { preHandler: requireUi }, async () => ({ report: d.security?.report ?? null, off: !d.security, node: process.version }));
+  // Cora's latest release (Settings › Updates & security): read at most once an hour
+  let release: { at: number; v: { version: string; url: string; publishedAt?: string } | { error: string } } | null = null;
+  app.get('/api/cora-release', { preHandler: requireUi }, async () => {
+    if (release && Date.now() - release.at < 3600_000) return release.v;
+    try {
+      const r = await fetch(`https://api.github.com/repos/${CORA_RELEASES.owner}/${CORA_RELEASES.repo}/releases/latest`, { headers: { accept: 'application/vnd.github+json', 'user-agent': 'cora' }, signal: AbortSignal.timeout(15_000) });
+      if (!r.ok) throw new Error(`GitHub: HTTP ${r.status}`);
+      const j = (await r.json()) as { tag_name?: string; html_url?: string; published_at?: string };
+      release = { at: Date.now(), v: { version: String(j.tag_name ?? '').replace(/^v/, ''), url: String(j.html_url ?? ''), ...(j.published_at ? { publishedAt: j.published_at } : {}) } };
+    } catch (e) {
+      release = { at: Date.now() - 3000_000, v: { error: (e as Error).message } };
+    }
+    return release.v;
+  });
   app.post('/api/security/check', { preHandler: requireAction }, async (_req, reply) => {
     if (!d.security) return reply.code(501).send({ error: 'the security check is off' });
     return { report: await d.security.check() };
@@ -1229,6 +1252,10 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
   // --- api ----------------------------------------------------------------------
   app.get('/api/me', { preHandler: requireUi }, async () => ({ ok: true }));
   app.get('/api/sessions', { preHandler: requireUi }, async () => ({ sessions: store.listSessions(), agents: store.listAgents() }));
+  // Claude Code's recaps (a session's, or everyone's) since a time: the board's Recap panel
+  app.get<{ Querystring: { session?: string; since?: string } }>('/api/recaps', { preHandler: requireUi }, async (req) => ({
+    recaps: store.recaps({ sessionId: req.query.session || undefined, since: Number(req.query.since ?? 0) || 0, limit: 200 }),
+  }));
   app.get<{ Params: { id: string }; Querystring: { before?: string; limit?: string } }>('/api/sessions/:id/events', { preHandler: requireUi }, async (req) => ({
     events: store.eventsForSession(req.params.id, {
       before: req.query.before ? Number(req.query.before) : undefined,
@@ -1323,6 +1350,31 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
   // the shells a shell tab can be (PowerShell, Command Prompt, Git Bash, WSL distros…); ?fresh looks again
   // how a ticket session starts (Settings › Jira): the user's own command (their /jira), or Cora's ticket prompt
   app.get('/api/ticket-start', { preHandler: requireUi }, async () => resolveTicketStart(prefs.get().jira.ticket, dirname(config.projectsDir)));
+  // GitLab issues, to start a session from one (New session › From a GitLab issue): read with glab, never changed
+  const issues = d.gitlabIssues ?? new GitlabIssues();
+  app.get('/api/gitlab/issues', { preHandler: requireUi }, async () => issues.mine());
+  // the Meme panel: a session's memes and GIFs; whether GIFs are set up (a Giphy key, never sent back), and setting it
+  app.get<{ Querystring: { session?: string } }>('/api/memes', { preHandler: requireUi }, async (req) => ({ posts: req.query.session ? (d.memes?.list(req.query.session) ?? []) : [] }));
+  app.get('/api/memes/giphy', { preHandler: requireUi }, async () => ({ key: !!d.memes?.giphyKey() }));
+  app.post<{ Body: { key?: unknown } }>('/api/memes/giphy', { preHandler: requireAction }, async (req, reply) => {
+    const key = req.body?.key;
+    if (key !== null && (typeof key !== 'string' || key.length > 200 || (key && !/^[A-Za-z0-9_-]+$/.test(key)))) return reply.code(400).send({ error: 'key must be a Giphy API key (letters and digits), or null to remove it' });
+    d.memes?.setGiphyKey(key);
+    return { key: !!d.memes?.giphyKey() };
+  });
+  app.get<{ Querystring: { force?: string } }>('/api/gitlab/status', { preHandler: requireUi }, async (req) => issues.status(req.query.force === '1'));
+  app.get<{ Querystring: { project?: string; iid?: string } }>('/api/gitlab/issue', { preHandler: requireUi }, async (req, reply) => {
+    const project = String(req.query.project ?? '');
+    const iid = Number(req.query.iid);
+    if (!/^[A-Za-z0-9_.-]+(\/[A-Za-z0-9_.-]+)+$/.test(project) || !Number.isInteger(iid) || iid < 1) return reply.code(400).send({ error: 'project (group/project) and iid (a number) are needed' });
+    return issues.one(project, iid);
+  });
+  app.post<{ Body: { project?: unknown; folders?: unknown } }>('/api/gitlab/issue-folder', { preHandler: requireUi }, async (req, reply) => {
+    const project = typeof req.body?.project === 'string' ? req.body.project : '';
+    const folders = Array.isArray(req.body?.folders) ? req.body.folders.filter((f): f is string => typeof f === 'string' && f.length < 500) : [];
+    if (!project) return reply.code(400).send({ error: 'project is needed' });
+    return { folder: await issues.folderFor(project, folders) };
+  });
   // which Claude Code Cora runs (Settings › Sessions): its path, and which install it is
   app.get('/api/claude', { preHandler: requireUi }, async () => {
     const f = findClaude();

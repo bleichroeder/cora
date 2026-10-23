@@ -15,6 +15,17 @@ export async function setSessionMeta(id: string, meta: { alias?: string | null; 
   if (r.ok) useBrain.getState().upsertSession(await r.json());
 }
 
+/** Show a session here; one removed from the list comes back into it (focus can't stay on a removed session). */
+export function showSession(sid: string): void {
+  const st = useBrain.getState();
+  const s = st.sessions[sid];
+  if (s && isDismissed(s)) {
+    st.upsertSession({ ...s, dismissedAt: null });
+    void dismissSession(sid, true);
+  }
+  st.setFocus(sid);
+}
+
 export async function dismissSession(id: string, undo = false): Promise<string | null> {
   const r = await post(`/api/sessions/${encodeURIComponent(id)}/dismiss`, { undo });
   if (!r.ok) return (await r.json().catch(() => ({}))).error ?? 'failed';
@@ -111,7 +122,7 @@ export function SessionMenu({ s, x, y, onClose }: { s: SessionInfo; x: number; y
       <div className="sm-sep" />
       {s.state !== 'ended'
         ? ([-1, 1] as const).map((dir) => {
-            const ids = nudgeOrder(useBrain.getState().sessions, s.id, dir, (v) => useBrain.getState().showDismissed || !isDismissed(v));
+            const ids = nudgeOrder(useBrain.getState().sessions, s.id, dir, (v) => !isDismissed(v));
             return (
               <button key={dir} className="sm-row" disabled={!ids} title="Or drag it in the list" onClick={() => ids && void saveOrder(ids).then(onClose)}>
                 <Icon name={dir < 0 ? 'ChevronUp' : 'ChevronDown'} size={14} /> Move {dir < 0 ? 'up' : 'down'}
@@ -132,7 +143,7 @@ export function SessionMenu({ s, x, y, onClose }: { s: SessionInfo; x: number; y
         <button
           className="sm-row"
           disabled={hosted}
-          title={hosted ? 'Running in Cora: end it first' : 'Hide it until it has new activity'}
+          title={hosted ? 'Running in Cora: end it first' : 'Off the list until it has new activity; Resume still has it'}
           onClick={async () => {
             const e = await dismissSession(s.id);
             if (e) setErr(e);

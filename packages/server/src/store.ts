@@ -5,7 +5,7 @@ import { basename } from 'node:path';
 // emits its ExperimentalWarning.
 const { DatabaseSync } = createRequire(import.meta.url)('node:sqlite') as typeof import('node:sqlite');
 type DatabaseSync = import('node:sqlite').DatabaseSync;
-import { PRESENT_TOOLS, type AgentInfo, type BrainEvent, type NewEvent, type SessionInfo } from '@cora/shared';
+import { PRESENT_TOOLS, recapText, type AgentInfo, type BrainEvent, type NewEvent, type Recap, type SessionInfo } from '@cora/shared';
 
 const MAX_FIELD = 8 * 1024;
 /** Tools whose input is the payload itself and is kept whole: an explain's document (the tool caps it at 2 MB). */
@@ -51,6 +51,9 @@ export class Store {
       CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, last_ts INTEGER NOT NULL, json TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS agents (session_id TEXT NOT NULL, agent_id TEXT NOT NULL, json TEXT NOT NULL,
         PRIMARY KEY (session_id, agent_id));
+      CREATE TABLE IF NOT EXISTS recaps (id TEXT PRIMARY KEY, session_id TEXT NOT NULL, ts INTEGER NOT NULL, text TEXT NOT NULL);
+      CREATE INDEX IF NOT EXISTS recap_ts ON recaps(ts);
+      CREATE INDEX IF NOT EXISTS recap_session ON recaps(session_id, ts);
     `);
     this.seq = (this.db.prepare('SELECT MAX(seq) AS m FROM events').get() as { m: number | null }).m ?? 0;
   }
@@ -236,7 +239,23 @@ export class Store {
   }
 
   /** Delete events older than `cutoffTs` and sessions idle since before it. Returns deleted event count. */
+  /** Keep a recap (each once: a transcript read again doesn't add it twice). True when it's new. */
+  addRecap(r: Recap): boolean {
+    return Number(this.db.prepare('INSERT OR IGNORE INTO recaps (id, session_id, ts, text) VALUES (?, ?, ?, ?)').run(r.id, r.sessionId, r.at, r.text).changes) > 0;
+  }
+
+  /** Recaps since a time, oldest first: one session's, or every session's. */
+  recaps(q: { since?: number; sessionId?: string; limit?: number } = {}): Recap[] {
+    const rows = (
+      q.sessionId
+        ? this.db.prepare('SELECT id, session_id, ts, text FROM recaps WHERE session_id = ? AND ts >= ? ORDER BY ts DESC LIMIT ?').all(q.sessionId, q.since ?? 0, q.limit ?? 200)
+        : this.db.prepare('SELECT id, session_id, ts, text FROM recaps WHERE ts >= ? ORDER BY ts DESC LIMIT ?').all(q.since ?? 0, q.limit ?? 200)
+    ) as Array<{ id: string; session_id: string; ts: number; text: string }>;
+    return rows.reverse().map((r) => ({ id: r.id, sessionId: r.session_id, at: r.ts, text: recapText(r.text) }));
+  }
+
   prune(cutoffTs: number): number {
+    this.db.prepare('DELETE FROM recaps WHERE ts < ?').run(cutoffTs);
     const n = Number(this.db.prepare('DELETE FROM events WHERE ts < ?').run(cutoffTs).changes);
     const dead = (this.db.prepare('SELECT id FROM sessions WHERE last_ts < ?').all(cutoffTs) as { id: string }[]).map((r) => r.id);
     for (const id of dead) {

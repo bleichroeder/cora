@@ -120,6 +120,11 @@ export class Hub {
   }
 
   /** A live explain's new data: the open pages redraw. */
+  /** a session posted to its Meme panel: the open panels look again */
+  publishMeme(sessionId: string): void {
+    this.broadcast({ t: 'meme', sessionId });
+  }
+
   publishExplainData(m: ExplainDataMsg): void {
     this.broadcast(m);
   }

@@ -60,6 +60,10 @@ contextBridge.exposeInMainWorld('coraDesktop', {
   restartApp: () => ipcRenderer.send('ab:restart'),
   // installed Cora: a new version downloaded (restartApp installs it)
   updateReady: () => ipcRenderer.invoke('ab:update-ready') as Promise<string | null>,
+  // what this copy is: its version, installed or from source, its Electron and Chromium
+  // a small picture of part of this window (CSS pixels): a JPEG data URL, or null
+  snap: (r: { x: number; y: number; width: number; height: number }) => ipcRenderer.invoke('ab:snap', r) as Promise<string | null>,
+  appInfo: () => ipcRenderer.invoke('ab:app-info') as Promise<{ version: string; packaged: boolean; electron: string; chrome: string } | null>,
   onUpdate: (cb: (version: string) => void) => {
     const h = (_e: unknown, v: unknown) => cb(String(v));
     ipcRenderer.on('ab:update', h);

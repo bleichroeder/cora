@@ -21,7 +21,7 @@ import { explainFrom } from './Viewer';
 import { openNewSession } from './Launchers';
 import { SETTINGS_SECTIONS, openSettings } from './SettingsModal';
 import { EndSessionConfirm } from './EndSession';
-import { clearEnded, dismissSession, suggestName } from './SessionMenu';
+import { clearEnded, dismissSession, showSession, suggestName } from './SessionMenu';
 import { Icon } from './Icon';
 import './dialogs.css';
 import './palette.css';
@@ -101,13 +101,7 @@ function linesOf(sid: string): Line[] {
 
 /** Focus a session; one hidden from the list comes back into it (focus can't stay on a hidden session). */
 function focusSession(sid: string) {
-  const st = useBrain.getState();
-  const s = st.sessions[sid];
-  if (s && isDismissed(s) && !st.showDismissed) {
-    st.upsertSession({ ...s, dismissedAt: null });
-    void dismissSession(sid, true);
-  }
-  st.setFocus(sid);
+  showSession(sid);
 }
 
 /** Show a transcript line: focus its session and put the timeline's playhead on it, which scrolls the transcript there. */
@@ -155,7 +149,6 @@ function useEntries(): PEntry[] {
   const cursor = useBrain((s) => s.cursor);
   const viewer = useBrain((s) => s.viewer);
   const prefs = useBrain((s) => s.prefs);
-  const showDismissed = useBrain((s) => s.showDismissed);
   const hosted = useBrain((s) => s.terminals.some((t) => t.sessionId === s.focus && t.alive));
   const voice = useVoice((s) => s.settings.enabled);
   const voiceKey = useVoice((s) => !!s.key?.set);
@@ -186,21 +179,21 @@ function useEntries(): PEntry[] {
     const out: PEntry[] = [];
     const st = useBrain.getState;
 
-    // sessions, in the list's order (live ones first); hidden ones last
+    // sessions, grouped as the nav groups them (working, idle, ended and removed), each in the list's order
     const order = sortedSessions(sessions);
     order.forEach((s, i) => {
       const name = sessionName(s);
       const hidden = isDismissed(s);
       out.push({
         id: `session:${s.id}`,
-        group: 'session',
+        group: hidden || s.state === 'ended' ? 'ended' : s.state === 'idle' ? 'idle' : 'session',
         label: name,
         detail: `${shortCwd(s.cwd)}${s.title && s.title !== name ? ` · ${s.title}` : ''}`,
         keywords: `${s.project} ${s.id.slice(0, 8)}`,
-        boost: 10 * (1 - i / Math.max(order.length, 1)) - (hidden ? 6 : 0) - (s.id === focus && !overview ? 3 : 0),
+        boost: 10 * (1 - i / Math.max(order.length, 1)) - (hidden || s.state === 'ended' ? 6 : 0) - (s.id === focus && !overview ? 3 : 0),
         dot: STATE_DOT[s.state] ?? 'z',
         color: sessionColor(s),
-        tag: s.id === focus && !overview ? 'here' : hidden ? 'hidden' : s.state === 'ended' ? 'ended' : s.state === 'needs-you' ? 'needs you' : undefined,
+        tag: s.id === focus && !overview ? 'here' : hidden ? 'removed' : s.state === 'needs-you' ? 'needs you' : undefined,
         verb: s.state === 'ended' ? 'open' : 'focus',
         run: () => focusSession(s.id),
       });
@@ -324,14 +317,13 @@ function useEntries(): PEntry[] {
     if (voiceKey) cmd('voice', voice ? 'Turn voice off' : 'Turn voice on', voice ? 'MicOff' : 'Mic', () => setVoice(!voice), { keywords: 'speech speak read aloud tts push to talk' });
     else cmd('voice', 'Set up voice…', 'Mic', () => openSettings('voice'), { keywords: 'speech speak read aloud tts push to talk' });
     if (voiceLevels.speaking) cmd('hush', 'Stop speaking', 'VolumeX', () => stopSpeaking(), { keywords: 'quiet silence voice', featured: true, boost: 7 });
-    if (Object.values(sessions).some(isDismissed)) cmd('dismissed', showDismissed ? 'Hide dismissed sessions' : 'Show dismissed sessions', 'Eye', () => st().setShowDismissed(!showDismissed), { keywords: 'hidden list' });
-    if (Object.values(sessions).some((s) => s.state === 'ended' && !isDismissed(s))) cmd('clear-ended', 'Clear ended sessions from the list', 'EyeOff', () => void clearEnded(), { keywords: 'dismiss hide remove' });
+    if (Object.values(sessions).some((s) => s.state === 'ended' && !isDismissed(s))) cmd('clear-ended', 'Take ended sessions off the list', 'EyeOff', () => void clearEnded(), { keywords: 'dismiss hide remove' });
     prefs.tools.forEach((t, i) => cmd(`tool:${t.id}`, `Open ${t.name}`, 'Wrench', () => openTool(t), { keywords: `tool ${t.url}${i < 9 ? ` ctrl+${i + 1}` : ''}` }));
     if (!useSlack.getState().status.connected) cmd('slack:connect', 'Slack: connect…', 'MessageSquare', () => openSettings('slack'), { keywords: 'slack token send message' });
     cmd('tubes', prefs.flowLinks ? 'Scene: lines with comets' : 'Scene: flowing tubes', 'Orbit', () => st().setPrefs({ flowLinks: !prefs.flowLinks }), { keywords: 'connections links' });
     if (prefs.inputMode === 'terminal') cmd('compact', prefs.compactTerminal ? 'Terminal: show all of it' : 'Terminal: show only Claude’s input area', 'SquareTerminal', () => st().setPrefs({ compactTerminal: !prefs.compactTerminal }), { keywords: 'compact' });
     return out;
-  }, [sessions, focus, overview, cursor, viewer, prefs, showDismissed, hosted, voice, voiceKey, webShown, history, explains, presets, notes]);
+  }, [sessions, focus, overview, cursor, viewer, prefs, hosted, voice, voiceKey, webShown, history, explains, presets, notes]);
 }
 
 /** Transcript lines matching the query: the focused session's first, then the rest, newest first. */

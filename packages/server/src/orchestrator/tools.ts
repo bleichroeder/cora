@@ -1,7 +1,7 @@
 import { existsSync, statSync } from 'node:fs';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
-import type { BrainEvent, CiMsg, Goal, GoalState, PendingRequest, SecurityReport, SessionInfo, TerminalInfo, UiCommand } from '@cora/shared';
+import type { BrainEvent, CiMsg, Goal, GoalState, PendingRequest, SecurityReport, SessionInfo, TerminalInfo, UiCommand, Recap } from '@cora/shared';
 import { isShell, JIRA_EVENT_KINDS, jiraLine, parseSince, type JiraEvent, type JiraEventKind } from '@cora/shared';
 import type { Approvals, ApprovalOutcome } from './approvals';
 import type { MandateRequest, Verdict } from './mandate';
@@ -31,6 +31,8 @@ export type OrchToolDeps = {
   sessions(): SessionInfo[];
   session(id: string): SessionInfo | undefined;
   events(id: string, limit: number): BrainEvent[];
+  /** Claude Code's recaps of sessions since a time (oldest first): every session's, or one's */
+  recaps?(since: number, sessionId?: string): Recap[];
   explains(sessionId?: string): BrainEvent[];
   pending(): PendingRequest[];
   terminals(): TerminalInfo[];
@@ -241,6 +243,33 @@ export function registerOrchestratorTools(server: McpServer, d: OrchToolDeps): v
       lines = lines.slice(-(limit ?? 40));
       const head = [`${nameOf(s)} · ${s.id}`, `state: ${s.state}${s.needsYou ? ` · needs the user (${s.needsYou})` : ''}${hostedTerm(id) ? ' · hosted in Cora' : ' · not hosted in Cora'}`, `folder: ${s.cwd}`, s.ticket ? `ticket: ${s.ticket.key}${s.ticket.summary ? ` (${s.ticket.summary})` : ''}` : '', s.model ? `model: ${s.model}` : '', `last activity: ${ago(s.lastTs)}`].filter(Boolean);
       return text(`${head.join('\n')}\n\n${lines.join('\n') || (search ? `Nothing mentions "${search}".` : 'Nothing yet.')}`);
+    },
+  );
+  server.registerTool(
+    'recaps',
+    {
+      title: "Claude Code's recaps of the sessions",
+      description:
+        "Claude Code's own recaps of the user's sessions since a time, oldest first: each written when the user came back to a session after a while away, saying where it stands and what's next. Together they're the story of the work. Use them first for briefs and wrap-ups (what happened, what's open), then look closer where it matters. Lines read `[when] session (id): recap`.",
+      inputSchema: {
+        since: z.string().max(20).optional().describe('How far back: e.g. 4h, 12h, 2d (default 24h)'),
+        id: z.string().min(4).max(80).optional().describe("Only this session's (its id, from `sessions`)"),
+      },
+    },
+    async ({ since, id }) => {
+      const ms = parseSince(since ?? '24h');
+      if (ms == null) return fail('since must be like 30m, 4h or 2d');
+      const now = Date.now();
+      const list = (d.recaps?.(now - ms, id) ?? []).filter((r) => !d.isAgent(r.sessionId));
+      if (!list.length) return text(`No recaps in the last ${since ?? '24h'}${id ? ' for that session' : ''}.`);
+      return text(
+        list
+          .map((r) => {
+            const s = d.session(r.sessionId);
+            return `[${ago(r.at, now)} ago] ${s ? nameOf(s) : 'a session'} (${r.sessionId}): ${r.text}`;
+          })
+          .join('\n'),
+      );
     },
   );
   server.registerTool(

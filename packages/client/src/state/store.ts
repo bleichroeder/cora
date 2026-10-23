@@ -150,7 +150,6 @@ type State = {
   rightTab: 'transcript' | 'explains' | 'changes';
   diff: DiffTarget | null;
   diffWide: boolean;
-  showDismissed: boolean;
   prefs: UiPrefs;
   /** the timeline's playhead (null: live) */
   cursor: TimeCursor | null;
@@ -165,7 +164,6 @@ type State = {
   setRightTab(t: 'transcript' | 'explains' | 'changes'): void;
   setDiff(d: DiffTarget | null): void;
   setDiffWide(v: boolean): void;
-  setShowDismissed(v: boolean): void;
   setPrefs(p: Partial<UiPrefs>): void;
   setConn(c: Conn): void;
   applySnapshot(s: { sessions: SessionInfo[]; agents: AgentInfo[]; pending: PendingRequest[]; terminals?: TerminalInfo[]; lastSeq: number; recent: Record<string, BrainEvent[]> }): void;
@@ -237,7 +235,6 @@ export const useBrain = create<State>((set, get) => ({
   rightTab: 'transcript',
   diff: null,
   diffWide: false,
-  showDismissed: false,
   prefs: loadPrefs(),
   cursor: null,
   bang: null,
@@ -281,7 +278,6 @@ export const useBrain = create<State>((set, get) => ({
   setRightTab: (rightTab) => set({ rightTab }),
   setDiff: (diff) => set({ diff, ...(diff ? hideWeb(diff.sessionId) : { diffWide: false }) }),
   setDiffWide: (diffWide) => set({ diffWide }),
-  setShowDismissed: (showDismissed) => set({ showDismissed }),
   setPrefs: (p) => {
     const prefs = { ...get().prefs, ...p };
     savePref('ui', prefs);

@@ -12,8 +12,10 @@ type State = {
   err: Record<string, string>;
   /** the first run was put away this time (Open Cora) */
   dismissed: boolean;
+  /** the checklist was asked for once (got or not): until then the app waits, so a first run doesn't flash the app */
+  checked: boolean;
 };
-export const useSetup = create<State>(() => ({ state: null, busy: {}, err: {}, dismissed: false }));
+export const useSetup = create<State>(() => ({ state: null, busy: {}, err: {}, dismissed: false, checked: false }));
 
 const post = async (url: string, body: unknown): Promise<{ ok: boolean; error?: string; [k: string]: unknown }> => {
   const r = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
@@ -23,7 +25,8 @@ const post = async (url: string, body: unknown): Promise<{ ok: boolean; error?: 
 
 export async function loadSetup(): Promise<void> {
   const r = await fetch('/api/setup').catch(() => null);
-  if (r?.ok) useSetup.setState({ state: (await r.json()) as SetupState });
+  const state = r?.ok ? ((await r.json().catch(() => null)) as SetupState | null) : null;
+  useSetup.setState(state ? { state, checked: true } : { checked: true });
 }
 
 // after a command opens its window: look again every 5 s for 3 minutes (and whenever Cora comes back to the front)

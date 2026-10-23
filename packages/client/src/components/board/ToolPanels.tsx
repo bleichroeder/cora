@@ -6,6 +6,7 @@ import { useWeb } from '../../state/web';
 import { dockBrowser, useBoardDock } from '../../state/boardDock';
 import { desktop } from '../../lib/desktop';
 import { THEME, useTermSizes } from '../TerminalPane';
+import { PanelBrowser } from '../WebPane';
 
 /* ------------------------------------------------------------------ Terminal */
 
@@ -111,11 +112,21 @@ function Mirror({ terminalId }: { terminalId: string }) {
 
 /* ------------------------------------------------------------------ Browser */
 
-/**
- * The session's browser, in a panel: the browser itself lays itself over this panel and follows it (its pages are
- * never moved, which would reload them); showing the panel shows the browser, and taking it away hides it again.
- */
+/** The board's Browser panel: a browser of its own (WebPane's PanelBrowser), apart from the session's. */
 export function BrowserPanel({ sessionId }: { sessionId: string }) {
+  if (!desktop?.browser) return <div className="lb-empty">The browser is in Cora's desktop app.</div>;
+  return (
+    <div className="lb-browser own">
+      <PanelBrowser sessionId={sessionId} />
+    </div>
+  );
+}
+
+/**
+ * The Spotlight's Browsing: the session's own browser (what Claude is browsing), laid over the Spotlight and following
+ * it (its pages are never moved, which would reload them); showing it shows the browser, and taking it away hides it.
+ */
+export function SessionBrowserDock({ sessionId }: { sessionId: string }) {
   const el = useRef<HTMLDivElement>(null);
   const shown = useWeb((w) => !!w.sessions[sessionId]?.shown);
   const wide = useWeb((w) => w.wide);

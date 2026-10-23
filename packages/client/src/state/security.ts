@@ -34,7 +34,7 @@ export function worrySummary(r: SecurityReport): string {
   else if (r.node?.securityBehind) parts.push(`Node ${r.node.version} is missing security releases`);
   const urgent = urgentFindings(r).length;
   if (urgent) parts.push(`${urgent} package${urgent > 1 ? 's' : ''} Cora runs with high-severity vulnerabilities`);
-  return parts.join('; ') || 'See Settings → Security.';
+  return parts.join('; ') || 'See Settings → Updates & security.';
 }
 
 export async function checkSecurity(): Promise<string | null> {

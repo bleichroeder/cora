@@ -52,6 +52,8 @@
 .oc-act.need svg { color: var(--need); }
 .oc-act.quiet { color: var(--ink4); font: 400 11.5px var(--ui); }
 .oc-say { overflow: hidden; color: var(--ink2); font: 400 12.5px/1.45 var(--ui); text-overflow: ellipsis; white-space: nowrap; }
+/* the card's summary is Claude Code's recap when there is one: its mark, as the CLI shows it */
+.oc-say.recap::before { content: "\203B\00a0"; color: color-mix(in srgb, var(--cora) 75%, var(--ink3)); }
 .grid-overview .empty { color: var(--ink4); font: 400 13px var(--ui); }
 
 /* the galaxy: its labels in the language (the space itself is unchanged) */

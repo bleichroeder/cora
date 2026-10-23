@@ -18,6 +18,10 @@ describe("how it's said", () => {
     expect(spokenText('[cheerful] Build passed.', v4)).toBe('[relaxed, warm] [cheerful] Build passed.');
     expect(spokenText('Build passed.', v4, true)).toBe('[bright, a little dry] Build passed.');
     expect(spokenText('Build passed.', { ...v4, coraDelivery: '' }, true)).toBe('[relaxed, warm] Build passed.');
+    // a whole description isn't a tag (ElevenLabs would read it aloud): its short cues, as one tag
+    const described = { ...v4, coraDelivery: '[Calm, confident, and conversational. Warm but understated, with natural pacing, subtle dry wit, and effortless intelligence. Never theatrical or overly enthusiastic.]' };
+    expect(spokenText('Good morning.', described, true)).toBe('[Calm, confident, conversational, Warm but understated] Good morning.');
+    expect(spokenText('Hi.', { ...v4, delivery: 'Never theatrical. Do not shout at all, ever, under any circumstances.' })).toBe('Hi.');
     const flash = { ...v4, model: 'eleven_flash_v2_5' };
     expect(spokenText('[cheerful] Build passed, see [image: shot.png].', flash)).toBe('Build passed, see [image: shot.png].');
   });

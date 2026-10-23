@@ -95,11 +95,15 @@ export function JiraStartCard({ a, inline = false }: { a: Approval; inline?: boo
   return (
     <div className={`sd-sent jw-card jw-start${inline ? ' inline' : ''}`} role="alert">
       <span className="sd-logo-tile jw-tile">
-        <BrandIcon source="jira" size={14} />
+        <BrandIcon source={t.source ?? 'jira'} size={14} />
       </span>
       <span className="sd-sent-t">
         <b>
-          {t.who} assigned you <span className="k">{t.key}</span>
+          {/* a GitLab issue reads as its project's name and number (its whole path in the tooltip) */}
+          {t.who} assigned you{' '}
+          <span className="k" title={t.key}>
+            {t.source === 'gitlab' ? t.key.replace(/^.*\/([^/]+)#(\d+)$/, '$1 #$2') : t.key}
+          </span>
         </b>
         <span>{t.summary}</span>
         <span className="jw-pick" title={cwd}>

@@ -164,7 +164,7 @@ function managerSetup() {
     held.push(p);
     m.pendingChanged([...held]);
   };
-  return { m, writes, resolved, ask, ui, setSpent: (x: number) => (spent = x), set: (s: Settings) => (settings = s), held, settings: () => settings, setClock: (t: number) => (clock = t), dataDir, setScreen: (l: string[]) => (screen = l) };
+  return { m, writes, resolved, ask, ui, setSpent: (x: number) => (spent = x), set: (s: Settings) => (settings = s), held, settings: () => settings, setClock: (t: number) => (clock = t), dataDir, setScreen: (l: string[]) => (screen = l), terms };
 }
 const flush = () => new Promise((r) => setTimeout(r, 5));
 
@@ -380,6 +380,27 @@ describe('watching for failures', () => {
 
 describe('briefs', () => {
   const typed = (writes: string[]) => writes.filter((w) => w.length > 2).join('');
+
+  it('back while Cora is still starting (first thing in the morning), the catch-up waits for it instead of being lost', () => {
+    vi.useFakeTimers();
+    try {
+      const { m, writes, setClock, terms } = managerSetup();
+      setClock(1_000_000_000);
+      m.presence();
+      // the app was just opened: Cora's terminal isn't up yet
+      for (const t of terms) t.alive = false;
+      setClock(1_000_000_000 + 10 * 3600_000);
+      expect(m.presence()).toEqual({ briefed: true });
+      expect(typed(writes)).not.toMatch(/Cora brief/);
+      // it comes up: the brief goes in
+      for (const t of terms) t.alive = true;
+      vi.advanceTimersByTime(2100);
+      expect(typed(writes)).toMatch(/\[Cora brief\] The user is back after 10 hours away\./);
+      m.dispose();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 
   it("back after a few hours away, Cora catches you up (once); not when you've just been here, or with briefs off", () => {
     const { m, writes, setClock, set, settings, dataDir } = managerSetup();

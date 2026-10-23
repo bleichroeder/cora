@@ -13,8 +13,13 @@ import { NeedsYou, Toasts, JumpButton } from './components/NeedsYou';
 import { GridOverview } from './components/GridOverview';
 import { InboxView } from './components/Inbox';
 import { SetupView } from './components/Setup';
+import { EmptyMain } from './components/EmptyMain';
+import { BootScreen } from './components/BootScreen';
+import { SessionSwitcher } from './components/SessionSwitcher';
+import { RecapBar } from './components/Recap';
+import { IssueChip } from './components/IssuePicker';
 import { loadSetup, useSetup } from './state/setup';
-import { setupFirstRun } from '@cora/shared';
+import { isShell, setupFirstRun } from '@cora/shared';
 import { Galaxy } from './galaxy/Galaxy';
 import { UsageStrip } from './components/UsageStrip';
 import { Scene } from './scene/Scene';
@@ -120,7 +125,16 @@ function RightColumn({ sessionId }: { sessionId: string }) {
         <button className={`rtab${tab === 'explains' ? ' on' : ''}`} onClick={() => setTab('explains')}>Explains{counts.explains ? <span className="rt-n">{counts.explains}</span> : null}</button>
         <button className={`rtab${tab === 'changes' ? ' on' : ''}`} onClick={() => setTab('changes')}>Changes{counts.files ? <span className="rt-n">{counts.files}</span> : null}</button>
       </div>
-      {tab === 'explains' ? <ExplainsList sessionId={sessionId} /> : tab === 'changes' ? <ChangesPane sessionId={sessionId} /> : <Transcript sessionId={sessionId} />}
+      {/* the transcript (or explains, changes), with Claude Code's latest recap resting on its lower edge, just above
+          the terminal and composer */}
+      <div className="rc-pane">
+        {tab === 'explains' ? <ExplainsList sessionId={sessionId} /> : tab === 'changes' ? <ChangesPane sessionId={sessionId} /> : <Transcript sessionId={sessionId} />}
+        {tab === 'explains' || tab === 'changes' ? null : (
+          <Boundary quiet name="recap">
+            <RecapBar sessionId={sessionId} />
+          </Boundary>
+        )}
+      </div>
       {auto ? null : (
         <DragHandle
           dir="row"
@@ -313,8 +327,8 @@ function FocusHeader({ sessionId }: { sessionId: string }) {
         {STATE_LABEL[s.state] ?? s.state}
         {inBackground ? <span className="fh-bg" title="Commands Claude left running in the background"> · {inBackground}<span className="fh-bgt"> in background</span></span> : null}
       </span>
-      {s.ticket || followed ? <span className="fh-dv" /> : null}
-      {s.ticket ? <TicketCard s={s} /> : null}
+      {s.ticket || s.issue || followed ? <span className="fh-dv" /> : null}
+      {s.ticket ? <TicketCard s={s} /> : s.issue ? <IssueChip s={s} header /> : null}
       {s.ticket ? <TicketSlack ticketKey={s.ticket.key} /> : null}
       <CiHeader sessionId={sessionId} />
       <DeployHeader sessionId={sessionId} />
@@ -358,9 +372,18 @@ export function App() {
   // setting Cora up: the first run shows instead of the app while something required is missing (or on a fresh install)
   const setupState = useSetup((s) => s.state);
   const setupDismissed = useSetup((s) => s.dismissed);
+  const setupChecked = useSetup((s) => s.checked);
   useEffect(() => {
     if (conn === 'open' && !useSetup.getState().state) void loadSetup();
   }, [conn]);
+  // until we know whether this is a first run, show nothing (not the app, then the setup over it): a few seconds once the
+  // server answers, longer while it's still starting (a cold first launch), then the app regardless
+  const [setupWaited, setSetupWaited] = useState(false);
+  useEffect(() => {
+    if (setupWaited) return;
+    const t = setTimeout(() => setSetupWaited(true), conn === 'open' ? 4000 : 20_000);
+    return () => clearTimeout(t);
+  }, [conn, setupWaited]);
 
   useEffect(() => watchPresence(), []);
   // "Hey Cora": the wake word, when it's on
@@ -495,21 +518,28 @@ export function App() {
     });
   }, []);
 
-  // Keep focus on a session that's visible in the list; when the focused one is dismissed move on, and with
-  // nothing left show the empty state instead of a stale scene.
-  const showDismissed = useBrain((s) => s.showDismissed);
+  // Keep focus on a session that's visible in the list. When the focused one is dismissed, or ends while you watch it
+  // (you ended it), move on to a live one; with none live, show the empty state instead of a stale scene. An ended
+  // session you click on stays (you went to read it).
+  // the focused session's Claude still running here (not a shell beside it: that outlives Claude); looked at again when it ends
+  const focusRunning = useBrain((s) => !!s.focus && s.terminals.some((t) => t.sessionId === s.focus && t.alive && !isShell(t)));
+  const watching = useRef<{ id: string | null; live: boolean; ended: boolean }>({ id: null, live: false, ended: false });
   useEffect(() => {
-    const visible = sortedSessions(sessions).filter((s) => showDismissed || !isDismissed(s));
-    if (focus && visible.some((s) => s.id === focus)) return;
+    const cur = focus ? sessions[focus] : undefined;
+    const live = !!cur && cur.state !== 'ended';
+    const w = watching.current;
+    watching.current = w.id !== focus ? { id: focus, live, ended: false } : { id: focus, live, ended: live ? false : w.ended || w.live };
+    const visible = sortedSessions(sessions).filter((s) => !isDismissed(s));
+    if (focus && !watching.current.ended && visible.some((s) => s.id === focus)) return;
     // never move off a session running in a terminal here (one just resumed may still look dismissed for a moment)
-    if (focus && sessions[focus] && useBrain.getState().terminals.some((t) => t.sessionId === focus && t.alive)) return;
-    const next = visible[0]?.id ?? null;
+    if (focus && sessions[focus] && focusRunning) return;
+    const next = visible.find((s) => s.id !== focus && s.state !== 'ended')?.id ?? null;
     if (next === focus) return;
     // a session going away doesn't take you out of the Overview
     const ov = useBrain.getState().overview;
     useBrain.getState().setFocus(next);
     if (ov) useBrain.setState({ overview: true });
-  }, [sessions, focus, showDismissed]);
+  }, [sessions, focus, focusRunning]);
 
   useEffect(() => {
     if (focus) void loadSession(focus);
@@ -523,6 +553,8 @@ export function App() {
       </div>
     );
   }
+
+  if (!setupChecked && !setupWaited) return <BootScreen connected={conn === 'open'} />;
 
   if (setupState && !setupDismissed && setupFirstRun(setupState))
     return (
@@ -541,18 +573,8 @@ export function App() {
             <Overview />
           ) : focus ? (
             <Focus sessionId={focus} />
-          ) : !ready || Object.values(sessions).some((x) => showDismissed || !isDismissed(x)) ? null : (
-            <div className="empty-state">
-              <span className="es-mark">
-                <Icon name="SquareTerminal" size={18} />
-              </span>
-              <h3>No sessions yet</h3>
-              <p className="dim">Start Claude Code here, resume an earlier one, or start one in any terminal: it shows up here on its own.</p>
-              <div className="es-actions">
-                <button className="btn allow" onClick={() => useBrain.getState().setModal('new-session')}><Icon name="Plus" size={13} /> New session</button>
-                <button className="btn ghost" onClick={() => useBrain.getState().setModal('history')}><Icon name="History" size={13} /> Resume a session</button>
-              </div>
-            </div>
+          ) : !ready ? null : (
+            <EmptyMain />
           )}
           <ToolDrawer />
           <SlackOutbox />
@@ -565,6 +587,7 @@ export function App() {
       <OpMenu />
       <CoraFloat />
       <PaletteHost />
+      <SessionSwitcher />
       <UsageView />
       {modal === 'new-session' ? <NewSessionModal /> : modal === 'history' ? <HistoryModal /> : modal === 'settings' ? <SettingsModal /> : null}
     </div>

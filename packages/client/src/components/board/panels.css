@@ -207,7 +207,7 @@
 .web-pane.docked { border-radius: 0 0 12px 12px; }
 
 /* panels that lay out their own scrolling (a list beside a diff, a pinned input, a terminal, a page): the panel doesn't scroll */
-.live-board .bd-pb:has(> .lb-split, > .lb-notes, > .lb-term, > .lb-browser, > .lb-ctx, > .lb-spot, > .lb-frame),
+.live-board .bd-pb:has(> .lb-split, > .lb-notes, > .lb-term, > .lb-browser, > .lb-ctx, > .lb-spot, > .lb-frame, > .lb-exs, > .mm-wall, > .lb-memes),
 .live-board .lb-spot-b:has(> .lb-split, > .lb-notes, > .lb-term, > .lb-browser, > .lb-ctx, > .lb-frame) { overflow: hidden; }
 
 /* the Spotlight: what it shows and why, then the panel itself (fading in as it changes) */
@@ -227,3 +227,7 @@
 /* usage */
 .live-board .lb-usage { display: flex; flex-direction: column; gap: 14px; padding: 14px; }
 .live-board .lb-usage .lb-pop { align-self: flex-start; }
+
+/* the board's Browser panel: a browser of its own, filling the panel */
+.live-board .lb-browser.own { position: relative; height: 100%; }
+.live-board .lb-browser.own > .web-pane.panel-browser { position: absolute; inset: 0; z-index: auto; box-shadow: none; }

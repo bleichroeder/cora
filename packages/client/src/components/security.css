@@ -1,4 +1,4 @@
-/* ---------- Settings → Security, and the left nav's shield ---------- */
+/* ---------- Settings → Updates & security, and the left nav's shield ---------- */
 .sec-ok { display: inline-flex; align-items: center; gap: 6px; color: #86efac; font: 12px var(--mono); }
 .sec-bad { display: inline-flex; align-items: center; gap: 6px; font: 12px var(--mono); }
 .sec-bad.high { color: #fca5a5; }

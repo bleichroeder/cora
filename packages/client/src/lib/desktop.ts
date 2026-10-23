@@ -48,6 +48,8 @@ export type DesktopBridge = {
   restartApp?(): void;
   /** installed Cora: the new version downloaded and waiting for a restart (null: none) */
   updateReady?(): Promise<string | null>;
+  snap?(r: { x: number; y: number; width: number; height: number }): Promise<string | null>;
+  appInfo?(): Promise<{ version: string; packaged: boolean; electron: string; chrome: string } | null>;
   onUpdate?(cb: (version: string) => void): () => void;
   /** Cora's hotkey from anywhere (Ctrl+Alt+Space), while the orchestrator is on */
   setCoraHotkey?(on: boolean): void;

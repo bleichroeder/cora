@@ -1,5 +1,6 @@
 import { GlRestart } from './GlGuard';
-import { EnvironmentsSection } from './EnvironmentsSettings';
+import { MemeRows } from './MemeSettings';
+import { EnvironmentsSection, GitlabSection, fetchGitlabStatus, type GitlabStatus } from './EnvironmentsSettings';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { SlackSection, ToolsSection } from './SlackSettings';
 import { SecuritySection } from './SecuritySettings';
@@ -37,13 +38,14 @@ export const SETTINGS_SECTIONS: Array<{ id: string; label: string; icon: string;
   { id: 'terminal', label: 'Terminal', icon: 'SquareTerminal', group: 'Sessions' },
   { id: 'notifications', label: 'Notifications', icon: 'Bell', group: 'Sessions', desktop: true },
   { id: 'jira', label: 'Jira', icon: 'Ticket', group: 'Connected', desktop: true, brand: 'jira' },
+  { id: 'gitlab', label: 'GitLab', icon: 'GitBranch', group: 'Connected', brand: 'gitlab' },
   { id: 'slack', label: 'Slack', icon: 'MessageSquare', group: 'Connected', brand: 'slack' },
   { id: 'gmail', label: 'Gmail', icon: 'Mail', group: 'Connected', brand: 'mail' },
   { id: 'onepassword', label: '1Password', icon: 'KeyRound', group: 'Connected', desktop: true },
   { id: 'tools', label: 'Tools', icon: 'Wrench', group: 'Connected' },
   { id: 'environments', label: 'Environments', icon: 'Network', group: 'This machine' },
   { id: 'scene', label: 'Scene', icon: 'Orbit', group: 'This machine' },
-  { id: 'security', label: 'Security', icon: 'ShieldCheck', group: 'This machine' },
+  { id: 'security', label: 'Updates & security', icon: 'ShieldCheck', group: 'This machine' },
   { id: 'data', label: 'Data', icon: 'Database', group: 'This machine' },
 ];
 const NAV = SETTINGS_SECTIONS;
@@ -171,6 +173,9 @@ export function SettingsModal() {
     setCurrent(id);
     pane.current?.scrollTo({ top: 0 });
   };
+  // GitLab: glab signed in there (asked once as Settings opens)
+  const [gitlabSt, setGitlabSt] = useState<GitlabStatus | null>(null);
+  useEffect(() => void fetchGitlabStatus().then(setGitlabSt), []);
   // a quiet word on the pages where on or off matters
   const setupLeft = useSetup((s) => (s.state ? s.state.items.filter((i) => i.status === 'needs' || i.status === 'partial').length : null));
   const stateOf = (id: string): [string, boolean] | null => {
@@ -180,6 +185,7 @@ export function SettingsModal() {
     // the Connected pages say the same words
     if (id === 'jira') return jiraAuth === 'ok' ? ['connected', true] : jiraAuth === 'signed-out' ? ['not connected', false] : null;
     if (id === 'slack') return slackOn ? ['connected', true] : ['not connected', false];
+    if (id === 'gitlab') return gitlabSt ? (gitlabSt.state === 'connected' ? ['connected', true] : ['not connected', false]) : null;
     if (id === 'gmail') return gmail ? (gmail.connected && !gmail.error ? ['connected', true] : ['not connected', false]) : null;
     return null;
   };
@@ -273,6 +279,7 @@ export function SettingsModal() {
                     onChange={(autoName) => void save({ autoName })}
                   />
                 ) : null}
+                {server ? <MemeRows server={server} save={trySave} /> : null}
                 <Row label="Ended sessions" hint="Take them off the list. Their transcripts stay.">
                   <button className="btn" onClick={async () => { await clearEnded(); setCleared(true); }}>
                     <Icon name="EyeOff" size={12} /> {cleared ? 'Cleared' : 'Clear ended'}
@@ -327,6 +334,10 @@ export function SettingsModal() {
                   <JiraSection server={server} save={(p) => save(p)} />
                 </Boundary>
               ) : null}
+
+              <Boundary name="GitLab settings">
+                <GitlabSection server={server} save={trySave} />
+              </Boundary>
 
               <Boundary name="Slack settings">
                 <SlackSection server={server} save={(p) => save(p)} />

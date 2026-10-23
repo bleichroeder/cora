@@ -28,6 +28,7 @@ export type Redo =
   | { do: 'end'; sessionId: string }
   | { do: 'ask'; question: string }
   | { do: 'jira'; event: JiraEvent; cwd: string }
+  | { do: 'issue'; project: string; iid: number; title: string; who: string; url: string; cwd: string }
   | { do: 'mail'; sessionId?: string; cwd?: string };
 export type RedoRun = (r: Redo, text: string | undefined, cwd: string | undefined) => Promise<string>;
 

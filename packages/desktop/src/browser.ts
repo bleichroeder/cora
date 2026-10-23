@@ -2,6 +2,8 @@ import { app, BrowserWindow, desktopCapturer, dialog, session, shell, type WebCo
 import { attachContextMenu, enableSpellcheck } from './contextMenu';
 import { toolWindowFill, watchLoginForms } from './opFill';
 import { windowFind } from './findBar';
+import { chromeUserAgent } from './userAgent';
+import { chromeIdentity, chromeSession } from './chromeIdentity';
 
 /** The built-in browser's logins and cookies: saved across restarts, kept apart from the dashboard's. */
 export const WEB_PARTITION = 'persist:web';
@@ -9,8 +11,6 @@ export const isWeb = (u: string) => /^https?:\/\//i.test(u);
 /** A browser profile's logins (persist:web, or persist:web-<profile>): what a page in Cora may use. */
 export const isWebPartition = (p: string) => p === WEB_PARTITION || /^persist:web-[a-z0-9-]{1,40}$/.test(p);
 
-/** Chrome's user agent without Electron's and the app's tokens (some sign-in pages turn away "embedded" browsers). */
-export const plainUserAgent = (ua: string) => ua.replace(/\s(Electron|Cora|cora|agent-brain|@cora\/desktop|@agent-brain\/desktop)\/\S+/gi, '');
 
 /**
  * Let the dashboard host web pages in a <webview>: only http(s), only in the browser partition, never with the
@@ -39,7 +39,9 @@ function webSession(partition: string): Electron.Session {
   const ses = session.fromPartition(partition);
   if (readied.has(partition)) return ses;
   readied.add(partition);
-  ses.setUserAgent(plainUserAgent(ses.getUserAgent()));
+  // Chrome's user agent, as Chrome sends it (Electron's leaves Chrome out, and sign-in pages turn that away)
+  ses.setUserAgent(chromeUserAgent(ses.getUserAgent(), process.versions.chrome));
+  chromeSession(ses);
   // notifications, mic and camera, screen sharing only for the Tools' sites (Slack: messages, huddles); other pages get
   // clipboard writes and fullscreen, nothing else
   ses.setPermissionRequestHandler((wc, perm, cb, details) => cb(perm === 'clipboard-sanitized-write' || perm === 'fullscreen' || (TOOL_PERMS.has(perm) && isToolPage(wc, details?.requestingUrl))));
@@ -59,6 +61,8 @@ function attachWebviews(win: BrowserWindow) {
     // right-click: spelling, copy/paste, links, images, the page; new tabs open in this page's session
     const newTab = (url: string, background: boolean) => win.webContents.send('ab:web-tab', { from: wc.id, url, background });
     attachContextMenu(wc, { window: win, web: true, newTab });
+    // the page sees Chrome as Chrome shows itself (sign-in pages turn away embedded browsers)
+    chromeIdentity(wc);
     // 1Password: tell the dashboard when the page has a login form (the key in its address bar)
     // and the key in its login fields: clicked, or focused (to suggest logins there)
     watchLoginForms(
@@ -68,6 +72,7 @@ function attachWebviews(win: BrowserWindow) {
     );
     wc.on('did-create-window', (popup) => {
       attachContextMenu(popup.webContents, { window: popup, web: true, newTab });
+      chromeIdentity(popup.webContents);
       // a sign-in or a huddle window: its links open as tabs, and it can't take you anywhere that isn't a web page
       // (the same guards as a tab's: audit S12)
       popup.webContents.setWindowOpenHandler(({ url }) => {

@@ -172,7 +172,9 @@ the edit) is never written there, only a fingerprint of it, so the log shows wha
 ## Updates
 
 New versions download in the background and install when you choose **Restart to update** (or the next time Cora
-quits). Sessions running in Cora keep running through an update. Cora's installer isn't code-signed yet, so Windows may
+quits). Sessions running in Cora keep running through an update. Security fixes to what Cora runs on (Electron and its
+Chromium, Node.js, and the packages Cora uses) come with these updates: **Settings › Updates & security** shows the
+version you're on, the latest release and its notes, what Cora runs on, and **Restart to update** once one is ready. Cora's installer isn't code-signed yet, so Windows may
 warn you the first time you run it; see [Getting started](getting-started.md#install).
 
 ## Removing Cora

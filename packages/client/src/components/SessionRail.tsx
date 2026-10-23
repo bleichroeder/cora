@@ -6,9 +6,11 @@ import { isDismissed, sessionColor, shortCwd } from '../lib/format';
 import { ticketLabel } from '../lib/ticket';
 import { SessionMenu, clearEnded, dismissSession } from './SessionMenu';
 import { Icon } from './Icon';
+import { RecapPeek } from './Recap';
+import { IssueChip } from './IssuePicker';
 import { JiraChip } from './JiraChip';
 import { EndSessionConfirm } from './EndSession';
-import { GROUPS, dropOrder, sameGroup, saveOrder, sortedSessions } from '../lib/sessionOrder';
+import { GROUPS, dropOrder, inList, sameGroup, saveOrder, sortedSessions } from '../lib/sessionOrder';
 import { openPalette } from './Palette';
 import { CiGlyph } from './CiStrip';
 import { ToolsDock } from './Tools';
@@ -21,7 +23,6 @@ import { oops } from '../state/oops';
 import './nav.css';
 
 export { sortedSessions };
-const ENDED_COLLAPSE_MS = 3600_000;
 
 /** Dragging a session to a new place in its group. */
 type Drag = { id: string; over?: { id: string; below: boolean } };
@@ -65,19 +66,27 @@ function Entry({ s, onMenu, drag, setDrag }: { s: SessionInfo; onMenu(e: React.M
   // finished while you were elsewhere (until you open it), and being read aloud now
   const fresh = useBrain((b) => !!b.unseen[s.id]) && s.state === 'idle';
   const speaking = useVoice((v) => v.reading?.sessionId === s.id);
+  // resting on it a moment: its latest recap, beside the nav
+  const [peek, setPeek] = useState(false);
+  const peekTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const unpeek = () => (peekTimer.current && clearTimeout(peekTimer.current), (peekTimer.current = null), setPeek(false));
+  useEffect(() => unpeek, []);
 
   return (
     <>
       {ending ? <EndSessionConfirm s={s} onClose={() => setEnding(false)} /> : null}
+      {peek && s.recap && ref.current ? <RecapPeek sessionId={s.id} row={ref.current} /> : null}
       <button
         ref={ref}
         className={`ses${st}${fresh ? ' fresh' : ''}${speaking ? ' speaking' : ''}${focus === s.id ? ' on' : ''}${byCora || fromJira ? ' cora' : ''}${isDismissed(s) ? ' dismissed' : ''}${drag?.id === s.id ? ' dragging' : ''}${hint}`}
         style={{ ['--sc' as any]: sessionColor(s) }}
-        title={`${name}\n${s.cwd}${s.state === 'needs-you' ? '\nWaiting for you' : fresh ? '\nFinished: new since you looked' : ''}${speaking ? '\nReading it aloud' : ''}${byCora ? "\nWorking on Cora's goal" : fromJira ? `\nStarted by Cora on ${fromJira}` : ''}`}
-        onClick={() => setFocus(s.id)}
-        onContextMenu={(e) => onMenu(e, s)}
+        onClick={() => (unpeek(), setFocus(s.id))}
+        onContextMenu={(e) => (unpeek(), onMenu(e, s))}
+        onMouseEnter={() => s.recap && !drag && (peekTimer.current = setTimeout(() => setPeek(true), 550))}
+        onMouseLeave={unpeek}
         draggable={movable}
         onDragStart={(e) => {
+          unpeek();
           e.dataTransfer.effectAllowed = 'move';
           e.dataTransfer.setData('text/plain', s.id);
           setDrag({ id: s.id });
@@ -105,7 +114,7 @@ function Entry({ s, onMenu, drag, setDrag }: { s: SessionInfo; onMenu(e: React.M
           <span className="ses-nm">{name}</span>
           <span className="ses-l2">
             <span className="ses-dir">{shortCwd(s.cwd)}</span>
-            {s.ticket ? <JiraChip jref={{ key: s.ticket.key, ...(s.ticket.site ? { site: s.ticket.site } : {}) }} sessionId={s.id} bare /> : null}
+            {s.ticket ? <JiraChip jref={{ key: s.ticket.key, ...(s.ticket.site ? { site: s.ticket.site } : {}) }} sessionId={s.id} bare /> : s.issue ? <IssueChip s={s} /> : null}
             <CiGlyph sessionId={s.id} />
           </span>
         </span>
@@ -161,16 +170,12 @@ export function SessionRail() {
     return () => (window.removeEventListener('focus', back), document.removeEventListener('visibilitychange', back));
   }, []);
   const now = useNow(5000);
-  const [showOld, setShowOld] = useState(false);
   const [menu, setMenu] = useState<{ s: SessionInfo; x: number; y: number } | null>(null);
   const [drag, setDrag] = useState<Drag | null>(null);
   const [folded, toggleFold] = useFolded();
-  const showDismissed = useBrain((s) => s.showDismissed);
-  const setShowDismissed = useBrain((s) => s.setShowDismissed);
-  const all = sortedSessions(sessions);
-  // sessions you cleared or dismissed: a group of their own at the bottom (folded), never mixed back into the others
-  const hiddenOnes = all.filter(isDismissed).sort((a, b) => b.lastTs - a.lastTs);
-  const list = all.filter((s) => !isDismissed(s));
+  const focus = useBrain((s) => s.focus);
+  // what's live, and what ended in the last few hours; removed ones and older ones are in Resume
+  const list = sortedSessions(sessions).filter((s) => inList(s, now, focus));
   const setModal = useBrain((s) => s.setModal);
   const onMenu = (e: React.MouseEvent, s: SessionInfo) => {
     e.preventDefault();
@@ -201,13 +206,6 @@ export function SessionRail() {
       <div className="rail-scroll">
       {GROUPS.map((g) => {
         const all = list.filter((s) => g.states.includes(s.state));
-        let items = all;
-        let hidden = 0;
-        if (g.title === 'ended' && !showOld) {
-          const recent = items.filter((s) => now - s.lastTs < ENDED_COLLAPSE_MS);
-          hidden = items.length - recent.length;
-          items = recent;
-        }
         if (!all.length) return null;
         const foldable = g.title !== 'working';
         const closed = foldable && !!folded[g.title];
@@ -231,42 +229,16 @@ export function SessionRail() {
                 </button>
               ) : null}
               {g.title === 'ended' ? (
-                <button className="ses-clear" onClick={(e) => (e.stopPropagation(), void clearEnded())} title="Hide all ended sessions from the list">
+                <button className="ses-clear" onClick={(e) => (e.stopPropagation(), void clearEnded())} title="Take the ended sessions off the list (Resume still has them)">
                   clear
                 </button>
               ) : null}
             </div>
-            {closed ? null : (
-              <>
-                {items.map((s) => (
-                  <Entry key={s.id} s={s} onMenu={onMenu} drag={drag} setDrag={setDrag} />
-                ))}
-                {hidden ? (
-                  <button className="more-old" onClick={() => setShowOld(true)} title="Ended sessions from before the last few hours">
-                    <Icon name="ChevronDown" size={11} /> Show {hidden} earlier
-                  </button>
-                ) : g.title === 'ended' && showOld && items.some((s) => now - s.lastTs >= ENDED_COLLAPSE_MS) ? (
-                  <button className="more-old" onClick={() => setShowOld(false)}>
-                    <Icon name="ChevronUp" size={11} /> Show fewer
-                  </button>
-                ) : null}
-              </>
-            )}
+            {closed ? null : all.map((s) => <Entry key={s.id} s={s} onMenu={onMenu} drag={drag} setDrag={setDrag} />)}
           </section>
         );
       })}
-      {!list.length && ready ? <div className="empty">No sessions yet. Start Claude Code; transcripts from the last 24 h appear here.</div> : null}
-      {hiddenOnes.length ? (
-        <section className="ses-group">
-          <div className={`ses-h fold${showDismissed ? '' : ' closed'}`} onClick={() => setShowDismissed(!showDismissed)} title="Sessions you cleared or dismissed (right-click one to bring it back)">
-            <Icon name="ChevronDown" size={11} className="ses-chev" />
-            <span>hidden</span>
-            <span className="ses-n">{hiddenOnes.length}</span>
-            <span className="ses-rule" />
-          </div>
-          {showDismissed ? hiddenOnes.map((s) => <Entry key={s.id} s={s} onMenu={onMenu} drag={drag} setDrag={setDrag} />) : null}
-        </section>
-      ) : null}
+      {!list.length && ready ? <div className="empty">Nothing open. Start a new session, or pick up an earlier one from Resume.</div> : null}
       </div>
       <ToolsDock />
       <RailFooter />

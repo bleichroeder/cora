@@ -6,11 +6,15 @@ import { DeploysPanel, PipelinePanel, TicketPanel } from './DeliveryPanels';
 import { MentionsPanel, NeedsPanel, NotesPanel, SessionsPanel } from './AroundPanels';
 import { ContextPanel, GoalPanel, UsagePanel } from './SessionPanels';
 import { BrowserPanel, TerminalPanel } from './ToolPanels';
+import { RecapPanel } from '../Recap';
+import { MemePanel } from './MemePanel';
 import './panels.css';
 
 type Props = { sessionId: string; data: BoardData };
 const BODIES: Partial<Record<PanelKind, React.ComponentType<Props>>> = {
   goal: GoalPanel,
+  recap: RecapPanel,
+  memes: MemePanel,
   context: ContextPanel,
   changes: ChangesPanel,
   git: GitPanel,

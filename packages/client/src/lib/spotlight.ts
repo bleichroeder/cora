@@ -6,11 +6,11 @@
  * board stays as you arranged it. Pure: the panel (components/board/Spotlight.tsx) gathers the signals.
  */
 
-export type SpotKind = 'needs' | 'tests' | 'pipeline' | 'deploys' | 'explain' | 'browser' | 'changes' | 'background' | 'ticket' | 'git' | 'terminal' | 'context' | 'agents' | 'touching' | 'tasks';
+export type SpotKind = 'needs' | 'tests' | 'pipeline' | 'deploys' | 'explain' | 'browser' | 'changes' | 'background' | 'ticket' | 'git' | 'terminal' | 'context' | 'agents' | 'touching' | 'tasks' | 'recap';
 export type Spot = { k: SpotKind; title?: string; why: string; prio: number };
 
 /** What Claude can ask the Spotlight to show (the spotlight tool's `panel`). */
-export const ASKABLE: SpotKind[] = ['pipeline', 'deploys', 'tests', 'changes', 'background', 'browser', 'ticket', 'git', 'terminal', 'context', 'explain'];
+export const ASKABLE: SpotKind[] = ['pipeline', 'deploys', 'tests', 'changes', 'background', 'browser', 'ticket', 'git', 'terminal', 'context', 'explain', 'recap'];
 
 export type SpotSignals = {
   now: number;
@@ -28,6 +28,8 @@ export type SpotSignals = {
   browserAt?: number;
   /** the last file it changed */
   editAt?: number;
+  /** Claude Code's latest recap of it (written as you came back) */
+  recapAt?: number;
   background: number;
 };
 
@@ -58,6 +60,7 @@ const NAMES: Record<SpotKind, string> = {
   agents: 'Agents',
   touching: 'Touching',
   tasks: 'Tasks',
+  recap: 'Recap',
 };
 export const spotName = (s: Pick<Spot, 'k' | 'title'>) => (s.k === 'explain' && s.title ? s.title : NAMES[s.k]);
 
@@ -73,6 +76,7 @@ export function candidates(s: SpotSignals): Spot[] {
   if (within(s.pipeline?.failedAt, 10 * 60_000)) out.push({ k: 'pipeline', why: 'Pipeline failed', prio: 66 });
   if (s.pipeline?.active) out.push({ k: 'pipeline', why: 'Pipeline running', prio: 60 });
   if (s.live && within(s.live.at, 3 * 60_000)) out.push({ k: 'explain', title: s.live.title, why: 'Live explain', prio: 50 });
+  if (within(s.recapAt, 3 * 60_000)) out.push({ k: 'recap', why: 'Where you left off', prio: 45 });
   if (within(s.browserAt, 90_000)) out.push({ k: 'browser', why: 'Browsing', prio: 40 });
   if (within(s.editAt, 2 * 60_000)) out.push({ k: 'changes', why: 'Editing files', prio: 30 });
   if (s.background) out.push({ k: 'background', why: s.background === 1 ? 'Running in the background' : `${s.background} running in the background`, prio: 20 });

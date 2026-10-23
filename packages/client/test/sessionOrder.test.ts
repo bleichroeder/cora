@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { SessionInfo } from '@cora/shared';
-import { dropOrder, moved, nudgeOrder, sortedSessions } from '../src/lib/sessionOrder';
+import { ENDED_KEEP_MS, dropOrder, inList, moved, nudgeOrder, sortedSessions } from '../src/lib/sessionOrder';
 
 const mk = (id: string, state: SessionInfo['state'], startedAt: number, lastTs: number, order?: number): SessionInfo => ({
   id, cwd: '', project: '', title: '', state, startedAt, lastTs, cliVersion: '', transcriptPath: '', needsYou: 0, ...(order != null ? { order } : {}),
@@ -38,5 +38,21 @@ describe('reordering', () => {
     expect(nudgeOrder(s, 'c', 1, () => true)).toBeNull();
     expect(nudgeOrder(s, 'd', -1, () => true)).toBeNull();
     expect(nudgeOrder(s, 'x', -1, () => true)).toBeNull();
+  });
+});
+
+describe('inList', () => {
+  const now = 10 * ENDED_KEEP_MS;
+  it('lists live sessions whatever their age, and ended ones for a few hours', () => {
+    expect(inList(mk('a', 'idle', 1, 1), now, null)).toBe(true);
+    expect(inList(mk('b', 'ended', 1, now - ENDED_KEEP_MS + 1000), now, null)).toBe(true);
+    expect(inList(mk('c', 'ended', 1, now - ENDED_KEEP_MS - 1000), now, null)).toBe(false);
+  });
+  it('keeps an old ended session listed while you look at it', () => {
+    expect(inList(mk('c', 'ended', 1, 1), now, 'c')).toBe(true);
+  });
+  it('leaves out removed sessions until they have new activity', () => {
+    expect(inList({ ...mk('d', 'idle', 1, 500), dismissedAt: 600 }, now, null)).toBe(false);
+    expect(inList({ ...mk('d', 'idle', 1, 700), dismissedAt: 600 }, now, null)).toBe(true);
   });
 });

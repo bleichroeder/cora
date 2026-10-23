@@ -1,0 +1,44 @@
+/* The main view with nothing open: Cora's orb and its light in your colour, what to do next, the last few sessions */
+.main > .empty-state.em { gap: 10px; background: radial-gradient(520px 360px at 50% 34%, color-mix(in srgb, var(--cora) 13%, transparent), transparent 70%), radial-gradient(900px 600px at 50% 40%, color-mix(in srgb, var(--cora) 5%, transparent), transparent 75%), var(--nav); }
+
+/* the orb, with two slow rings around it */
+.em-hero { position: relative; display: grid; place-items: center; width: 132px; height: 132px; margin-bottom: 6px; }
+.em-hero::before, .em-hero::after { content: ''; position: absolute; border-radius: 50%; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cora) 24%, transparent); animation: em-ring 6s ease-in-out infinite; }
+.em-hero::before { inset: 22px; }
+.em-hero::after { inset: 0; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cora) 11%, transparent); animation-delay: -3s; }
+.em-orb { width: 62px; height: 62px; box-shadow: 0 0 0 1px color-mix(in srgb, var(--cora) 35%, transparent), 0 0 28px color-mix(in srgb, var(--cora) 45%, transparent), 0 0 70px color-mix(in srgb, var(--cora) 22%, transparent); animation: em-breathe 4.8s ease-in-out infinite; }
+@keyframes em-ring { 50% { transform: scale(1.05); opacity: .55; } }
+@keyframes em-breathe { 50% { box-shadow: 0 0 0 1px color-mix(in srgb, var(--cora) 45%, transparent), 0 0 36px color-mix(in srgb, var(--cora) 60%, transparent), 0 0 90px color-mix(in srgb, var(--cora) 30%, transparent); } }
+
+.main > .empty-state.em h3 { margin: 0; color: var(--ink); font: 600 20px var(--ui); letter-spacing: -.01em; }
+.main > .empty-state.em p { max-width: 400px; margin: 0; color: var(--ink3); font: 400 13px/1.55 var(--ui); }
+.main > .empty-state.em .es-actions { margin-top: 10px; }
+.main > .empty-state.em .btn.em-go { height: 32px; padding: 0 14px; background: color-mix(in srgb, var(--cora) 22%, var(--raise)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cora) 55%, transparent), 0 6px 20px color-mix(in srgb, var(--cora) 18%, transparent); color: var(--ink); }
+.main > .empty-state.em .btn.em-go:hover { background: color-mix(in srgb, var(--cora) 30%, var(--raise)); }
+.main > .empty-state.em .btn.ghost { height: 32px; }
+
+/* the last few sessions: one click shows it here */
+.em-recent { display: flex; flex-direction: column; gap: 6px; width: min(400px, 100%); margin-top: 22px; }
+.em-h { margin: 0 2px 2px; color: var(--ink4); font: 600 10px var(--ui); letter-spacing: .14em; text-align: left; text-transform: uppercase; }
+.em-row { display: grid; grid-template-columns: 10px minmax(0, 1fr) 14px; align-items: center; gap: 12px; padding: 9px 12px; border: 0; border-radius: 10px; background: var(--raise); box-shadow: inset 0 0 0 1px var(--hair); color: var(--ink4); text-align: left; cursor: pointer; transition: box-shadow .15s, background .15s, color .15s; }
+.em-row:hover { background: color-mix(in srgb, var(--cora) 7%, var(--raise)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cora) 40%, transparent); color: var(--ink2); }
+.em-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--sc); box-shadow: 0 0 8px color-mix(in srgb, var(--sc) 60%, transparent); }
+.em-t { display: flex; flex-direction: column; min-width: 0; }
+.em-t b { overflow: hidden; color: var(--ink); font: 500 13px/17px var(--ui); text-overflow: ellipsis; white-space: nowrap; }
+.em-t span { overflow: hidden; color: var(--ink4); font: 400 11px var(--code); text-overflow: ellipsis; white-space: nowrap; }
+
+.em-hint { display: inline-flex; align-items: center; gap: 4px; margin-top: 18px; padding: 2px 4px; border: 0; background: none; color: var(--ink4); font: 400 11.5px var(--ui); cursor: pointer; }
+.em-hint:hover { color: var(--ink2); }
+.em-hint kbd { padding: 0 5px; border: 0; border-radius: 4px; background: var(--raise2); box-shadow: inset 0 0 0 1px var(--hair2); color: var(--ink3); font: 500 10.5px var(--code); }
+.em-hint kbd + kbd { margin-right: 3px; }
+
+@media (prefers-reduced-motion: reduce) { .em-hero::before, .em-hero::after, .em-orb { animation: none; } }
+
+/* the boot screen: the desktop splash's look carried on (its word, below the orb), in your colour */
+.boot-screen { --orb-glow: .4; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; background: radial-gradient(520px 360px at 50% 42%, color-mix(in srgb, var(--orb-tint, var(--cora)) calc(var(--orb-glow) * 30%), transparent), transparent 70%), var(--nav); -webkit-app-region: drag; animation: bs-in .4s ease-out both; }
+.boot-screen .bs-orb { display: grid; place-items: center; width: 150px; height: 150px; margin-bottom: 8px; }
+.boot-screen .bs-word { color: var(--ink2); font: 600 13px var(--ui); letter-spacing: .5em; text-indent: .5em; }
+.boot-screen .bs-sub { color: var(--ink4); font: 400 11.5px var(--ui); animation: bs-wait 1.8s ease-in-out infinite; }
+@keyframes bs-in { from { opacity: 0; } }
+@keyframes bs-wait { 50% { opacity: .45; } }
+@media (prefers-reduced-motion: reduce) { .boot-screen, .boot-screen .bs-sub { animation: none; } }

@@ -223,7 +223,7 @@ Cora follows each session's GitLab pipeline, so you see a failure the moment it 
 it.
 
 **It needs** the GitLab command line, `glab`, installed and signed in (`glab auth login`). Set your GitLab host in
-**Settings › Environments › Pipelines and Deploys › GitLab** (it starts as `gitlab.com`). Cora only reads from GitLab.
+**Settings › GitLab › Site** (it starts as `gitlab.com`). Cora only reads from GitLab.
 
 - **Which pipelines.** Each live session follows the latest pipeline for the branch it works on (its merge request's,
   when it has one), plus pipelines its commands start or look at. After a push, Cora looks again within seconds.
@@ -245,8 +245,16 @@ out.) Cora reads the list every minute and never marks anything done.
 - **Your phone**, while you're away: assignments, reviews, mentions and approvals, through Cora's bot (its
   **Tickets assigned to me** setting).
 
-What's already on the list the first time comes in as read. Turn it off with **Settings › Environments › Pipelines
-and Deploys › Your GitLab to-dos**.
+What's already on the list the first time comes in as read. Turn it off with **Settings › GitLab › Your GitLab
+to-dos**.
+
+### An issue assigned to you
+
+When GitLab assigns you an issue, **Settings › GitLab › When an issue is assigned to you** decides what happens:
+**Just tell me** (the Inbox), **Offer to start it** (a card: start it in your checkout of its project, or pick another
+folder), or **Start it on its own** (in your checkout, in plan mode: it sums the issue up and diagnoses it, then waits
+for you; at most 2 at a time). Offering and starting need Cora on. You can always start one yourself from
+**New session › From a GitLab issue** (see [Sessions](sessions.md)).
 
 ## Deploys
 

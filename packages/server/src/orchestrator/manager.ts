@@ -1,9 +1,10 @@
 import type { JiraFresh } from '../jiraFeed';
+import { IssueStarts } from './issueStart';
 import type { CoraTold } from '../inboxFeeds';
 import { appendFileSync, existsSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { AWAY_MS, bareWords, choiceOpen, isShell, type BriefKind, type BrainEvent, type SessionInfo, type CiMsg, type GoalState, type OrchestratorStatus, type PendingDecision, type PendingRequest, type Settings, type TerminalInfo, type UiCommand, takesTags, jiraLine, type JiraEvent, type MailHit, type GitlabTodo, todoWhy } from '@cora/shared';
+import { AWAY_MS, bareWords, choiceOpen, isShell, type BriefKind, type BrainEvent, type SessionInfo, type CiMsg, type GoalState, type OrchestratorStatus, type PendingDecision, type PendingRequest, type Settings, type TerminalInfo, type UiCommand, takesTags, jiraLine, type JiraEvent, type MailHit, type GitlabTodo, type GitlabIssue, todoWhy } from '@cora/shared';
 import { terminalInput } from '../input';
 import type { PtyManager } from '../pty';
 import { Approvals, type ApprovalOutcome } from './approvals';
@@ -66,6 +67,9 @@ export type OrchDeps = {
   mailConnected?: () => boolean;
   /** the latest "assigned to you" event for a ticket (starting work from Jira) */
   jiraAssigned?(key: string): JiraEvent | undefined;
+  /** GitLab issues: a project's checkout among folders, and one issue as glab reads it */
+  issueFolder?(project: string, folders: string[]): Promise<string | null>;
+  gitlabIssue?(project: string, iid: number): Promise<GitlabIssue | null>;
   /** how many prompts a session has (a Jira start's first is Cora's) */
   prompts?(sessionId: string): number;
   /** what Cora did or asked (Cora's Inbox) */
@@ -114,6 +118,7 @@ export class OrchestratorManager {
   readonly copies: Copies;
   /** starting work on tickets assigned to you */
   readonly jiraStarts: JiraStarts;
+  readonly issueStarts: IssueStarts;
   /** how it starts sessions (the app's launch, set once the app is built) */
   private launcher: JiraStartDeps['launch'] | null = null;
 
@@ -164,6 +169,38 @@ export class OrchestratorManager {
       now: () => this.now(),
     });
     this.copies = new Copies({ dir: join(this.dir, 'copy'), claudeCmd: () => this.d.claudeCmd ?? defaultClaudeCmd(), run: d.copyRun });
+    this.issueStarts = new IssueStarts({
+      mode: () => this.d.settings().gitlab.start ?? 'offer',
+      sessions: () => this.d.sessions?.() ?? [],
+      isDir: (p) => {
+        try {
+          return statSync(p).isDirectory();
+        } catch {
+          return false;
+        }
+      },
+      folderFor: (project, folders) => this.d.issueFolder?.(project, folders) ?? Promise.resolve(null),
+      issue: (project, iid) => this.d.gitlabIssue?.(project, iid) ?? Promise.resolve(null),
+      approvals: this.approvals,
+      launch: async (o) => {
+        if (!this.launcher) throw new Error("Cora can't start sessions right now");
+        return this.launcher(o);
+      },
+      prompts: (sid) => this.d.prompts?.(sid) ?? 0,
+      focus: (sid) => this.ui({ action: 'focus', sessionId: sid }),
+      note: (l) => this.feed.note(l),
+      changed: () => this.changed(),
+      started: (r) =>
+        this.d.told?.({
+          key: `start:gl:${r.project}#${r.iid}`,
+          title: `Started #${r.iid} in ${r.cwd.split(/[\\/]/).filter(Boolean).pop() ?? r.cwd}`,
+          text: r.auto ? `On its own: it sums up ${r.project}#${r.iid} and diagnoses it, then stops at a plan` : 'You said start',
+          why: r.auto ? 'assigned to you, and Cora starts these' : 'assigned to you',
+          sessionId: r.sessionId,
+        }),
+      file: join(this.dir, 'issue-starts.json'),
+      now: () => this.now(),
+    });
     this.jiraStarts = new JiraStarts({
       mode: () => this.d.settings().jira.watch.start,
       listening: () => this.enabled() && !!this.terminal() && this.feedMode() !== 'off',
@@ -470,6 +507,11 @@ export class OrchestratorManager {
     if (todos.length > 5) this.feed.hold(`[GitLab] ${todos.length - 5} more GitLab to-dos (in the Inbox)`);
   }
 
+  /** New GitLab to-dos: the issues assigned to you are offered or started (Settings › GitLab), with Cora on. */
+  issueTodos(todos: GitlabTodo[]): void {
+    if (this.enabled()) void this.issueStarts.todos(todos);
+  }
+
   /** New in Jira (already told to the user): Cora knows, without a turn of its own. */
   jiraNotes(f: JiraFresh): void {
     // assigned to you, and Cora offers or starts it: a turn of its own, to pick the folder
@@ -664,9 +706,10 @@ export class OrchestratorManager {
     const look = 'Look first (sessions, pending, pipelines, security, and the goal if there is one); never guess.';
     const text =
       kind === 'wrap'
-        ? `[Cora wrap-up] The user is wrapping up for now. Sum up the work across their sessions since this morning: what got done, what's still open, anything left running or waiting on them. Then say what to pick up first next time. ${look} Remember anything worth keeping with remember. Keep it to about a minute to hear.`
-        : `[Cora brief] ${kind === 'welcome' ? `The user is back after ${Math.round(awayMs / 3600_000)} hours away.` : 'The user asked for a brief.'} Catch them up: what needs them now first (prompts and questions waiting, failures${this.d.slackConnected?.() ? `, and Slack DMs and mentions waiting for them: slack_inbox with since ${kind === 'welcome' ? `${Math.max(1, Math.round(awayMs / 3600_000))}h` : '8h'}` : ''}${this.d.jiraWatching?.() ? `, and Jira (assigned to them, mentions, comments): jira_inbox with since ${kind === 'welcome' ? `${Math.max(1, Math.round(awayMs / 3600_000))}h` : '8h'}` : ''}${this.d.mailConnected?.() ? `, and email they watch for: gmail_inbox with since ${kind === 'welcome' ? `${Math.max(1, Math.round(awayMs / 3600_000))}h` : '8h'}` : ''}), then what happened${kind === 'welcome' ? ' while they were away' : ''} (sessions that finished, what they did, pipelines), then anything else worth knowing. ${look} Offer the obvious next steps. Keep it to about a minute to hear; skip what's quiet.`;
-    if (whenFree && this.terminal()) {
+        ? `[Cora wrap-up] The user is wrapping up for now. Sum up the work across their sessions since this morning (start from the sessions' recaps: recaps with since 14h): what got done, what's still open, anything left running or waiting on them. Then say what to pick up first next time. ${look} Remember anything worth keeping with remember. Keep it to about a minute to hear.`
+        : `[Cora brief] ${kind === 'welcome' ? `The user is back after ${Math.round(awayMs / 3600_000)} hours away.` : 'The user asked for a brief.'} Catch them up: what needs them now first (prompts and questions waiting, failures${this.d.slackConnected?.() ? `, and Slack DMs and mentions waiting for them: slack_inbox with since ${kind === 'welcome' ? `${Math.max(1, Math.round(awayMs / 3600_000))}h` : '8h'}` : ''}${this.d.jiraWatching?.() ? `, and Jira (assigned to them, mentions, comments): jira_inbox with since ${kind === 'welcome' ? `${Math.max(1, Math.round(awayMs / 3600_000))}h` : '8h'}` : ''}${this.d.mailConnected?.() ? `, and email they watch for: gmail_inbox with since ${kind === 'welcome' ? `${Math.max(1, Math.round(awayMs / 3600_000))}h` : '8h'}` : ''}), then what happened${kind === 'welcome' ? ' while they were away' : ''} (start from the sessions' recaps, Claude Code's own summaries: recaps with since ${kind === 'welcome' ? `${Math.max(1, Math.round(awayMs / 3600_000))}h` : '8h'}; then sessions that finished, what they did, pipelines), then anything else worth knowing. ${look} Offer the obvious next steps. Keep it to about a minute to hear; skip what's quiet.`;
+    // later is fine: its terminal busy with a menu, or not up yet (Cora still starting when you sit down in the morning)
+    if (whenFree && this.enabled()) {
       this.sayWhenFree(text);
       this.d.log?.(`orchestrator: brief (${kind})`);
       return { ok: true };
