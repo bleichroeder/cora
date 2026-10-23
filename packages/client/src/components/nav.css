@@ -6,13 +6,6 @@
 }
 
 /* New, Resume, Find: 12px from the line above, the list 12px below */
-.rail .rail-actions { display: grid; grid-template-columns: 1fr 1fr 32px; gap: 6px; padding: 12px 12px 0; border-top-color: var(--hair2); }
-.rail .rail-actions .btn { height: 30px; justify-content: center; gap: 6px; padding: 0 8px; border: 0; border-radius: 8px; background: var(--raise); box-shadow: inset 0 0 0 1px var(--hair2); color: var(--ink); font: 600 12.5px var(--ui); }
-.rail .rail-actions .btn:hover { background: var(--raise2); }
-.rail .rail-actions .btn.allow { background: color-mix(in srgb, var(--work) 14%, var(--raise)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--work) 40%, transparent); color: #d9fbe9; }
-.rail .rail-actions .btn.allow:hover { background: color-mix(in srgb, var(--work) 20%, var(--raise)); }
-.rail .rail-actions .rail-find { width: 32px; height: 30px; display: grid; place-items: center; border-radius: 8px; background: var(--raise); box-shadow: inset 0 0 0 1px var(--hair2); color: var(--ink3); }
-.rail .rail-actions .rail-find:hover { color: var(--ink); background: var(--raise2); }
 .rail .rail-scroll { padding: 4px 8px 8px; gap: 0; scrollbar-width: thin; scrollbar-color: #1d2430 transparent; }
 
 /* group headers: small caps, a count, a hairline */
@@ -80,7 +73,7 @@
 .rail .jchip.bare.j-progress { color: color-mix(in srgb, #8ab4f8 80%, var(--ink3)); }
 .rail .jchip.bare.j-done { color: color-mix(in srgb, var(--work) 70%, var(--ink3)); }
 .rail .jchip.bare:hover { color: var(--ink); background: none; text-decoration: underline; }
-.rail .more-old { margin: 4px 6px; padding: 0; border: 0; background: none; color: var(--ink4); font: 500 11px var(--code); cursor: pointer; }
+.rail .more-old { display: inline-flex; align-items: center; gap: 5px; margin: 4px 8px; padding: 2px 0; border: 0; background: none; color: var(--ink4); font: 500 11px var(--ui); cursor: pointer; }
 .rail .more-old:hover { color: var(--ink2); }
 
 /* Tools and the footer: the same surfaces, hairlines and type; labels kept */
@@ -152,3 +145,9 @@
 .rail .rt-fin { padding-left: 12px; }
 /* installed Cora: a new version is waiting for a restart */
 .rail-foot .rf-update { color: var(--cora); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cora) 40%, transparent); background: color-mix(in srgb, var(--cora) 10%, var(--raise)); }
+
+/* the sessions' section: a heading like Tools', with Resume and Search beside it, then New session */
+.rail .rail-sessions { padding: 2px 12px 10px; }
+.rail .ses-head { margin: 0 0 8px 2px; }
+.rail .btn.ses-new { display: flex; width: 100%; height: 32px; align-items: center; justify-content: center; gap: 6px; padding: 0 8px; border: 0; border-radius: 8px; background: color-mix(in srgb, var(--work) 14%, var(--raise)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--work) 40%, transparent); color: #d9fbe9; font: 600 12.5px var(--ui); }
+.rail .btn.ses-new:hover { background: color-mix(in srgb, var(--work) 20%, var(--raise)); }

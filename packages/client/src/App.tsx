@@ -22,6 +22,8 @@ import { LiveBoard } from './components/LiveBoard';
 import { ago, isDismissed, plainName, prettyModel, sessionColor, sessionName, tokens } from './lib/format';
 import { contextMax } from './scene/derive';
 import { Icon } from './components/Icon';
+import { PlanUsage, UsageView } from './components/AccountUsage';
+import { openUsage, useAccountUsage, useWatchUsage } from './state/accountUsage';
 import { TerminalPane } from './components/TerminalPane';
 import { useTermView } from './state/shells';
 import { Composer } from './components/Composer';
@@ -40,6 +42,7 @@ import { ChangesPane } from './components/ChangesPane';
 import { WebPane, openFind, stepTab, tabOfPage } from './components/WebPane';
 import { openInBrowser } from './state/browser';
 import { useWeb } from './state/web';
+import { browserDockOf, useBoardDock } from './state/boardDock';
 import { JiraText } from './components/JiraChip';
 import { backgroundTasks } from './lib/background';
 import { PaletteHost } from './components/Palette';
@@ -164,9 +167,12 @@ function Focus({ sessionId }: { sessionId: string }) {
   const diffWide = useBrain((s) => s.diffWide);
   // a docked browser takes the right of the scene area and the scene fits itself into the rest
   const scene3d = useBrain((s) => s.prefs.scene3d !== false);
+  // (a Browser panel on the live board holds it instead: nothing pushed aside)
+  const browserDocked = useBoardDock((d) => !!browserDockOf(d, sessionId));
+  const needsDocked = useBoardDock((d) => d.needs.includes(sessionId));
   const sceneInset = useWeb((w) => {
     const s = w.sessions[sessionId];
-    return desktop?.browser && s?.shown && s.active && !w.wide && w.split < 1 ? `${Math.round(w.split * 1000) / 10}%` : 0;
+    return desktop?.browser && !browserDocked && s?.shown && s.active && !w.wide && w.split < 1 ? `${Math.round(w.split * 1000) / 10}%` : 0;
   });
   const box = useRef<HTMLDivElement>(null);
   const startW = useRef(0);
@@ -186,14 +192,16 @@ function Focus({ sessionId }: { sessionId: string }) {
           ) : (
             <div className="scene-box" style={{ right: sceneInset }}>
               {scene3d ? <Scene sessionId={sessionId} /> : <LiveBoard sessionId={sessionId} />}
+              {/* switching sessions: the new one fades in (keyed: it plays once per switch; the scene itself isn't rebuilt) */}
+              <div key={sessionId} className="scene-veil" aria-hidden />
             </div>
           )}
-          <NeedsYou sessionId={sessionId} />
+          {needsDocked ? null : <NeedsYou sessionId={sessionId} />}
           <Boundary quiet name="push-to-talk">
             <PushToTalk sessionId={sessionId} />
           </Boundary>
         </div>
-        <Strip sessionId={sessionId} />
+        <Timeline sessionId={sessionId} />
       </div>
       <DragHandle
         dir="col"
@@ -224,6 +232,35 @@ function Focus({ sessionId }: { sessionId: string }) {
           <WebPane view={view} sessionId={sessionId} />
         </Boundary>
       ) : null}
+    </div>
+  );
+}
+
+/**
+ * The timeline under the scene, folded away with the tab on its edge (folded, it isn't there at all: nothing ticks).
+ * With the 3D scene it starts open, with the live board folded (it rewinds the scene, not the board); each as you left it.
+ */
+function Timeline({ sessionId }: { sessionId: string }) {
+  const scene3d = useBrain((s) => s.prefs.scene3d !== false);
+  const pref = useBrain((s) => s.prefs.timeline);
+  const shown = scene3d ? (pref?.scene ?? true) : (pref?.board ?? false);
+  const set = (on: boolean) => {
+    const st = useBrain.getState();
+    if (!on) st.setCursor(null);
+    st.setPrefs({ timeline: { ...st.prefs.timeline, [scene3d ? 'scene' : 'board']: on } });
+  };
+  return shown ? (
+    <div className="tl-dock">
+      <button className="tl-fold" onClick={() => set(false)} title="Hide the timeline">
+        <Icon name="ChevronDown" size={12} />
+      </button>
+      <Strip sessionId={sessionId} />
+    </div>
+  ) : (
+    <div className="tl-dock folded">
+      <button className="tl-fold" onClick={() => set(true)} title="Show the timeline">
+        <Icon name="ChevronUp" size={12} /> Timeline
+      </button>
     </div>
   );
 }
@@ -448,8 +485,9 @@ export function App() {
         const sid = st.focus;
         setTimeout(() => {
           const now = useBrain.getState();
-          // not over the browser (you're looking at something there), nor over a game of golf (it stays on the shelf)
-          if (now.focus === sid && now.viewer?.toolUseId !== p.toolUseId && !useWeb.getState().sessions[sid]?.shown && !document.querySelector('.golfing')) now.setViewer(p);
+          // not over the browser (you're looking at something there), nor over a game of golf (it stays on the shelf),
+          // nor over the live board when its Spotlight is up (the explain shows there)
+          if (now.focus === sid && now.viewer?.toolUseId !== p.toolUseId && !useWeb.getState().sessions[sid]?.shown && !document.querySelector('.golfing') && !useBoardDock.getState().spotlight.includes(sid)) now.setViewer(p);
         }, 2200);
         if (st.prefs.notifyExplains && !attentive()) desktop?.notify(`${st.sessions[st.focus] ? sessionName(st.sessions[st.focus]) : 'Claude'} wrote an explain`, p.title, st.focus);
         break;
@@ -527,6 +565,7 @@ export function App() {
       <OpMenu />
       <CoraFloat />
       <PaletteHost />
+      <UsageView />
       {modal === 'new-session' ? <NewSessionModal /> : modal === 'history' ? <HistoryModal /> : modal === 'settings' ? <SettingsModal /> : null}
     </div>
   );
@@ -587,11 +626,15 @@ function SessionMeter({ s }: { s: SessionInfo }) {
   }, [s.id, version, s.model]);
   const m = prettyModel(s.model);
   const drift = s.totalLines && s.unknownLines ? s.unknownLines / s.totalLines : 0;
+  // your plan's usage under the session's: read while you look at the card (about once a minute at most)
+  const [hover, setHover] = useState(false);
+  useWatchUsage(hover);
+  const plan = useAccountUsage((a) => a.u);
   if (!u.out && u.pct == null && !m) return null;
   const pct = u.pct ?? 0;
   const col = u.pct == null ? 'var(--ink4)' : pct < 0.6 ? 'var(--work)' : pct < 0.8 ? 'var(--think)' : 'var(--need)';
   return (
-    <span className="fh-meter">
+    <span className="fh-meter clickable" onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)} onClick={() => openUsage()} title="">
       <span className="fh-bar"><i style={{ width: `${Math.min(100, pct * 100)}%`, background: col }} /></span>
       <span>{u.compactedAt != null ? 'fresh' : u.pct != null ? `${Math.round(pct * 100)}%` : '–'}</span>
       {m ? <span className="fh-model">{m.name}</span> : null}
@@ -605,6 +648,12 @@ function SessionMeter({ s }: { s: SessionInfo }) {
         {m ? <span className="r"><span className="k">model</span><span>{m.name}{m.ctx ? ` · ${m.ctx} context` : ''}</span></span> : null}
         <span className="r"><span className="k">output this session</span><span>{tokens(u.out)} tokens</span></span>
         <span className="r"><span className="k">compactions</span><span>{u.compactions || 'none'}</span></span>
+        <button className="au-sec" onClick={(e) => (e.stopPropagation(), openUsage())}>
+          <span className="k">
+            Your plan<span>All usage ›</span>
+          </span>
+          <PlanUsage u={plan} compact />
+        </button>
         {drift > 0.05 ? (
           <span className="w">
             ⚠ {Math.round(drift * 100)}% of transcript lines weren't recognised: Claude Code's transcript format may have changed, so the scene may miss some steps.

@@ -1,6 +1,6 @@
 import { mkdirSync, readdirSync, rmSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import { DEPLOYS_TOOL, ENV_TOOL, LIVE_EXPLAIN_TOOL, NOTES_TOOLS, MCP_SERVER, OPEN_TAB_TOOL, SESSION_HEADER, SLACK_FIND_TOOL, SLACK_READ_TOOL, SLACK_SEND_TOOL, SPEAK_TOOL, TOKEN_HEADER, speaksSummaries, type Settings, type VoiceSettings, takesTags } from '@cora/shared';
+import { DEPLOYS_TOOL, ENV_TOOL, LIVE_EXPLAIN_TOOL, NOTES_TOOLS, MCP_SERVER, OPEN_TAB_TOOL, SPOTLIGHT_TOOL, SESSION_HEADER, SLACK_FIND_TOOL, SLACK_READ_TOOL, SLACK_SEND_TOOL, SPEAK_TOOL, TOKEN_HEADER, speaksSummaries, type Settings, type VoiceSettings, takesTags } from '@cora/shared';
 import type { Config } from './config';
 import { attachmentsDir } from './attachments';
 import { writeFileAtomic } from './fsx';
@@ -65,6 +65,8 @@ export function nudgeFor(s: Settings['explains'], voice?: VoiceSettings): string
       : 'Use format="markdown" for documents, or format="html" with one self-contained HTML document for visual or interactive output (it is shown in a wide viewer: use the full width, dark background; inline CSS/JS, scripts may load from cdn.jsdelivr.net or cdnjs.cloudflare.com, no other network requests).';
   const browser =
     "It also gives you an `open_tab` tool that opens a web page in Cora's browser for the user (signed in to their sites). After you change something they'd want to see on the web (a Jira ticket you commented on or moved, a merge request, pipeline or issue you created or updated), open it with this tool; also when they ask to see a page.";
+  const spotlight =
+    "When something starts that the user would want to watch (a pipeline or deploy you started, a test run, a live explain), the `spotlight` tool asks Cora to show it in their board's Spotlight; use it sparingly.";
   return [
     'You are running inside Cora, a desktop app that shows this terminal next to a live view of your work.',
     ...(s.mode === 'off'
@@ -81,6 +83,7 @@ export function nudgeFor(s: Settings['explains'], voice?: VoiceSettings): string
           'Do not use explains for short answers, confirmations, or routine progress updates.',
         ]),
     browser,
+    spotlight,
     ...(speak ? [speak] : []),
     '',
   ].join('\n');
@@ -113,7 +116,7 @@ ${OTHERS}`);
   const explains = join(config.dataDir, 'explains');
   const live = settings.explains.mode === 'markdown+html';
   if (live) mkdirSync(explains, { recursive: true });
-  const allowed = [OPEN_TAB_TOOL, ENV_TOOL, DEPLOYS_TOOL, ...NOTES_TOOLS.map((t) => `mcp__${MCP_SERVER}__${t}`), SLACK_FIND_TOOL, SLACK_READ_TOOL, SLACK_SEND_TOOL, ...(speaksSummaries(settings.voice) ? [SPEAK_TOOL] : []), ...(live ? [LIVE_EXPLAIN_TOOL, `Edit(${ruleFor(explains)}/**)`] : [])].join(',');
+  const allowed = [OPEN_TAB_TOOL, SPOTLIGHT_TOOL, ENV_TOOL, DEPLOYS_TOOL, ...NOTES_TOOLS.map((t) => `mcp__${MCP_SERVER}__${t}`), SLACK_FIND_TOOL, SLACK_READ_TOOL, SLACK_SEND_TOOL, ...(speaksSummaries(settings.voice) ? [SPEAK_TOOL] : []), ...(live ? [LIVE_EXPLAIN_TOOL, `Edit(${ruleFor(explains)}/**)`] : [])].join(',');
   const attachments = attachmentsDir(config.dataDir);
   mkdirSync(attachments, { recursive: true });
   // --add-dir takes several folders: an option must follow it

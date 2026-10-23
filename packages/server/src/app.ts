@@ -57,6 +57,7 @@ import type { Inbox } from './inbox';
 import { checkSetup, glabAuthed, refreshPath, runInWindow, setupCommand, whichCmd, type SetupDeps, onePasswordStatus } from './setup';
 import { computeHooksBlock, diffText, isOurs, mergeHooks, readSettings, settingsPath, writeSettings, hooksAimed } from './settings';
 import { connectedMcp } from './mcpServers';
+import { accountUsage } from './accountUsage';
 import { homedir } from 'node:os';
 import { join as joinPath } from 'node:path';
 
@@ -686,6 +687,9 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
     const now = Date.now();
     return summarizeUsage(store.usageEvents(now - days * 86_400_000), days, now);
   });
+  // your plan's limits, as /usage shows them (read with Claude Code's own login, at most once a minute)
+  const plan = accountUsage();
+  app.get('/api/account-usage', { preHandler: requireUi }, async () => plan.get());
   app.post<{ Body: any }>('/api/settings', { preHandler: requireAction }, async (req, reply) => {
     try {
       const before = prefs.get().orchestrator;

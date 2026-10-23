@@ -97,7 +97,7 @@ export function SaidLine({ id, text, failed = false }: { id: string; text: strin
     <div className={`said${playing ? ' playing' : ''}${failed ? ' fail' : ''}`} title={failed ? 'Not said: spoken summaries were off' : undefined}>
       <span className="said-t">🔊 said: {text}</span>
       {on && text ? (
-        <button className={`spk${playing ? ' playing' : ''}`} title={playing ? 'Stop' : 'Say it again'} onClick={() => (playing ? stopSpeaking() : void speak(id, text, 400))}>
+        <button className={`spk${playing ? ' playing' : ''}`} title={playing ? 'Stop' : 'Say it again'} onClick={() => (playing ? stopSpeaking() : void speak(id, text, 400, false, undefined, { now: true }))}>
           <Icon name={playing ? 'Square' : 'RotateCcw'} size={10} />
         </button>
       ) : null}

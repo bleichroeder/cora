@@ -83,6 +83,29 @@ function buildServer(settings: Settings, sessionId: string | null, s?: McpSlack,
       return { content: [{ type: 'text', text: known ? `Opened ${url} for the user in Cora's browser.` : `Asked the user whether to open ${host} (a site Cora doesn't know yet): it opens if they say so.` }] };
     },
   );
+  // The live board's Spotlight: what the session would like the user to watch now. The call itself is the message: the
+  // dashboard reads it from the transcript (nothing to store here), and it shows if the user has a Spotlight up.
+  if (sessionId && !asCora(sessionId))
+    server.registerTool(
+      'spotlight',
+      {
+        title: "Show it in the board's Spotlight",
+        description: [
+          "Ask Cora to show something in the Spotlight of the user's live board (a panel there that follows what matters): use it when something starts that they would want to watch,",
+          'e.g. a pipeline or a deploy you started, a test run, a page you opened, a live explain you are keeping current. Use it a few times per task at most, not for every step.',
+          'It shows only if the user has a Spotlight on their board; nothing comes back.',
+        ].join(' '),
+        inputSchema: {
+          panel: z.enum(['pipeline', 'deploys', 'tests', 'changes', 'background', 'browser', 'ticket', 'git', 'terminal', 'context', 'explain']).describe('What to show'),
+          explain: z.string().max(120).optional().describe("For panel 'explain': the explain's title"),
+          reason: z.string().max(80).optional().describe('A few words on why, shown with it (e.g. "Deploying 2.4 to staging")'),
+        },
+      },
+      async ({ panel, explain }) => {
+        if (panel === 'explain' && !explain) return fail("Say which explain: its title in 'explain'.");
+        return { content: [{ type: 'text', text: `Asked Cora to show ${panel === 'explain' ? `"${explain}"` : `the ${panel}`} in the user's Spotlight (it shows if they have one on their board).` }] };
+      },
+    );
   // A live explain: a page the session writes once and data it keeps current while it works (not Cora's agent: it
   // doesn't write files). Writing in its folder needs no OK (hosted.ts); Cora watches it and updates the open page.
   if (live && sessionId && settings.explains.mode === 'markdown+html' && !asCora(sessionId))

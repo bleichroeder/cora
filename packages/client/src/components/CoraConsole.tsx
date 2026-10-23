@@ -9,7 +9,7 @@ import { voiceCues } from '../lib/voiceAuto';
 import { openSettings } from './SettingsModal';
 import { desktop } from '../lib/desktop';
 import { Markdown } from './Markdown';
-import { CoraLens } from './CoraEye';
+import { CoraMark } from './CoraEye';
 import { Icon } from './Icon';
 import { CoraSentInline } from './SlackOutbox';
 import { JiraAlertsInline, JiraStartCard } from './JiraAlerts';
@@ -209,7 +209,7 @@ export function CoraConsole() {
   return (
     <div className={`cora-console${open ? ' on' : ''}`} aria-hidden={!open}>
       <div className="cc-h">
-        <CoraLens state={state} size={22} />
+        <CoraMark state={state} size={22} />
         <b>CORA</b>
         <span className="cc-st">{status.error ? 'stopped' : state === 'thinking' ? 'thinking…' : state === 'listening' ? 'listening…' : state === 'starting' ? 'waking up…' : status.model}</span>
         <span className="spacer" />
@@ -277,7 +277,7 @@ export function CoraConsole() {
       <div className="cc-body" ref={body}>
         {!lines.length ? (
           <div className="cc-empty">
-            <CoraLens state={state} size={64} />
+            <CoraMark state={state} size={64} />
             <p>
               Ask me what your sessions are doing, to start one on a ticket, to show you something, or to tell a session what to do next. I'll ask before I act.
             </p>

@@ -56,6 +56,14 @@ const hideWeb = (sid: string | null) => {
 export type UiPrefs = {
   /** the scene area in 3D (off: the live board, flat, no graphics engine; the overview shows its grid) */
   scene3d?: boolean;
+  /** the live board's layout a new session starts with (lib/boardLayout); missing: the default */
+  board?: import('../lib/boardLayout').BoardItem[];
+  /** Cora's eye on its card: a main agent's orb (the default) or the lens */
+  coraEye?: 'orb' | 'lens';
+  /** the timeline under the scene shown (not folded away): with the 3D scene, and with the live board */
+  timeline?: { scene?: boolean; board?: boolean };
+  /** each session's own live board: its panels and pages */
+  boards?: Record<string, import('../lib/boardLayout').SessionBoard>;
   /** collapse main's replies in hosted sessions (the terminal shows them too) */
   collapseHosted: boolean;
   /** terminal shows only Claude's input area, growing for menus and dialogs (where you type in the terminal) */

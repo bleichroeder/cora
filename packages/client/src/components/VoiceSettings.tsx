@@ -132,7 +132,7 @@ export function VoiceSection() {
                       <option key={o.id} value={o.id}>{o.name}{o.note ? ` · ${o.note}` : ''}</option>
                     ))}
                   </select>
-                  <button className="btn ghost" onClick={() => (previewing ? stopSpeaking() : void speak('voice-preview', "Good evening. Your build passed, and I've summarised the changes in the transcript.", 5000, true))}>
+                  <button className="btn ghost" onClick={() => (previewing ? stopSpeaking() : void speak('voice-preview', "Good evening. Your build passed, and I've summarised the changes in the transcript.", 5000, true, undefined, { now: true }))}>
                     <Icon name={previewing ? 'Square' : 'Play'} size={11} /> {previewing ? 'Stop' : 'Preview'}
                   </button>
                 </span>
@@ -151,7 +151,7 @@ export function VoiceSection() {
                   <button
                     className="btn ghost"
                     disabled={!v.coraVoiceId}
-                    onClick={() => (coraPreviewing ? stopSpeaking() : void speak('cora:voice-preview', "Hi, it's Cora. Two sessions finished while you were away, and canvas needs you.", 5000, true))}
+                    onClick={() => (coraPreviewing ? stopSpeaking() : void speak('cora:voice-preview', "Hi, it's Cora. Two sessions finished while you were away, and canvas needs you.", 5000, true, undefined, { now: true }))}
                   >
                     <Icon name={coraPreviewing ? 'Square' : 'Play'} size={11} /> {coraPreviewing ? 'Stop' : 'Preview'}
                   </button>

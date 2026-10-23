@@ -59,14 +59,23 @@ The bridge card sits at the top of the left nav. It shows Cora's eye, its state 
 **listening…**, **waiting for you**, **away mode**, **autopilot** with its progress), your running sessions orbiting
 it, and Cora's latest words.
 
-Under it are three buttons:
+Cora's eye is an orb like a session's main agent (or the older lens: **Settings › Scene › Cora's eye as an orb**). It
+moves as Cora works: its thinking layer fires (deeper the longer it thinks), it spikes while it runs a tool, freezes
+red while it waits for you, ripples as you talk and pulses with its voice. It's alive to you too: it looks toward your
+pointer, swells under it with ripples where you touch, jiggles when you click, and **listens while you hold it** (let go
+to send). It breathes, now and then ripples or turns on its own, and sleeps in Away mode or late at night once you've
+gone quiet, waking with a flash when you're back.
 
-- **Talk**: speak to Cora (needs [voice](voice.md)).
+With the orb, the card is mostly the orb: your sessions drift round it as small dots (one that needs you is red), a
+goal's progress fills in along that ring, and the orb's light falls on the card (brighter as it works, red when it
+needs you). Two buttons show in the top corner as your pointer comes near:
+
 - **Brief**: catch up on what needs you and what happened.
 - **Goal**: give Cora a goal, or see the one it's on.
 
-Click the eye or the card to open the console. The arrow in the corner shrinks the card to one row. When Cora is off,
-the card shows **offline** and a **Turn on** button.
+(Hold the orb to talk to Cora. With the lens, the card has **Talk**, **Brief** and **Goal** under it.)
+
+Click the eye or the card to open the console. When Cora is off, the card shows **offline** and a **Turn on** button.
 
 ## The console and command mode
 

@@ -84,5 +84,6 @@ describe('git changes', () => {
     expect('patch' in u && u.patch).toMatch(/\+b\n\+b/);
     expect(await gitDiff(repo, join(tmpdir(), 'elsewhere.txt'))).toEqual({ error: 'that file is outside the repository' });
     expect((await gitChanges(tmpdir())).repo).toBe(false);
-  });
+    // a dozen git runs: slow to start on Windows, slower still with the whole suite running alongside
+  }, 30_000);
 });

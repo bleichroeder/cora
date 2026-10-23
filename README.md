@@ -41,7 +41,7 @@ already have.
 
 <table>
   <tr>
-    <td width="30%" valign="top"><img src="docs/images/cora-card.png" alt="Cora's card at the top of the nav: its status on autopilot, Talk, Brief and Goal buttons, and the Inbox counts"></td>
+    <td width="30%" valign="top"><img src="docs/images/cora-card.png" alt="Cora's card at the top of the nav: its orb on autopilot with the goal's progress around it, your sessions as dots on its ring, and the Inbox counts under it"></td>
     <td valign="top">
       Cora is a Claude Code session of its own that sits at the top of the nav and keeps an eye on everything:
       your sessions, pipelines, tickets, Slack and email.
@@ -50,7 +50,8 @@ already have.
         <li><b>Briefs.</b> Back after a while? It tells you what happened and what's waiting for you.</li>
         <li><b>Goals.</b> Give it something to get done ("get release 2.4 green and out to staging") and it starts and steers sessions until it's done, within a token budget you set.</li>
         <li><b>It asks first.</b> Starting a session, messaging someone or ending one waits for your OK, unless you've given it rules to work by. Hard limits it never crosses, whatever the rules.</li>
-        <li><b>Talk to it.</b> Type, hold a key, or just say "Hey Cora".</li>
+        <li><b>Talk to it.</b> Type, hold its orb or a key, or just say "Hey Cora".</li>
+        <li><b>Its orb is alive.</b> It thinks, works and speaks like a session's main agent, looks toward your pointer, and sleeps when you're away.</li>
       </ul>
     </td>
   </tr>
@@ -67,6 +68,17 @@ and each subagent it starts (and each helper those start) gets its own orbit, la
 Tool calls fly as sparks to what they touch: files and folders, the web, the shell, a browser. The model burns at the
 edge with a count of the agents waiting on it, and a timeline underneath lets you scrub back through every agent's
 steps. Zoom out and every session on your PC is a star in one galaxy.
+
+## Or a board of panels
+
+<p align="center">
+  <img src="docs/images/board.png" alt="Cora's live board for a release session: the agents and what each is doing, a Spotlight showing the live release dashboard Claude keeps current, and the files it changed with their diff" width="100%">
+</p>
+
+Prefer it flat? Turn the 3D scene off and the scene area becomes a board of panels you arrange: the agents, what
+they're touching, the changes and their diffs, test runs, the pipeline and its merge request, deploys, the ticket, the
+terminal, the browser, your plan's usage: twenty-one kinds, on pages, each session with its own. The **Spotlight** shows
+what Claude decides you should see: the explain it just wrote, the pipeline it started, the dashboard it keeps live.
 
 ## Your tools, beside your sessions
 

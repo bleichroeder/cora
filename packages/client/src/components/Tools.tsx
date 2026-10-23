@@ -50,6 +50,8 @@ function ToolGlyph({ t, size = 18 }: { t: ToolDef; size?: number }) {
 }
 
 const EXPANDED = 'cora.tools.expanded';
+/** The expanded list's height, as you dragged it (none: as tall as it needs). */
+const TOOLS_H = 'cora.tools.height';
 const readExpanded = () => {
   try {
     return localStorage.getItem(EXPANDED) === '1';
@@ -77,6 +79,49 @@ export function ToolsDock() {
       /* not kept */
     }
   };
+  // expanded, the list is as tall as you drag it (its top edge); longer, it scrolls. Double-click: as tall as it needs
+  const [height, setHeight] = useState<number | null>(() => {
+    try {
+      const v = Number(localStorage.getItem(TOOLS_H));
+      return v > 0 ? v : null;
+    } catch {
+      return null;
+    }
+  });
+  const list = useRef<HTMLDivElement>(null);
+  const keepHeight = (h: number | null) => {
+    setHeight(h);
+    try {
+      if (h) localStorage.setItem(TOOLS_H, String(Math.round(h)));
+      else localStorage.removeItem(TOOLS_H);
+    } catch {
+      /* not kept */
+    }
+  };
+  const grab = (e: React.PointerEvent) => {
+    const el = list.current;
+    if (!el || e.button !== 0) return;
+    e.preventDefault();
+    const bar = e.currentTarget as HTMLElement;
+    bar.setPointerCapture(e.pointerId);
+    const y0 = e.clientY;
+    const h0 = el.clientHeight;
+    const max = Math.max(160, window.innerHeight * 0.6);
+    let h = h0;
+    document.body.classList.add('ui-dragging');
+    const move = (ev: PointerEvent) => {
+      h = Math.max(72, Math.min(max, h0 + (y0 - ev.clientY)));
+      setHeight(h);
+    };
+    const up = () => {
+      bar.removeEventListener('pointermove', move);
+      bar.removeEventListener('pointerup', up);
+      document.body.classList.remove('ui-dragging');
+      keepHeight(h);
+    };
+    bar.addEventListener('pointermove', move);
+    bar.addEventListener('pointerup', up);
+  };
   const entries = toolEntries(tools);
   const badge = (u: number | 'dot' | undefined) => (u != null ? <span className={`rt-badge${u === 'dot' ? ' dot' : ''}`}>{u === 'dot' ? '' : u > 99 ? '99+' : u}</span> : null);
   // a folder's news: the sum of its tools' (a dot when only dots)
@@ -88,6 +133,7 @@ export function ToolsDock() {
   };
   return (
     <div className={`rail-tools${expanded ? ' expanded' : ''}`}>
+      {expanded ? <div className="rt-grip" title="Drag to resize the list (double-click: as tall as it needs)" onPointerDown={grab} onDoubleClick={() => keepHeight(null)} /> : null}
       {/* Cora's own tools (Notes) sit in their own group under yours: fixed, no number */}
       {/* the view toggle and the add button sit by the heading: the row is just the tools, centred */}
       <div className="rt-h">
@@ -104,7 +150,7 @@ export function ToolsDock() {
         </span>
       </div>
       {expanded ? (
-        <div className="rt-card">
+        <div className="rt-card rt-list" ref={list} style={height ? { maxHeight: height } : undefined}>
           {entries.map((e) => (e.kind === 'tool' ? <ToolRow key={e.t.id} t={e.t} n={e.n} on={open === e.t.id} u={unread[e.t.id]} /> : <FolderRows key={`f:${e.name}`} name={e.name} tools={e.tools} open={open} unread={unread} />))}
           <button className="rt-r rt-more" onClick={() => openSettings('tools')}>
             <span className="rt-plus">

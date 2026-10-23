@@ -382,9 +382,21 @@ export function SettingsModal() {
                 <Toggle label="Flowing tubes" hint="Prototype: tool calls as liquid tubes with light pulsing down them while they run. Off: lines with a travelling comet." checked={prefs.flowLinks} onChange={(v) => ui({ flowLinks: v })} />
                 <Toggle
                   label="3D scene"
-                  hint="Off: the scene area becomes a flat live board (each agent and what it's doing now, what they touch, the explains) with no graphics engine, and the overview shows its grid. The transcript, timeline and browser don't change."
+                  hint="Off: the scene area becomes a flat live board with no graphics engine: panels you arrange (agents, changes, tests, the pipeline, the browser, a Spotlight that follows what matters…), on pages, each session its own. The overview shows its grid."
                   checked={prefs.scene3d !== false}
                   onChange={(v) => ui({ scene3d: v })}
+                />
+                <Toggle
+                  label="Cora's eye as an orb"
+                  hint="Cora's card shows a main agent's orb in Cora's colour (it thinks, waits, listens and speaks like one) instead of the lens, with the 3D scene on or off (a small graphics canvas of its own)."
+                  checked={prefs.coraEye !== 'lens'}
+                  onChange={(v) => ui({ coraEye: v ? 'orb' : 'lens' })}
+                />
+                <Toggle
+                  label="Timeline"
+                  hint={`The strip under the ${prefs.scene3d !== false ? '3D scene' : 'live board'} with the session's activity over time${prefs.scene3d !== false ? ' (drag it to rewind the scene)' : ''}. The tab on its edge folds it away; folded, it does no work. Kept separately for the 3D scene and the live board.`}
+                  checked={prefs.scene3d !== false ? (prefs.timeline?.scene ?? true) : (prefs.timeline?.board ?? false)}
+                  onChange={(v) => ui({ timeline: { ...prefs.timeline, [prefs.scene3d !== false ? 'scene' : 'board']: v } })}
                 />
                 <Row label="3D engine" hint="If the 3D view is blank or frozen: tears it down and builds it again. Nothing else restarts. (It also restarts itself when the graphics process resets.)">
                   <GlRestart />

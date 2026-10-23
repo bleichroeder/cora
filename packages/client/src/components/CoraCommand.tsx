@@ -7,7 +7,7 @@ import { ApprovalCard, GoalBar, Talks } from './CoraConsole';
 import { CoraSentInline } from './SlackOutbox';
 import { JiraAlertsInline, JiraStartCard } from './JiraAlerts';
 import { DeployCards } from './Deploys';
-import { CoraLens } from './CoraEye';
+import { CoraMark } from './CoraEye';
 import { Markdown } from './Markdown';
 import { Icon } from './Icon';
 import { sessionColor, shortCwd } from '../lib/format';
@@ -162,7 +162,7 @@ export function CoraCommand() {
               <i />
               <i />
             </div>
-            <CoraLens state={state} size={150} progress={progress} />
+            <CoraMark state={state} size={150} progress={progress} live />
           </div>
           <div className="cm-state">
             {STATE_LINE[state] ?? state}

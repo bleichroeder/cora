@@ -91,7 +91,7 @@ Voice needs an ElevenLabs key.
 
 ### Tools sessions get (MCP)
 
-Every hosted session: `open_tab`, `environment`, `deploys`, `notes_list/search/read/add`, `slack_find/read/search/send/watch/inbox`,
+Every hosted session: `open_tab`, `spotlight`, `environment`, `deploys`, `notes_list/search/read/add`, `slack_find/read/search/send/watch/inbox`,
 `gmail_inbox/search/read/draft/watch/watches/unwatch`, `speak`. Cora also gets: `sessions`, `session`, `pending`,
 `pipelines`, `explains`, `security`, `start_session`, `resume_session`, `send_to_session`, `ask_session`, `ask_copy`,
 `end_session`, `rename_session`, `focus`, `open_url`, `open_tool`, `show_explain`, `jira_inbox`, `jira_start`, `notify`,

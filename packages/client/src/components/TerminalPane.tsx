@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { create } from 'zustand';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
@@ -13,7 +14,10 @@ import { desktop } from '../lib/desktop';
 import { oops } from '../state/oops';
 import { Icon } from './Icon';
 
-const THEME = {
+/** Each terminal's size as its pane last set it: a read-only mirror (the live board's Terminal panel) draws at the same. */
+export const useTermSizes = create<Record<string, { cols: number; rows: number }>>(() => ({}));
+
+export const THEME = {
   background: '#05080d',
   foreground: '#d7dde8',
   cursor: '#38bdf8',
@@ -132,6 +136,8 @@ function LiveTerminal({ terminal, compact, shown = true, sized = false, onChoice
         /* not laid out yet */
       }
       send({ t: 'resize', cols: term.cols, rows: term.rows });
+      const had = useTermSizes.getState()[terminal.terminalId];
+      if (had?.cols !== term.cols || had?.rows !== term.rows) useTermSizes.setState({ [terminal.terminalId]: { cols: term.cols, rows: term.rows } });
     };
     relayout.current = refit;
     focus.current = () => term.focus();

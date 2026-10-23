@@ -8,7 +8,12 @@ import type { Pipeline } from './pipeline';
 // Simulated sessions for UI development (`cora start --sim`). Feeds hook-shaped payloads through the
 // real pipeline (plus narration/thinking events that normally come from transcripts).
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+/**
+ * CORA_SIM_LITE=1: a light simulation for checking how something looks (two sessions, at a third of the pace, resting
+ * between turns), so it doesn't load the PC like the full one.
+ */
+const LITE = process.env.CORA_SIM_LITE === '1';
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, LITE ? ms * 3 : ms));
 const rnd = (a: number, b: number) => a + Math.random() * (b - a);
 const pick = <T>(a: T[]) => a[Math.floor(Math.random() * a.length)];
 let n = 0;
@@ -318,7 +323,7 @@ class SimSession {
       this.hook('Stop', 'main', { last_assistant_message: 'done', stop_hook_active: false });
       // the transcript's note that the turn ended (what the overview counts turns by)
       this.p.ingestEvents([{ id: uid('turn'), sessionId: this.sid, agentId: 'main', ts: Date.now(), kind: 'turn_end', icon: EVENT_ICON.turn_end, durationMs: Math.round(rnd(40_000, 160_000)), source: 'transcript' }]);
-      await sleep(rnd(6000, 14000));
+      await sleep(rnd(6000, 14000) + (LITE ? 30_000 : 0));
     }
   }
 }
@@ -452,7 +457,7 @@ export function startSim(pipeline: Pipeline, pending?: PendingManager, o: { repo
     // a second session in the same folder (the galaxy overview clusters by directory)
     ['sim-api-0004', new SimSession('sim-api-0004', CWD.api, pipeline, pending, 0, TOPICS.sink), TOPICS.sink],
   ];
-  sessions.forEach(([id, s, t], i) =>
+  (LITE ? sessions.slice(0, 2) : sessions).forEach(([id, s, t], i) =>
     setTimeout(() => {
       void s.run(() => stopped);
       // named once it exists (its first hook made it)

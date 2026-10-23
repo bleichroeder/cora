@@ -33,6 +33,8 @@ export const PRESENT_TOOLS = [PRESENT_TOOL, LEGACY_PRESENT_TOOL] as const;
 export const isPresentTool = (name?: string | null) => name === PRESENT_TOOL || name === LEGACY_PRESENT_TOOL;
 /** Opens a web page for the user in this session's tabs of Cora's browser. */
 export const OPEN_TAB_TOOL = 'mcp__cora__open_tab';
+/** Asks Cora to show something in the Spotlight of the user's live board. */
+export const SPOTLIGHT_TOOL = 'mcp__cora__spotlight';
 /** Says a short spoken summary to the user (voice "summaries" reading mode). */
 export const SPEAK_TOOL = 'mcp__cora__speak';
 /** Which of the user's environments (their VPNs) is reachable right now: read-only, for every session. */

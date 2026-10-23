@@ -168,8 +168,9 @@ export function SessionRail() {
   const showDismissed = useBrain((s) => s.showDismissed);
   const setShowDismissed = useBrain((s) => s.setShowDismissed);
   const all = sortedSessions(sessions);
-  const dismissedCount = all.filter(isDismissed).length;
-  const list = showDismissed ? all : all.filter((s) => !isDismissed(s));
+  // sessions you cleared or dismissed: a group of their own at the bottom (folded), never mixed back into the others
+  const hiddenOnes = all.filter(isDismissed).sort((a, b) => b.lastTs - a.lastTs);
+  const list = all.filter((s) => !isDismissed(s));
   const setModal = useBrain((s) => s.setModal);
   const onMenu = (e: React.MouseEvent, s: SessionInfo) => {
     e.preventDefault();
@@ -179,10 +180,23 @@ export function SessionRail() {
     <nav className="rail">
       <CoraEye />
       <InboxRow />
-      <div className="rail-actions">
-        <button className="btn allow" onClick={() => setModal('new-session')} title="Start a new Claude Code session"><Icon name="Plus" size={14} /> New</button>
-        <button className="btn ghost" onClick={() => setModal('history')} title="Resume or fork any session on disk"><Icon name="History" size={13} /> Resume</button>
-        <button className="icon-btn rail-find" onClick={() => openPalette(true)} title="Go to anything: sessions, folders, transcripts, commands (Ctrl+K)"><Icon name="Search" size={14} /></button>
+      {/* the sessions' section, as Tools has it: its heading with Resume and Search beside it, and the one big button,
+          New session (the main thing you do here) */}
+      <div className="rail-sessions">
+        <div className="rt-h ses-head">
+          <span>Sessions</span>
+          <span className="rt-hb">
+            <button className="rt-add" onClick={() => setModal('history')} title="Resume or fork any session on disk">
+              <Icon name="History" size={12} />
+            </button>
+            <button className="rt-add" onClick={() => openPalette(true)} title="Go to anything: sessions, folders, transcripts, commands (Ctrl+K)">
+              <Icon name="Search" size={12} />
+            </button>
+          </span>
+        </div>
+        <button className="btn allow ses-new" onClick={() => setModal('new-session')} title="Start a new Claude Code session">
+          <Icon name="Plus" size={14} /> New session
+        </button>
       </div>
       <div className="rail-scroll">
       {GROUPS.map((g) => {
@@ -228,8 +242,12 @@ export function SessionRail() {
                   <Entry key={s.id} s={s} onMenu={onMenu} drag={drag} setDrag={setDrag} />
                 ))}
                 {hidden ? (
-                  <button className="more-old" onClick={() => setShowOld(true)}>
-                    + {hidden} older
+                  <button className="more-old" onClick={() => setShowOld(true)} title="Ended sessions from before the last few hours">
+                    <Icon name="ChevronDown" size={11} /> Show {hidden} earlier
+                  </button>
+                ) : g.title === 'ended' && showOld && items.some((s) => now - s.lastTs >= ENDED_COLLAPSE_MS) ? (
+                  <button className="more-old" onClick={() => setShowOld(false)}>
+                    <Icon name="ChevronUp" size={11} /> Show fewer
                   </button>
                 ) : null}
               </>
@@ -238,10 +256,16 @@ export function SessionRail() {
         );
       })}
       {!list.length && ready ? <div className="empty">No sessions yet. Start Claude Code; transcripts from the last 24 h appear here.</div> : null}
-      {dismissedCount ? (
-        <button className="more-old" onClick={() => setShowDismissed(!showDismissed)}>
-          {showDismissed ? 'hide dismissed' : `${dismissedCount} dismissed · show`}
-        </button>
+      {hiddenOnes.length ? (
+        <section className="ses-group">
+          <div className={`ses-h fold${showDismissed ? '' : ' closed'}`} onClick={() => setShowDismissed(!showDismissed)} title="Sessions you cleared or dismissed (right-click one to bring it back)">
+            <Icon name="ChevronDown" size={11} className="ses-chev" />
+            <span>hidden</span>
+            <span className="ses-n">{hiddenOnes.length}</span>
+            <span className="ses-rule" />
+          </div>
+          {showDismissed ? hiddenOnes.map((s) => <Entry key={s.id} s={s} onMenu={onMenu} drag={drag} setDrag={setDrag} />) : null}
+        </section>
       ) : null}
       </div>
       <ToolsDock />

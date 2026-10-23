@@ -31,7 +31,7 @@ terminal still works.
 
 Push-to-talk turns what you say into a prompt for the session you're looking at.
 
-1. Hold `Ctrl+Shift+Space` anywhere in Cora, the terminal included, or hold the mic button over the scene.
+1. Hold `Ctrl+Shift+Space` anywhere in Cora, the terminal included, or use the mic in the composer (click it, talk, and your words land in the box to check before you send).
 2. Speak. Your words appear as they're recognised, with the session's name, so you know where they're going.
 3. Let go.
 
@@ -109,8 +109,11 @@ Under **Also say it when**, Cora can say short lines like "Claude wants to run n
 - **A tool fails**, in the session you're looking at
 - **A GitLab pipeline finishes**, one a session follows (on by default)
 
-Summaries and failures wait their turn: they never talk over something being read or over you. Nothing is announced
-while you're speaking.
+Nothing talks over anything else: everything said aloud (summaries, failures, finished commands, pipelines, Jira
+news, Cora's own replies) waits its turn. Short announcements waiting together are said as one, and a line left waiting
+too long is dropped rather than said late. Nothing is said while you're speaking; what waited goes on after. A "read
+aloud" you click cuts in at once, and **Esc**, the speaker under the transcript (mute) or **Stop speaking** in the
+command palette stop it all.
 
 ## Voices, pronunciation and pace
 

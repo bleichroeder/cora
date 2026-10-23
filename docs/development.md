@@ -53,7 +53,9 @@ CORA_URL=http://127.0.0.1:4318 npm run dev:client
 ```
 
 Point `CORA_HOME` at a scratch folder to keep the simulator's data apart from yours. `--sim-repo <checkout>` gives a
-simulated session a real repo (for pipelines).
+simulated session a real repo (for pipelines). `CORA_SIM_LITE=1` runs a light simulation (two sessions at a third of
+the pace, resting between turns) for checking how something looks without loading the PC; `CORA_SIM_WILD=1` the
+opposite, sessions fanning out wide and deep for a busy screenshot.
 
 ## Tests
 

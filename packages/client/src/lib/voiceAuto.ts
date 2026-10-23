@@ -3,7 +3,7 @@ import { SLACK_DM_MARK, SPEAK_TOOL, isPresentTool, shortToolName, type BrainEven
 import { sessionEvents, useBrain } from '../state/store';
 import { buildSteps, saidId } from './steps';
 import { sessionName } from './format';
-import { loadVoice, speak, stopSpeaking, useVoice } from './voice';
+import { coraLine, loadVoice, speak, stopSpeaking, useVoice } from './voice';
 import { backgroundTasks, outcome, type BgTask } from './background';
 
 /** Something to say from a session's newest events: a line Claude said with its speak tool, or a tool that failed. */
@@ -179,6 +179,9 @@ export function useVoiceAutomation(): void {
         const changed = Object.keys(st.versions).filter((k) => st.versions[k] !== prevVersions[k]);
         prevVersions = st.versions;
         for (const sid of changed) {
+          // Cora's own session: its console says what Cora says (as Cora); said here too it was heard twice, once
+          // as "In a session: …"
+          if (coraLine('', sid)) continue;
           const evs = sessionEvents(sid);
           const s = st.sessions[sid];
           const where = s ? sessionName(s) : 'a session';
@@ -208,7 +211,7 @@ export function useVoiceAutomation(): void {
         const fresh = st.pending.find((p) => !before.has(p.id));
         if (!fresh) return;
         const s = st.sessions[fresh.sessionId];
-        void speak('announce', announcement(fresh, s ? sessionName(s) : 'a session'), 5000, true);
+        void speak('announce', announcement(fresh, s ? sessionName(s) : coraLine('', fresh.sessionId) ? 'Cora' : 'a session'), 5000, true);
       }
     });
     return () => {

@@ -57,3 +57,10 @@
 .strip .tl-act { border: 0; border-radius: 6px; background: var(--raise2); box-shadow: inset 0 0 0 1px var(--hair2); color: var(--ink2); }
 .strip .tl-act:hover { color: var(--ink); box-shadow: inset 0 0 0 1px var(--c); }
 .strip .tl-empty { color: var(--ink4); }
+
+/* the timeline folds away with a tab on its top edge; folded, just the tab on a line */
+.tl-dock { position: relative; flex: none; }
+.tl-dock.folded { height: 0; border-top: 1px solid var(--hair2); }
+.tl-fold { position: absolute; left: 50%; bottom: 100%; z-index: 23; display: inline-flex; align-items: center; gap: 4px; height: 15px; padding: 0 10px; border: 0; border-radius: 7px 7px 0 0; background: var(--nav); box-shadow: inset 0 1px 0 var(--hair2), inset 1px 0 0 var(--hair2), inset -1px 0 0 var(--hair2); color: var(--ink4); font: 600 9px var(--code); letter-spacing: .12em; text-transform: uppercase; cursor: pointer; transform: translateX(-50%); opacity: .8; }
+.tl-dock:not(.folded) .tl-fold { bottom: calc(100% - 1px); }
+.tl-fold:hover { opacity: 1; color: var(--ink2); }

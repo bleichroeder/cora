@@ -55,7 +55,7 @@ export function DeployHeader({ sessionId }: { sessionId: string }) {
   );
 }
 
-function JourneyCard({ j, envs }: { j: Journey; envs: DeployEnv[] }) {
+export function JourneyCard({ j, envs }: { j: Journey; envs: DeployEnv[] }) {
   const s = useDeploys((d) => d.s.suggestions.find((x) => x.sessionId === j.sessionId));
   const bump = useDeploys((d) => d.s.bumps.find((b) => b.project === j.project && b.state === 'rolling'));
   const [confirm, setConfirm] = useState(false);

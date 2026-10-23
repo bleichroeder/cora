@@ -2,10 +2,32 @@
 
 What changed in each release. Cora updates itself; each update's notes are on its release page too.
 
-## Unreleased
+## 0.1.5
 
+- **Switching sessions is calmer:** the new one fades in, with no zoom.
 - **3D off: the live board.** Settings › Scene › 3D scene off swaps the scene for a flat board of each agent and what
-  it's doing now, what they're touching and the explains, with no graphics engine.
+  it's doing now, what they're touching, the tasks and the explains, with no graphics engine. Its panels sit on a grid
+  that fills the area at any window size: drag one onto another to swap or split, drag an edge like a split bar, close
+  and add them back, and spread them over pages. Each session keeps its own board. Explains show as cards with a
+  preview, who wrote them and when; pop one out to keep it (live) on the board. Sixteen more panels to add: Goal,
+  Context, Changes, Git, Tests, Background, Pipeline & MR, Deploys, Ticket, Needs you, Mentions, Notes, All sessions,
+  Usage, Terminal and Browser. And a **Spotlight** panel that Claude decides about: the explains it writes land there (not
+  over the board), and its new `spotlight` tool asks for a panel; the latest stays until the next (an approval cuts in).
+- **Your plan's usage, as `/usage` shows it**: on the session's context meter card (session and week), a click away
+  from the full view (every limit, extra usage, what your sessions used this week), and as a board panel.
+- **Tidier nav and board.** The board's page and panel buttons are one even bar (bottom right); the board sits in a
+  well of its own with room around its panels; the expanded Tools list resizes from its top edge (and scrolls); the
+  session list says "Show 5 earlier" for older ended sessions, and keeps the ones you dismissed in a folded **hidden**
+  group at the bottom; the Inbox sits under Cora's card as part of the same section.
+- **Cora's eye is alive**: an orb like a main agent's (Settings › Scene), with all its moves driven by Cora's own
+  agent, and it notices you: it looks toward your pointer, swells and ripples under it, jiggles when clicked, listens
+  while you hold it, breathes, and sleeps in Away mode or late at night.
+- **Nothing talks over anything else**: spoken lines wait their turn (announcements, summaries, Cora's replies,
+  pipeline and Jira news), short ones waiting together are said as one, and a line left waiting too long is dropped
+  rather than said late. A "read aloud" you click cuts in; Esc and mute stop it all; talking to it pauses the rest.
+- **The timeline folds away** with a tab on its edge, and does no work while folded; it starts folded with the live board.
+- **The mic is in the composer** now (the one over the scene is gone; Ctrl+Shift+Space still talks from anywhere); the
+  board's own buttons are bottom right.
 - **The speaker under the transcript mutes all voice updates**, not just replies: finished commands, pipelines,
   failures, "needs you" and Cora's own news are quiet too while it's off.
 - **Fewer 3D restarts and black flashes.** A 3D view being closed (leaving the overview, restarting it by hand) no

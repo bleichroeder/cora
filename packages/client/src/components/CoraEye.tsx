@@ -7,6 +7,7 @@ import { isDismissed } from '../lib/format';
 import { sortedSessions } from '../lib/sessionOrder';
 import { openSettings } from './SettingsModal';
 import { Icon } from './Icon';
+import { CoraOrb } from './CoraOrb';
 import './cora.css';
 
 const LABEL: Record<CoraState, string> = {
@@ -60,6 +61,19 @@ export function CoraLens({ state, size = 28, progress }: { state: CoraState; siz
 }
 
 const BARS = [0.55, 0.85, 1, 0.75, 0.5];
+
+/**
+ * Cora's eye wherever else it shows: the orb or the lens, as set in Settings › Scene. `live`: the live orb (command
+ * mode's centrepiece); otherwise a still one (the console's header and its empty page), a glowing sphere in Cora's
+ * colour that only breathes while it thinks and goes red while it needs you: no graphics engine for an icon.
+ */
+export function CoraMark({ state, size, progress, live }: { state: CoraState; size: number; progress?: number; live?: boolean }) {
+  const orb = useBrain((s) => s.prefs.coraEye !== 'lens');
+  const agent = useOrch((s) => s.status?.sessionId ?? null);
+  if (!orb) return <CoraLens state={state} size={size} progress={progress} />;
+  if (live) return <CoraOrb state={state} size={size} agent={agent} progress={progress} />;
+  return <span className={`orb-glyph st-${state}`} style={{ width: size, height: size }} aria-hidden />;
+}
 
 /** A small meter of Cora's voice: while you talk to it, and while it speaks. */
 function Wave({ listening }: { listening: boolean }) {
@@ -123,7 +137,7 @@ function Orbit() {
   const agent = useOrch((s) => s.status?.sessionId ?? null);
   const live = sortedSessions(sessions).filter((x) => x.id !== agent && x.state !== 'ended' && !isDismissed(x)).slice(0, ORBIT_MAX);
   return (
-    <>
+    <span className="cb-dots">
       {live.map((x, i) => (
         <button
           key={x.id}
@@ -133,7 +147,7 @@ function Orbit() {
           onClick={(e) => (e.stopPropagation(), setFocus(x.id))}
         />
       ))}
-    </>
+    </span>
   );
 }
 
@@ -155,19 +169,19 @@ export function CoraEye() {
   const ptt = useVoice((v) => v.ptt);
   const voiceOn = useVoice((v) => v.settings.enabled && !!v.key?.set);
   const wakeOn = useVoice((v) => !!v.settings.wake);
-  const [small, setSmall] = useState(() => {
-    try {
-      return localStorage.getItem('cora.bridge.small') === '1';
-    } catch {
-      return false;
-    }
-  });
+  // its eye: a main agent's orb, or the lens (Settings › Scene; either way, with the 3D scene on or off)
+  const orb = useBrain((s) => s.prefs.coraEye !== 'lens');
   const [err, setErr] = useState<string | null>(null);
-  const shrink = (on: boolean) => {
-    setSmall(on);
-    try {
-      localStorage.setItem('cora.bridge.small', on ? '1' : '0');
-    } catch {}
+  // hold the orb to talk to Cora (the click that ends the hold doesn't open the console)
+  const held = useRef(false);
+  // the card, for the orb's light on it
+  const card = useRef<HTMLDivElement>(null);
+  const holdTalk = (on: boolean) => {
+    if (on) {
+      if (!agent || !voiceOn) return;
+      held.current = true;
+      void startListening(agent);
+    } else void stopListening();
   };
 
   if (!enabled)
@@ -198,33 +212,32 @@ export function CoraEye() {
     void startListening(agent, { hands: true });
   };
 
-  if (small)
-    return (
-      <div className={`cora-bridge small st-${state}${open ? ' on' : ''}`}>
-        <button className="cb-row" onClick={toggle} title="Open Cora's console">
-          <CoraLens state={state} size={26} progress={goal?.progress} />
-          <b>CORA</b>
-          <WakeGlyph />
-          <span className="ce-st">{label}</span>
-          <Wave listening={state === 'listening'} />
-          {approvals ? <span className="cb-badge">{approvals}</span> : null}
-        </button>
-        <button className="cb-ib" title="Show Cora's bridge" onClick={() => shrink(false)}>
-          <Icon name="ChevronDown" size={14} />
-        </button>
-      </div>
-    );
 
   return (
-    <div className={`cora-bridge st-${state}${open ? ' on' : ''}`}>
-      <button className="cb-ib cb-shrink" title="Shrink to one row" onClick={() => shrink(true)}>
-        <Icon name="ChevronUp" size={14} />
-      </button>
+    <div ref={card} className={`cora-bridge st-${state}${open ? ' on' : ''}${orb ? ' orb-mode' : ''}`}>
+      {orb ? (
+        // with the orb: Brief and Goal in the corner, shown as you come near (holding the orb talks)
+        <div className="cb-corner">
+          <button className="cb-ib" disabled={!running} title="Brief me: what needs me, what happened" onClick={() => void briefMe('now').then((e) => (setErr(e), e ? undefined : setConsoleOpen(true)))}>
+            <Icon name="Sunrise" size={13} />
+          </button>
+          <button className="cb-ib" title={goal && ['running', 'waiting', 'blocked'].includes(goal.state) ? "Cora's goal" : 'Give Cora a goal'} onClick={() => (useOrch.setState({ composeGoal: !(goal && ['running', 'waiting', 'blocked'].includes(goal.state)) }), setConsoleOpen(true))}>
+            <Icon name="Rocket" size={13} />
+          </button>
+        </div>
+      ) : null}
       <div className="cb-orbit">
-        <button className="cb-lens" onClick={toggle} title="Cora: open its console (hold Ctrl+Space to talk)">
-          <CoraLens state={state} size={64} progress={goal?.progress} />
+        <button className="cb-lens" onClick={() => (held.current ? (held.current = false) : toggle())} title={orb ? 'Cora: open its console (hold it, or Ctrl+Space, to talk)' : 'Cora: open its console (hold Ctrl+Space to talk)'}>
+          {orb ? <CoraOrb state={state} size={104} agent={agent} away={control} onHold={holdTalk} glow={card} /> : <CoraLens state={state} size={64} progress={goal?.progress} />}
         </button>
         <Orbit />
+        {/* with the orb: a goal's progress along the sessions' ring, out of the orb's way */}
+        {orb && state === 'autopilot' && goal?.progress != null ? (
+          <svg className="cb-progress" viewBox="0 0 100 100" aria-label={`Goal ${Math.round(goal.progress * 100)}% done`}>
+            <title>{`Autopilot: the goal is about ${Math.round(goal.progress * 100)}% done`}</title>
+            <circle cx="50" cy="50" r="48" pathLength={100} strokeDasharray={`${Math.round(goal.progress * 100)} 100`} />
+          </svg>
+        ) : null}
       </div>
       <button className="cb-t" onClick={toggle} title="Open Cora's console">
         <span className="cb-name">

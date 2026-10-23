@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { enqueueLine, nextUp, type Line } from './voiceQueue';
 import { DEFAULT_VOICE, type VoiceKeyInfo, type VoiceSettings } from '@cora/shared';
 import { sentenceAt, sentences, speakable } from './speakable';
 import { sessionEvents, useBrain } from '../state/store';
@@ -64,9 +65,22 @@ function player(): HTMLAudioElement {
 /** Gives up on a line that never starts, or plays on far longer than it should: nothing may block the queue for good. */
 let watchdog: ReturnType<typeof setTimeout> | undefined;
 
+/** Stop speaking: what's being said and everything waiting (Esc, mute, a speaker button's stop). */
 export function stopSpeaking(): void {
+  queue = [];
+  endLine();
+}
+
+/** What's being said stops; what's waiting waits (you started talking: it goes on once you've finished). */
+function hush(): void {
+  endLine();
+}
+
+/** The line being said ends (finished, stopped, failed): the player and levels reset. */
+function endLine(): void {
   readSeq++;
   clearTimeout(watchdog);
+  playing = null;
   if (audio) {
     audio.pause();
     audio.removeAttribute('src');
@@ -76,6 +90,22 @@ export function stopSpeaking(): void {
   voiceLevels.speakFor = null;
   if (useVoice.getState().reading) useVoice.setState({ reading: null });
 }
+
+// what's waiting to be said (lib/voiceQueue: its turn, short ones together, nothing said late), and what's playing
+let queue: Line[] = [];
+let playing: Line | null = null;
+
+/** The next line, when nothing is being said and you're not talking. */
+function drain(): void {
+  if (playing || useVoice.getState().ptt.phase !== 'idle') return;
+  const { line, rest } = nextUp(queue, Date.now());
+  queue = rest;
+  if (line) void play(line);
+}
+// you finished talking: what waited goes on
+useVoice.subscribe((st, prev) => {
+  if (st.ptt.phase === 'idle' && prev.ptt.phase !== 'idle') drain();
+});
 
 /**
  * Read aloud. `id` marks what's being read (a transcript step's key) so its button shows stop and its line
@@ -119,18 +149,33 @@ export function onSpeechEnd(cb: (id: string, sessionId?: string) => void): () =>
   return () => void endListeners.delete(cb);
 }
 
-export async function speak(id: string, markdown: string, cap = 4800, raw = false, sessionId?: string): Promise<void> {
-  // the quick line said when you spoke finishes first (it's short) rather than being cut off by the answer
-  if (!isFrontLine(id) && isFrontLine(useVoice.getState().reading?.id)) await frontSaid(5000);
-  stopSpeaking();
-  const my = readSeq;
+/**
+ * Say something. It waits its turn (never over another line): short announcements waiting together are said as one,
+ * and lines left waiting too long are dropped. `now`: you asked for it (a "read aloud" button): it cuts in at once.
+ * `group`: a newer line of the same group replaces one still waiting.
+ */
+export async function speak(id: string, markdown: string, cap = 4800, raw = false, sessionId?: string, opts: { now?: boolean; group?: string } = {}): Promise<void> {
   const text = (raw ? markdown : speakable(markdown, cap)).slice(0, 5000);
   if (!text) return;
+  const line: Line = { id, text, ...(sessionId ? { sessionId } : {}), at: Date.now(), voice: voiceFor(id, sessionId) ?? '', short: raw && text.length <= 220, ...(opts.group ? { group: opts.group } : {}), keepMs: coraLine(id, sessionId) ? 180_000 : 90_000 };
+  if (opts.now) {
+    endLine();
+    return play(line);
+  }
+  queue = enqueueLine(queue, line, playing?.id);
+  drain();
+}
+
+async function play(line: Line): Promise<void> {
+  const { id, text, sessionId } = line;
+  playing = line;
+  const my = readSeq;
   const list = sentences(text);
   useVoice.setState({ reading: { id, sentence: list[0], progress: 0, ...(sessionId ? { sessionId } : {}) } });
   const est = text.length / (15 * useVoice.getState().settings.speed);
-  // not started within 10s (the speech request hanging, or the browser holding sound back): give up on it
-  watchdog = setTimeout(() => my === readSeq && stopSpeaking(), 10_000);
+  // not started within 10s (the speech request hanging, or the browser holding sound back): give up on it, go on
+  const giveUp = () => my === readSeq && (endLine(), drain());
+  watchdog = setTimeout(giveUp, 10_000);
   try {
     const voiceId = voiceFor(id, sessionId);
     const r = await fetch('/api/voice/speech', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text, ...(voiceId ? { voiceId } : {}), ...(coraLine(id, sessionId) ? { cora: true } : {}) }) });
@@ -150,19 +195,21 @@ export async function speak(id: string, markdown: string, cap = 4800, raw = fals
     };
     a.onended = () => {
       if (my !== readSeq) return;
-      stopSpeaking();
+      endLine();
       for (const cb of endListeners) cb(id, sessionId);
+      drain();
     };
     a.onerror = () => {
       if (my !== readSeq) return;
-      stopSpeaking();
+      endLine();
       notice("Couldn't play the reply: check your ElevenLabs key and voice in Settings → Voice");
+      drain();
     };
     a.onplaying = () => {
       if (my !== readSeq) return;
       // playing: now it only has to end in reasonable time
       clearTimeout(watchdog);
-      watchdog = setTimeout(() => my === readSeq && stopSpeaking(), (est * 1.6 + 15) * 1000);
+      watchdog = setTimeout(giveUp, (est * 1.6 + 15) * 1000);
     };
     a.src = j.url;
     voiceLevels.speaking = true;
@@ -170,8 +217,9 @@ export async function speak(id: string, markdown: string, cap = 4800, raw = fals
     await a.play();
   } catch (e) {
     if (my !== readSeq) return;
-    stopSpeaking();
+    endLine();
     notice((e as Error).message);
+    drain();
   }
 }
 
@@ -227,7 +275,7 @@ function teardownMic() {
 export async function startListening(sessionId: string, opts: { /** click-to-talk: it stops once you've finished speaking (holding a key: when you let go) */ hands?: boolean } = {}): Promise<void> {
   const st = useVoice.getState();
   if (!st.settings.enabled || st.ptt.phase === 'listening' || st.ptt.phase === 'finishing') return;
-  stopSpeaking(); // talking over Claude stops it
+  hush(); // talking over Claude stops it (what's waiting goes on once you've finished)
   if (!st.key?.set) return void notice('Add an ElevenLabs key in Settings → Voice to talk');
   if (st.key.perms.stt === false) return void notice("Your ElevenLabs key can't transcribe (Speech to Text is off for it). Use /voice in the terminal, or allow it on the key.");
   const my = ++listenSeq;
@@ -461,19 +509,6 @@ function sayFront(sid: string, line: string, at: number): void {
   const now = useVoice.getState();
   if (answered || now.ptt.phase !== 'idle' || now.reading) return;
   void speak(`front:${frontSeq}`, line, 300, true, sid);
-}
-
-/** Resolves when the voice front's line has been said (or after `ms`). */
-function frontSaid(ms: number): Promise<void> {
-  return new Promise((res) => {
-    const t = setTimeout(() => (off(), res()), ms);
-    const off = useVoice.subscribe((st) => {
-      if (isFrontLine(st.reading?.id)) return;
-      clearTimeout(t);
-      off();
-      res();
-    });
-  });
 }
 
 // ---------------------------------------------------------------- levels for the scene

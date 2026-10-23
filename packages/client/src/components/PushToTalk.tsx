@@ -2,12 +2,11 @@ import { useEffect, useRef } from 'react';
 import { useBrain } from '../state/store';
 import { sessionName } from '../lib/format';
 import { cancelPtt, sendPrompt, startListening, stopListening, stopSpeaking, useVoice, voiceLevels } from '../lib/voice';
-import { Icon } from './Icon';
 import './popovers.css';
 
 const inField = (t: EventTarget | null) => !!(t as HTMLElement | null)?.closest?.('input, textarea, select, [contenteditable], .xterm');
 
-/** Push-to-talk over the scene: hold Ctrl+Shift+Space anywhere (or the mic button), see your words, review and send. */
+/** Push-to-talk over the scene: hold Ctrl+Shift+Space anywhere, see your words, review and send (the composer has its own mic). */
 export function PushToTalk({ sessionId }: { sessionId: string }) {
   const enabled = useVoice((s) => s.settings.enabled);
   const ptt = useVoice((s) => s.ptt);
@@ -92,19 +91,6 @@ export function PushToTalk({ sessionId }: { sessionId: string }) {
   };
   return (
     <>
-      <button
-        className={`ptt-mic${active ? ' hot' : ''}${speaking ? ' speaking' : ''}`}
-        title={speaking ? 'Claude is speaking: hold to talk over it (Esc stops it)' : 'Hold to talk (Ctrl+Shift+Space)'}
-        onPointerDown={(e) => {
-          e.preventDefault();
-          (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
-          void startListening(sessionId);
-        }}
-        onPointerUp={() => void stopListening()}
-        onPointerCancel={() => void stopListening()}
-      >
-        <Icon name={speaking ? 'AudioLines' : 'Mic'} size={17} />
-      </button>
       {note && ptt.phase === 'idle' ? <div className="ptt-note">{note}</div> : null}
       {ptt.phase !== 'idle' && mine ? (
         <div className="ptt">

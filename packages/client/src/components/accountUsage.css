@@ -1,0 +1,39 @@
+/* your plan's usage: rows with bars (the session card, the usage view, the board's Usage panel) */
+.au { display: flex; flex-direction: column; gap: 12px; }
+.au.compact { gap: 8px; }
+.au-l .h { display: flex; align-items: baseline; gap: 8px; }
+.au-l .n { min-width: 0; overflow: hidden; color: var(--ink2); font: 500 12px var(--ui); text-overflow: ellipsis; white-space: nowrap; }
+.au-l .h b { margin-left: auto; color: var(--c); font: 600 12px var(--code); white-space: nowrap; }
+.au-l .h b .of { color: var(--ink4); font-weight: 400; }
+.au-l .bar { height: 5px; margin-top: 5px; border-radius: 3px; background: var(--raise2); overflow: hidden; }
+.au-l .bar i { display: block; height: 100%; border-radius: 3px; background: var(--c); }
+.au-l .r { margin-top: 4px; color: var(--ink4); font: 400 10.5px var(--code); }
+.au-l.big .n { font-size: 13px; }
+.au-l.big .h b { font-size: 14px; }
+.au-l.big .bar { height: 8px; border-radius: 4px; }
+.au-x { color: var(--ink4); font: 400 10.5px var(--code); }
+.au-msg { color: var(--ink4); font: 400 11.5px var(--ui); }
+
+/* on the session's usage card: a section under its own */
+.fh-card .au-sec { display: flex; flex-direction: column; gap: 8px; width: 100%; margin-top: 4px; padding: 10px 0 0; border: 0; border-top: 1px solid var(--hair); background: none; text-align: left; cursor: pointer; }
+.fh-card .au-sec .k { display: flex; align-items: center; justify-content: space-between; color: var(--ink4); font: 600 9.5px var(--code); letter-spacing: .14em; text-transform: uppercase; }
+.fh-card .au-sec .k span { color: var(--ink3); letter-spacing: 0; text-transform: none; font-weight: 500; }
+.fh-card .au-sec:hover .k span { color: var(--cora); }
+.fh-meter.clickable { cursor: pointer; }
+
+/* the usage view */
+.usage-dlg { width: min(560px, calc(100vw - 32px)); }
+.au-plan { margin-left: 6px; padding: 1px 7px; border-radius: 8px; background: var(--raise2); color: var(--ink3); font: 500 10.5px var(--code); text-transform: capitalize; }
+.au-days { display: flex; align-items: flex-end; gap: 8px; height: 90px; padding: 4px 0; }
+.au-days .d { display: flex; flex: 1; flex-direction: column; align-items: center; justify-content: flex-end; gap: 5px; height: 100%; }
+.au-days .d i { display: block; width: 100%; max-width: 34px; border-radius: 4px 4px 2px 2px; background: color-mix(in srgb, var(--cora) 55%, transparent); }
+.au-days .d:last-child i { background: var(--cora); }
+.au-days .d span { color: var(--ink4); font: 500 10px var(--code); }
+.au-today { margin-top: 10px; color: var(--ink3); font: 400 12px var(--ui); }
+.au-today b { color: var(--ink); font-weight: 600; }
+.au-ses { display: flex; flex-direction: column; gap: 4px; margin-top: 10px; }
+.au-ses .s { display: flex; align-items: center; gap: 8px; color: var(--ink2); font: 12px var(--ui); }
+.au-ses .s i { flex: none; width: 7px; height: 7px; border-radius: 50%; }
+.au-ses .s span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.au-ses .s b { margin-left: auto; color: var(--ink3); font: 500 11px var(--code); }
+.au-note { margin-top: 16px; color: var(--ink4); font: 400 11px var(--ui); }

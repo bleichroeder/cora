@@ -22,7 +22,7 @@ function SpeakBtn({ id, text, sessionId }: { id: string; text: string; sessionId
   const playing = useVoice((s) => s.reading?.id === id);
   if (!on) return null;
   return (
-    <button className={`spk${playing ? ' playing' : ''}`} title={playing ? 'Stop reading' : 'Read aloud'} onClick={(e) => (e.stopPropagation(), playing ? stopSpeaking() : void speak(id, text, 4800, false, sessionId))}>
+    <button className={`spk${playing ? ' playing' : ''}`} title={playing ? 'Stop reading' : 'Read aloud'} onClick={(e) => (e.stopPropagation(), playing ? stopSpeaking() : void speak(id, text, 4800, false, sessionId, { now: true }))}>
       <Icon name={playing ? 'Square' : 'Volume2'} size={11} />
     </button>
   );

@@ -360,15 +360,20 @@ export function Orb(p: OrbProps) {
   );
 }
 
-/** Thought motes: faint particles spiralling into the orb while it thinks, faster as the think goes on. */
-function ThoughtMotes({ r, thinking, color }: { r: number; thinking: boolean; color: THREE.Color }) {
+/**
+ * Thought motes: faint particles spiralling into the orb while it thinks, faster as the think goes on. `ring`: where
+ * they start (from r × ring[0], up to ring[1] × r further out) and `tall`: how high they spread, in orb radii (smaller on
+ * Cora's card than in the scene).
+ */
+export function ThoughtMotes({ r, thinking, color, ring = [2.6, 2.6], tall = 3 }: { r: number; thinking: boolean; color: THREE.Color; ring?: [number, number]; tall?: number }) {
   const N = 120;
   const { pts, geo, mat, ps } = useMemo(() => {
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(N * 3), 3));
     const mat = new THREE.PointsMaterial({ size: 0.07, color: color.clone().lerp(new THREE.Color('#ffffff'), 0.55), transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false });
-    const ps = Array.from({ length: N }, () => ({ r: r * 2.6 + Math.random() * r * 2.6, th: Math.random() * Math.PI * 2, y: (Math.random() - 0.5) * r * 3, sp: 0.4 + Math.random() * 0.6 }));
+    const ps = Array.from({ length: N }, () => ({ r: r * ring[0] + Math.random() * r * ring[1], th: Math.random() * Math.PI * 2, y: (Math.random() - 0.5) * r * tall, sp: 0.4 + Math.random() * 0.6 }));
     return { pts: new THREE.Points(geo, mat), geo, mat, ps };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [r, color]);
   useEffect(() => () => (geo.dispose(), mat.dispose()), [geo, mat]);
   const k = useRef({ vis: 0, since: 0 });
@@ -387,10 +392,10 @@ function ThoughtMotes({ r, thinking, color }: { r: number; thinking: boolean; co
       q.r -= dt * (0.35 + deep * 0.6) * q.sp * r;
       q.y *= 1 - dt * 0.4;
       if (q.r < r * 1.05) {
-        q.r = r * 2.6 + Math.random() * r * 2.6;
-        q.y = (Math.random() - 0.5) * r * 3;
+        q.r = r * ring[0] + Math.random() * r * ring[1];
+        q.y = (Math.random() - 0.5) * r * tall;
       }
-      a.setXYZ(i, Math.cos(q.th) * q.r, q.y * (q.r / (r * 4)), Math.sin(q.th) * q.r * 0.6);
+      a.setXYZ(i, Math.cos(q.th) * q.r, q.y * (q.r / (r * (ring[0] + ring[1]) * 0.77)), Math.sin(q.th) * q.r * 0.6);
     }
     a.needsUpdate = true;
   });

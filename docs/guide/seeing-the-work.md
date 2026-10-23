@@ -80,10 +80,55 @@ whose graphics struggle, or if you'd just rather):
   files it touched. "Waiting on the model" counts the agents thinking.
 - **Touching**: the files (with who touched each, what changed and **diff**), web pages and searches, shell commands
   and other tools of the last ten minutes, newest first.
-- **Explains**: the session's explains; click one to open it.
+- **Explains**: the session's explains as cards with a preview (more below).
+- **Tasks**: Claude's task list.
+- **A popped-out explain**: the page itself, kept at its latest version (a live explain keeps updating).
 
-The overview shows its grid (the galaxy is 3D too). The transcript, timeline, browser and everything else stay the
-same.
+**Spotlight** is the panel Claude decides about, so the rest of the board can stay as you arranged it: an explain it
+writes goes there (instead of opening over the board), and when it starts something you'd want to watch (a pipeline, a
+deploy, a test run, a page) it calls Cora's `spotlight` tool; the latest of these stays in the Spotlight until Claude
+writes or asks for something else. An approval waiting on you cuts in (the
+card moves into it), then it goes back. Before Claude has asked for anything, it follows the session on its own: tests
+failing or running, a deploy rolling out, the pipeline, a live explain, browsing, edits, background commands (holding
+each for a while, and never a panel that's already on the page). It says what it shows and why; pin it to keep it.
+
+More panels, from **+ Panel** (grouped as in its menu):
+
+- **This session:** **Goal** (what it was asked first, and the latest ask) and **Context** (how full the context
+  window is, a line of how it filled, and at the recent rate about when it fills).
+- **Code:** **Changes** (every file it changed with +/−; pick one for its change over the session, or open it in the
+  diff viewer), **Git** (the branch, what's uncommitted, commits made and whether they're pushed), **Tests** (each test
+  run's passed and failed, as a bar per run) and **Background** (commands running in the background, with the last
+  lines each wrote).
+- **Delivery:** **Pipeline & MR** (the pipeline stage by stage; a failed job shows the end of its log right there; the
+  merge request), **Deploys** (where the change has got to, from MR to each environment) and **Ticket** (the Jira
+  ticket: status, who has it, its description).
+- **Around you:** **Needs you** (approvals and questions with their buttons; the floating cards stand down while it
+  shows them), **Mentions** (Inbox items about this session, its ticket or its pipeline), **Notes** (Scratch's jots
+  from this session, and a line to jot one down), **All sessions** (each one and what it's doing; click to go there)
+  and **Usage** (your plan's limits and extra usage, as `/usage` shows them).
+- **Tools:** **Terminal** (the session's terminal or a shell, live, to watch; type in the terminal pane) and
+  **Browser** (the session's browser, laid over the panel and following it as you move it; its pages never reload).
+
+The board is panels on a grid that fills the area, yours to arrange; it keeps its shape as the window or the viewer
+beside it changes size (narrower than about 560 px, the panels stack in one column):
+
+- **Move** a panel by dragging its header: onto the middle of another, they swap; near another's edge, it takes that
+  half of it; its old place goes to its neighbours. The spot it will take shows as you drag (Esc cancels).
+- **Resize** from an edge, which moves like a split bar (the panels along it on both sides follow), or from the corner,
+  which resizes just that panel.
+- **Maximise** one for a moment, close the ones you don't want and add them back with **+ Panel** (bottom right), which
+  also resets the board.
+- **Each session has its own board** (its panels, pages and the page showing), kept as you left it when you switch
+  away and back. A new session starts with the default layout, or yours: **+ Panel › Use for new sessions**.
+- **Pages:** **+ Page** beside it starts another page of panels; the numbers beside it switch between them. Drag a
+  panel onto a page's number to send it there (or onto **+** for a new page). An empty page offers to remove itself.
+
+The **Explains** panel shows each explain as a card: a preview of the page or document, whether it's live, who wrote it,
+when, and how many versions. Click one to open it, or **Pop out** to give it a panel of its own.
+
+The overview shows its grid (the galaxy is 3D too). The timeline starts folded away with the board (its tab brings it
+back); the transcript, browser and everything else stay the same.
 
 ## The transcript
 
@@ -128,7 +173,9 @@ it's on. Click it to show or hide the whole list: done tasks are ticked, and the
 ## The timeline
 
 The timeline runs along the bottom of the scene. It has a lane for each agent, with a block for each tool call and
-each stretch of thinking, and markers above for the moments you might want to find again:
+each stretch of thinking, and markers above for the moments you might want to find again. The tab on its top edge
+folds it away (folded, it does no work) and brings it back; it starts open with the 3D scene and folded with the live
+board, and each keeps how you left it (also **Settings › Scene › Timeline**):
 
 | Marker | Moment |
 |---|---|

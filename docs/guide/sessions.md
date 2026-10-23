@@ -204,8 +204,11 @@ Above the scene, each session has a header:
 - **The ticket card**, the **pipeline**, how far the ticket's change has got through your environments, and any email
   watch, when the session has them (see [Integrations](integrations.md)).
 - **The context meter**: how full the main agent's context window is (green, then amber, then red) and the model.
-  Hover it for the numbers, the output so far and how many times the context was compacted. Right after a
-  compaction it reads "fresh".
+  Hover it for the numbers, the output so far and how many times the context was compacted, and under them **your
+  plan's usage** (the current session's limit and the week's, as Claude Code's `/usage` shows them). Click it for the
+  full **Usage** view: every limit with when it resets, extra usage, and what your sessions used today and this week.
+  Right after a compaction it reads "fresh". (Cora reads your plan's numbers with Claude Code's login, about once a
+  minute while you look; it never refreshes or keeps the login.)
 - **Browser**: this session's own browser, with its tabs (desktop app; see [Integrations](integrations.md)).
 - **Jump**, for a session running outside Cora: brings its terminal window to the front. If Cora can't find the
   window, it copies the command to resume the session instead.

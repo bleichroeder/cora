@@ -206,8 +206,11 @@ export function Scene({ sessionId }: { sessionId: string }) {
   useEffect(() => {
     slotsRef.current = new Map();
     prevWaiting.current = null;
+    // a new session starts where the camera rests, with no swing or dolly (the scene area fades it in: App's veil)
     resetCam(cam);
-    cam.dist = 1.55; // start a little further out and dolly in (the rig eases dist back to 1)
+    cam.yaw = 0;
+    cam.pitch = 0;
+    cam.dist = 1;
   }, [sessionId, cam]);
 
   const agents = useMemo(() => {

@@ -29,5 +29,4 @@
 .pal-f kbd { margin-right: 3px; }
 .pal-err { color: var(--red); }
 /* its button in the rail's header: the two buttons there size to their labels so all three fit on one line */
-.rail-actions .btn { flex: 1 1 auto; white-space: nowrap; }
 .rail-find { flex: none; width: 26px; height: 26px; color: #64748b; }
