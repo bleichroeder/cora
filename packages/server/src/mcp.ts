@@ -6,7 +6,7 @@ import { NoteError, type Notes } from './notes';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { z } from 'zod';
-import { SVG_MAX, svgProblem, AGENT_HEADER, MCP_SERVER, SESSION_HEADER, deploysText, parseSlackLink, speaksSummaries, type Settings, ATTACH_MAX, type SlackAttachment, type UiCommand } from '@cora/shared';
+import { BOARD_LAYOUTS, BOARD_LAYOUT_INFO, SVG_MAX, svgProblem, AGENT_HEADER, MCP_SERVER, SESSION_HEADER, deploysText, parseSlackLink, speaksSummaries, type Settings, ATTACH_MAX, type SlackAttachment, type UiCommand } from '@cora/shared';
 import { hookToken, sameSecret } from './config';
 import { SlackError, type Outbox, type Slack, hitLine, isImage } from './slack';
 import type { SlackLive } from './slackLive';
@@ -93,11 +93,11 @@ function buildServer(settings: Settings, sessionId: string | null, s?: McpSlack,
         title: "Show it in the board's Spotlight",
         description: [
           "Ask Cora to show something in the Spotlight of the user's live board (a panel there that follows what matters): use it when something starts that they would want to watch,",
-          'e.g. a pipeline or a deploy you started, a test run, a page you opened, a live explain you are keeping current. Use it a few times per task at most, not for every step.',
+          'e.g. a pipeline or a deploy you started, a test run, a live explain you are keeping current (pages you open stay in the session\'s own browser: open_tab). Use it a few times per task at most, not for every step.',
           'It shows only if the user has a Spotlight on their board; nothing comes back.',
         ].join(' '),
         inputSchema: {
-          panel: z.enum(['pipeline', 'deploys', 'tests', 'changes', 'background', 'browser', 'ticket', 'git', 'terminal', 'context', 'explain', 'recap']).describe('What to show'),
+          panel: z.enum(['pipeline', 'deploys', 'tests', 'changes', 'background', 'ticket', 'git', 'terminal', 'context', 'explain', 'recap']).describe('What to show'),
           explain: z.string().max(120).optional().describe("For panel 'explain': the explain's title"),
           reason: z.string().max(80).optional().describe('A few words on why, shown with it (e.g. "Deploying 2.4 to staging")'),
         },
@@ -107,15 +107,35 @@ function buildServer(settings: Settings, sessionId: string | null, s?: McpSlack,
         return { content: [{ type: 'text', text: `Asked Cora to show ${panel === 'explain' ? `"${explain}"` : `the ${panel}`} in the user's Spotlight (it shows if they have one on their board).` }] };
       },
     );
-  // The Meme panel (when the user wants memes): a meme from a popular template with the session's captions, or a GIF
+  // The Board (when the user lets sessions add pages): a page laid out for what the session is doing now. Like the
+  // Spotlight, the call itself is the message: the dashboard reads it from the transcript and adds (or shows) the page.
+  if (sessionId && !asCora(sessionId) && (settings.board?.pages ?? 'show') !== 'off')
+    server.registerTool(
+      'board',
+      {
+        title: "Lay out the user's Board for this work",
+        description: [
+          "Give the user's Board (the panels beside this session) a page laid out for the kind of work you're doing now:",
+          BOARD_LAYOUTS.map((l) => `'${l}' (${BOARD_LAYOUT_INFO[l].hint})`).join(', ') + '.',
+          'Use it when the work moves into a new phase (e.g. from investigating a problem to coding the fix, then reviewing it, then shipping it), once per phase, not for every step.',
+          "It adds a page (or goes back to the one already made for that work); it never changes the user's own pages. Nothing comes back.",
+        ].join(' '),
+        inputSchema: {
+          layout: z.enum(BOARD_LAYOUTS).describe('The kind of work'),
+          reason: z.string().max(80).optional().describe('A few words on why, shown with it (e.g. "Found the cause: fixing it")'),
+        },
+      },
+      async ({ layout }) => ({ content: [{ type: 'text', text: `Asked Cora to lay out the user's Board for ${BOARD_LAYOUT_INFO[layout].name.toLowerCase()} (a page of its own).` }] }),
+    );
+  // The Vibes panel (when the user wants memes): a meme from a popular template with the session's captions, or a GIF
   // from Giphy (with the user's key). Kept for the session; the panel shows them.
   if (memes && sessionId && !asCora(sessionId) && (settings.memes?.mode ?? 'off') !== 'off')
     server.registerTool(
       'meme',
       {
-        title: 'Post a meme or a GIF to the Meme panel',
+        title: 'Post a meme or a GIF to the Vibes panel',
         description: [
-          "Post a meme or a GIF about what's happening in this session to the user's Meme panel (just for fun).",
+          "Post a meme or a GIF about what's happening in this session to the user's Vibes panel (just for fun).",
           "A meme: `template` (a popular meme's name, e.g. \"Distracted Boyfriend\", \"This Is Fine\", \"Drake Hotline Bling\", \"Two Buttons\", \"Change My Mind\", \"Expanding Brain\", \"Batman Slapping Robin\", \"Woman Yelling At Cat\") with `top` and `bottom` text.",
           'A GIF: `gif`, a few words to search for (e.g. "celebration", "facepalm", "this is fine fire").',
           'Or draw your own: `svg`, one whole SVG (viewBox="0 0 600 400"; at most 30 KB; no scripts, links or outside images or fonts: draw everything). Make it a real meme about this moment: a two-panel comic, a joke chart, a character reacting, a fake error dialog, your own take on a classic format. Big bold readable text, colours that work on a dark background. It is shown in the panel only (never saved).',
@@ -136,14 +156,14 @@ function buildServer(settings: Settings, sessionId: string | null, s?: McpSlack,
           const bad = svgProblem(svg);
           if (bad) return fail(`Cora can't show that SVG: ${bad}`);
           memes.post(sessionId, { kind: 'svg', url: '', svg: svg.trim(), ...(why ? { why } : {}) });
-          return { content: [{ type: 'text', text: 'Posted your meme to the Meme panel (shown there only; never saved).' }] };
+          return { content: [{ type: 'text', text: 'Posted your meme to the Vibes panel (shown there only; never saved).' }] };
         }
         if (gif) {
           try {
             const g = await memes.gif(gif);
             if (!g) return fail(`No GIF found for "${gif}": try other words, or make a meme.`);
             memes.post(sessionId, { kind: 'gif', url: g.url, query: gif, page: g.page, ...(why ? { why } : {}) });
-            return { content: [{ type: 'text', text: `Posted a GIF for "${gif}" to the Meme panel.` }] };
+            return { content: [{ type: 'text', text: `Posted a GIF for "${gif}" to the Vibes panel.` }] };
           } catch (e) {
             const m = (e as Error).message;
             return fail(m === 'no-key' ? "GIFs aren't set up (the user hasn't given Cora a Giphy key): make a meme from a template instead." : m === 'bad-key' ? "Giphy turned the user's key away: make a meme instead." : `Couldn't reach Giphy (${m}): make a meme instead.`);
@@ -158,7 +178,7 @@ function buildServer(settings: Settings, sessionId: string | null, s?: McpSlack,
         const t = matchTemplate(list, template!);
         if (!t) return fail(`No template called "${template}". Some popular ones: ${list.slice(0, 25).map((x) => x.name).join(', ')}.`);
         memes.post(sessionId, { kind: 'meme', url: t.url, template: t.name, ...(top ? { top } : {}), ...(bottom ? { bottom } : {}), ...(why ? { why } : {}) });
-        return { content: [{ type: 'text', text: `Posted "${t.name}" to the Meme panel${t.boxes > 2 ? ` (it has ${t.boxes} text boxes; Cora shows top and bottom)` : ''}.` }] };
+        return { content: [{ type: 'text', text: `Posted "${t.name}" to the Vibes panel${t.boxes > 2 ? ` (it has ${t.boxes} text boxes; Cora shows top and bottom)` : ''}.` }] };
       },
     );
   // A live explain: a page the session writes once and data it keeps current while it works (not Cora's agent: it
@@ -744,7 +764,7 @@ function registerSlack(server: McpServer, sessionId: string | null, { slack, out
  * Streamable-HTTP MCP endpoint (stateless: a fresh server per request). The tool itself has no side effects:
  * the document travels in the tool call, which lands in the transcript, and the UI renders it from there.
  */
-export function registerMcp(app: FastifyInstance, token: string, getSettings: () => Settings, slack?: McpSlack, orch?: McpOrchestrator, env?: Environments, deploys?: Deploys, notes?: McpNotes, mail?: McpGmail, /** Cora's agent's own key (Cora passes its own; tests use the hook token) */ agentToken: string = token, /** drives the dashboards (open_tab) */ ui?: (cmd: UiCommand) => void, /** live explains */ live?: McpLive, /** the Meme panel */ memes?: Memes): void {
+export function registerMcp(app: FastifyInstance, token: string, getSettings: () => Settings, slack?: McpSlack, orch?: McpOrchestrator, env?: Environments, deploys?: Deploys, notes?: McpNotes, mail?: McpGmail, /** Cora's agent's own key (Cora passes its own; tests use the hook token) */ agentToken: string = token, /** drives the dashboards (open_tab) */ ui?: (cmd: UiCommand) => void, /** live explains */ live?: McpLive, /** the Vibes panel */ memes?: Memes): void {
   app.post('/mcp', async (req, reply) => {
     if (!sameSecret(hookToken(req), token)) return reply.code(401).send({ error: 'bad token' });
     // sessions launched here say who they are (older ones don't: their drafts are matched to them by their events)

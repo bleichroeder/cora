@@ -52,7 +52,7 @@ describe('memes', () => {
   });
 
   it("are offered to sessions only when the user wants them", () => {
-    expect(nudgeFor(DEFAULT_SETTINGS.explains)).not.toMatch(/Meme panel/);
+    expect(nudgeFor(DEFAULT_SETTINGS.explains)).not.toMatch(/Vibes panel/);
     expect(nudgeFor(DEFAULT_SETTINGS.explains, undefined, 'sometimes')).toMatch(/`meme` tool \(.*draw yourself as an SVG.*\), at most one every several turns/);
   });
 });
@@ -81,5 +81,24 @@ describe('memes Claude draws', () => {
     // a restart: the drawn one is gone
     expect(new Memes({ dataDir: dir }).list('s1').map((p) => p.kind)).toEqual(['gif']);
     expect(existsSync(join(dir, 'memes.json'))).toBe(true);
+  });
+});
+
+describe('the Vibes wall', () => {
+  it('loses one sticker, or all of them, kept or drawn', () => {
+    let now = 1000;
+    const dir = mkdtempSync(join(tmpdir(), 'cora-memes-'));
+    const told: string[] = [];
+    const m = new Memes({ dataDir: dir, now: () => now++, onPost: (s) => told.push(s) });
+    const a = m.post('s1', { kind: 'gif', url: 'g', query: 'party' });
+    m.post('s1', { kind: 'svg', url: '', svg: '<svg></svg>' });
+    m.post('s1', { kind: 'gif', url: 'h', query: 'win' });
+    expect(m.remove('s1', a.id)).toBe(true);
+    expect(m.list('s1').map((p) => p.kind)).toEqual(['svg', 'gif']);
+    expect(new Memes({ dataDir: dir }).list('s1').map((p) => p.query)).toEqual(['win']);
+    expect(m.remove('s1', 'nope')).toBe(false);
+    expect(m.remove('s1')).toBe(true);
+    expect(m.list('s1')).toEqual([]);
+    expect(told.filter((s) => s === 's1')).toHaveLength(5);
   });
 });

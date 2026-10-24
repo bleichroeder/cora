@@ -2,6 +2,39 @@
 
 What changed in each release. Cora updates itself; each update's notes are on its release page too.
 
+## Unreleased
+
+## 0.1.7
+
+- **Lockdown.** Lock Cora behind a PIN when you step away: the lock button beside Settings, Ctrl+Alt+L, the tray, or
+  the palette, and (if you like) whenever Windows locks or sleeps. The lock screen is the splash's star stream with
+  Cora's orb keeping watch. While it's locked, your pages get nothing from Cora's server, notifications say only that
+  something needs you, and quitting from the tray never ends a session; your sessions keep running, and Cora stays
+  locked over a restart. Set the PIN in Settings › Lockdown.
+- **The Board, reworked.** A page always fills the area, like split panes: no holes, nothing hanging below.
+  - Every line between panels drags like a split bar, from either side; a dot where lines meet moves them all.
+  - Dragging a panel keeps the mouse to the end. The Board stays still meanwhile, with an outline showing where it
+    will land and what that does (swap, or take a half). Drop it on the Board's own edge to run the full width or
+    height there.
+  - A finer grid (24 by 24). The narrow one-column view reorders by dragging. Esc brings back a panel filling the
+    Board.
+- **Board layouts.** Pages laid out for a kind of work (Investigating, Coding, Reviewing, Shipping, Writing), or your
+  own saved ones. As the work moves on, a session can add the page for it (Settings › Sessions › Board: off, add, or
+  add and show, with Undo); it never changes your own pages.
+- **The Board's bar:** pages as named tabs (double-click to rename; their ⋯ menu renames, saves as a layout,
+  duplicates, moves and removes, with Undo), ＋ for a new page, and a ⋯ menu for the Board as a whole.
+- **The Terminal panel** holds terminals of its own, in tabs: it opens PowerShell (or your default) at once, ＋ adds
+  another of any kind, × ends one.
+- **The session's browser slides over the Board** like a drawer instead of pushing it aside, and the Spotlight no
+  longer pulls it onto the Board.
+- **Vibes:** take a sticker off the wall, or clear them all; the wall is a pinboard now.
+- **Resume names sessions as the nav does** (your name, its ticket's or issue's, Cora's suggestion), even once a
+  session has left Cora's history.
+- **Vibes** is the Memes panel's new name; its stickers always fit inside the panel, and a meme Claude drew opens large
+  properly.
+- **From the splash straight into the app:** the second loader shows only when a start is slow.
+- **One scrollbar everywhere**, explains and terminals included.
+
 ## 0.1.6
 
 - **Memes.** A board panel the session fills itself: a wall of memes from popular templates captioned by Claude,

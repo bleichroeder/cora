@@ -1,8 +1,6 @@
 /* The scene area with 3D off (LiveBoard): agents, what they touch, explains, flat and quiet. */
 /* a well of its own, a shade deeper than the nav and the transcript beside it, with room around the panels */
 .live-board { position: absolute; inset: 0; display: flex; overflow: hidden; padding: 16px 18px 52px; background: color-mix(in srgb, var(--nav) 78%, #000); color: var(--ink2); font: 400 13px/1.45 var(--ui); }
-/* scrollbars as the transcript's: thin, quiet */
-.live-board, .live-board * { scrollbar-width: thin; scrollbar-color: #1d2430 transparent; }
 @keyframes lb-pulse { 50% { opacity: .35; } }
 .live-board .lb-more, .live-board .lb-empty { padding: 9px 12px; color: var(--ink4); font: 400 11.5px var(--code); }
 .live-board .lb-more.in { padding: 4px 0 0; font-size: 10.5px; }
@@ -111,17 +109,25 @@
 .live-board .bd-cell.stacked { position: relative; flex: none; transition: none; }
 .live-board .bd-cell.lifted { z-index: 4; transition: none; }
 .live-board .bd-cell.lifted .bd-pn { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cora) 50%, transparent), 0 20px 44px rgba(0, 0, 0, .55); }
-.live-board .bd-ghost { position: absolute; border-radius: 12px; background: color-mix(in srgb, var(--cora) 9%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cora) 55%, transparent); transition: left .12s, top .12s, width .12s, height .12s; }
-.live-board .bd-rz { position: absolute; z-index: 2; }
-.live-board .bd-rz.w { top: 14px; right: -7px; bottom: 14px; width: 10px; cursor: ew-resize; }
-.live-board .bd-rz.h { right: 14px; bottom: -7px; left: 14px; height: 10px; cursor: ns-resize; }
-.live-board .bd-rz.w::after, .live-board .bd-rz.h::after { content: ''; position: absolute; border-radius: 2px; transition: background .15s; }
-.live-board .bd-rz.w::after { top: 30%; bottom: 30%; left: 4px; width: 2px; }
-.live-board .bd-rz.h::after { top: 4px; right: 30%; left: 30%; height: 2px; }
-.live-board .bd-rz.w:hover::after, .live-board .bd-rz.h:hover::after { background: color-mix(in srgb, var(--cora) 60%, transparent); }
-.live-board .bd-rz.wh { right: -5px; bottom: -5px; width: 18px; height: 18px; cursor: nwse-resize; }
-.live-board .bd-rz.wh::after { content: ''; position: absolute; right: 8px; bottom: 8px; width: 7px; height: 7px; border-right: 2px solid var(--ink3); border-bottom: 2px solid var(--ink3); border-bottom-right-radius: 3px; opacity: 0; transition: opacity .15s; }
-.live-board .bd-cell:hover .bd-rz.wh::after, .live-board .bd-cell.lifted .bd-rz.wh::after { opacity: .8; }
+/* moving: the panel stays in its place, dimmed; a chip with its name follows the pointer; an outline shows where it
+   lands and says what that does */
+.live-board.moving .bd-cell.lifted { opacity: .38; }
+.live-board.moving .bd-cell.lifted .bd-pn { box-shadow: inset 0 0 0 1px var(--hair2); }
+.live-board .bd-land { position: absolute; left: 0; top: 0; z-index: 5; display: grid; place-items: center; box-sizing: border-box; border-radius: 14px; background: color-mix(in srgb, var(--cora) 12%, transparent); box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--cora) 70%, transparent), 0 0 0 4px color-mix(in srgb, var(--cora) 12%, transparent); pointer-events: none; transition: transform .14s cubic-bezier(.2, .7, .2, 1), width .14s cubic-bezier(.2, .7, .2, 1), height .14s cubic-bezier(.2, .7, .2, 1); }
+.live-board .bd-land.swap { background: color-mix(in srgb, var(--cora) 7%, transparent); box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--cora) 55%, transparent); }
+.live-board .bd-land span { padding: 5px 11px; border-radius: 8px; background: color-mix(in srgb, var(--nav) 88%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cora) 40%, transparent); color: var(--ink); font: 600 12px var(--ui); white-space: nowrap; backdrop-filter: blur(6px); }
+.live-board .bd-chip { position: fixed; left: 0; top: 0; z-index: 90; display: inline-flex; align-items: center; gap: 7px; height: 30px; padding: 0 12px; border-radius: 9px; background: var(--raise2); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cora) 50%, transparent), 0 12px 30px rgba(0, 0, 0, .55); color: var(--ink2); font: 500 12px var(--ui); pointer-events: none; white-space: nowrap; }
+.live-board .bd-chip b { color: var(--ink); font-weight: 600; }
+.live-board .bd-chip em { color: var(--cora-hi); font-style: normal; }
+.live-board.sizing .bd-cell { transition-duration: .12s; }
+/* while a panel moves or resizes, nothing under the pointer takes it (pages, terminals, explains) */
+.bd-shield { position: fixed; inset: 0; z-index: 85; cursor: grabbing; }
+.bd-shield.w { cursor: ew-resize; }
+.bd-shield.h { cursor: ns-resize; }
+.bd-shield.wh { cursor: nwse-resize; }
+/* a panel filling the board: its place says so */
+.live-board .bd-pn.bd-away { align-items: center; justify-content: center; gap: 4px; background: color-mix(in srgb, var(--raise) 50%, transparent); border: 1px dashed var(--hair2); box-shadow: none; color: var(--ink3); font: 500 12px var(--ui); }
+.live-board .bd-pn.bd-away em { color: var(--ink4); font-style: normal; font-size: 11px; }
 
 /* a panel */
 .live-board .bd-pn { display: flex; flex: 1; flex-direction: column; min-width: 0; min-height: 0; border-radius: 14px; background: var(--raise); box-shadow: inset 0 0 0 1px var(--hair), 0 10px 28px rgba(0, 0, 0, .22); overflow: hidden; }
@@ -162,10 +168,8 @@
 .live-board .bd-menu button .d { margin-left: auto; overflow: hidden; color: var(--ink4); font: 400 11px var(--ui); text-overflow: ellipsis; white-space: nowrap; }
 
 /* the board's bar, bottom right: pages, a new page, a panel to add; one height, one look */
-.live-board .bd-add { position: absolute; right: 10px; bottom: 11px; z-index: 7; display: flex; align-items: center; gap: 2px; padding: 3px; border-radius: 10px; background: var(--raise2); box-shadow: inset 0 0 0 1px var(--hair2), 0 6px 18px rgba(0, 0, 0, .35); opacity: .8; transition: opacity .15s; }
-.live-board .bd-add:hover, .live-board .bd-add.moving, .live-board .bd-add:has(.on) { opacity: 1; }
+.live-board .bd-add { position: absolute; left: 18px; right: 18px; bottom: 11px; z-index: 7; display: flex; align-items: center; gap: 2px; padding: 3px; border-radius: 10px; background: var(--raise2); box-shadow: inset 0 0 0 1px var(--hair2), 0 6px 18px rgba(0, 0, 0, .35); }
 .live-board .bd-tb { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-width: 26px; height: 26px; padding: 0 8px; border: 0; border-radius: 7px; background: none; color: var(--ink3); font: 500 11.5px var(--ui); white-space: nowrap; cursor: pointer; transition: background .12s, color .12s, transform .12s; }
-.live-board .bd-tb.bd-pg:not(.new) { padding: 0; font-family: var(--code); }
 .live-board .bd-tb:hover { background: var(--raise); color: var(--ink); }
 .live-board .bd-tb.on { background: color-mix(in srgb, var(--cora) 16%, var(--raise)); color: var(--ink); }
 .live-board .bd-tb.drop { transform: scale(1.12); background: color-mix(in srgb, var(--cora) 30%, var(--raise)); color: var(--ink); }
@@ -176,7 +180,7 @@
 .live-board .bd-menu.wide { display: flex; flex-direction: column; width: min(620px, calc(100vw - 48px)); max-height: min(72vh, 680px); padding: 0; overflow: hidden; }
 .live-board .bd-mq { flex: none; display: flex; align-items: center; gap: 8px; height: 42px; padding: 0 14px; border-bottom: 1px solid var(--hair); color: var(--ink4); }
 .live-board .bd-mq input { flex: 1; min-width: 0; border: 0; outline: 0; background: none; color: var(--ink); font: 400 13px var(--ui); }
-.live-board .bd-mbody { flex: 1; min-height: 0; padding: 4px 8px 6px; overflow-y: auto; scrollbar-width: thin; }
+.live-board .bd-mbody { flex: 1; min-height: 0; padding: 4px 8px 6px; overflow-y: auto; }
 .live-board .bd-menu.wide .mh { padding: 10px 6px 6px; }
 .live-board .bd-mgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 4px; }
 .live-board .bd-menu .bd-mt { align-items: flex-start; gap: 11px; padding: 9px 10px; border-radius: 10px; }
@@ -194,3 +198,81 @@
 .live-board .bd-menu.wide > .bd-mx { margin: 0 8px; width: calc(100% - 16px); }
 .live-board .bd-menu.wide > .bd-mx:last-child { margin-bottom: 8px; }
 .live-board .bd-menu.wide > .sep + .bd-mx { margin-top: 6px; }
+
+/* the lines between panels, in the gaps: a grip in the middle always shows; the whole line lights on hover and while
+   dragged (red for a moment when it can't go further); where two meet, a dot that moves both */
+.live-board .bd-bar { position: absolute; z-index: 3; display: grid; place-items: center; }
+.live-board .bd-bar.x { cursor: col-resize; }
+.live-board .bd-bar.y { cursor: row-resize; }
+.live-board .bd-bar::before { content: ''; position: absolute; border-radius: 2px; background: transparent; transition: background .15s; }
+.live-board .bd-bar.x::before { top: 4px; bottom: 4px; left: calc(50% - 1px); width: 2px; }
+.live-board .bd-bar.y::before { left: 4px; right: 4px; top: calc(50% - 1px); height: 2px; }
+.live-board .bd-bar > i { position: relative; border-radius: 3px; background: var(--ink4); opacity: .45; transition: opacity .15s, background .15s; }
+.live-board .bd-bar.x > i { width: 3px; height: min(28px, 40%); }
+.live-board .bd-bar.y > i { width: min(28px, 40%); height: 3px; }
+.live-board .bd-bar:hover::before, .live-board .bd-bar.on::before { background: color-mix(in srgb, var(--cora) 65%, transparent); }
+.live-board .bd-bar:hover > i, .live-board .bd-bar.on > i { opacity: 1; background: var(--cora); }
+.live-board .bd-bar.stuck::before { background: color-mix(in srgb, var(--need) 75%, transparent); }
+.live-board .bd-bar.stuck > i { background: var(--need); }
+.live-board .bd-meet { position: absolute; z-index: 4; width: 18px; height: 18px; border-radius: 50%; cursor: move; }
+.live-board .bd-meet::after { content: ''; position: absolute; inset: 5px; border-radius: 50%; background: var(--ink4); opacity: 0; transition: opacity .15s, background .15s, transform .15s; }
+.live-board .bd-grid:hover .bd-meet::after { opacity: .5; }
+.live-board .bd-meet:hover::after, .live-board .bd-meet.on::after { opacity: 1; background: var(--cora); transform: scale(1.3); }
+.live-board .bd-meet.stuck::after { background: var(--need); }
+.live-board.sizing .bd-bar:not(.on), .live-board.sizing .bd-meet:not(.on) { opacity: 0; }
+/* dropped on the board's own edge: a strip the full width or height, drawn a little stronger */
+.live-board .bd-land.edge { background: color-mix(in srgb, var(--cora) 16%, transparent); box-shadow: inset 0 0 0 2px var(--cora), 0 0 0 4px color-mix(in srgb, var(--cora) 16%, transparent); }
+/* a narrow board (one column): a panel dragged by its header swaps places with the one it's over */
+.live-board .bd-cell.stacked.lifted { opacity: .4; }
+.live-board .bd-cell.stacked.target .bd-pn { box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--cora) 70%, transparent); }
+/* a narrow panel: its name comes first (the grip, the count and the buttons it can spare go) */
+.live-board .bd-pn { container-type: inline-size; }
+@container (max-width: 230px) {
+  .live-board .bd-ph .g, .live-board .bd-ph .n { display: none; }
+  .live-board .bd-ph { gap: 4px; padding-left: 9px; letter-spacing: .08em; }
+}
+/* something the board did (a panel sent to a page, a page a session added): in its bar, with the way there or back */
+.live-board .bd-note { display: inline-flex; align-items: center; gap: 7px; height: 26px; padding: 0 4px 0 9px; border-radius: 7px; background: color-mix(in srgb, var(--cora) 12%, transparent); color: var(--cora-hi); font: 500 11.5px var(--ui); white-space: nowrap; animation: bd-note .25s ease-out; }
+.live-board .bd-note > span { max-width: 260px; overflow: hidden; text-overflow: ellipsis; }
+.live-board .bd-note button { height: 20px; padding: 0 8px; border: 0; border-radius: 5px; background: color-mix(in srgb, var(--cora) 22%, var(--raise)); color: var(--ink); font: 600 11px var(--ui); cursor: pointer; }
+.live-board .bd-note button:hover { background: color-mix(in srgb, var(--cora) 34%, var(--raise)); }
+@keyframes bd-note { from { opacity: 0; transform: translateX(6px); } }
+/* + Panel: your layouts (forget one with its x), and naming this page's */
+.live-board .bd-menu .bd-mt.yours { position: relative; display: flex; cursor: pointer; }
+.live-board .bd-menu .bd-mt.yours .del { position: absolute; top: 8px; right: 8px; display: grid; place-items: center; width: 22px; height: 22px; padding: 0; border-radius: 6px; color: var(--ink4); opacity: 0; }
+.live-board .bd-menu .bd-mt.yours:hover .del { opacity: 1; }
+.live-board .bd-menu .bd-mt.yours .del:hover { background: var(--raise); color: var(--ink); }
+.live-board .bd-menu .bd-name { cursor: text; }
+.live-board .bd-menu .bd-name input { flex: 1; min-width: 0; border: 0; outline: 0; background: none; color: var(--ink); font: 500 12.5px var(--ui); }
+.live-board .bd-menu .bd-name .lb-pop { flex: none; width: auto; padding: 2px 10px; }
+.live-board .bd-menu .bd-mt.yours { color: var(--ink); }
+/* the bar: the pages as named tabs, + for a new page, then + Panel and the Board's own menu */
+.live-board .bd-tabs { display: flex; align-items: center; gap: 2px; min-width: 0; }
+.live-board .bd-tabs > .bd-tabw:not(.add) { flex: 0 1 176px; min-width: 120px; }
+.live-board .bd-tabs .bd-tabw:not(.add) .bd-pg { width: 100%; min-width: 0; justify-content: flex-start; }
+.live-board .bd-tabw { position: relative; flex: none; display: inline-flex; }
+.live-board .bd-sp { flex: 1; }
+.live-board .bd-tb.bd-pg { gap: 6px; padding: 0 4px 0 9px; }
+.live-board .bd-tb.bd-pg.new { padding: 0 8px; }
+.live-board .bd-pg .num { color: var(--ink4); font: 500 10.5px var(--code); }
+.live-board .bd-pg.on .num { color: var(--cora); }
+.live-board .bd-pg .pn { flex: 1; min-width: 0; overflow: hidden; text-align: left; text-overflow: ellipsis; }
+.live-board .bd-pg.lifting { opacity: .45; }
+.live-board .bd-pg.renaming { padding-right: 6px; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cora) 55%, transparent); }
+.live-board .bd-pg.renaming input { flex: 1; width: 0; min-width: 0; border: 0; outline: 0; background: none; color: var(--ink); font: 500 11.5px var(--ui); }
+/* the bar's menus open above it: a page's from its tab, the Board's from the right */
+.live-board .bd-menu.bd-pop { left: 0; right: auto; width: 250px; }
+.live-board .bd-menu.bd-pop.right { left: auto; right: 0; width: 300px; }
+.live-board .bd-menu.bd-newmenu { width: 520px; padding: 6px; }
+.live-board .bd-newmenu .bd-mgrid { grid-template-columns: repeat(2, minmax(0, 1fr)); --gt: var(--cora); }
+.live-board .bd-menu .bd-mx.bad { color: #ffb3b3; }
+.live-board .bd-menu .bd-mx.yours { position: relative; display: flex; align-items: center; gap: 9px; padding: 7px 34px 7px 8px; border-radius: 8px; color: var(--ink); cursor: pointer; }
+.live-board .bd-menu .bd-mx.yours:hover { background: color-mix(in srgb, var(--cora) 10%, transparent); }
+.live-board .bd-menu .bd-mx.yours .del { position: absolute; right: 6px; top: 50%; width: 22px; height: 22px; padding: 0; justify-content: center; transform: translateY(-50%); border-radius: 6px; color: var(--ink4); opacity: 0; }
+.live-board .bd-menu .bd-mx.yours:hover .del { opacity: 1; }
+.live-board .bd-menu .bd-mx.yours .del:hover { background: var(--raise); color: var(--ink); }
+/* a page tab's menu: tucked away; on hover (or while it's open) it shows beside the name, which gives way */
+.live-board .bd-pg .acts { display: inline-flex; align-items: center; gap: 1px; max-width: 0; margin-left: -6px; overflow: hidden; opacity: 0; transition: max-width .16s ease, opacity .12s, margin .16s; }
+.live-board .bd-pg:hover .acts, .live-board .bd-pg .acts.open, .live-board .bd-pg:focus-visible .acts { max-width: 22px; margin-left: 0; opacity: 1; }
+.live-board .bd-pg .act { display: inline-grid; place-items: center; flex: none; width: 20px; height: 20px; border-radius: 5px; color: var(--ink3); }
+.live-board .bd-pg .act:hover { background: var(--raise2); color: var(--ink); }

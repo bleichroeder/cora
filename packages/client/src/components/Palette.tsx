@@ -23,6 +23,7 @@ import { SETTINGS_SECTIONS, openSettings } from './SettingsModal';
 import { EndSessionConfirm } from './EndSession';
 import { clearEnded, dismissSession, showSession, suggestName } from './SessionMenu';
 import { Icon } from './Icon';
+import { lockNow } from '../state/lock';
 import './dialogs.css';
 import './palette.css';
 
@@ -286,6 +287,7 @@ function useEntries(): PEntry[] {
     cmd('older', 'Resume a session…', 'History', () => st().setModal('history'), { keywords: 'history resume fork', featured: true, boost: 4 });
     cmd('overview', overview ? 'Back to the session' : 'Overview', 'LayoutGrid', () => st().toggleOverview(), { keywords: 'grid galaxy all sessions G', featured: true, boost: 3 });
     cmd('settings', 'Settings', 'Settings', () => openSettings(), { keywords: 'preferences options', featured: true, boost: 2 });
+    cmd('lock', 'Lock Cora', 'Lock', () => void lockNow(), { keywords: 'lockdown away pin secure screen' });
     for (const sec of SETTINGS_SECTIONS) if (!sec.desktop || desktop) cmd(`settings:${sec.id}`, `Settings: ${sec.label}`, sec.icon, () => openSettings(sec.id), { keywords: 'preferences options' });
     cmd('grid', 'Overview as a grid', 'LayoutGrid', () => (st().setPrefs({ overviewStyle: 'grid' }), st().toggleOverview(true)), { keywords: 'cards' });
     cmd('galaxy', 'Overview as a galaxy', 'Orbit', () => (st().setPrefs({ overviewStyle: 'galaxy' }), st().toggleOverview(true)), { keywords: 'stars space' });

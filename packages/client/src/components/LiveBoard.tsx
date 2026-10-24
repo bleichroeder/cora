@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { displayPath, type AgentInfo, type BrainEvent } from '@cora/shared';
+import { BOARD_LAYOUTS, BOARD_LAYOUT_INFO, displayPath, type AgentInfo, type BoardLayoutId, type BoardPageMode, type BrainEvent } from '@cora/shared';
 import { sessionEvents, useBrain } from '../state/store';
 import { derive, fileOf, type AgentView } from '../scene/derive';
 import { latestByTitle, versionsOf } from '../lib/explainVersions';
@@ -10,12 +10,25 @@ import {
   PANEL_GROUPS,
   PANELS,
   ROWS,
+  addLayoutPage,
+  shellsOf,
+  duplicatePage,
+  moveName,
+  movePage,
+  movedTo,
   addPanel,
+  asLayout,
+  LAYOUTS,
+  namesWithout,
   bottom,
+  dropEdge,
   dropOn,
   merge,
-  moveEdge,
-  moveTo,
+  crossings,
+  moveMeet,
+  lineAt,
+  lines,
+  moveLine,
   keepBoards,
   normalize,
   pageCount,
@@ -23,15 +36,17 @@ import {
   popExplain,
   removePage,
   removePanel,
-  resizeTo,
   sendToPage,
   template,
   visible,
   type BoardItem,
-  type Drop,
+  type Line,
+  type Meet,
+  type SavedLayout,
   type SessionBoard,
 } from '../lib/boardLayout';
 import { fitGrid } from '../lib/fitGrid';
+import { dropLabel, dropTarget } from '../lib/boardDrag';
 import { liveKey, loadLiveData, useLiveData } from '../state/liveExplains';
 import { explainShim, themeVars } from '../lib/explainShim';
 import { fetchToolDetail } from '../state/ws';
@@ -41,7 +56,10 @@ import { maskSecrets } from '../lib/mask';
 import { explainFrom, looksLikeHtmlDoc, sandboxedHtml, type Explain } from './Viewer';
 import { Icon } from './Icon';
 import { MorePanel } from './board/panels';
-import { SessionBrowserDock } from './board/ToolPanels';
+import { BoardTerminal } from './board/ToolPanels';
+import { BoardBar, type BoardNote } from './board/BoardBar';
+import { openSettings } from './SettingsModal';
+import { closeShell } from '../state/shells';
 import { SpotlightPanel } from './board/Spotlight';
 import type { Spot } from '../lib/spotlight';
 import type { PanelKind } from '../lib/boardLayout';
@@ -55,7 +73,9 @@ const SPARK = 10;
 const SPARK_MS = 120_000;
 /** The board: the gap between panels, the least a row is tall, and below this width one column of panels. */
 const GAP = 12;
-const MIN_ROW = 34;
+const MIN_ROW = 17;
+/** A Board shell this new isn't ended for having no panel (its panel is still saving it). */
+const SHELL_GRACE_MS = 20_000;
 const NARROW = 560;
 /** An explain's preview: a page drawn this wide, then scaled down to the card. */
 const PREVIEW_W = 1200;
@@ -191,23 +211,42 @@ function useBoardData(sessionId: string) {
 export type BoardData = ReturnType<typeof useBoardData>;
 type BoardExplain = BoardData['explains'][number];
 
-/** A drag (move) or resize in progress: where the panel is under the pointer, and where everything would go. */
+/**
+ * A move or resize in progress. Moving, the board stays still (what you see is what you're over): the panel dims, a
+ * chip with its name follows the pointer, and an outline shows where it would land. Resizing, the panels take their
+ * snapped sizes as you go, and an edge that can't go further says so.
+ */
 type Act = {
+  /** moving: the panel; a line: the panel it's moved by */
   id: string;
-  mode: 'move' | 'w' | 'h' | 'wh';
-  px: { left: number; top: number; width: number; height: number };
+  /** a panel, a line between panels, or where two lines meet */
+  mode: 'move' | 'line' | 'cross';
+  /** the line (or the two) being dragged */
+  line?: Line;
+  cross?: Meet;
+  /** what the board shows meanwhile (moving: as it is) */
   preview: BoardItem[];
+  /** what letting go does */
+  result: BoardItem[];
+  /** moving: where the pointer is (the chip), and where it would land and what that does */
+  at?: { x: number; y: number };
+  land?: { px: { left: number; top: number; width: number; height: number }; label: string; swap?: boolean; edge?: boolean };
   /** over a page's tab: it goes to that page */
   toPage?: number;
+  /** a line: it can't go further that way */
+  stuck?: boolean;
+  /** one column (a narrow board): the panel it would swap with */
+  over?: string;
 };
 
 /**
- * The scene area with 3D off (Settings › Scene): a board of panels on a grid that snaps, like a dashboard. 12 columns
- * and 12 rows as shares of the area, so it keeps its shape as the window (or the viewer beside it) changes size; under
- * 560 px wide the panels stack in one column. Drag a panel by its header onto another (its middle swaps them, an
- * edge splits it) or onto empty cells; drag an edge to move it like a split bar, the corner to resize just that panel;
- * ⤢ to fill the area. Panels: Agents, Touching, Explains, Tasks, and any explain popped out (live ones
- * keep updating). Each session has its own board, kept as you left it.
+ * The scene area with 3D off (Settings › Scene): a board of panels on a grid that snaps, like a dashboard. 24 columns
+ * and 24 rows as shares of the area, so it keeps its shape as the window (or the viewer beside it) changes size; under
+ * 560 px wide the panels stack in one column. The panels always fill the area. Drag a panel by its header onto another
+ * (its middle swaps them, near an edge it takes that half), or onto the board's own edge to run the full width or
+ * height there; drag any line between panels like a split bar, or where two
+ * meet to move both; ⤢ to fill the area (Esc to come back). Panels: Agents, Touching, Explains, Tasks, and any explain popped out (live
+ * ones keep updating). Each session has its own board, kept as you left it.
  */
 export function LiveBoard({ sessionId }: { sessionId: string }) {
   // this session's own board (none yet: the layout new sessions start with)
@@ -218,18 +257,85 @@ export function LiveBoard({ sessionId }: { sessionId: string }) {
   const pg = Math.min(mine?.page ?? 0, pages - 1);
   const items = useMemo(() => visible(all, sessionId, pg), [all, sessionId, pg]);
   const setPrefs = useBrain.getState().setPrefs;
+  // every change builds on the board as it is now, never on what a render saw (a late one, a terminal coming up or a
+  // drag finishing, would otherwise put back an older board, and the page it was on)
+  const latest = () => {
+    const s = useBrain.getState();
+    const b = s.prefs.boards?.[sessionId];
+    const a = b ? normalize(b.items) : template(s.prefs.board);
+    const n = pageCount(a, b?.pages ?? 1);
+    return { b, all: a, pages: n, page: Math.min(b?.page ?? 0, n - 1) };
+  };
   const setBoard = (next: Partial<SessionBoard>) => {
     const s = useBrain.getState();
-    const board = { items: all, pages, page: pg, ...next };
+    const now = latest();
+    const board = { items: now.all, pages: now.pages, page: now.page, ...(now.b?.names ? { names: now.b.names } : {}), ...(now.b?.done ? { done: now.b.done } : {}), ...next };
     setPrefs({ boards: keepBoards(s.prefs.boards, sessionId, board, (id) => !!s.sessions[id]) });
   };
-  const save = (next: BoardItem[]) => setBoard({ items: merge(all, sessionId, next, pg) });
+  // a page's panels as they now are (`page`: the page they're on, the one showing unless said)
+  const save = (next: BoardItem[], page = pg) => setBoard({ items: merge(latest().all, sessionId, next, page) });
+  // one panel's own settings (a terminal's tabs, the Spotlight's pin), on whichever page it is
+  const patch = (id: string, p: Partial<BoardItem>) => setBoard({ items: latest().all.map((o) => (o.id === id ? { ...o, ...p } : o)) });
   const goTo = (n: number) => (setMaxed(null), setBoard({ page: n }));
   const data = useBoardData(sessionId);
   const [maxed, setMaxed] = useState<string | null>(null);
   useEffect(() => setMaxed(null), [sessionId]);
   const [menu, setMenu] = useState(false);
   const [act, setAct] = useState<Act | null>(null);
+  // the drag in progress (its way to stop): a page or session change stops it, nothing kept
+  const dragging = useRef<((keep: boolean) => void) | null>(null);
+  useEffect(() => () => dragging.current?.(false), [pg, sessionId]);
+  // something the board did that you'd want to know (a panel sent to a page, a page a session added): said in its bar
+  // for a few seconds, with the way there (or back)
+  const [note, setNote] = useState<BoardNote | null>(null);
+  useEffect(() => {
+    if (!note) return;
+    const t = setTimeout(() => setNote(null), note.undo ? 10_000 : 6000);
+    return () => clearTimeout(t);
+  }, [note]);
+  // what Undo puts back (the Board as it was before a page went, a reset, a page a session added)
+  const undoTo = useRef<SessionBoard | null>(null);
+  const snapshot = (): SessionBoard => ({ items: all, pages, page: pg, ...(mine?.names ? { names: mine.names } : {}) });
+  const names = mine?.names ?? [];
+  const named = (page: number, name: string | null) => Object.assign(Array.from({ length: Math.max(names.length, page + 1) }, (_, i) => names[i] ?? null), { [page]: name });
+  // a page laid out for a kind of work (or one of yours): after the last one, and shown
+  const addLayout = (layout: Parameters<typeof addLayoutPage>[2], name: string) => {
+    const r = addLayoutPage(all, pages, layout);
+    if (!r) return setNote({ text: `The board has ${MAX_PAGES} pages, the most it can`, icon: 'Info', at: Date.now() });
+    setMaxed(null);
+    setBoard({ items: r.items, pages: r.page + 1, page: r.page, names: named(r.page, name) });
+  };
+  const saved = useBrain((s) => s.prefs.layouts) ?? [];
+
+  // a session's ask (its board tool): a page laid out for what it's doing now, once per ask; one already made for that
+  // work is gone back to instead. How far it goes is yours (Settings › Sessions › Board): off, add it, or add and show it.
+  const mode = useBoardPageMode();
+  const version = useBrain((s) => s.versions[sessionId]);
+  const ask = useMemo(() => latestBoardAsk(sessionId), [sessionId, version]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!ask || !mode || mode === 'off') return;
+    const done = mine?.done ?? [];
+    if (done.includes(ask.id)) return;
+    const marked = [...done, ask.id].slice(-50);
+    // asked long ago (an old session opened again): noted, not acted on
+    if (Date.now() - ask.ts > ASK_FRESH_MS) return setBoard({ done: marked });
+    const name = BOARD_LAYOUT_INFO[ask.layout].name;
+    const at = names.indexOf(name);
+    if (at >= 0 && at < pages) {
+      if (mode === 'show' && at !== pg) {
+        setMaxed(null);
+        setBoard({ done: marked, page: at });
+        setNote({ text: `Claude went to the ${name} page`, icon: BOARD_LAYOUT_INFO[ask.layout].icon, go: pg, at: Date.now() });
+      } else setBoard({ done: marked });
+      return;
+    }
+    const r = addLayoutPage(all, pages, LAYOUTS[ask.layout]);
+    if (!r) return setBoard({ done: marked });
+    if (mode === 'show') setMaxed(null);
+    undoTo.current = snapshot();
+    setBoard({ items: r.items, pages: r.page + 1, page: mode === 'show' ? r.page : pg, names: named(r.page, name), done: marked });
+    setNote(mode === 'show' ? { text: `Claude added a ${name} page`, icon: BOARD_LAYOUT_INFO[ask.layout].icon, undo: true, at: Date.now() } : { text: `Claude added a ${name} page`, icon: BOARD_LAYOUT_INFO[ask.layout].icon, go: r.page, at: Date.now() });
+  }, [ask?.id, mode]); // eslint-disable-line react-hooks/exhaustive-deps
   const grid = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ w: 0, h: 0 });
   useLayoutEffect(() => {
@@ -253,122 +359,174 @@ export function LiveBoard({ sessionId }: { sessionId: string }) {
   });
 
   const maxedPanel = maxed ? items.find((p) => p.id === maxed) : undefined;
+  // a panel fills the board: Esc brings the board back
+  useEffect(() => {
+    if (!maxed) return;
+    const k = (e: KeyboardEvent) => e.key === 'Escape' && !e.defaultPrevented && setMaxed(null);
+    window.addEventListener('keydown', k);
+    return () => window.removeEventListener('keydown', k);
+  }, [maxed]);
   const pop = (title: string) => save(popExplain(items, sessionId, title));
+  // the Board's own shells no panel holds any more (a page removed, the board reset): ended
+  // (one just opened isn't held yet: its panel saves it a moment later, so a shell gets a while before it counts)
+  const boardShells = useBrain((s) => s.shells.filter((t) => t.sessionId === sessionId && t.place === 'board' && t.alive && Date.now() - t.startedAt > SHELL_GRACE_MS).map((t) => t.terminalId).join(','));
+  const ready = useBrain((s) => s.ready);
+  useEffect(() => {
+    if (!ready || !boardShells) return;
+    const held = new Set(all.flatMap(shellsOf));
+    for (const id of boardShells.split(',')) if (!held.has(id)) void closeShell(id);
+  }, [all, boardShells, ready]);
   // this session's explains that have a panel, and on which page
   const onPage = new Set(items.filter((i) => i.k !== 'spotlight').map((i) => i.k as string));
   const popped = new Map(all.filter((p) => p.k === 'explain' && p.sid === sessionId).map((p) => [p.title!, p.pg ?? 0]));
+  const nameOf = (i: BoardItem) => (i.k === 'explain' ? i.title! : PANELS[i.k].name);
 
-  // the panel under the pointer (not the one moving), and where on it: the middle, or which edge
-  const over = (ev: PointerEvent, id: string): { id: string; how: Drop } | null => {
-    const box = grid.current?.querySelector('.bd-canvas')?.getBoundingClientRect();
-    if (!box) return null;
-    const x = ev.clientX - box.left;
-    const y = ev.clientY - box.top;
-    for (const o of items) {
-      const r = rect(o);
-      if (o.id === id || x < r.left || x > r.left + r.width || y < r.top || y > r.top + r.height) continue;
-      const fx = (x - r.left) / r.width;
-      const fy = (y - r.top) / r.height;
-      const edges: Array<[number, Drop]> = [
-        [fx, 'left'],
-        [1 - fx, 'right'],
-        [fy, 'top'],
-        [1 - fy, 'bottom'],
-      ];
-      const [d, side] = edges.sort((a, b) => a[0] - b[0])[0];
-      return { id: o.id, how: d < 0.24 ? side : 'swap' };
-    }
-    return null;
-  };
-
-  // move (from the header) or resize (from an edge or the corner): the panel follows the pointer, the rest show where
-  // they'd go
-  const start = (e: React.PointerEvent, it: BoardItem, mode: Act['mode']) => {
-    if (e.button !== 0 || narrow || (mode === 'move' && (e.target as HTMLElement).closest('button'))) return;
+  // move a panel (from its header), or drag a line between panels (or where two meet)
+  const start = (e: React.PointerEvent, it: BoardItem, mode: Act['mode'], drag?: { line?: Line; cross?: Meet }) => {
+    if (e.button !== 0 || (narrow && mode !== 'move') || (mode === 'move' && (e.target as HTMLElement).closest('button'))) return;
     e.preventDefault(); // no text selected on the way
+    // one drag at a time (one left over from before goes, unkept)
+    dragging.current?.(false);
+    const page = pg;
     const el = e.currentTarget as HTMLElement;
-    const r0 = rect(it);
+    // the pointer is the board's until it's let go, whatever it passes over (a page, a terminal, an explain)
+    try {
+      el.setPointerCapture(e.pointerId);
+    } catch {
+      /* the pointer already went */
+    }
     const x0 = e.clientX;
     const y0 = e.clientY;
     let cur: Act | null = null;
-    let cell = '';
+    let key = '';
+    let shield: HTMLDivElement | null = null;
     const move = (ev: PointerEvent) => {
+      // let go somewhere we didn't hear about (another window, a page that kept the mouse): it ends there
+      if (cur && (ev.buttons & 1) === 0) return end(true);
       const dx = ev.clientX - x0;
       const dy = ev.clientY - y0;
       if (!cur && Math.hypot(dx, dy) < 4) return;
       if (!cur) {
-        el.setPointerCapture(e.pointerId);
         document.body.classList.add('ui-dragging');
+        // over everything: nothing underneath (an explain's page, a terminal) takes the pointer meanwhile
+        shield = document.createElement('div');
+        shield.className = `bd-shield ${mode === 'line' ? drag!.line!.axis : mode}`;
+        document.body.append(shield);
       }
-      const px =
-        mode === 'move'
-          ? {
-              ...r0,
-              left: Math.max(-r0.width / 2, Math.min(size.w - r0.width / 2, r0.left + dx)),
-              top: Math.max(0, r0.top + dy),
-            }
-          : {
-              ...r0,
-              width: mode === 'h' ? r0.width : Math.max(2 * colW - GAP, Math.min(size.w - r0.left, r0.width + dx)),
-              height: mode === 'w' ? r0.height : Math.max(2 * rowH - GAP, r0.height + dy),
-            };
-      // over another page's tab: it goes there
-      const tab = mode === 'move' ? [...document.querySelectorAll<HTMLElement>('.live-board .bd-pg[data-pg]')].find((t) => {
-        const b = t.getBoundingClientRect();
-        return ev.clientX >= b.left && ev.clientX <= b.right && ev.clientY >= b.top && ev.clientY <= b.bottom;
-      }) : undefined;
-      const toPage = tab && Number(tab.dataset.pg) !== pg ? Number(tab.dataset.pg) : undefined;
-      if (toPage != null) {
-        cur = { id: it.id, mode, px, preview: items, toPage };
-        cell = `page${toPage}`;
-        setAct(cur);
-        return;
+      if (mode === 'move') {
+        const at = { x: ev.clientX, y: ev.clientY };
+        // over another page's tab: it goes there
+        const tab = [...document.querySelectorAll<HTMLElement>('.live-board .bd-pg[data-pg]')].find((t) => {
+          const b = t.getBoundingClientRect();
+          return ev.clientX >= b.left && ev.clientX <= b.right && ev.clientY >= b.top && ev.clientY <= b.bottom;
+        });
+        const toPage = tab && Number(tab.dataset.pg) !== pg ? Number(tab.dataset.pg) : undefined;
+        if (toPage != null) {
+          key = `page${toPage}`;
+          cur = { id: it.id, mode, preview: items, result: items, at, toPage };
+          return setAct(cur);
+        }
+        // one column (a narrow board): the panel under the pointer swaps places with it
+        if (narrow) {
+          const over = [...(grid.current?.querySelectorAll<HTMLElement>('.bd-cell.stacked[data-id]') ?? [])].find((c) => {
+            const b = c.getBoundingClientRect();
+            return c.dataset.id !== it.id && ev.clientY >= b.top && ev.clientY <= b.bottom;
+          })?.dataset.id;
+          cur = { id: it.id, mode, preview: items, result: over ? dropOn(items, it.id, over, 'swap') : items, at, over };
+          return setAct(cur);
+        }
+        const box = grid.current?.querySelector('.bd-canvas')?.getBoundingClientRect();
+        const bx = box ? ev.clientX - box.left : 0;
+        const by = box ? ev.clientY - box.top : 0;
+        const on = box ? dropTarget(items, it.id, bx, by, rect, GAP, { width: box.width, height: box.height }) : null;
+        // over a panel: the board stays still, the outline shows where it lands (off the panels: nothing happens)
+        const k = on ? `${on.id}:${on.how}` : 'none';
+        if (k !== key || !cur) {
+          key = k;
+          if (on?.edge && on.how !== 'swap') {
+            const result = dropEdge(items, it.id, on.how);
+            cur = { id: it.id, mode, preview: items, result, at, land: { px: rect(result.find((o) => o.id === it.id)!), label: dropLabel(on.how, '', false, true), edge: true } };
+          } else if (on) {
+            const result = dropOn(items, it.id, on.id, on.how);
+            const t = items.find((o) => o.id === on.id)!;
+            const landed = result.find((o) => o.id === it.id)!;
+            cur = { id: it.id, mode, preview: items, result, at, land: { px: rect(landed), label: dropLabel(on.how, nameOf(t), on.fallback), swap: on.how === 'swap' } };
+          } else cur = { id: it.id, mode, preview: items, result: items, at };
+        } else cur = { ...cur, at };
+        return setAct(cur);
       }
-      // moving over another panel: its middle swaps them, near an edge it takes that half; over empty cells, there
-      const on = mode === 'move' ? over(ev, it.id) : null;
-      const nx = mode === 'move' ? Math.round(px.left / colW) : Math.round((px.width + GAP) / colW);
-      const ny = mode === 'move' ? Math.round(px.top / rowH) : Math.round((px.height + GAP) / rowH);
-      const key = on ? `${on.id}:${on.how}` : `${nx},${ny}`;
-      if (key !== cell || !cur) {
-        cell = key;
-        cur = {
-          id: it.id,
-          mode,
-          px,
-          preview: on
-            ? dropOn(items, it.id, on.id, on.how)
-            : mode === 'move'
-              ? moveTo(items, it.id, nx, ny)
-              : mode === 'w'
-                ? moveEdge(items, it.id, 'x', nx)
-                : mode === 'h'
-                  ? moveEdge(items, it.id, 'y', ny)
-                  : resizeTo(items, it.id, nx, ny),
-        };
-      } else cur = { ...cur, px };
+      // a line (or two): snapped to the grid as it goes; where it's asked to go and where it can differ: it's stuck
+      const box = grid.current?.querySelector('.bd-canvas')?.getBoundingClientRect();
+      if (!box) return;
+      const wantX = Math.round((ev.clientX - box.left + GAP / 2) / colW);
+      const wantY = Math.round((ev.clientY - box.top + GAP / 2) / rowH);
+      const k = mode === 'line' ? String(drag!.line!.axis === 'x' ? wantX : wantY) : `${wantX},${wantY}`;
+      if (k === key && cur) return;
+      key = k;
+      let result = items;
+      let stuck = false;
+      if (mode === 'line') {
+        const l = drag!.line!;
+        const want = l.axis === 'x' ? wantX : wantY;
+        result = moveLine(items, l, want);
+        stuck = lineAt(result, l) !== want;
+      } else {
+        const m = drag!.cross!;
+        result = moveMeet(items, m, wantX, wantY);
+        stuck = m.vs.some((v) => lineAt(result, v) !== wantX) || m.hs.some((h) => lineAt(result, h) !== wantY);
+      }
+      cur = { id: it.id, mode, ...drag, preview: result, result, stuck };
       setAct(cur);
     };
     const end = (keep: boolean) => {
+      if (dragging.current === end) dragging.current = null;
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', up);
+      window.removeEventListener('pointercancel', cancel);
+      window.removeEventListener('blur', cancel);
       window.removeEventListener('keydown', esc, true);
+      el.removeEventListener('lostpointercapture', lost);
       document.body.classList.remove('ui-dragging');
-      if (cur && keep && cur.toPage != null) setBoard({ items: sendToPage(all, sessionId, cur.id, pg, cur.toPage) });
-      else if (cur && keep) save(cur.preview);
+      shield?.remove();
+      const done = cur;
+      cur = null;
+      if (done && keep && done.toPage != null) {
+        const now = latest();
+        setBoard({ items: sendToPage(now.all, sessionId, done.id, page, done.toPage), pages: Math.max(now.pages, done.toPage + 1) });
+        setNote({ text: `${nameOf(it)} is on page ${done.toPage + 1}`, icon: 'CornerDownRight', go: done.toPage, at: Date.now() });
+      }
+      else if (done && keep) save(done.result, page);
       setAct(null);
     };
+    dragging.current = end;
     const up = () => end(true);
-    const esc = (ev: KeyboardEvent) => ev.key === 'Escape' && (ev.stopPropagation(), end(false));
+    const cancel = () => end(false);
+    // capture taken away (the panel went, the window lost the mouse): what was showing is kept
+    const lost = () => {
+      if (cur) end(true);
+    };
+    const esc = (ev: KeyboardEvent) => {
+      if (ev.key !== 'Escape') return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      end(false);
+    };
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up);
+    window.addEventListener('pointercancel', cancel);
+    window.addEventListener('blur', cancel);
     window.addEventListener('keydown', esc, true);
+    el.addEventListener('lostpointercapture', lost);
   };
 
   const shown = act?.preview ?? items;
-  const target = act ? shown.find((i) => i.id === act.id) : undefined;
   // taller than the area only when panels go below it (rows have a least height): only then does the board scroll
   const tall = bottom(shown) * rowH - GAP > size.h + 1;
   const height = tall ? bottom(shown) * rowH - GAP : size.h;
+  const lifted = act ? items.find((i) => i.id === act.id) : undefined;
+  // the lines to drag, where they are now (following a drag as it goes)
+  const bars = useMemo(() => once(lines(shown), (l) => `${l.axis}:${l.id}:${l.from}`), [shown]);
+  const meets = useMemo(() => once(crossings(bars), (c) => `${c.vs[0].id}:${c.hs[0].id}`), [bars]);
   const panel = (p: BoardItem, isMax = false) => (
     <BoardPanelView
       p={p}
@@ -378,17 +536,22 @@ export function LiveBoard({ sessionId }: { sessionId: string }) {
       popped={popped}
       page={pg}
       onPage={onPage}
-      onUpdate={(next) => save(items.map((i) => (i.id === next.id ? next : i)))}
+      onUpdate={(next) => patch(next.id, { pin: next.pin, term: next.term, terms: next.terms })}
       onGo={goTo}
       onPop={pop}
       onMax={() => setMaxed(isMax ? null : p.id)}
-      onClose={() => (setMaxed(null), save(removePanel(items, p.id)))}
-      onGrab={isMax || narrow ? undefined : (e) => start(e, p, 'move')}
+      onClose={() => {
+        setMaxed(null);
+        save(removePanel(items, p.id));
+        // a Terminal panel's shells end with it
+        for (const id of shellsOf(p)) void closeShell(id);
+      }}
+      onGrab={isMax ? undefined : (e) => start(e, p, 'move')}
     />
   );
 
   return (
-    <div className={`live-board${act ? ' acting' : ''}`}>
+    <div className={`live-board${act ? ` acting ${act.mode === 'move' ? 'moving' : 'sizing'}` : ''}`}>
       <div
         ref={grid}
         className={`bd-grid${narrow ? ' narrow' : ''}${tall ? ' tall' : ''}`}
@@ -404,7 +567,7 @@ export function LiveBoard({ sessionId }: { sessionId: string }) {
             {pages > 1 ? (
               <button
                 onClick={() => {
-                  setBoard({ items: removePage(all, pg), pages: pages - 1, page: Math.max(0, pg - 1) });
+                  setBoard({ items: removePage(all, pg), pages: pages - 1, page: Math.max(0, pg - 1), names: namesWithout(mine?.names, pg) });
                 }}
               >
                 Remove this page
@@ -416,74 +579,131 @@ export function LiveBoard({ sessionId }: { sessionId: string }) {
           [...items]
             .sort((a, b) => a.y - b.y || a.x - b.x)
             .map((p) => (
-              <div key={p.id} className="bd-cell stacked" style={{ height: Math.max(180, p.h * 40) }}>
-                {panel(p)}
+              <div key={p.id} data-id={p.id} className={`bd-cell stacked${act?.id === p.id ? ' lifted' : ''}${act?.over === p.id ? ' target' : ''}`} style={{ height: Math.max(180, p.h * 20) }}>
+                {p.id === maxed ? <BoardAway name={nameOf(p)} /> : panel(p)}
               </div>
             ))
         ) : (
           <div className="bd-canvas" style={{ height }}>
-            {target ? <div className="bd-ghost" style={rect(target)} /> : null}
             {shown.map((p) => {
-              const lifted = act?.id === p.id;
-              const r = lifted ? act.px : rect(p);
+              const r = rect(p);
+              const me = act?.mode === 'move' && act.id === p.id;
               return (
                 <div
                   key={p.id}
-                  className={`bd-cell${lifted ? ' lifted' : ''}`}
+                  className={`bd-cell${me ? ` lifted ${act!.mode}` : ''}`}
                   style={{
                     transform: `translate(${r.left}px, ${r.top}px)`,
                     width: r.width,
                     height: r.height,
                   }}
                 >
-                  {panel(p)}
-                  <div className="bd-rz w" title="Drag to move this edge (and the panels along it)" onPointerDown={(e) => start(e, p, 'w')} />
-                  <div className="bd-rz h" title="Drag to move this edge (and the panels along it)" onPointerDown={(e) => start(e, p, 'h')} />
-                  <div className="bd-rz wh" title="Drag to resize just this panel" onPointerDown={(e) => start(e, p, 'wh')} />
+                  {/* filling the board: shown there alone (two of a terminal or a browser would fight) */}
+                  {p.id === maxed ? <BoardAway name={nameOf(p)} /> : panel(p)}
                 </div>
               );
             })}
+            {/* the lines between panels, in the gaps: each drags like a split bar; where two meet, both move */}
+            {act?.mode === 'move'
+              ? null
+              : bars.map((l) => {
+                  const on = !!act && (act.line ? sameLine(act.preview, act.line, l) : !!act.cross && [...act.cross.vs, ...act.cross.hs].some((d) => sameLine(act.preview, d, l)));
+                  const style =
+                    l.axis === 'x'
+                      ? { left: l.at * colW - GAP - 3, top: l.from * rowH, width: GAP + 6, height: (l.to - l.from) * rowH - GAP }
+                      : { left: l.from * colW, top: l.at * rowH - GAP - 3, width: (l.to - l.from) * colW - GAP, height: GAP + 6 };
+                  return (
+                    <div
+                      key={`${l.axis}:${l.id}:${l.from}`}
+                      className={`bd-bar ${l.axis}${on ? ' on' : ''}${on && act?.stuck ? ' stuck' : ''}`}
+                      style={style}
+                      title="Drag to resize the panels on both sides"
+                      onPointerDown={(e) => start(e, items.find((i) => i.id === l.id)!, 'line', { line: l })}
+                    >
+                      <i />
+                    </div>
+                  );
+                })}
+            {act?.mode === 'move'
+              ? null
+              : meets.map((c) => (
+                  <div
+                    key={`${c.vs[0].id}:${c.hs[0].id}`}
+                    className={`bd-meet${act?.cross && act.cross.vs.some((v) => c.vs.some((w) => sameLine(act.preview, v, w))) && act.cross.hs.some((h) => c.hs.some((w) => sameLine(act.preview, h, w))) ? ` on${act.stuck ? ' stuck' : ''}` : ''}`}
+                    style={{ left: c.x * colW - GAP / 2 - 9, top: c.y * rowH - GAP / 2 - 9 }}
+                    title="Drag to move both lines"
+                    onPointerDown={(e) => start(e, items.find((i) => i.id === c.vs[0].id)!, 'cross', { cross: c })}
+                  />
+                ))}
+            {act?.land ? (
+              <div className={`bd-land${act.land.swap ? ' swap' : ''}${act.land.edge ? ' edge' : ''}`} style={{ transform: `translate(${act.land.px.left}px, ${act.land.px.top}px)`, width: act.land.px.width, height: act.land.px.height }}>
+                <span>{act.land.label}</span>
+              </div>
+            ) : null}
           </div>
         )}
       </div>
+      {act?.mode === 'move' && act.at && lifted ? (
+        <div className="bd-chip" style={{ transform: `translate(${act.at.x + 14}px, ${act.at.y + 12}px)` }}>
+          <Icon name={lifted.k === 'explain' ? 'FileText' : PANEL_ICON[lifted.k]} size={13} />
+          <b>{nameOf(lifted)}</b>
+          {act.toPage != null ? <em>to page {act.toPage + 1}</em> : null}
+        </div>
+      ) : null}
       {maxedPanel ? <div className="bd-max">{panel(maxedPanel, true)}</div> : null}
-      {/* one bar, bottom right: the pages (click one to go there; drag a panel onto one to send it there), a new page, and
-          a panel to add; every control the same size */}
-      <div className={`bd-add${act?.mode === 'move' ? ' moving' : ''}`} role="toolbar" aria-label="Board">
-        {pages > 1 || act?.mode === 'move'
-          ? Array.from({ length: pages }, (_, n) => (
-              <button key={n} role="tab" aria-selected={n === pg} className={`bd-tb bd-pg${n === pg ? ' on' : ''}${act?.toPage === n ? ' drop' : ''}`} data-pg={n} title={n === pg ? `Page ${n + 1}` : `Page ${n + 1} (drop a panel here to send it there)`} onClick={() => goTo(n)}>
-                {n + 1}
-              </button>
-            ))
-          : null}
-        {pages < MAX_PAGES ? (
-          <button
-            className={`bd-tb bd-pg new${act?.mode === 'move' && act.toPage === pages ? ' drop' : ''}`}
-            data-pg={act?.mode === 'move' ? pages : undefined}
-            title={act?.mode === 'move' ? 'Drop here: a new page for it' : 'A new page of panels'}
-            onClick={() => setBoard({ pages: pages + 1, page: pages })}
-          >
-            <Icon name="CopyPlus" size={13} />
-            {pages === 1 && act?.mode !== 'move' ? 'Page' : null}
-          </button>
-        ) : null}
-        <span className="bd-sep" />
-        <button className={`bd-tb${menu ? ' on' : ''}`} title="Add a panel" onClick={() => setMenu(!menu)}>
-          <Icon name="LayoutGrid" size={13} /> Panel
-        </button>
-        {menu ? (
-          <AddMenu
-            items={items}
-            explains={data.explains}
-            onPick={(next) => (save(next), setMenu(false))}
-            onPop={(title) => (pop(title), setMenu(false))}
-            onReset={() => (setBoard({ items: template(firstLayout), pages: 1, page: 0 }), setMenu(false))}
-            onTemplate={() => (setPrefs({ board: template(all) }), setMenu(false))}
-            onClose={() => setMenu(false)}
-          />
-        ) : null}
-      </div>
+      <BoardBar
+        pages={pages}
+        pg={pg}
+        names={names}
+        moving={act?.mode === 'move'}
+        dropPage={act?.toPage}
+        note={note}
+        onNote={() => {
+          if (!note) return;
+          setNote(null);
+          if (note.undo && undoTo.current) setBoard({ ...undoTo.current, done: mine?.done });
+          else if (note.go != null) goTo(note.go);
+        }}
+        saved={saved}
+        onGo={goTo}
+        onRename={(n, name) => setBoard({ names: named(n, name) })}
+        onNewPage={(layout) => (layout ? addLayout(layout.items, layout.name) : (setMaxed(null), setBoard({ pages: pages + 1, page: pages })))}
+        onSaveLayout={(n, name) => {
+          const next: SavedLayout = { id: `layout:${Date.now().toString(36)}`, name, items: asLayout(visible(all, sessionId, n)).map((p, i) => ({ ...p, id: `${p.k}:${i}` })) };
+          setPrefs({ layouts: [...saved.filter((l) => l.name.toLowerCase() !== name.toLowerCase()), next] });
+          // the page goes by that name too
+          setBoard({ names: named(n, name) });
+          setNote({ text: `Saved "${name}" as a layout`, icon: 'Bookmark', at: Date.now() });
+        }}
+        onDeleteLayout={(id) => setPrefs({ layouts: saved.filter((l) => l.id !== id) })}
+        onDuplicate={(n) => {
+          const r = duplicatePage(all, sessionId, n, pages);
+          if (r) setBoard({ items: r.items, pages: r.page + 1, page: r.page, names: named(r.page, names[n] ? `${names[n]} copy` : null) });
+        }}
+        onMove={(from, to) => setBoard({ items: movePage(all, from, to), names: moveName(names, from, to), page: movedTo(pg, from, to) })}
+        onRemove={(n) => {
+          undoTo.current = snapshot();
+          setMaxed(null);
+          setBoard({ items: removePage(all, n), pages: pages - 1, page: pg > n ? pg - 1 : Math.min(pg, pages - 2), names: namesWithout(mine?.names, n) });
+          setNote({ text: `Removed ${names[n] || `page ${n + 1}`}`, icon: 'Trash2', undo: true, at: Date.now() });
+        }}
+        onTemplate={() => (setPrefs({ board: template(items) }), setNote({ text: 'New sessions start with this page', icon: 'LayoutTemplate', at: Date.now() }))}
+        onReset={() => {
+          undoTo.current = snapshot();
+          setMaxed(null);
+          setBoard({ items: template(firstLayout), pages: 1, page: 0, names: [] });
+          setNote({ text: 'The Board is back to its start', icon: 'RotateCcw', undo: true, at: Date.now() });
+        }}
+        onSettings={() => openSettings('sessions')}
+        panel={
+          <span className="bd-tabw">
+            <button className={`bd-tb${menu ? ' on' : ''}`} title="Add a panel" onClick={() => setMenu(!menu)}>
+              <Icon name="LayoutGrid" size={13} /> Panel
+            </button>
+            {menu ? <AddMenu items={items} explains={data.explains} onPick={(next) => (save(next), setMenu(false))} onPop={(title) => (pop(title), setMenu(false))} onClose={() => setMenu(false)} /> : null}
+          </span>
+        }
+      />
     </div>
   );
 }
@@ -491,22 +711,18 @@ export function LiveBoard({ sessionId }: { sessionId: string }) {
 /** Each group's tint in the + Panel menu. */
 const GROUP_TINT: Record<string, string> = { 'This session': 'var(--cora)', Code: '#a78bfa', Delivery: '#fb923c', 'Around you': '#38bdf8', Tools: '#34d399' };
 
-/** Add a panel: the ones not on the board, and this session's explains (popped out); or put the board back as it was. */
+/** + Panel: the panels not on this page, and this session's explains to pop out. */
 function AddMenu({
   items,
   explains,
   onPick,
   onPop,
-  onReset,
-  onTemplate,
   onClose,
 }: {
   items: BoardItem[];
   explains: BoardExplain[];
   onPick(next: BoardItem[]): void;
   onPop(title: string): void;
-  onReset(): void;
-  onTemplate(): void;
   onClose(): void;
 }) {
   const box = useRef<HTMLDivElement>(null);
@@ -571,18 +787,54 @@ function AddMenu({
           );
         })}
       </div>
-      <div className="sep" />
-      <button className="bd-mx" onClick={onTemplate}>
-        <Icon name="LayoutTemplate" size={13} />
-        Use for new sessions
-        <span className="d">new sessions start with this layout</span>
-      </button>
-      <button className="bd-mx" onClick={onReset}>
-        <Icon name="RotateCcw" size={13} />
-        Reset this board
-        <span className="d">to the layout new sessions start with</span>
-      </button>
     </div>
+  );
+}
+
+/** A session's ask this old (an old session opened again) is noted, not acted on. */
+const ASK_FRESH_MS = 12 * 3600_000;
+
+/** The session's latest ask for a page laid out for its work (its board tool), if any. */
+function latestBoardAsk(sessionId: string): { id: string; layout: BoardLayoutId; ts: number } | null {
+  let out: { id: string; layout: BoardLayoutId; ts: number } | null = null;
+  for (const e of sessionEvents(sessionId)) {
+    if (e.kind !== 'tool' || e.phase !== 'start' || !e.tool || !/__board$/.test(e.tool.name)) continue;
+    const l = (e.tool.input as { layout?: unknown } | undefined)?.layout;
+    if ((BOARD_LAYOUTS as readonly unknown[]).includes(l)) out = { id: e.toolUseId ?? `${e.ts}`, layout: l as BoardLayoutId, ts: e.ts };
+  }
+  return out;
+}
+
+/** How far sessions may go with the Board (Settings › Sessions › Board), read when the board shows. */
+function useBoardPageMode(): BoardPageMode | null {
+  const [mode, setMode] = useState<BoardPageMode | null>(null);
+  useEffect(() => {
+    void fetch('/api/settings')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j: { board?: { pages?: BoardPageMode } } | null) => setMode(j?.board?.pages ?? 'show'))
+      .catch(() => setMode(null));
+  }, []);
+  return mode;
+}
+
+/** Each once by its key: two handles with one key would leave one behind on screen (a stray dot from another page). */
+function once<T>(list: T[], key: (t: T) => string): T[] {
+  const seen = new Set<string>();
+  return list.filter((t) => !seen.has(key(t)) && (seen.add(key(t)), true));
+}
+
+/** Whether a line on the board (`l`, from lines() of `items`) is the one being dragged (`drag`, as it started). */
+function sameLine(items: BoardItem[], drag: Line, l: Line): boolean {
+  return l.axis === drag.axis && l.at === lineAt(items, drag) && l.from < drag.to && drag.from < l.to;
+}
+
+/** A panel filling the board: its place here, said so (Esc or the button brings it back). */
+function BoardAway({ name }: { name: string }) {
+  return (
+    <section className="bd-pn bd-away">
+      <span>{name} fills the board</span>
+      <em>Esc to bring it back</em>
+    </section>
   );
 }
 
@@ -670,6 +922,8 @@ function BoardPanelView({
           <TasksBody data={data} />
         ) : p.k === 'explain' ? (
           <ExplainBody sessionId={sessionId} title={p.title!} />
+        ) : p.k === 'terminal' ? (
+          <BoardTerminal sessionId={sessionId} item={p} onUpdate={onUpdate} />
         ) : p.k === 'spotlight' ? (
           <SpotlightPanel key={sessionId} sessionId={sessionId} data={data} item={p} onPage={onPage} onPin={(pin) => onUpdate({ ...p, pin })} render={(s) => <SpotBody spot={s} sessionId={sessionId} data={data} />} />
         ) : (
@@ -687,7 +941,6 @@ function SpotBody({ spot, sessionId, data }: { spot: Spot; sessionId: string; da
   if (spot.k === 'tasks') return <TasksBody data={data} />;
   if (spot.k === 'explain') return <ExplainBody sessionId={sessionId} title={spot.title ?? ''} />;
   // what Claude is browsing: the session's own browser (the board's Browser panel is a browser of its own)
-  if (spot.k === 'browser') return <SessionBrowserDock sessionId={sessionId} />;
   return <MorePanel k={spot.k as PanelKind} sessionId={sessionId} data={data} />;
 }
 

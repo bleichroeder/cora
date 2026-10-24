@@ -115,6 +115,19 @@ export async function openShell(sessionId: string, kind?: string): Promise<strin
   return null;
 }
 
+/** A shell of the Board's own (its Terminal panel), in the session's folder: its terminal id, or why not. */
+export async function openBoardShell(sessionId: string, kind?: string): Promise<{ id: string } | { error: string }> {
+  const shell = kind ?? useBrain.getState().prefs.defaultShell;
+  const r = await post('/api/terminals', { mode: 'shell', sessionId, board: true, ...(shell ? { shell } : {}) }).catch(() => null);
+  if (!r) return { error: "Can't reach Cora's server." };
+  const j = await r.json().catch(() => ({ error: `HTTP ${r.status}` }));
+  if (!r.ok) return { error: j.error ?? `HTTP ${r.status}` };
+  const t = j as TerminalInfo;
+  const st = useBrain.getState();
+  st.setTerminals([...st.terminals, ...st.shells.filter((x) => x.terminalId !== t.terminalId), t]);
+  return { id: t.terminalId };
+}
+
 /** End a shell (and whatever runs in it); its tab goes when the server says it's gone. */
 export async function closeShell(terminalId: string): Promise<string | null> {
   const r = await post(`/api/terminals/${encodeURIComponent(terminalId)}/close`, {});

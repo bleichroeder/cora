@@ -11,12 +11,15 @@ import { applySlack } from './slack';
 import { applySecurity } from './security';
 import { applyOrch, runUi } from './orchestrator';
 import { applyExplainData } from './liveExplains';
+import { toLockScreen } from './lock';
 
 let ws: WebSocket | null = null;
 let delay = 500;
 
 export async function connect(): Promise<void> {
   const me = await fetch('/api/me').catch(() => null);
+  // Cora is locked: the lock screen
+  if (me?.status === 423) return toLockScreen();
   if (!me || me.status === 401) {
     useBrain.getState().setConn('unauthorized');
     return;
@@ -97,10 +100,17 @@ function open() {
       case 'meme':
         memePosted(msg.sessionId);
         break;
+      case 'lock':
+        toLockScreen();
+        break;
     }
   };
   ws.onclose = () => {
     useBrain.getState().setConn('closed');
+    // locked while away (the stream is refused): the lock screen, not retries
+    void fetch('/api/me')
+      .then((r) => r.status === 423 && toLockScreen())
+      .catch(() => {});
     setTimeout(open, delay);
     delay = Math.min(delay * 2, 8000);
   };

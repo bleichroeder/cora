@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useMemeNews } from './memeNews';
 import { MEME_TOOL, type MemeMode, type MemePost, type Settings } from '@cora/shared';
 import { sessionEvents, useBrain } from '../../state/store';
@@ -7,49 +7,38 @@ import { openSettings } from '../SettingsModal';
 import { openInBrowser } from '../JiraChip';
 import './memes.css';
 
-/** The panel's little meme guy: a smug grin, and every few seconds his "deal with it" shades come down. */
-function MemeGuy() {
+/** An empty wall: a few blank stickers taped up, waiting (nothing to look at but the shape of what comes). */
+function BlankStickers() {
   return (
-    <svg className="mm-guy" viewBox="0 0 120 120" aria-hidden>
-      <defs>
-        <radialGradient id="mm-head" cx="40%" cy="35%" r="70%">
-          <stop offset="0" className="s0" />
-          <stop offset="1" className="s1" />
-        </radialGradient>
-      </defs>
-      <ellipse className="mm-shadow" cx="60" cy="108" rx="28" ry="5" />
-      <g className="mm-body">
-        <circle cx="60" cy="58" r="40" fill="url(#mm-head)" />
-        {/* eyes, half-lidded, and one raised brow: the smug look */}
-        <path d="M38 47 q8 -6 16 0" className="mm-brow" />
-        <path d="M68 44 q8 -3 15 2" className="mm-brow" />
-        <ellipse cx="46" cy="55" rx="5" ry="3.4" className="mm-eye" />
-        <ellipse cx="74" cy="55" rx="5" ry="3.4" className="mm-eye" />
-        <path d="M42 70 q18 16 38 -2" className="mm-grin" />
-        <path d="M74 66 l7 -1" className="mm-grin" />
-        {/* the shades: pixel glasses, dropping in */}
-        <g className="mm-shades">
-          <rect x="30" y="49" width="24" height="10" />
-          <rect x="62" y="49" width="24" height="10" />
-          <rect x="52" y="51" width="12" height="4" />
-          <rect x="22" y="49" width="10" height="4" />
-          <rect x="84" y="49" width="10" height="4" />
-          <rect x="34" y="51" width="5" height="3" className="glint" />
-          <rect x="66" y="51" width="5" height="3" className="glint" />
-        </g>
-      </g>
-    </svg>
+    <div className="mm-blanks" aria-hidden>
+      <i />
+      <i />
+      <i />
+    </div>
   );
 }
 
+/**
+ * A drawn meme with a size of its own: an SVG with only a viewBox has none, and an image without one shrinks to almost
+ * nothing wherever nothing else sizes it (it showed as a sliver when opened large). Its viewBox's, else 600 by 400.
+ */
+function sized(svg: string): string {
+  const open = /<svg\b[^>]*>/i.exec(svg)?.[0];
+  if (!open || (/\swidth\s*=/.test(open) && /\sheight\s*=/.test(open))) return svg;
+  const vb = /viewBox\s*=\s*["']\s*[-\d.]+[\s,]+[-\d.]+[\s,]+([\d.]+)[\s,]+([\d.]+)/i.exec(open);
+  const [w, h] = vb ? [vb[1], vb[2]] : ['600', '400'];
+  return svg.replace(open, open.replace(/<svg\b/i, `<svg width="${w}" height="${h}"`));
+}
+
 /** A meme: its template with the captions drawn on, the way memes look (big white letters with a black outline). */
-export function MemeImage({ p, small = false }: { p: MemePost; small?: boolean }) {
-  if (p.kind === 'gif') return <img className="mm-img" src={p.url} alt={p.query ?? 'GIF'} draggable={false} />;
+export function MemeImage({ p, small = false, onShape }: { p: MemePost; small?: boolean; /** its height over its width, once loaded */ onShape?(r: number): void }) {
+  const loaded = (e: React.SyntheticEvent<HTMLImageElement>) => onShape?.(e.currentTarget.naturalHeight / Math.max(1, e.currentTarget.naturalWidth));
+  if (p.kind === 'gif') return <img className="mm-img" src={p.url} alt={p.query ?? 'GIF'} draggable={false} onLoad={loaded} />;
   // one Claude drew: as an image, so it can't run anything or load anything from outside
-  if (p.kind === 'svg') return <img className="mm-img drawn" src={`data:image/svg+xml;charset=utf-8,${encodeURIComponent(p.svg ?? '')}`} alt={p.why ?? 'a meme Claude drew'} draggable={false} />;
+  if (p.kind === 'svg') return <img className="mm-img drawn" src={`data:image/svg+xml;charset=utf-8,${encodeURIComponent(sized(p.svg ?? ''))}`} alt="" draggable={false} onLoad={loaded} />;
   return (
     <span className={`mm-meme${small ? ' small' : ''}`}>
-      <img className="mm-img" src={p.url} alt={p.template ?? 'meme'} draggable={false} />
+      <img className="mm-img" src={p.url} alt={p.template ?? 'meme'} draggable={false} onLoad={loaded} />
       {p.top ? <span className="mm-cap top">{p.top}</span> : null}
       {p.bottom ? <span className="mm-cap bottom">{p.bottom}</span> : null}
     </span>
@@ -90,7 +79,7 @@ export function MemePanel({ sessionId }: { sessionId: string }) {
   if (!posts.length)
     return (
       <div className="mm-empty">
-        <MemeGuy />
+        <BlankStickers />
         {mode == null ? null : mode === 'off' ? (
           <>
             <p>Memes are off, so this session won&apos;t post any.</p>
@@ -103,6 +92,12 @@ export function MemePanel({ sessionId }: { sessionId: string }) {
         )}
       </div>
     );
+  // a sticker off the wall, or all of them (the server tells the other panels)
+  const remove = async (id?: string) => {
+    setPosts((cur) => (cur ? (id ? cur.filter((p) => p.id !== id) : []) : cur));
+    if (!id || id === picked) setPicked(null);
+    await fetch(`/api/memes?session=${encodeURIComponent(sessionId)}${id ? `&id=${encodeURIComponent(id)}` : ''}`, { method: 'DELETE' }).catch(() => {});
+  };
   const show = picked ? posts.find((p) => p.id === picked) : null;
   // one, large (click it, or Esc, to go back to the wall)
   if (show)
@@ -111,14 +106,14 @@ export function MemePanel({ sessionId }: { sessionId: string }) {
         <button className="mm-main" title="Back to all of them" onClick={() => setPicked(null)}>
           <MemeImage p={show} />
         </button>
-        <Why p={show} sessionId={sessionId} />
+        <Why p={show} sessionId={sessionId} onRemove={() => void remove(show.id)} />
       </div>
     );
-  return <Stickers posts={posts} onPick={setPicked} />;
+  return <Stickers posts={posts} onPick={setPicked} onRemove={(id) => void remove(id)} onClear={() => void remove()} />;
 }
 
 /** What it's about, when, and (a GIF) its source. */
-function Why({ p, sessionId }: { p: MemePost; sessionId: string }) {
+function Why({ p, sessionId, onRemove }: { p: MemePost; sessionId: string; onRemove(): void }) {
   return (
     <div className="mm-why">
       <span>{p.why ?? (p.kind === 'gif' ? `“${p.query}”` : p.kind === 'svg' ? 'Drawn by Claude' : p.template)}</span>
@@ -129,6 +124,9 @@ function Why({ p, sessionId }: { p: MemePost; sessionId: string }) {
           via GIPHY
         </button>
       ) : null}
+      <button className="mm-giphy" title="Take it off the wall" onClick={onRemove}>
+        Remove
+      </button>
     </div>
   );
 }
@@ -147,33 +145,101 @@ const MAX_STUCK = 10;
  * The panel as a sticker wall: the latest posts slapped on at a slant, overlapping, the newest on top (landing with a
  * slap as it comes in). Each keeps its spot and its angle. Click one to see it large.
  */
-function Stickers({ posts, onPick }: { posts: MemePost[]; onPick(id: string): void }) {
+function Stickers({ posts, onPick, onRemove, onClear }: { posts: MemePost[]; onPick(id: string): void; onRemove(id: string): void; onClear(): void }) {
+  // clearing the wall asks once more (a second click, within a few seconds)
+  const [sure, setSure] = useState(false);
+  useEffect(() => {
+    if (!sure) return;
+    const t = setTimeout(() => setSure(false), 3500);
+    return () => clearTimeout(t);
+  }, [sure]);
   // the ones there when it opened don't slap in; only those that come after
   const [seen] = useState(() => new Set(posts.map((p) => p.id)));
   const stuck = posts.slice(-MAX_STUCK);
+  // the panel's size, and each picture's shape (height over width) once it has loaded
+  const box = useRef<HTMLDivElement>(null);
+  const [size, setSize] = useState<{ w: number; h: number } | null>(null);
+  useLayoutEffect(() => {
+    const el = box.current;
+    if (!el) return;
+    const read = () => setSize((c) => (c && c.w === el.clientWidth && c.h === el.clientHeight ? c : { w: el.clientWidth, h: el.clientHeight }));
+    const ro = new ResizeObserver(read);
+    ro.observe(el);
+    read();
+    return () => ro.disconnect();
+  }, []);
+  const [shapes, setShapes] = useState<Record<string, number>>({});
+  const shape = (id: string) => (r: number) => r > 0 && Math.abs((shapes[id] ?? 0) - r) > 0.01 && setShapes((m) => ({ ...m, [id]: r }));
   // fewer stickers, bigger ones
-  const w = stuck.length <= 1 ? 62 : stuck.length <= 3 ? 50 : stuck.length <= 6 ? 42 : 36;
+  const share = stuck.length <= 1 ? 0.62 : stuck.length <= 3 ? 0.5 : stuck.length <= 6 ? 0.42 : 0.36;
   return (
-    <div className="mm-wall">
-      {stuck.map((p, i) => {
-        const [x, y] = SPOTS[i % SPOTS.length];
-        const left = Math.max(0, Math.min(100 - w, x + (seed(p.id, 1) - 0.5) * 12));
-        const top = Math.max(0, Math.min(62, y + (seed(p.id, 2) - 0.5) * 12));
-        const tilt = (seed(p.id, 3) - 0.5) * 26;
-        return (
-          <button
-            key={p.id}
-            className={`mm-sticker${seen.has(p.id) ? '' : ' slap'}${i === stuck.length - 1 ? ' newest' : ''}`}
-            style={{ left: `${left}%`, top: `${top}%`, width: `${w}%`, zIndex: i + 1, ['--tilt' as never]: `${tilt.toFixed(1)}deg` }}
-            title={p.why ?? p.template ?? p.query ?? ''}
-            onClick={() => onPick(p.id)}
-          >
-            <MemeImage p={p} />
-          </button>
-        );
-      })}
+    <div className="mm-wall" ref={box}>
+      {size
+        ? stuck.map((p, i) => {
+            const tilt = (seed(p.id, 3) - 0.5) * 26;
+            const at = place(size, share, shapes[p.id] ?? (p.kind === 'gif' ? 0.75 : 2 / 3), tilt, SPOTS[i % SPOTS.length], seed(p.id, 1), seed(p.id, 2));
+            return (
+              <button
+                key={p.id}
+                className={`mm-sticker${seen.has(p.id) ? '' : ' slap'}${i === stuck.length - 1 ? ' newest' : ''}`}
+                style={{ left: at.left, top: at.top, width: at.width, zIndex: i + 1, ['--tilt' as never]: `${tilt.toFixed(1)}deg` }}
+                title={p.why ?? p.template ?? p.query ?? ''}
+                onClick={() => onPick(p.id)}
+              >
+                <MemeImage p={p} onShape={shape(p.id)} />
+                <span
+                  className="mm-x"
+                  role="button"
+                  aria-label="Take it off the wall"
+                  title="Take it off the wall"
+                  onClick={(e) => (e.stopPropagation(), onRemove(p.id))}
+                >
+                  ×
+                </span>
+              </button>
+            );
+          })
+        : null}
       {posts.length > MAX_STUCK ? <span className="mm-older">+{posts.length - MAX_STUCK} under these</span> : null}
+      <button className={`mm-clear${sure ? ' sure' : ''}`} title="Take every sticker off the wall" onClick={() => (sure ? (setSure(false), onClear()) : setSure(true))}>
+        {sure ? `Clear all ${posts.length}?` : 'Clear'}
+      </button>
     </div>
   );
 }
 
+/** A sticker's border (each side), and the room kept between the stickers and the panel's edges. */
+const BORDER = 5;
+const MARGIN = 6;
+
+/**
+ * Where a sticker goes so that all of it, tilted corners included, is inside the panel: as wide as its share of the
+ * panel unless that would make it too tall (or too wide, tilted) to fit, then smaller; its centre somewhere in the room
+ * left, by its spot and a little nudge of its own.
+ */
+export function place(panel: { w: number; h: number }, share: number, shape: number, tilt: number, spot: [number, number], jx: number, jy: number): { left: number; top: number; width: number } {
+  const rad = (Math.abs(tilt) * Math.PI) / 180;
+  const cos = Math.cos(rad);
+  const sin = Math.sin(rad);
+  const outline = (w: number) => {
+    const h = (w - 2 * BORDER) * shape + 2 * BORDER;
+    return { h, bw: w * cos + h * sin, bh: w * sin + h * cos };
+  };
+  let width = Math.max(40, panel.w * share);
+  let o = outline(width);
+  const fit = Math.min(1, (panel.w - 2 * MARGIN) / o.bw, (panel.h - 2 * MARGIN) / o.bh);
+  if (fit < 1) {
+    width = Math.max(30, width * fit);
+    o = outline(width);
+  }
+  // the room for its centre, and where in it (its spot, nudged)
+  const fx = Math.max(0, Math.min(1, spot[0] / 60 + (jx - 0.5) * 0.2));
+  const fy = Math.max(0, Math.min(1, spot[1] / 56 + (jy - 0.5) * 0.2));
+  const x0 = MARGIN + o.bw / 2;
+  const x1 = Math.max(x0, panel.w - MARGIN - o.bw / 2);
+  const y0 = MARGIN + o.bh / 2;
+  const y1 = Math.max(y0, panel.h - MARGIN - o.bh / 2);
+  const cx = x0 + fx * (x1 - x0);
+  const cy = y0 + fy * (y1 - y0);
+  return { left: Math.round(cx - width / 2), top: Math.round(cy - o.h / 2), width: Math.round(width) };
+}

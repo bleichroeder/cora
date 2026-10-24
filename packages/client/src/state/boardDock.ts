@@ -1,22 +1,11 @@
 import { create } from 'zustand';
 
 /**
- * What the live board shows in place of the scene area's overlays: the Browser panel (the session's browser lays itself
- * over the panel, so its pages are never moved: moving a webview reloads it) and the Needs-you panel (the floating cards
- * stand down while the board shows them), and the Spotlight (new explains show there instead of opening the viewer).
- * Each panel registers while it's on screen; the newest one wins (a panel and its maximised copy can both be up).
+ * What the Board shows in place of the scene area's overlays: the Needs-you panel (the floating cards stand down while
+ * the Board shows them), and the Spotlight (new explains show there instead of opening the viewer). Each panel
+ * registers while it's on screen.
  */
-type Dock = { sessionId: string; el: HTMLElement };
-export const useBoardDock = create<{ browser: Dock[]; needs: string[]; spotlight: string[] }>(() => ({ browser: [], needs: [], spotlight: [] }));
-
-export function dockBrowser(sessionId: string, el: HTMLElement): () => void {
-  const d = { sessionId, el };
-  useBoardDock.setState((s) => ({ browser: [...s.browser, d] }));
-  return () => useBoardDock.setState((s) => ({ browser: s.browser.filter((x) => x !== d) }));
-}
-
-/** The element the session's browser lays itself over, if the board shows a Browser panel for it. */
-export const browserDockOf = (s: { browser: Dock[] }, sessionId: string) => s.browser.filter((d) => d.sessionId === sessionId).at(-1)?.el ?? null;
+export const useBoardDock = create<{ needs: string[]; spotlight: string[] }>(() => ({ needs: [], spotlight: [] }));
 
 function dockId(k: 'needs' | 'spotlight', sessionId: string): () => void {
   useBoardDock.setState((s) => ({ [k]: [...s[k], sessionId] }));

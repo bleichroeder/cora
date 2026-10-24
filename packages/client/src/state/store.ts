@@ -64,6 +64,8 @@ export type UiPrefs = {
   timeline?: { scene?: boolean; board?: boolean };
   /** each session's own live board: its panels and pages */
   boards?: Record<string, import('../lib/boardLayout').SessionBoard>;
+  /** the Board's layouts you saved (+ Panel › Save this page as a layout) */
+  layouts?: import('../lib/boardLayout').SavedLayout[];
   /** collapse main's replies in hosted sessions (the terminal shows them too) */
   collapseHosted: boolean;
   /** terminal shows only Claude's input area, growing for menus and dialogs (where you type in the terminal) */

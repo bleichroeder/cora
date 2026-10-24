@@ -192,13 +192,13 @@ export class PtyManager {
    * swallow it.
    */
   /** `newId`: the new session's id (Cora's own agent chooses its own); `bare`: without the hosted sessions' extras (MCP config, prompt) */
-  launch(req: { mode: TerminalMode; cwd: string; sessionId?: string; cols?: number; rows?: number; args?: string[]; prompt?: string; newId?: string; bare?: boolean; /** a shell: which kind (its id) */ shell?: string }): TerminalInfo {
+  launch(req: { mode: TerminalMode; cwd: string; sessionId?: string; cols?: number; rows?: number; args?: string[]; prompt?: string; newId?: string; bare?: boolean; /** a shell: which kind (its id) */ shell?: string; /** a shell: the Board's own */ place?: 'board' }): TerminalInfo {
     if (!['new', 'resume', 'fork', 'shell'].includes(req.mode)) throw new Error('mode must be new|resume|fork|shell');
     if ((req.mode === 'resume' || req.mode === 'fork' || req.mode === 'shell') && !req.sessionId) throw new Error('sessionId required');
     // it goes on claude's command line (`--resume <id>`): only an id, never something that reads as a flag
     if (req.sessionId != null && !isSafeId(req.sessionId)) throw new Error('not a session id');
     if (!req.cwd || !existsSync(req.cwd) || !statSync(req.cwd).isDirectory()) throw new Error(`folder not found: ${req.cwd}`);
-    if (req.mode === 'shell') return this.launchShell(req.sessionId!, req.cwd, req.cols ?? 100, req.rows ?? 30, req.shell);
+    if (req.mode === 'shell') return this.launchShell(req.sessionId!, req.cwd, req.cols ?? 100, req.rows ?? 30, req.shell, req.place);
     if (req.prompt && req.mode !== 'new') throw new Error('a first prompt is for a new session');
     if (req.mode === 'resume') {
       const live = this.forSession(req.sessionId!);
@@ -228,12 +228,12 @@ export class PtyManager {
   private found: Shell[] | null = null;
 
   /** A plain shell for a session, in its folder. No screen mirror: there's no Claude indicator to read off it. */
-  private launchShell(sessionId: string, cwd: string, cols: number, rows: number, kind?: string): TerminalInfo {
+  private launchShell(sessionId: string, cwd: string, cols: number, rows: number, kind?: string, place?: 'board'): TerminalInfo {
     const sh = pickShell(this.shells(), kind);
     const [file, ...args] = sh.cmd;
-    const t: Term = { terminalId: randomUUID(), sessionId, cwd, mode: 'shell', shell: sh.name, alive: true, startedAt: Date.now(), buf: '', sinks: new Set(), screen: null, dirty: false, status: null };
+    const t: Term = { terminalId: randomUUID(), sessionId, cwd, mode: 'shell', shell: sh.name, ...(place ? { place } : {}), alive: true, startedAt: Date.now(), buf: '', sinks: new Set(), screen: null, dirty: false, status: null };
     this.terms.set(t.terminalId, t);
-    this.backend.spawn(t.terminalId, file, args, { cwd, cols, rows, env: shellEnv(process.env) }, { sessionId, cwd, mode: 'shell', startedAt: t.startedAt, shell: sh.name });
+    this.backend.spawn(t.terminalId, file, args, { cwd, cols, rows, env: shellEnv(process.env) }, { sessionId, cwd, mode: 'shell', startedAt: t.startedAt, shell: sh.name, ...(place ? { place } : {}) });
     this.o.audit?.log({ ts: Date.now(), sessionId, agentId: 'main', kind: 'terminal', tool: 'shell', input: { cwd, file }, decision: 'launch', edited: false, via: 'dashboard' });
     this.changed();
     return this.list().find((x) => x.terminalId === t.terminalId)!;

@@ -1,6 +1,8 @@
 import { EVENT_ICON, PRESENT_TOOL, iconFor, isShell, summarizeTool, SLACK_SEND_TOOL, TODO_PINGS, todoWhy, type JiraMsg, type OrchestratorStatus } from '@cora/shared';
 import { GitlabIssues } from './gitlabIssues';
 import { Memes } from './memes';
+import { SessionNames } from './sessionNames';
+import { Lock } from './lock';
 import { LiveExplains } from './liveExplains';
 import { Environments, envLine } from './environments';
 import { homedir } from 'node:os';
@@ -264,6 +266,10 @@ export async function startServer(config: Config, opts: { tail?: boolean; listen
   });
   live.setBot(bot);
   // the Meme panel's memes and GIFs (a session's own)
+  // sessions' names, kept past history (Resume names them as the nav did)
+  const sessionNames = new SessionNames(config.dbPath === ':memory:' ? null : config.dataDir);
+  // lockdown: your PIN (hashed), and locked or not, kept over a restart
+  const lock = new Lock(config.dbPath === ':memory:' ? null : config.dataDir);
   const memes = new Memes({ dataDir: config.dbPath === ':memory:' ? null : config.dataDir, onPost: (sessionId) => hub.publishMeme(sessionId) });
   // GitLab issues (to start sessions from them): read with glab
   const gitlabIssues = new GitlabIssues();
@@ -516,7 +522,7 @@ export async function startServer(config: Config, opts: { tail?: boolean; listen
     ...(opts.draftRun ? { run: opts.draftRun } : {}),
   });
   if (config.dbPath !== ':memory:' && opts.ci) deploys.start();
-  const app = await buildApp({ config, store, hub, pipeline, pending, ptys, live: liveExplains, registry, prefs, voice, voiceFront, gmail, mailWatches, namer, tickets, jira, environments, deploys, notes, drafts, bot, inbox, ...(opts.claudeSettingsFile ? { claudeSettingsFile: opts.claudeSettingsFile } : {}), ...(opts.setupChecks ? { setupChecks: opts.setupChecks } : {}), onShutdown: opts.onShutdown, ci: () => ci, slack: { slack, outbox, live, cwdOf: (sid) => store.getSession(sid)?.cwd }, security: security ?? undefined, orchestrator: o, gitlabIssues, memes });
+  const app = await buildApp({ config, store, hub, pipeline, pending, ptys, live: liveExplains, registry, prefs, voice, voiceFront, gmail, mailWatches, namer, tickets, jira, environments, deploys, notes, drafts, bot, inbox, ...(opts.claudeSettingsFile ? { claudeSettingsFile: opts.claudeSettingsFile } : {}), ...(opts.setupChecks ? { setupChecks: opts.setupChecks } : {}), onShutdown: opts.onShutdown, ci: () => ci, slack: { slack, outbox, live, cwdOf: (sid) => store.getSession(sid)?.cwd }, security: security ?? undefined, orchestrator: o, gitlabIssues, memes, sessionNames, lock });
 
   let tailer: Tailer | undefined;
   if (opts.tail !== false) {
@@ -535,6 +541,8 @@ export async function startServer(config: Config, opts: { tail?: boolean; listen
   const phantoms = store.purgePhantomAgents();
   if (phantoms) console.log(`  removed ${phantoms} phantom agent(s) left by hidden helper stops`);
   const prune = () => {
+    // their names first: a session leaving the list keeps its name in Resume
+    sessionNames.remember(store.listSessions());
     store.prune(Date.now() - prefs.get().retentionDays * 86400_000);
     pruneAttachments(config.dataDir);
     liveExplains.prune(Date.now() - prefs.get().retentionDays * 86400_000);

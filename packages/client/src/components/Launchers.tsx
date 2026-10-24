@@ -433,7 +433,7 @@ export function HistoryModal() {
     stopAsk.current?.abort();
     setAskedAt(null);
   };
-  const named = (items ?? []).filter((h) => !q || `${h.title} ${h.firstPrompt} ${h.cwd}`.toLowerCase().includes(q.toLowerCase())).slice(0, 200);
+  const named = (items ?? []).filter((h) => !q || `${h.name ?? ''} ${h.title} ${h.firstPrompt} ${h.cwd}`.toLowerCase().includes(q.toLowerCase())).slice(0, 200);
   const pickIds = new Set((picks ?? []).map((h) => h.sessionId));
   const namedIds = new Set(named.map((h) => h.sessionId));
   const deep = (said ?? []).filter((h) => !namedIds.has(h.sessionId) && !pickIds.has(h.sessionId));
@@ -530,7 +530,8 @@ export function HistoryModal() {
             </div>
             {g.rows.map((h) => {
               const me = i++;
-              const title = h.title || h.firstPrompt;
+              // named as the nav names it (Cora's name for it), else Claude Code's title, else its first prompt
+              const title = h.name || h.title || h.firstPrompt;
               return (
                 <div key={h.sessionId} className={`hs-row${me === at ? ' on' : ''}`} onMouseMove={() => me !== at && setSel(me)} onDoubleClick={() => void go(h, 'resume')}>
                   <FolderTile path={h.cwd || h.sessionId} />

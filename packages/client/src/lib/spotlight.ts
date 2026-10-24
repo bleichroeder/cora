@@ -1,16 +1,17 @@
 /**
  * The live board's Spotlight: what Claude decided you should see (Cora's spotlight tool), kept until Claude asks for
  * something else; an approval waiting on you cuts in, then it goes back. Before Claude has asked for anything it
- * follows the session on its own (tests failing or running, a deploy, the pipeline, a live explain, browsing, edits),
+ * follows the session on its own (tests failing or running, a deploy, the pipeline, a live explain, edits),
  * holding each for a while and never repeating a panel already on the page. A pin keeps what it shows. The rest of the
- * board stays as you arranged it. Pure: the panel (components/board/Spotlight.tsx) gathers the signals.
+ * board stays as you arranged it. Never the session's browser: that stays where it is, beside the session (and the
+ * board's Browser panel is yours alone). Pure: the panel (components/board/Spotlight.tsx) gathers the signals.
  */
 
-export type SpotKind = 'needs' | 'tests' | 'pipeline' | 'deploys' | 'explain' | 'browser' | 'changes' | 'background' | 'ticket' | 'git' | 'terminal' | 'context' | 'agents' | 'touching' | 'tasks' | 'recap';
+export type SpotKind = 'needs' | 'tests' | 'pipeline' | 'deploys' | 'explain' | 'changes' | 'background' | 'ticket' | 'git' | 'terminal' | 'context' | 'agents' | 'touching' | 'tasks' | 'recap';
 export type Spot = { k: SpotKind; title?: string; why: string; prio: number };
 
 /** What Claude can ask the Spotlight to show (the spotlight tool's `panel`). */
-export const ASKABLE: SpotKind[] = ['pipeline', 'deploys', 'tests', 'changes', 'background', 'browser', 'ticket', 'git', 'terminal', 'context', 'explain', 'recap'];
+export const ASKABLE: SpotKind[] = ['pipeline', 'deploys', 'tests', 'changes', 'background', 'ticket', 'git', 'terminal', 'context', 'explain', 'recap'];
 
 export type SpotSignals = {
   now: number;
@@ -24,8 +25,6 @@ export type SpotSignals = {
   deployRolling: boolean;
   /** the live explain written to last */
   live?: { title: string; at: number };
-  /** the last time it used the web or the browser */
-  browserAt?: number;
   /** the last file it changed */
   editAt?: number;
   /** Claude Code's latest recap of it (written as you came back) */
@@ -50,7 +49,6 @@ const NAMES: Record<SpotKind, string> = {
   pipeline: 'Pipeline',
   deploys: 'Deploys',
   explain: 'Explain',
-  browser: 'Browser',
   changes: 'Changes',
   background: 'Background',
   ticket: 'Ticket',
@@ -77,7 +75,6 @@ export function candidates(s: SpotSignals): Spot[] {
   if (s.pipeline?.active) out.push({ k: 'pipeline', why: 'Pipeline running', prio: 60 });
   if (s.live && within(s.live.at, 3 * 60_000)) out.push({ k: 'explain', title: s.live.title, why: 'Live explain', prio: 50 });
   if (within(s.recapAt, 3 * 60_000)) out.push({ k: 'recap', why: 'Where you left off', prio: 45 });
-  if (within(s.browserAt, 90_000)) out.push({ k: 'browser', why: 'Browsing', prio: 40 });
   if (within(s.editAt, 2 * 60_000)) out.push({ k: 'changes', why: 'Editing files', prio: 30 });
   if (s.background) out.push({ k: 'background', why: s.background === 1 ? 'Running in the background' : `${s.background} running in the background`, prio: 20 });
   return out.sort((a, b) => b.prio - a.prio);

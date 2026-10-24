@@ -269,6 +269,8 @@ export type Settings = {
   autoName: boolean;
   /** memes and GIFs sessions post to the Meme panel (off unless the user turns them on) */
   memes?: { mode: import('./memes').MemeMode };
+  /** sessions and the Board: whether they may add (and show) a page laid out for what they're doing */
+  board?: { pages: import('./boardLayouts').BoardPageMode };
   /** the Cora Orchestrator (off by default) */
   orchestrator: import('./orchestrator').OrchestratorSettings;
   /** Jira: watching it for you (off by default) */
@@ -298,6 +300,7 @@ export const DEFAULT_SETTINGS: Settings = {
   voice: DEFAULT_VOICE,
   autoName: false,
   memes: { mode: 'off' },
+  board: { pages: 'show' },
   orchestrator: { enabled: false, model: 'opus', speak: true, mandate: { repos: [], deploy: false, slack: [] }, budget: 5_000_000, events: 'important', briefs: 'welcome' },
   jira: { watch: DEFAULT_JIRA_WATCH, ticket: DEFAULT_TICKET_START },
   gitlab: { host: 'gitlab.com', todos: true, start: 'offer' },
@@ -367,6 +370,8 @@ export type TerminalInfo = {
   status?: string | null;
   /** a shell: which kind (its name, e.g. "Git Bash", "Ubuntu") */
   shell?: string;
+  /** a shell the Board's Terminal panel opened (it lives there, not among the session's terminal tabs) */
+  place?: 'board';
 };
 
 export type HistoryItem = {
@@ -377,6 +382,8 @@ export type HistoryItem = {
   firstPrompt: string;
   mtime: number;
   size: number;
+  /** what Cora calls it (as in the nav), when Cora knows it: your name, its ticket's… (naming.ts) */
+  name?: string;
 };
 
 /** A GitLab CI status, as the API spells it. */
@@ -454,6 +461,8 @@ export type ServerMsg =
   | import('./orchestrator').OrchMsg
   | import('./orchestrator').UiCommandMsg
   | ExplainDataMsg
+  /** Cora locked: every page goes to the lock screen */
+  | { t: 'lock' }
   /** a session posted to the Meme panel */
   | { t: 'meme'; sessionId: string }
   | { t: 'snapshot'; sessions: SessionInfo[]; agents: AgentInfo[]; pending: PendingRequest[]; terminals: TerminalInfo[]; lastSeq: number; recent: Record<string, BrainEvent[]> }

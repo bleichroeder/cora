@@ -231,3 +231,28 @@
 /* the board's Browser panel: a browser of its own, filling the panel */
 .live-board .lb-browser.own { position: relative; height: 100%; }
 .live-board .lb-browser.own > .web-pane.panel-browser { position: absolute; inset: 0; z-index: auto; box-shadow: none; }
+.lb-bterm { display: flex; flex-direction: column; height: 100%; min-height: 0; background: var(--nav); }
+.lb-tnew { position: relative; }
+.lb-tmenu { position: absolute; right: 0; top: calc(100% + 4px); z-index: 5; display: flex; flex-direction: column; min-width: 160px; padding: 4px; border-radius: 9px; background: var(--raise2); box-shadow: inset 0 0 0 1px var(--hair2), 0 12px 30px rgba(0, 0, 0, .5); }
+.lb-tmenu button { padding: 6px 9px; border: 0; border-radius: 6px; background: none; color: var(--ink); font: 500 12px var(--ui); text-align: left; cursor: pointer; }
+.lb-tmenu button:hover { background: color-mix(in srgb, var(--cora) 12%, transparent); }
+.lb-tbody { position: relative; flex: 1; min-height: 0; display: flex; }
+.lb-tbody .term-window { margin: 0; border-radius: 0; box-shadow: none; }
+/* the Terminal panel's tabs, like the terminal area's: each shell's name and its x, then + for another (any kind) */
+.lb-ttabs { position: relative; z-index: 3; flex: none; display: flex; align-items: center; gap: 2px; min-width: 0; height: 32px; padding: 0 6px; border-bottom: 1px solid var(--hair); }
+.lb-ttab { flex: 0 1 150px; display: inline-flex; align-items: center; gap: 6px; min-width: 70px; height: 24px; padding: 0 4px 0 8px; border-radius: 6px; color: var(--ink3); font: 500 11.5px var(--ui); cursor: pointer; }
+.lb-ttab:hover { background: var(--raise2); color: var(--ink2); }
+.lb-ttab.on { background: color-mix(in srgb, var(--cora) 13%, var(--raise2)); color: var(--ink); }
+.lb-ttab .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lb-ttab .x { display: inline-grid; place-items: center; flex: none; width: 18px; height: 18px; border-radius: 4px; color: var(--ink4); opacity: 0; }
+.lb-ttab:hover .x, .lb-ttab.on .x { opacity: .8; }
+.lb-ttab .x:hover { background: color-mix(in srgb, var(--need) 22%, var(--raise)); color: #fff; opacity: 1; }
+.lb-tadd { display: inline-flex; align-items: center; gap: 1px; height: 24px; padding: 0 6px; border: 0; border-radius: 6px; background: none; color: var(--ink3); cursor: pointer; }
+.lb-tadd:hover { background: var(--raise2); color: var(--ink); }
+.lb-tmenu button em { margin-left: 8px; color: var(--ink4); font-style: normal; font-size: 10.5px; }
+.lb-terr { color: #ffb3b3; font: 400 11px var(--ui); font-style: normal; white-space: nowrap; }
+.lb-tmenu { top: calc(100% + 4px); left: 0; right: auto; }
+/* the Terminal panel with no terminals: quiet, under its tab strip (+ opens one) */
+.lb-tnone { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; padding: 16px; color: var(--ink4); font: 400 12px var(--ui); text-align: center; }
+.lb-tnone b { color: var(--ink3); font: 600 12.5px var(--ui); }
+.lb-tnone svg { opacity: .6; }

@@ -30,10 +30,10 @@ export function MemeRows({ server, save }: { server: Settings; save(p: object): 
   return (
     <>
       <Row
-        label="Memes"
+        label="Vibes"
         hint={
           mode === 'off'
-            ? "Sessions can post memes and GIFs about what's happening to the board's Memes panel, just for fun. Off: they don't."
+            ? "Sessions can post memes and GIFs about what's happening to the board's Vibes panel, just for fun. Off: they don't."
             : mode === 'sometimes'
               ? 'At real moments only (a stubborn fix, green tests after a fight, a scary failure), at most one every several turns. For sessions started from now on.'
               : 'Whenever something happens. For sessions started from now on.'

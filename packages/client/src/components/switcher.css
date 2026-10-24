@@ -2,7 +2,7 @@
    you last saw it (or where it stands, in words, until you've been in it), the picked one lifted and lit in its colour */
 .sw-scrim { position: fixed; inset: 0; z-index: 80; display: grid; place-items: center; padding: 16px; background: rgba(3, 5, 9, .45); animation: sw-in .12s ease-out; }
 .sw-box { display: flex; flex-direction: column; align-items: center; gap: 12px; max-width: calc(100vw - 32px); max-height: calc(100vh - 32px); padding: 18px 18px 14px; border-radius: 16px; background: color-mix(in srgb, var(--nav) 92%, transparent); box-shadow: inset 0 0 0 1px var(--hair2), 0 30px 80px rgba(0, 0, 0, .7); backdrop-filter: blur(14px); font-family: var(--ui); overflow: hidden; }
-.sw-row { display: flex; flex-wrap: nowrap; gap: 12px; max-width: 100%; overflow-x: auto; overflow-y: hidden; scrollbar-width: thin; padding: 6px 4px 8px; }
+.sw-row { display: flex; flex-wrap: nowrap; gap: 12px; max-width: 100%; overflow-x: auto; overflow-y: hidden; padding: 6px 4px 8px; }
 
 .sw-card { position: relative; flex: none; display: flex; flex-direction: column; gap: 8px; box-sizing: border-box; padding: 10px; border: 0; border-radius: 12px; background: var(--raise); box-shadow: inset 0 0 0 1px var(--hair); color: var(--ink2); text-align: left; cursor: pointer; transition: transform .12s, box-shadow .12s, background .12s; }
 .sw-card.on { transform: translateY(-3px); background: color-mix(in srgb, var(--sc) 10%, var(--raise)); box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--sc) 70%, transparent), 0 12px 30px rgba(0, 0, 0, .45); }

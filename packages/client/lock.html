@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Cora · Locked</title>
+    <style>html, body { background: #06090f; }</style>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='7' fill='%2338bdf8'/><circle cx='16' cy='16' r='13' fill='none' stroke='%2338bdf8' stroke-opacity='.4' stroke-width='2'/></svg>" />
+  </head>
+  <body>
+    <div class="win-drag"></div>
+    <canvas id="c"></canvas>
+    <i class="hud tl"></i><i class="hud tr"></i><i class="hud bl"></i><i class="hud br"></i>
+    <header id="top"><span class="word">CORA</span><span class="tag"><i></i>LOCKDOWN</span></header>
+    <main id="ov">
+      <h1>Locked down</h1>
+      <p id="sub">Cora is keeping watch. Your sessions keep running.</p>
+      <div id="pin" role="group" aria-label="PIN"></div>
+      <p id="msg" aria-live="polite">Type your PIN</p>
+      <div id="pad" aria-hidden="true"></div>
+    </main>
+    <footer id="foot"><span id="clock"></span><span id="need"></span></footer>
+    <script type="module" src="/src/lock/lock.ts"></script>
+  </body>
+</html>

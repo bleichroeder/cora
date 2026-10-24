@@ -12,7 +12,7 @@ import type { TerminalMode } from '@cora/shared';
 export const PROTOCOL_VERSION = 1;
 
 /** What the server needs to rebuild its record of a terminal after reconnecting; the host stores it opaquely. */
-export type TermMeta = { sessionId: string; cwd: string; mode: TerminalMode; startedAt: number; /** a shell's kind (its name) */ shell?: string };
+export type TermMeta = { sessionId: string; cwd: string; mode: TerminalMode; startedAt: number; /** a shell's kind (its name) */ shell?: string; /** a shell of the Board's */ place?: 'board' };
 export type HostTerm = { id: string; meta: TermMeta; alive: boolean; exitCode?: number; buf: string };
 
 export type ClientMsg =

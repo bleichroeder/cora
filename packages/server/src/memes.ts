@@ -124,6 +124,22 @@ export class Memes {
     return [...(this.posts[sessionId] ?? []), ...(this.drawn[sessionId] ?? [])].sort((a, b) => a.at - b.at);
   }
 
+  /** Take one post off a session's wall (`id`), or all of them (none given). True if anything went. */
+  remove(sessionId: string, id?: string): boolean {
+    const kept = (list: MemePost[] | undefined) => (id ? (list ?? []).filter((p) => p.id !== id) : []);
+    const before = this.list(sessionId).length;
+    const posts = kept(this.posts[sessionId]);
+    const drawn = kept(this.drawn[sessionId]);
+    if (posts.length) this.posts[sessionId] = posts;
+    else delete this.posts[sessionId];
+    if (drawn.length) this.drawn[sessionId] = drawn;
+    else delete this.drawn[sessionId];
+    if (this.list(sessionId).length === before) return false;
+    this.save();
+    this.o.onPost?.(sessionId);
+    return true;
+  }
+
   /** Posts older than history is kept go. */
   prune(cutoff: number): void {
     let changed = false;

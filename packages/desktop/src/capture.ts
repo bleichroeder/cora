@@ -10,8 +10,13 @@ export const CAPTURE_HOTKEY = 'Control+Alt+N';
 const W = 560;
 const H = 250;
 
-export function setupCapture(base: string): void {
+let hide: () => void = () => {};
+/** Lockdown: the capture window goes away (and doesn't come while locked). */
+export const hideCapture = () => hide();
+
+export function setupCapture(base: string, allowed: () => boolean = () => true): void {
   let w: BrowserWindow | null = null;
+  hide = () => w?.hide();
   const make = () => {
     w = new BrowserWindow({
       width: W,
@@ -47,7 +52,7 @@ export function setupCapture(base: string): void {
     w!.focus();
     w!.webContents.send('ab:capture-shown');
   };
-  const toggle = () => (w?.isVisible() ? w.hide() : show());
+  const toggle = () => (w?.isVisible() ? w.hide() : allowed() ? show() : undefined);
   ipcMain.on('ab:capture-hide', (e) => {
     if (w && e.sender === w.webContents) w.hide();
   });

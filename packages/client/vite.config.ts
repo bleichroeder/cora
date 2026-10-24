@@ -17,5 +17,6 @@ export default defineConfig({
       '/pty': { target: target.replace(/^http/, 'ws'), ws: true },
     },
   },
-  build: { outDir: 'dist', emptyOutDir: true, chunkSizeWarningLimit: 2000 },
+  // the dashboard, and the lock screen (lockdown: a page of its own, so nothing of the dashboard is loaded behind it)
+  build: { outDir: 'dist', emptyOutDir: true, chunkSizeWarningLimit: 2000, rollupOptions: { input: { main: 'index.html', lock: 'lock.html' } } },
 });

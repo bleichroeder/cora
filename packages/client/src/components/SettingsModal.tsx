@@ -4,6 +4,7 @@ import { EnvironmentsSection, GitlabSection, fetchGitlabStatus, type GitlabStatu
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { SlackSection, ToolsSection } from './SlackSettings';
 import { SecuritySection } from './SecuritySettings';
+import { LockSection } from './LockSettings';
 import { OrchestratorSection } from './OrchestratorSettings';
 import type { InboxSource, Settings } from '@cora/shared';
 import { BrandIcon } from './BrandIcon';
@@ -45,6 +46,7 @@ export const SETTINGS_SECTIONS: Array<{ id: string; label: string; icon: string;
   { id: 'tools', label: 'Tools', icon: 'Wrench', group: 'Connected' },
   { id: 'environments', label: 'Environments', icon: 'Network', group: 'This machine' },
   { id: 'scene', label: 'Scene', icon: 'Orbit', group: 'This machine' },
+  { id: 'lock', label: 'Lockdown', icon: 'Lock', group: 'This machine' },
   { id: 'security', label: 'Updates & security', icon: 'ShieldCheck', group: 'This machine' },
   { id: 'data', label: 'Data', icon: 'Database', group: 'This machine' },
 ];
@@ -279,6 +281,20 @@ export function SettingsModal() {
                     onChange={(autoName) => void save({ autoName })}
                   />
                 ) : null}
+                {server ? (
+                  <Row
+                    label="Board"
+                    hint={
+                      (server.board?.pages ?? 'show') === 'off'
+                        ? "Sessions leave the Board to you."
+                        : (server.board?.pages ?? 'show') === 'add'
+                          ? 'As the work moves on (investigating, coding, reviewing, shipping), a session adds a page laid out for it; you go to it when you like. Never changes your own pages. For sessions started from now on.'
+                          : 'As the work moves on (investigating, coding, reviewing, shipping), a session adds a page laid out for it and shows it (Undo takes it away). Never changes your own pages. For sessions started from now on.'
+                    }
+                  >
+                    <Choice value={server.board?.pages ?? 'show'} onChange={(m) => void save({ board: { pages: m } })} options={[['off', 'Off'], ['add', 'Add pages'], ['show', 'Add and show']]} />
+                  </Row>
+                ) : null}
                 {server ? <MemeRows server={server} save={trySave} /> : null}
                 <Row label="Ended sessions" hint="Take them off the list. Their transcripts stay.">
                   <button className="btn" onClick={async () => { await clearEnded(); setCleared(true); }}>
@@ -416,6 +432,10 @@ export function SettingsModal() {
 
               <Boundary name="Environments settings">
                 <EnvironmentsSection server={server} save={trySave} />
+              </Boundary>
+
+              <Boundary name="Lockdown settings">
+                <LockSection />
               </Boundary>
 
               <Boundary name="Security settings">

@@ -6,7 +6,7 @@
 }
 
 /* New, Resume, Find: 12px from the line above, the list 12px below */
-.rail .rail-scroll { padding: 4px 8px 8px; gap: 0; scrollbar-width: thin; scrollbar-color: #1d2430 transparent; }
+.rail .rail-scroll { padding: 4px 8px 8px; gap: 0; }
 
 /* group headers: small caps, a count, a hairline */
 .ses-h { display: flex; align-items: center; gap: 8px; height: 30px; margin-top: 6px; padding: 0 6px; font: 600 10px var(--code); letter-spacing: .16em; text-transform: uppercase; color: var(--ink4); user-select: none; }

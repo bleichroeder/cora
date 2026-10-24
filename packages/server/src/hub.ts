@@ -1,7 +1,7 @@
 import { MAX_REPLAY, type AgentInfo, type BrainEvent, type CiMsg, type ClientMsg, type DeploysMsg, type ExplainDataMsg, type InboxMsg, type NotesMsg, type JiraMsg, type OrchMsg, type PendingRequest, type SecurityMsg, type ServerMsg, type SessionInfo, type SlackMsg, type TerminalInfo, type UiCommandMsg } from '@cora/shared';
 import type { Store } from './store';
 
-type Sock = { send(data: string): void; on(ev: 'message' | 'close', fn: (d?: any) => void): void; readyState: number };
+type Sock = { send(data: string): void; on(ev: 'message' | 'close', fn: (d?: any) => void): void; readyState: number; close?(): void };
 
 const OPEN = 1;
 const RECENT_PER_SESSION = 40;
@@ -121,6 +121,13 @@ export class Hub {
 
   /** A live explain's new data: the open pages redraw. */
   /** a session posted to its Meme panel: the open panels look again */
+  /** Cora locked: every page hears it (and goes to the lock screen), then its stream is closed. */
+  lockAll(): void {
+    this.broadcast({ t: 'lock' });
+    const socks = [...this.socks];
+    this.socks.clear();
+    setTimeout(() => socks.forEach((s) => s.close?.()), 100);
+  }
   publishMeme(sessionId: string): void {
     this.broadcast({ t: 'meme', sessionId });
   }

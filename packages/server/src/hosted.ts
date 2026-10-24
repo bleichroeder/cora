@@ -1,6 +1,6 @@
 import { mkdirSync, readdirSync, rmSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import { MEME_TOOL, type MemeMode, DEPLOYS_TOOL, ENV_TOOL, LIVE_EXPLAIN_TOOL, NOTES_TOOLS, MCP_SERVER, OPEN_TAB_TOOL, SPOTLIGHT_TOOL, SESSION_HEADER, SLACK_FIND_TOOL, SLACK_READ_TOOL, SLACK_SEND_TOOL, SPEAK_TOOL, TOKEN_HEADER, speaksSummaries, type Settings, type VoiceSettings, takesTags } from '@cora/shared';
+import { BOARD_TOOL, type BoardPageMode, MEME_TOOL, type MemeMode, DEPLOYS_TOOL, ENV_TOOL, LIVE_EXPLAIN_TOOL, NOTES_TOOLS, MCP_SERVER, OPEN_TAB_TOOL, SPOTLIGHT_TOOL, SESSION_HEADER, SLACK_FIND_TOOL, SLACK_READ_TOOL, SLACK_SEND_TOOL, SPEAK_TOOL, TOKEN_HEADER, speaksSummaries, type Settings, type VoiceSettings, takesTags } from '@cora/shared';
 import type { Config } from './config';
 import { attachmentsDir } from './attachments';
 import { writeFileAtomic } from './fsx';
@@ -57,15 +57,19 @@ const LIVE = [
 ].join(' ');
 
 /** The system-prompt addendum for hosted sessions, built from the explain settings (and voice, for spoken summaries). */
-/** The Meme panel (Settings › Sessions › Memes): when a session may post a meme or a GIF about what's happening. */
+/** Sessions and the Board (Settings › Sessions › Board): a page laid out for each phase of the work. */
+const BOARD_NUDGE =
+  "The user's Board (the panels beside you) can follow the work: when it moves into a new phase (investigating a problem, coding the fix, reviewing it, shipping it, writing it up), call the `board` tool once with that kind of work, and Cora lays out a page for it. Once per phase, not per step.";
+
+/** The Vibes panel (Settings › Sessions › Vibes): when a session may post a meme or a GIF about what's happening. */
 const MEME_NUDGE: Record<Exclude<MemeMode, 'off'>, string> = {
   sometimes:
-    "For fun, the user has a Meme panel: at a real moment (a stubborn bug finally fixed, tests green after a fight, a scary failure, a long wait), you may post one meme or GIF about it with the `meme` tool (a popular template, a GIF, or one you draw yourself as an SVG when no template fits), at most one every several turns. Keep it light and kind, about the work, never instead of the work.",
+    "For fun, the user has a Vibes panel: at a real moment (a stubborn bug finally fixed, tests green after a fight, a scary failure, a long wait), you may post one meme or GIF about it with the `meme` tool (a popular template, a GIF, or one you draw yourself as an SVG when no template fits), at most one every several turns. Keep it light and kind, about the work, never instead of the work.",
   often:
-    "For fun, the user has a Meme panel: when something happens (a fix, a failure, a win, a wait), post a meme or GIF about it with the `meme` tool (a popular template, a GIF, or one you draw yourself as an SVG). Keep it light and kind, about the work, never instead of the work.",
+    "For fun, the user has a Vibes panel: when something happens (a fix, a failure, a win, a wait), post a meme or GIF about it with the `meme` tool (a popular template, a GIF, or one you draw yourself as an SVG). Keep it light and kind, about the work, never instead of the work.",
 };
 
-export function nudgeFor(s: Settings['explains'], voice?: VoiceSettings, memes: MemeMode = 'off'): string {
+export function nudgeFor(s: Settings['explains'], voice?: VoiceSettings, memes: MemeMode = 'off', board: BoardPageMode = 'off'): string {
   const speak = speakNudge(voice);
   const formats =
     s.mode === 'markdown'
@@ -92,6 +96,7 @@ export function nudgeFor(s: Settings['explains'], voice?: VoiceSettings, memes: 
         ]),
     browser,
     spotlight,
+    ...(board !== 'off' ? [BOARD_NUDGE] : []),
     ...(memes !== 'off' ? [MEME_NUDGE[memes]] : []),
     ...(speak ? [speak] : []),
     '',
@@ -116,7 +121,7 @@ export function hostedArgs(config: Config, settings: Settings, sessionId?: strin
   const headers = { [TOKEN_HEADER]: config.hookToken, ...(sessionId ? { [SESSION_HEADER]: sessionId } : {}) };
   const mcp = { mcpServers: { [MCP_SERVER]: { type: 'http', url: `http://127.0.0.1:${config.port}/mcp`, headers, alwaysLoad: true } } };
   writeFileAtomic(mcpPath, JSON.stringify(mcp, null, 2), { mode: 0o600 });
-  writeFileAtomic(promptPath, `${nudgeFor(settings.explains, settings.voice, settings.memes?.mode ?? 'off')}
+  writeFileAtomic(promptPath, `${nudgeFor(settings.explains, settings.voice, settings.memes?.mode ?? 'off', settings.board?.pages ?? 'show')}
 
 ${OTHERS}`);
   // opening a tab is harmless; so are the Slack tools (looking up and reading; a message is only sent once you
@@ -125,7 +130,7 @@ ${OTHERS}`);
   const explains = join(config.dataDir, 'explains');
   const live = settings.explains.mode === 'markdown+html';
   if (live) mkdirSync(explains, { recursive: true });
-  const allowed = [OPEN_TAB_TOOL, SPOTLIGHT_TOOL, ...((settings.memes?.mode ?? 'off') !== 'off' ? [MEME_TOOL] : []), ENV_TOOL, DEPLOYS_TOOL, ...NOTES_TOOLS.map((t) => `mcp__${MCP_SERVER}__${t}`), SLACK_FIND_TOOL, SLACK_READ_TOOL, SLACK_SEND_TOOL, ...(speaksSummaries(settings.voice) ? [SPEAK_TOOL] : []), ...(live ? [LIVE_EXPLAIN_TOOL, `Edit(${ruleFor(explains)}/**)`] : [])].join(',');
+  const allowed = [OPEN_TAB_TOOL, SPOTLIGHT_TOOL, ...((settings.board?.pages ?? 'show') !== 'off' ? [BOARD_TOOL] : []), ...((settings.memes?.mode ?? 'off') !== 'off' ? [MEME_TOOL] : []), ENV_TOOL, DEPLOYS_TOOL, ...NOTES_TOOLS.map((t) => `mcp__${MCP_SERVER}__${t}`), SLACK_FIND_TOOL, SLACK_READ_TOOL, SLACK_SEND_TOOL, ...(speaksSummaries(settings.voice) ? [SPEAK_TOOL] : []), ...(live ? [LIVE_EXPLAIN_TOOL, `Edit(${ruleFor(explains)}/**)`] : [])].join(',');
   const attachments = attachmentsDir(config.dataDir);
   mkdirSync(attachments, { recursive: true });
   // --add-dir takes several folders: an option must follow it

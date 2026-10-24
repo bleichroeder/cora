@@ -16,6 +16,8 @@ import { SetupView } from './components/Setup';
 import { EmptyMain } from './components/EmptyMain';
 import { BootScreen } from './components/BootScreen';
 import { SessionSwitcher } from './components/SessionSwitcher';
+import { LockSetup } from './components/LockSettings';
+import { lockNow } from './state/lock';
 import { RecapBar } from './components/Recap';
 import { IssueChip } from './components/IssuePicker';
 import { loadSetup, useSetup } from './state/setup';
@@ -47,7 +49,7 @@ import { ChangesPane } from './components/ChangesPane';
 import { WebPane, openFind, stepTab, tabOfPage } from './components/WebPane';
 import { openInBrowser } from './state/browser';
 import { useWeb } from './state/web';
-import { browserDockOf, useBoardDock } from './state/boardDock';
+import { useBoardDock } from './state/boardDock';
 import { JiraText } from './components/JiraChip';
 import { backgroundTasks } from './lib/background';
 import { PaletteHost } from './components/Palette';
@@ -179,14 +181,13 @@ function Focus({ sessionId }: { sessionId: string }) {
   const viewerWide = useBrain((s) => s.viewerWide);
   const diffOpen = useBrain((s) => s.diff?.sessionId === sessionId);
   const diffWide = useBrain((s) => s.diffWide);
-  // a docked browser takes the right of the scene area and the scene fits itself into the rest
+  // a docked browser takes the right of the scene area: the 3D scene fits itself into the rest; the Board stays as it
+  // is, the browser sliding over it like a drawer
   const scene3d = useBrain((s) => s.prefs.scene3d !== false);
-  // (a Browser panel on the live board holds it instead: nothing pushed aside)
-  const browserDocked = useBoardDock((d) => !!browserDockOf(d, sessionId));
   const needsDocked = useBoardDock((d) => d.needs.includes(sessionId));
   const sceneInset = useWeb((w) => {
     const s = w.sessions[sessionId];
-    return desktop?.browser && !browserDocked && s?.shown && s.active && !w.wide && w.split < 1 ? `${Math.round(w.split * 1000) / 10}%` : 0;
+    return scene3d && desktop?.browser && s?.shown && s.active && !w.wide && w.split < 1 ? `${Math.round(w.split * 1000) / 10}%` : 0;
   });
   const box = useRef<HTMLDivElement>(null);
   const startW = useRef(0);
@@ -423,7 +424,8 @@ export function App() {
   useEffect(() => {
     if (!desktop) return;
     const offFocus = desktop.onFocusSession((sid) => useBrain.getState().setFocus(sid));
-    const offCmd = desktop.onCommand((c) => c === 'new-session' && useBrain.getState().setModal('new-session'));
+    // the tray: a new session; Lock Cora with no PIN yet (choose one, then it locks)
+    const offCmd = desktop.onCommand((c) => (c === 'new-session' ? useBrain.getState().setModal('new-session') : c === 'lock' ? void lockNow() : undefined));
     // links clicked anywhere in the app open in the built-in browser: the session's, or with no session open, Cora's Browser
     const offWeb = desktop.onOpenWeb?.((url) => {
       const st = useBrain.getState();
@@ -588,6 +590,7 @@ export function App() {
       <CoraFloat />
       <PaletteHost />
       <SessionSwitcher />
+      <LockSetup />
       <UsageView />
       {modal === 'new-session' ? <NewSessionModal /> : modal === 'history' ? <HistoryModal /> : modal === 'settings' ? <SettingsModal /> : null}
     </div>

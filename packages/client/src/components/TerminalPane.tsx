@@ -23,6 +23,10 @@ export const THEME = {
   cursor: '#38bdf8',
   cursorAccent: '#05080d',
   selectionBackground: '#1e3a5f',
+  // its scrollbar as the rest of Cora's (the thumb design.css calls --scroll-thumb; a little lighter held)
+  scrollbarSliderBackground: '#1d2430',
+  scrollbarSliderHoverBackground: '#2a3442',
+  scrollbarSliderActiveBackground: '#334155',
   black: '#1e293b', red: '#f87171', green: '#34d399', yellow: '#fbbf24', blue: '#60a5fa', magenta: '#c084fc', cyan: '#22d3ee', white: '#cbd5e1',
   brightBlack: '#475569', brightRed: '#fca5a5', brightGreen: '#6ee7b7', brightYellow: '#fde68a', brightBlue: '#93c5fd', brightMagenta: '#e9d5ff', brightCyan: '#67e8f9', brightWhite: '#f8fafc',
 };
@@ -47,7 +51,7 @@ function writeClipboard(text: string) {
  * xterm.js attached to a PTY hosted by the Cora server: the session's Claude, or one of its shells. Tabs not on show
  * stay mounted (hidden), so switching back is instant and a shell can flag output you haven't seen.
  */
-function LiveTerminal({ terminal, compact, shown = true, sized = false, onChoice }: {
+export function LiveTerminal({ terminal, compact, shown = true, sized = false, onChoice }: {
   terminal: TerminalInfo;
   compact: boolean;
   shown?: boolean;
@@ -418,7 +422,8 @@ export function TerminalPane({ sessionId }: { sessionId: string }) {
   const view = useTermView(sessionId);
   const setPeek = (on: boolean) => useShells.getState().setPeek(sessionId, on);
   const onChoice = (open: boolean) => useShells.getState().setAsking(sessionId, open);
-  const shells = useMemo(() => allShells.filter((t) => t.sessionId === sessionId), [allShells, sessionId]);
+  // (the Board's Terminal panels have shells of their own: they stay there)
+  const shells = useMemo(() => allShells.filter((t) => t.sessionId === sessionId && t.place !== 'board'), [allShells, sessionId]);
   const ids = shells.map((t) => t.terminalId);
   const remembered = useShells((s) => s.active[sessionId]);
   const titles = useShells((s) => s.titles);

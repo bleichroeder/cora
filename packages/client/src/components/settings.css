@@ -29,7 +29,6 @@
 
 /* the page */
 .modal.settings .set-pane { min-height: 0; overflow-y: auto; padding: 22px 28px 28px; scroll-behavior: auto; }
-.modal.settings .set-pane::-webkit-scrollbar-thumb { background: var(--raise2); border-color: var(--nav); }
 .modal.settings .set-sec { display: none; padding: 0; border: 0; min-height: 0; }
 .modal.settings .set-sec.on { display: block; }
 .modal.settings .set-sec-h { margin-bottom: 18px; }
@@ -188,3 +187,9 @@
 .vdir { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .vdir-sent { color: var(--ink4); font: 400 11px var(--ui); }
 .vdir-sent code { color: var(--ink2); font: 500 10.5px var(--code); }
+
+/* Settings › Lockdown */
+.lk-form { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.lk-form .lk-pin { width: 150px; letter-spacing: .25em; }
+.lk-acts { display: inline-flex; gap: 6px; }
+.lk-err { flex-basis: 100%; color: #ffb3b3; font: 500 12px var(--ui); }

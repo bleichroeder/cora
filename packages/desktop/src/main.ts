@@ -7,8 +7,8 @@ import { orbPng } from './icons';
 import { coraIcoFile, readCoraColor, saveCoraColor } from './look';
 import { isCoraColor } from '@cora/shared';
 import { APP_ID, dataHome, ensureStartMenuShortcut, migrateProfile, refreshStartMenuIcon, TOAST_CLSID } from './paths';
-import { isWeb, openToolWindow, setToolHosts, setupBrowser } from './browser';
-import { setupCapture } from './capture';
+import { hideToolWindows, isWeb, openToolWindow, setToolHosts, setupBrowser } from './browser';
+import { hideCapture, setupCapture } from './capture';
 import { startPresence } from './presence';
 import { setupJira, startJiraWatch } from './jira';
 import { setupDiagnostics } from './diag';
@@ -18,6 +18,7 @@ import { runtimeFor } from './runtime';
 import { startUpdates } from './updates';
 import { saveExplain } from './explainFile';
 import { setupOnePassword } from './opFill';
+import { setupLockdown } from './lockdown';
 
 const PORT = Number(process.env.CORA_PORT ?? process.env.AGENT_BRAIN_PORT ?? 4317);
 const DATA = dataHome();
@@ -54,6 +55,32 @@ let needsYou = 0;
 /** installed: a new version downloaded and waiting for a restart (and how to install it) */
 let pendingUpdate: string | null = null;
 let updates: { install(): void } | null = null;
+/** popped-out explains (hidden while Cora is locked) */
+const popouts = new Set<BrowserWindow>();
+
+/**
+ * Lockdown: while the window shows the lock screen, nothing else of Cora's shows (tools, popped-out explains, quick
+ * capture), its hotkeys rest, and the tray only shows it or quits (never ending sessions).
+ */
+const lockdown = setupLockdown({
+  base: BASE,
+  tokenFile: join(DATA, 'token'),
+  win: () => win,
+  askPin: () => {
+    show();
+    win?.webContents.send('ab:command', 'lock');
+  },
+  onChange: (locked) => {
+    if (locked) {
+      hideToolWindows();
+      hideCapture();
+      for (const w of popouts) if (!w.isDestroyed()) w.hide();
+      // Cora's talk hotkeys: the dashboard turns them back on when it's back
+      for (const k of [CORA_HOTKEY, CORA_STANDDOWN]) if (globalShortcut.isRegistered(k)) globalShortcut.unregister(k);
+    } else for (const w of popouts) if (!w.isDestroyed()) w.showInactive();
+    refreshTray();
+  },
+});
 
 const img = (size: number, color?: string): NativeImage => nativeImage.createFromBuffer(orbPng(size, color));
 // the orb in Cora's colour (yours to pick in Settings); red when something needs you
@@ -132,6 +159,12 @@ function createWindow() {
   // Ctrl+R (Ctrl+Shift+R: ignoring the cache) and F5 reload the app, wherever the keyboard is: a terminal would
   // otherwise take Ctrl+R (Claude Code's history search) and the menu would never see it
   win.webContents.on('before-input-event', (e, i) => {
+    // Ctrl+Alt+L: lock Cora, wherever the keyboard is
+    if (i.type === 'keyDown' && i.control && i.alt && !i.shift && !i.meta && i.key.toLowerCase() === 'l') {
+      e.preventDefault();
+      if (!lockdown.locked) void lockdown.lock('key');
+      return;
+    }
     if (i.type !== 'keyDown' || i.alt || i.meta) return;
     // F11: full screen (no taskbar, no window buttons), and back
     if (i.key === 'F11' && !i.control && !i.shift) {
@@ -147,6 +180,7 @@ function createWindow() {
   });
   // right-click in the dashboard's text fields and selections (elsewhere, nothing: the scene and terminals have their own)
   enableSpellcheck(win.webContents.session);
+  lockdown.watch(win);
   attachContextMenu(win.webContents, { window: win, web: false });
   win.on('close', (e) => {
     if (quitting) return;
@@ -169,6 +203,19 @@ function createWindow() {
   });
 }
 
+/** The dashboard's setup check, asked for while the splash plays (the server keeps the answer for the dashboard). */
+let warming: Promise<void> | null = null;
+function warmUp(): void {
+  try {
+    const token = readFileSync(join(DATA, 'ui-token'), 'utf8').trim();
+    warming = fetch(`${BASE}/api/setup?warm=1`, { headers: { cookie: `ab_session=${token}` }, signal: AbortSignal.timeout(8000) })
+      .then(() => undefined)
+      .catch(() => undefined);
+  } catch {
+    warming = null;
+  }
+}
+
 let watching = false;
 /** Show the dashboard (the server is up); from here on, keep the server alive. */
 function loadDashboard() {
@@ -182,7 +229,7 @@ function loadDashboard() {
     watching = true;
     watchServer();
     // quick capture (Ctrl+Alt+N): once the dashboard has signed in (its window shares the sign-in)
-    setupCapture(BASE);
+    setupCapture(BASE, () => !lockdown.locked);
     // are you at the PC (Cora's Slack bot messages you while you're away)
     startPresence({ base: BASE, tokenFile: join(DATA, 'token') });
   }
@@ -216,6 +263,12 @@ function refreshTray() {
   tray.setImage(needsYou > 0 ? ICON.trayAlert : ICON.tray);
   tray.setToolTip(needsYou > 0 ? `Cora · ${needsYou} need${needsYou === 1 ? 's' : ''} you` : 'Cora');
   const login = loginOn();
+  // locked: show it (the lock screen) or quit; nothing that would reach a session
+  if (lockdown.locked) {
+    tray.setToolTip('Cora · locked');
+    tray.setContextMenu(Menu.buildFromTemplate([{ label: 'Show Cora (locked)', click: show }, { type: 'separator' }, { label: 'Quit', click: () => void quitAsking() }]));
+    return;
+  }
   tray.setContextMenu(
     Menu.buildFromTemplate([
       { label: 'Show Cora', accelerator: HOTKEY, click: show },
@@ -226,6 +279,7 @@ function refreshTray() {
           win?.webContents.send('ab:command', 'new-session');
         },
       },
+      { label: 'Lock Cora', accelerator: 'Control+Alt+L', click: () => void lockdown.lock('tray') },
       { type: 'separator' },
       {
         label: 'Start at login',
@@ -310,6 +364,12 @@ function restartKeeping() {
 
 /** Quit; with Claude sessions (or shells) running in Cora, ask whether to end them or keep them running. */
 async function quitAsking() {
+  // locked: quitting keeps every session running (whoever is at the PC can't end them)
+  if (lockdown.locked) {
+    endOnQuit = false;
+    quitting = true;
+    return app.quit();
+  }
   const { live, shells, persistent } = server?.owned ? await liveTerminals(PORT, join(DATA, 'token')) : { live: 0, shells: 0, persistent: true };
   if (live > 0) {
     const { response } = await dialog.showMessageBox({
@@ -389,6 +449,7 @@ async function bootServer(noHost: boolean) {
   try {
     server = await ensureServer({ ...SERVER, noHost, stageFile: join(DATA, 'startup-stages.jsonl'), onStage: send });
     ready = true;
+    warmUp();
     refreshTray();
     send({ t: 'ready' });
   } catch (e) {
@@ -406,8 +467,10 @@ function wireIpc() {
   ipcMain.on('ab:splash-start', (e, noHost: boolean) => {
     if (fromOurWindow(e)) void bootServer(!!noHost);
   });
+  // the splash's finale is done: the dashboard comes once its setup check is (the splash holds its last frame till
+  // then, a few seconds at most), so it opens straight on the app, or on setting Cora up: never a second loader
   ipcMain.on('ab:splash-done', (e) => {
-    if (fromOurWindow(e) && ready) loadDashboard();
+    if (fromOurWindow(e) && ready) void Promise.race([warming ?? Promise.resolve(), new Promise((r) => setTimeout(r, 4000))]).then(loadDashboard);
   });
   ipcMain.on('ab:splash-log', (e) => {
     if (fromOurWindow(e)) void shell.openPath(LOG);
@@ -451,7 +514,7 @@ function wireIpc() {
   });
   // Cora's hotkey, from anywhere: bring Cora up and start (or stop) talking to it
   ipcMain.on('ab:cora-hotkey', (e, on: unknown) => {
-    if (!fromOurWindow(e)) return;
+    if (!fromOurWindow(e) || (on && lockdown.locked)) return;
     const registered = globalShortcut.isRegistered(CORA_HOTKEY);
     if (on && !registered) {
       if (!globalShortcut.register(CORA_HOTKEY, () => (show(), win?.webContents.send('ab:cora-ptt')))) console.warn(`[cora] hotkey ${CORA_HOTKEY} is taken`);
@@ -463,7 +526,7 @@ function wireIpc() {
     }
   });
   ipcMain.on('ab:tool-window', (e, m: { url: string; title: string }) => {
-    if (fromOurWindow(e) && isWeb(String(m?.url))) openToolWindow(String(m.url), String(m.title ?? 'Cora'), ICON.app);
+    if (fromOurWindow(e) && !lockdown.locked && isWeb(String(m?.url))) openToolWindow(String(m.url), String(m.title ?? 'Cora'), ICON.app);
   });
   ipcMain.on('ab:cora-color', (e, c: unknown) => {
     if (fromOurWindow(e) && isCoraColor(c) && c.toLowerCase() !== coraColor) setCoraColor(c.toLowerCase());
@@ -502,7 +565,7 @@ function wireIpc() {
     refreshTray();
   });
   ipcMain.on('ab:popout', (e, m: { title: string; html: string }) => {
-    if (!fromOurWindow(e)) return;
+    if (!fromOurWindow(e) || lockdown.locked) return;
     const w = new BrowserWindow({
       width: 1100,
       height: 820,
@@ -518,6 +581,8 @@ function wireIpc() {
       return { action: 'deny' };
     });
     w.webContents.on('will-navigate', (ev) => ev.preventDefault());
+    popouts.add(w);
+    w.on('closed', () => popouts.delete(w));
     void w.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(m.html)}`);
   });
 }

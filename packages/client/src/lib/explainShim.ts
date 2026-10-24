@@ -20,6 +20,7 @@ export const THEME: Array<[string, string]> = [
   ['--ok', '--work'],
   ['--warn', '--think'],
   ['--bad', '--need'],
+  ['--scroll', '--scroll-thumb'],
 ];
 
 /** The theme's values right now (from the dashboard's styles; a test passes them in). */
@@ -44,7 +45,8 @@ export function explainShim(o: { vars: Record<string, string>; live?: boolean; d
     .filter(([k, v]) => /^--[\w-]+$/.test(k) && !/[;{}<>]/.test(v))
     .map(([k, v]) => `${k}:${v}`)
     .join(';');
-  const style = `<style>:root{${vars}}</style>`;
+  // the app's scrollbar (a page that styles its own keeps it: this is the least specific rule there is)
+  const style = `<style>:root{${vars}}</style><style>:root{color-scheme:dark}*{scrollbar-width:thin;scrollbar-color:var(--scroll,#1d2430) transparent}</style>`;
   const script = `<script>(function(){
 var fns=[],has=${o.live && o.data !== undefined ? 'true' : 'false'},last=${o.live ? inScript(o.data) : 'null'};
 window.cora={onData:function(f){if(typeof f!=='function')return;fns.push(f);if(has)try{f(last)}catch(e){console.error(e)}}};

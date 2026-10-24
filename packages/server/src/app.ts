@@ -1,6 +1,7 @@
 import { createHmac } from 'node:crypto';
 import { GitlabIssues } from './gitlabIssues';
 import type { Memes } from './memes';
+import { SessionNames } from './sessionNames';
 import { existsSync, readFileSync } from 'node:fs';
 import { envLine, signature, type EnvLabel, type Environments } from './environments';
 import type { Deploys } from './deploys';
@@ -12,7 +13,7 @@ import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest }
 import cookie from '@fastify/cookie';
 import fastifyStatic from '@fastify/static';
 import websocket from '@fastify/websocket';
-import { INBOX_SOURCES, MAX_DRAFT_ASKS, ticketInPrompt, type TicketFacts, type PendingDecision, type SessionInfo, type SessionTicket, JIRA_EVENT_KINDS, type JiraEvent, type JiraEventKind, type JiraWatchStatus, HELLO_PREFIX, artifactUrl, BROWSER_PROFILE_ID, CORA_RELEASES } from '@cora/shared';
+import { INBOX_SOURCES, MAX_DRAFT_ASKS, ticketInPrompt, type TicketFacts, type PendingDecision, type SessionInfo, type SessionTicket, JIRA_EVENT_KINDS, type JiraEvent, type JiraEventKind, type JiraWatchStatus, HELLO_PREFIX, artifactUrl, BROWSER_PROFILE_ID, CORA_RELEASES, displayName } from '@cora/shared';
 import { checkOptions, checkPrompt, launchArgs } from './launch';
 import { checkSummary, checkTicket, type Tickets } from './tickets';
 import { summarizeUsage } from './usage';
@@ -61,6 +62,7 @@ import { computeHooksBlock, diffText, isOurs, mergeHooks, readSettings, settings
 import { connectedMcp } from './mcpServers';
 import { accountUsage } from './accountUsage';
 import { homedir } from 'node:os';
+import { Lock } from './lock';
 import { join as joinPath } from 'node:path';
 
 /** How long the agent's start_session waits for the new session to take its prompt (its tool call times out at a minute). */
@@ -69,8 +71,12 @@ const LAUNCH_ANSWER_MS = 40_000;
 export type AppDeps = {
   /** GitLab issues (tests give their own) */
   gitlabIssues?: GitlabIssues;
-  /** the Meme panel */
+  /** the Vibes panel */
   memes?: Memes;
+  /** sessions' names, kept past Cora's history (Resume) */
+  sessionNames?: SessionNames;
+  /** lockdown (tests: none, a fresh one) */
+  lock?: Lock;
   /** live explains: a session's page and data files */
   live?: import('./liveExplains').LiveExplains;
   /** your Chrome / Edge bookmarks and history (tests: a fake) */
@@ -146,14 +152,33 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
   const authed = (req: FastifyRequest) => sameSecret(req.cookies[COOKIE], config.uiToken);
   const viewer = (req: FastifyRequest) => !!config.viewToken && sameSecret(req.cookies[VIEW_COOKIE], config.viewToken);
   // reading: you, or a view-only sign-in; acting (requireAction, /pty) is yours alone
+  // lockdown: while Cora is locked, your pages get nothing but the lock screen (sessions and their hooks carry on)
+  const lock = d.lock ?? new Lock(null);
+  const LOCKED = { error: 'locked', locked: true };
   const requireUi = async (req: FastifyRequest, reply: FastifyReply) => {
     if (!authed(req) && !viewer(req)) return reply.code(401).send({ error: 'open the link printed by `cora start`' });
+    if (lock.locked) return reply.code(423).send(LOCKED);
   };
   const requireAction = async (req: FastifyRequest, reply: FastifyReply) => {
     if (!authed(req)) return reply.code(401).send({ error: 'unauthorized' });
     const origin = req.headers.origin;
     if (!origin || !allowedOrigins.has(origin)) return reply.code(403).send({ error: 'bad origin' });
+    if (lock.locked) return reply.code(423).send(LOCKED);
   };
+  // terminals' streams, closed when Cora locks
+  const ptySocks = new Set<{ close(): void }>();
+  lock.onChange = (locked) => {
+    if (!locked) return;
+    hub.lockAll();
+    for (const s of ptySocks) s.close();
+    ptySocks.clear();
+  };
+  // the dashboard's page itself, while locked: the lock screen instead (the capture window keeps its own)
+  app.addHook('onRequest', async (req, reply) => {
+    if (!lock.locked || req.method !== 'GET') return;
+    const [path, q = ''] = req.url.split('?');
+    if ((path === '/' || path === '/index.html') && !/(^|&)capture=1/.test(q)) return reply.redirect('/lock.html');
+  });
 
   // --- hooks from Claude Code -------------------------------------------------
   /**
@@ -267,6 +292,13 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
     if (!Number.isFinite(idle)) return reply.code(400).send({ error: 'idle seconds, please' });
     d.bot?.report({ idle, locked: req.body?.locked === true });
     return { away: d.bot?.away() ?? false };
+  });
+  // the desktop app locks Cora: its tray, Ctrl+Alt+L, or Windows locking or sleeping (when you want that)
+  app.post<{ Body: { reason?: unknown } }>('/api/local/lock', async (req, reply) => {
+    if (!sameSecret(hookToken(req), config.hookToken)) return reply.code(401).send({ error: 'bad token' });
+    if (req.body?.reason === 'windows' && !lock.onWindowsLock) return { locked: lock.locked };
+    if (!lock.hasPin) return { locked: false, needsPin: true };
+    return { locked: lock.lock() };
   });
   app.get('/api/local/terminals', async (req, reply) => {
     if (!sameSecret(hookToken(req), config.hookToken)) return reply.code(401).send({ error: 'bad token' });
@@ -1032,9 +1064,19 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
     onePassword: () => onePasswordStatus(),
     ...d.setupChecks,
   });
-  app.get('/api/setup', { preHandler: requireUi }, async () => {
+  // the checklist takes a second or two (it looks for Claude Code, glab and the rest): the desktop asks for it while its
+  // splash plays (?warm=1), and the dashboard's first ask, right after, takes that answer (once, if it's fresh)
+  let warmSetup: { at: number; v: unknown } | null = null;
+  app.get<{ Querystring: { warm?: string } }>('/api/setup', { preHandler: requireUi }, async (req) => {
+    if (req.query.warm !== '1' && warmSetup && Date.now() - warmSetup.at < 20_000) {
+      const v = warmSetup.v;
+      warmSetup = null;
+      return v;
+    }
     await refreshPath().catch(() => {});
-    return { items: await checkSetup(setupDeps()), seen: prefs.get().setup.seen, fresh: store.listSessions().length === 0 };
+    const v = { items: await checkSetup(setupDeps()), seen: prefs.get().setup.seen, fresh: store.listSessions().length === 0 };
+    warmSetup = req.query.warm === '1' ? { at: Date.now(), v } : null;
+    return v;
   });
   // the hooks as they'd be written (the token shortened)
   app.get('/api/setup/hooks', { preHandler: requireUi }, async (_req, reply) => {
@@ -1251,6 +1293,36 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
 
   // --- api ----------------------------------------------------------------------
   app.get('/api/me', { preHandler: requireUi }, async () => ({ ok: true }));
+
+  // --- lockdown -----------------------------------------------------------------
+  // what the lock screen and Settings see; locked, only how many sessions need you (a number, nothing about them)
+  const lockStatus = () => {
+    const st = lock.status();
+    if (!st.locked) return st;
+    const need = new Set([...store.listSessions().filter((s) => s.needsYou > 0 && s.state !== 'ended').map((s) => s.id), ...pending.list().map((p) => p.sessionId)]);
+    return { ...st, needsYou: need.size };
+  };
+  // the lock screen's own asks: your sign-in and Cora's own pages, locked or not
+  const lockAsk = async (req: FastifyRequest, reply: FastifyReply) => {
+    if (!authed(req)) return reply.code(401).send({ error: 'unauthorized' });
+    if (req.method !== 'GET' && (!req.headers.origin || !allowedOrigins.has(req.headers.origin))) return reply.code(403).send({ error: 'bad origin' });
+  };
+  app.get('/api/lock', { preHandler: lockAsk }, async () => lockStatus());
+  app.post('/api/lock', { preHandler: requireAction }, async (_req, reply) => (lock.lock() ? { ok: true } : reply.code(409).send({ error: 'Set a PIN first.', needsPin: true })));
+  app.post<{ Body: { pin?: unknown } }>('/api/lock/unlock', { preHandler: lockAsk }, async (req, reply) => {
+    const r = lock.unlock(req.body?.pin);
+    return r.ok ? { ok: true } : reply.code(r.waitMs ? 429 : 403).send({ ok: false, waitMs: r.waitMs });
+  });
+  app.put<{ Body: { pin?: unknown; current?: unknown } }>('/api/lock/pin', { preHandler: requireAction }, async (req, reply) => {
+    const r = lock.setPin(req.body?.pin, req.body?.current);
+    return r.ok ? lockStatus() : reply.code(400).send(r);
+  });
+  app.delete<{ Body: { current?: unknown } }>('/api/lock/pin', { preHandler: requireAction }, async (req, reply) => {
+    const r = lock.clearPin(req.body?.current);
+    return r.ok ? lockStatus() : reply.code(400).send(r);
+  });
+  app.put<{ Body: { onWindowsLock?: unknown } }>('/api/lock/options', { preHandler: requireAction }, async (req) => (lock.setOptions(req.body ?? {}), lockStatus()));
+
   app.get('/api/sessions', { preHandler: requireUi }, async () => ({ sessions: store.listSessions(), agents: store.listAgents() }));
   // Claude Code's recaps (a session's, or everyone's) since a time: the board's Recap panel
   app.get<{ Querystring: { session?: string; since?: string } }>('/api/recaps', { preHandler: requireUi }, async (req) => ({
@@ -1355,6 +1427,12 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
   app.get('/api/gitlab/issues', { preHandler: requireUi }, async () => issues.mine());
   // the Meme panel: a session's memes and GIFs; whether GIFs are set up (a Giphy key, never sent back), and setting it
   app.get<{ Querystring: { session?: string } }>('/api/memes', { preHandler: requireUi }, async (req) => ({ posts: req.query.session ? (d.memes?.list(req.query.session) ?? []) : [] }));
+  // a sticker off the Vibes wall (`id`), or the whole wall
+  app.delete<{ Querystring: { session?: string; id?: string } }>('/api/memes', { preHandler: requireAction }, async (req, reply) => {
+    const sid = req.query.session;
+    if (!sid || !d.memes) return reply.code(400).send({ error: 'which session?' });
+    return { removed: d.memes.remove(sid, req.query.id || undefined), posts: d.memes.list(sid) };
+  });
   app.get('/api/memes/giphy', { preHandler: requireUi }, async () => ({ key: !!d.memes?.giphyKey() }));
   app.post<{ Body: { key?: unknown } }>('/api/memes/giphy', { preHandler: requireAction }, async (req, reply) => {
     const key = req.body?.key;
@@ -1384,7 +1462,7 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
     if (!ptys) return reply.code(501).send({ error: 'not supported' });
     return { shells: ptys.shells(req.query.fresh === '1').map(({ id, name, wsl }) => ({ id, name, ...(wsl ? { wsl } : {}) })) };
   });
-  app.post<{ Body: { mode: TerminalMode; cwd?: string; sessionId?: string; cols?: number; rows?: number; options?: unknown; prompt?: unknown; brief?: unknown; shell?: unknown } }>('/api/terminals', { preHandler: requireAction }, async (req, reply) => {
+  app.post<{ Body: { mode: TerminalMode; cwd?: string; sessionId?: string; cols?: number; rows?: number; options?: unknown; prompt?: unknown; brief?: unknown; shell?: unknown; board?: unknown } }>('/api/terminals', { preHandler: requireAction }, async (req, reply) => {
     if (!ptys) return reply.code(501).send({ error: 'terminals disabled' });
     const { mode, sessionId } = req.body ?? ({} as any);
     if (!['new', 'resume', 'fork', 'shell'].includes(mode)) return reply.code(400).send({ error: 'mode must be new|resume|fork|shell' });
@@ -1395,7 +1473,8 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
       // a plain shell beside a session's Claude: it belongs to that session, which it leaves alone
       if (!src) return reply.code(400).send({ error: 'a shell needs a known session' });
       try {
-        return ptys.launch({ mode, cwd, sessionId, cols: req.body.cols, rows: req.body.rows, ...(typeof req.body.shell === 'string' ? { shell: req.body.shell } : {}) });
+        // `board`: the Board's Terminal panel's own (not one of the session's terminal tabs)
+        return ptys.launch({ mode, cwd, sessionId, cols: req.body.cols, rows: req.body.rows, ...(typeof req.body.shell === 'string' ? { shell: req.body.shell } : {}), ...(req.body.board === true ? { place: 'board' as const } : {}) });
       } catch (e) {
         return reply.code(400).send({ error: (e as Error).message });
       }
@@ -1488,9 +1567,21 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
     const pids = await (d.findProcess ?? findSessionProcess)(req.params.id);
     return { hosted: false, elsewhere: pids.length > 0, pids };
   });
-  app.get<{ Querystring: { limit?: string } }>('/api/history', { preHandler: requireUi }, async (req) => ({
-    sessions: await listHistory(config.projectsDir, Math.min(Number(req.query.limit ?? 300), 2000), (slug) => isNamerSlug(slug, namerDir(config.dataDir))),
-  }));
+  // Resume: every session on disk, named as the nav names it (Cora's name for it, or one it remembers from before)
+  const names = d.sessionNames ?? new SessionNames(null);
+  app.get<{ Querystring: { limit?: string } }>('/api/history', { preHandler: requireUi }, async (req) => {
+    const known = store.listSessions();
+    names.remember(known);
+    const byId = new Map(known.map((s) => [s.id, s]));
+    const list = await listHistory(config.projectsDir, Math.min(Number(req.query.limit ?? 300), 2000), (slug) => isNamerSlug(slug, namerDir(config.dataDir)));
+    return {
+      sessions: list.map((h) => {
+        const s = byId.get(h.sessionId);
+        const name = s ? displayName(s) : names.get(h.sessionId);
+        return name ? { ...h, name } : h;
+      }),
+    };
+  });
   // finding an old session by what was said in it (Resume): an index of prompts and replies, read in the background
   // a while after Cora starts and then kept fresh; or Claude picks it from what you remember of it
   const skipSlug = (slug: string) => isNamerSlug(slug, namerDir(config.dataDir));
@@ -1530,8 +1621,10 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
     preValidation: async (req, reply) => {
       if (!authed(req)) return reply.code(401).send({ error: 'unauthorized' });
       if (!req.headers.origin || !allowedOrigins.has(req.headers.origin)) return reply.code(403).send({ error: 'bad origin' });
+      if (lock.locked) return reply.code(423).send(LOCKED);
     },
   }, (socket, req) => {
+    ptySocks.add(socket);
     const send = (m: object) => socket.readyState === 1 && socket.send(JSON.stringify(m));
     let detach: (() => void) | undefined;
     try {
@@ -1551,7 +1644,7 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
       if (m.t === 'in' && typeof m.d === 'string') ptys?.write(req.params.id, m.d);
       else if (m.t === 'resize') ptys?.resize(req.params.id, Number(m.cols), Number(m.rows));
     });
-    socket.on('close', () => detach?.());
+    socket.on('close', () => (detach?.(), ptySocks.delete(socket)));
   });
 
   // --- live stream --------------------------------------------------------------
@@ -1562,6 +1655,7 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
     preValidation: async (req, reply) => {
       if (!authed(req) && !viewer(req)) return reply.code(401).send({ error: 'unauthorized' });
       if (!req.headers.origin || !allowedOrigins.has(req.headers.origin)) return reply.code(403).send({ error: 'bad origin' });
+      if (lock.locked) return reply.code(423).send(LOCKED);
     },
   }, (socket) => {
     hub.add(socket as any);
@@ -1572,7 +1666,7 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
     // wildcard (the default) serves files built after startup too
     await app.register(fastifyStatic, { root: config.clientDir, prefix: '/' });
     app.setNotFoundHandler((req, reply) => {
-      if (req.method === 'GET' && !req.url.startsWith('/api') && !req.url.startsWith('/hook')) return reply.sendFile('index.html');
+      if (req.method === 'GET' && !req.url.startsWith('/api') && !req.url.startsWith('/hook')) return reply.sendFile(lock.locked ? 'lock.html' : 'index.html');
       return reply.code(404).send({ error: 'not found' });
     });
   } else {

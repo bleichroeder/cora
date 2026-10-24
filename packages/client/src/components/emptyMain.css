@@ -35,10 +35,14 @@
 @media (prefers-reduced-motion: reduce) { .em-hero::before, .em-hero::after, .em-orb { animation: none; } }
 
 /* the boot screen: the desktop splash's look carried on (its word, below the orb), in your colour */
-.boot-screen { --orb-glow: .4; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; background: radial-gradient(520px 360px at 50% 42%, color-mix(in srgb, var(--orb-tint, var(--cora)) calc(var(--orb-glow) * 30%), transparent), transparent 70%), var(--nav); -webkit-app-region: drag; animation: bs-in .4s ease-out both; }
+.boot-screen { --orb-glow: .4; position: relative; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; background: #06090f; -webkit-app-region: drag; }
+/* nothing but the window's dark at first: a quick start goes from the splash straight into the app; only if it's still
+   waiting after a moment does Cora's orb (and its light) come in */
+.boot-screen::before { content: ''; position: absolute; inset: 0; background: radial-gradient(520px 360px at 50% 42%, color-mix(in srgb, var(--orb-tint, var(--cora)) calc(var(--orb-glow) * 30%), transparent), transparent 70%), var(--nav); animation: bs-in .5s ease-out 1.2s both; }
+.boot-screen > * { position: relative; animation: bs-in .5s ease-out 1.2s both; }
 .boot-screen .bs-orb { display: grid; place-items: center; width: 150px; height: 150px; margin-bottom: 8px; }
 .boot-screen .bs-word { color: var(--ink2); font: 600 13px var(--ui); letter-spacing: .5em; text-indent: .5em; }
-.boot-screen .bs-sub { color: var(--ink4); font: 400 11.5px var(--ui); animation: bs-wait 1.8s ease-in-out infinite; }
+.boot-screen .bs-sub { color: var(--ink4); font: 400 11.5px var(--ui); animation: bs-in .5s ease-out 1.2s both, bs-wait 1.8s ease-in-out 1.7s infinite; }
 @keyframes bs-in { from { opacity: 0; } }
 @keyframes bs-wait { 50% { opacity: .45; } }
-@media (prefers-reduced-motion: reduce) { .boot-screen, .boot-screen .bs-sub { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .boot-screen .bs-sub { animation: none; } }

@@ -19,3 +19,5 @@
 .rf-sec:hover { background: #0f1724; }
 @keyframes sec-pulse { 50% { box-shadow: 0 0 10px rgba(248, 113, 113, .45); } }
 @media (prefers-reduced-motion: reduce) { .rf-sec.high { animation: none; } }
+/* lock Cora: a square beside Settings */
+.rf-row .rf-btn.rf-lock { flex: none; width: 34px; padding: 0; justify-content: center; }

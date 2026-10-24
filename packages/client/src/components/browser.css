@@ -19,6 +19,9 @@
 .web-pane { background: var(--nav); }
 .web-pane:not(.wide) { box-shadow: -1px 0 0 var(--hair2); }
 .web-pane.wide { box-shadow: 0 0 0 1px var(--hair2); }
+/* over the Board: a drawer like Tools and Cora's, sliding in over it (hidden, it stays loaded: only out of sight) */
+.web-pane.over { border-left: 1px solid color-mix(in srgb, var(--cora) 33%, transparent); box-shadow: -18px 0 40px rgba(0, 0, 0, .55); transition: transform .18s ease-out, opacity .18s ease-out; }
+.web-pane.over.hidden { transform: translateX(16px); opacity: 0; transition: transform .18s ease-out, opacity .18s ease-out, visibility 0s linear .18s; }
 .web-resize:hover::after, .web-pane.dragging .web-resize::after { background: color-mix(in srgb, var(--cora) 60%, transparent); }
 /* tabs: the language's segments */
 .web-pane .web-tabs { align-items: center; gap: 4px; height: 40px; padding: 0 8px; border-bottom: 1px solid var(--hair); background: var(--nav); }

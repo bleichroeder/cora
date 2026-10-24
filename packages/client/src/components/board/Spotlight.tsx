@@ -29,7 +29,6 @@ export function SpotlightPanel({ sessionId, data, item, onPage, onPin, render }:
   useEffect(() => dockSpotlight(sessionId), [sessionId]);
   const seen = useMemo(() => {
     let asked: SpotSignals['asked'];
-    let browserAt: number | undefined;
     let editAt: number | undefined;
     let testsFailedAt: number | undefined;
     const tests = new Map<string, boolean>();
@@ -41,7 +40,6 @@ export function SpotlightPanel({ sessionId, data, item, onPage, onPin, render }:
           const i = (e.tool.input ?? {}) as { panel?: string; explain?: string; reason?: string };
           if (ASKABLE.includes(i.panel as SpotKind)) asked = { k: i.panel as SpotKind, ...(i.explain ? { title: i.explain } : {}), ...(i.reason ? { why: i.reason } : {}), at: e.ts };
         }
-        if (e.tool.resource === 'browser' || e.tool.resource?.startsWith('web') || /__open_tab$/.test(name)) browserAt = e.ts;
         if ((name === 'Bash' || name === 'PowerShell') && e.toolUseId && TEST_CMD.test(String((e.tool.input as { command?: unknown } | undefined)?.command ?? e.tool.summary ?? ''))) tests.set(e.toolUseId, true);
       } else {
         if (e.tool.change && !e.tool.failed) editAt = e.ts;
@@ -52,7 +50,7 @@ export function SpotlightPanel({ sessionId, data, item, onPage, onPin, render }:
         }
       }
     }
-    return { asked, browserAt, editAt, testsFailedAt, testsRunning: [...tests.values()].some(Boolean) };
+    return { asked, editAt, testsFailedAt, testsRunning: [...tests.values()].some(Boolean) };
   }, [sessionId, version, tick]); // eslint-disable-line react-hooks/exhaustive-deps
   const live = data.explains.filter((x) => x.live).sort((a, b) => b.ts - a.ts)[0];
   // an explain Claude wrote is Claude's pick too: the newer of it and the last spotlight ask

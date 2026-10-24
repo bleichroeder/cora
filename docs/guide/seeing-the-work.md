@@ -96,9 +96,9 @@ More panels, from **+ Panel** (grouped as in its menu, each with its icon and wh
 
 - **This session:** **Goal** (what it was asked first, and the latest ask), **Context** (how full the context
   window is, a line of how it filled, and at the recent rate about when it fills), **Recap** (Claude Code's recaps,
-  newest first) and **Memes** (a wall of memes and GIFs the session posts about what's happening, just for fun, newest first;
-  click one to see it large. Claude can also draw its own, which are shown only and never saved. Turn them on in
-  **Settings › Sessions › Memes**; GIFs need a Giphy key there).
+  newest first) and **Vibes** (memes and GIFs the session sticks up about what's happening, just for fun: slapped on at a slant,
+  overlapping, always inside the panel, newest on top; click one to see it large. Claude can also draw its own, which are shown only and never saved. Turn them on in
+  **Settings › Sessions › Vibes**; GIFs need a Giphy key there).
 - **Code:** **Changes** (every file it changed with +/−; pick one for its change over the session, or open it in the
   diff viewer), **Git** (the branch, what's uncommitted, commits made and whether they're pushed), **Tests** (each test
   run's passed and failed, as a bar per run) and **Background** (commands running in the background, with the last

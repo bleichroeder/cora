@@ -244,6 +244,12 @@ async function pickScreen(origin: string | undefined, cb: (s: Electron.Streams) 
 }
 
 /** A tool (Slack) in its own window: same logins as the browser; its links go to your browser; sign-in popups allowed. */
+const toolWindows = new Set<BrowserWindow>();
+/** Lockdown: every tool window out of sight (they open again from the dashboard). */
+export function hideToolWindows(): void {
+  for (const w of toolWindows) if (!w.isDestroyed()) w.close();
+}
+
 export function openToolWindow(url: string, title: string, icon?: Electron.NativeImage): void {
   if (!isWeb(url)) return;
   const w = new BrowserWindow({
@@ -255,6 +261,8 @@ export function openToolWindow(url: string, title: string, icon?: Electron.Nativ
     backgroundColor: '#ffffff',
     webPreferences: { partition: WEB_PARTITION, sandbox: true, contextIsolation: true, nodeIntegration: false },
   });
+  toolWindows.add(w);
+  w.on('closed', () => toolWindows.delete(w));
   w.webContents.on('page-title-updated', (e) => (e.preventDefault(), w.setTitle(`${title} · ${w.webContents.getTitle()}`)));
   toolWindowFill(w);
   // Ctrl+F: find in its page (a bar of Cora's over the page, since the window has no Cora around it)

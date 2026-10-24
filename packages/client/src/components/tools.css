@@ -64,4 +64,4 @@ body.ui-dragging .td-body webview { pointer-events: none; }
 .rail-tools .rt-grip::after { content: ''; position: absolute; top: 3px; left: 50%; width: 36px; height: 2px; border-radius: 1px; background: var(--hair2); transform: translateX(-50%); opacity: 0; transition: opacity .15s, background .15s; }
 .rail-tools:hover .rt-grip::after { opacity: 1; }
 .rail-tools .rt-grip:hover::after { background: color-mix(in srgb, var(--cora) 60%, transparent); }
-.rail-tools .rt-list { overflow-y: auto; scrollbar-width: thin; scrollbar-color: #1d2430 transparent; }
+.rail-tools .rt-list { overflow-y: auto; }

@@ -6,7 +6,7 @@
 .mm-cap.top { top: 3%; }
 .mm-cap.bottom { bottom: 3%; }
 
-.live-board .mm-wall { position: relative; height: 100%; overflow: hidden; background: radial-gradient(circle at 30% 20%, color-mix(in srgb, var(--cora) 6%, transparent), transparent 60%); }
+.live-board .mm-wall, .live-board .mm-empty { position: relative; height: 100%; overflow: hidden; background: radial-gradient(circle at 18% 12%, color-mix(in srgb, var(--cora) 9%, transparent), transparent 55%), radial-gradient(circle, rgba(148, 163, 184, .1) 1px, transparent 1.4px) 0 0 / 18px 18px, radial-gradient(ellipse at center, transparent 55%, rgba(0, 0, 0, .35)); }
 /* a sticker: the picture in a white sticker border, at its own slant, a shadow under it */
 .live-board .mm-sticker { position: absolute; display: block; padding: 5px; border: 0; border-radius: 10px; background: #f8fafc; box-shadow: 0 6px 18px rgba(0, 0, 0, .45), 0 1px 0 rgba(255, 255, 255, .6) inset; transform: rotate(var(--tilt)); cursor: zoom-in; transition: transform .15s, box-shadow .15s; }
 .live-board .mm-sticker > .mm-img, .live-board .mm-sticker > .mm-meme { display: block; width: 100%; max-width: none; max-height: none; border-radius: 6px; }
@@ -30,19 +30,21 @@
 .live-board .mm-giphy:hover { color: var(--ink2); }
 
 .live-board .mm-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; height: 100%; padding: 16px; text-align: center; }
-.live-board .mm-guy { width: 92px; height: 92px; overflow: visible; }
-.mm-guy .mm-body { transform-origin: 60px 100px; animation: mm-bob 4.8s ease-in-out infinite; }
-.mm-guy .mm-shadow { fill: rgba(0, 0, 0, .35); animation: mm-shadow 4.8s ease-in-out infinite; transform-origin: 60px 108px; }
-.mm-guy .mm-brow, .mm-guy .mm-grin { fill: none; stroke: #0b0f17; stroke-width: 3.2; stroke-linecap: round; }
-.mm-guy .mm-eye { fill: #0b0f17; }
-.mm-guy .s0 { stop-color: color-mix(in srgb, var(--cora) 35%, #fff); }
-.mm-guy .s1 { stop-color: color-mix(in srgb, var(--cora) 60%, #1b2230); }
-.mm-guy .mm-shades rect { fill: #05070b; }
-.mm-guy .mm-shades .glint { fill: #fff; opacity: .85; }
-/* deal with it: the shades come down, sit a while, go back up */
-.mm-guy .mm-shades { animation: mm-shades 4.8s cubic-bezier(.3, .7, .3, 1) infinite; }
-@keyframes mm-shades { 0%, 18% { transform: translateY(-70px); opacity: 0; } 34% { transform: translateY(0); opacity: 1; } 38% { transform: translateY(-3px); } 42%, 82% { transform: translateY(0); opacity: 1; } 96%, 100% { transform: translateY(-70px); opacity: 0; } }
-@keyframes mm-bob { 0%, 100% { transform: translateY(0) rotate(0); } 36% { transform: translateY(1px) rotate(-3deg); } 60% { transform: translateY(-2px) rotate(2deg); } }
-@keyframes mm-shadow { 0%, 100% { transform: scaleX(1); } 60% { transform: scaleX(.9); } }
-@media (prefers-reduced-motion: reduce) { .mm-guy .mm-body, .mm-guy .mm-shades, .mm-guy .mm-shadow { animation: none; } }
 .live-board .mm-empty p { max-width: 280px; margin: 0; color: var(--ink3); font: 400 12px/1.5 var(--ui); }
+/* opened large: a drawn meme or a GIF fills the room it has, keeping its shape */
+.live-board .lb-memes.one .mm-main > .mm-img { width: 100%; height: 100%; object-fit: contain; }
+/* a sticker's x (on hover): off the wall; Clear, top right of the wall (a second click to be sure) */
+.mm-sticker .mm-x { position: absolute; top: 9px; right: 9px; z-index: 2; display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--raise2); box-shadow: inset 0 0 0 1px var(--hair2), 0 4px 10px rgba(0, 0, 0, .5); color: var(--ink2); font: 600 14px/1 var(--ui); opacity: 0; transform: rotate(calc(-1 * var(--tilt, 0deg))) scale(.85); transition: opacity .12s, transform .12s, color .12s, background .12s; }
+.mm-sticker:hover .mm-x { opacity: 1; transform: rotate(calc(-1 * var(--tilt, 0deg))) scale(1); }
+.mm-sticker .mm-x:hover { background: color-mix(in srgb, var(--need) 25%, var(--raise2)); color: #fff; }
+.mm-clear { position: absolute; top: 6px; right: 6px; z-index: 50; height: 22px; padding: 0 9px; border: 0; border-radius: 6px; background: color-mix(in srgb, var(--nav) 80%, transparent); box-shadow: inset 0 0 0 1px var(--hair2); color: var(--ink3); font: 500 11px var(--ui); cursor: pointer; opacity: 0; transition: opacity .15s; backdrop-filter: blur(4px); }
+.mm-wall:hover .mm-clear, .mm-clear.sure { opacity: 1; }
+.mm-clear:hover { color: var(--ink); }
+.mm-clear.sure { color: #ffc9c9; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--need) 55%, transparent); }
+/* the wall, empty: three blank stickers taped up at a slant, faint */
+.live-board .mm-blanks { position: relative; width: 150px; height: 96px; margin-bottom: 6px; }
+.live-board .mm-blanks i { position: absolute; width: 74px; height: 56px; border-radius: 9px; background: color-mix(in srgb, var(--ink) 4%, transparent); box-shadow: inset 0 0 0 1.5px rgba(148, 163, 184, .2), 0 6px 14px rgba(0, 0, 0, .25); }
+.live-board .mm-blanks i::before { content: ''; position: absolute; top: -6px; left: calc(50% - 15px); width: 30px; height: 11px; border-radius: 2px; background: color-mix(in srgb, var(--cora) 22%, rgba(230, 235, 242, .18)); transform: rotate(-4deg); }
+.live-board .mm-blanks i:nth-child(1) { left: 0; top: 18px; transform: rotate(-9deg); }
+.live-board .mm-blanks i:nth-child(2) { left: 44px; top: 0; transform: rotate(5deg); box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--cora) 35%, transparent), 0 6px 14px rgba(0, 0, 0, .25); }
+.live-board .mm-blanks i:nth-child(3) { left: 78px; top: 30px; transform: rotate(-3deg); }

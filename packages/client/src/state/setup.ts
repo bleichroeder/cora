@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { SetupState } from '@cora/shared';
+import { setupFirstRun, type SetupState } from '@cora/shared';
 
 /**
  * Setting Cora up: the checklist from the server, what's being
@@ -15,7 +15,20 @@ type State = {
   /** the checklist was asked for once (got or not): until then the app waits, so a first run doesn't flash the app */
   checked: boolean;
 };
-export const useSetup = create<State>(() => ({ state: null, busy: {}, err: {}, dismissed: false, checked: false }));
+/**
+ * The last check found Cora set up (no first run): the app shows at once next time, while the check (a second or two:
+ * it looks for Claude Code, glab and the rest) runs again behind it. A fresh install, or one missing something it
+ * needs, waits for it.
+ */
+const SET_UP = 'cora.setup.ok';
+const wasSetUp = () => {
+  try {
+    return localStorage.getItem(SET_UP) === '1';
+  } catch {
+    return false;
+  }
+};
+export const useSetup = create<State>(() => ({ state: null, busy: {}, err: {}, dismissed: false, checked: wasSetUp() }));
 
 const post = async (url: string, body: unknown): Promise<{ ok: boolean; error?: string; [k: string]: unknown }> => {
   const r = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
@@ -27,6 +40,13 @@ export async function loadSetup(): Promise<void> {
   const r = await fetch('/api/setup').catch(() => null);
   const state = r?.ok ? ((await r.json().catch(() => null)) as SetupState | null) : null;
   useSetup.setState(state ? { state, checked: true } : { checked: true });
+  if (state)
+    try {
+      if (setupFirstRun(state)) localStorage.removeItem(SET_UP);
+      else localStorage.setItem(SET_UP, '1');
+    } catch {
+      /* it waits next time */
+    }
 }
 
 // after a command opens its window: look again every 5 s for 3 minutes (and whenever Cora comes back to the front)

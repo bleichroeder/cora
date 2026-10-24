@@ -140,7 +140,6 @@
 .pal-bg .pal-in kbd, .pal-bg .pal-f kbd { padding: 0; border: 0; background: none; box-shadow: none; color: var(--ink3); font: 500 10.5px var(--code); }
 .pal-bg .pal-busy { color: var(--think); font: 500 11px var(--code); }
 .pal-bg .pal-list { padding: 6px 10px 8px; }
-.pal-bg .pal-list::-webkit-scrollbar-thumb { background: var(--raise2); border-color: var(--nav); }
 .pal-bg .pal-gh { display: flex; align-items: center; gap: 8px; margin: 10px 8px 4px; color: var(--ink4); font: 600 9.5px var(--code); letter-spacing: .16em; }
 .pal-bg .pal-gh::after { content: ''; flex: 1; height: 1px; background: var(--hair); }
 .pal-bg .pal-row { gap: 12px; min-height: 40px; padding: 4px 10px 4px 8px; border-radius: 9px; }
@@ -170,3 +169,12 @@
 .dlg .gl-row .tsum { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
 .dlg .gl-row .gl-lbl { flex: none; max-width: 110px; overflow: hidden; padding: 1px 6px; border-radius: 5px; background: var(--raise2); color: var(--ink3); font: 500 10.5px var(--ui); text-overflow: ellipsis; white-space: nowrap; }
 .dlg .gl-row .gl-when { flex: none; color: var(--ink4); font: 400 10.5px var(--code); }
+
+/* choosing a PIN to lock with */
+.modal.dlg.lk-setup { width: min(440px, calc(100vw - 32px)); }
+.lk-setup .lk-why { margin: 0 0 14px; color: var(--ink3); font: 400 12.5px/1.5 var(--ui); }
+.lk-setup .lk-form { display: flex; flex-wrap: wrap; gap: 8px; }
+.lk-setup .lk-pin { width: 100%; height: 34px; box-sizing: border-box; padding: 0 12px; border: 0; border-radius: 8px; outline: none; background: var(--raise); box-shadow: inset 0 0 0 1px var(--hair2); color: var(--ink); font: 400 14px var(--code); letter-spacing: .3em; }
+.lk-setup .lk-pin:focus { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cora) 50%, transparent); }
+.lk-setup .btn.allow { margin-left: auto; margin-top: 6px; }
+.lk-setup .lk-err { flex-basis: 100%; color: #ffb3b3; font: 500 12px var(--ui); }

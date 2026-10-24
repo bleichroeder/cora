@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { create } from 'zustand';
 import { useWeb } from '../state/web';
-import { browserDockOf, useBoardDock } from '../state/boardDock';
+import { useBrain } from '../state/store';
 import { useTools } from '../state/tools';
 import { BROWSER_ID, browserGroup, panelGroup, partitionOfGroup, profileOfGroup, useBrowserProfile, useBrowserSettings, usePanelProfile } from '../state/browser';
 import { openSettings } from './SettingsModal';
@@ -577,28 +577,8 @@ export function WebPane({ view, sessionId }: { view: React.RefObject<HTMLDivElem
   const panelIn = usePanelIn((p) => p.sid === sessionId);
   const [rect, setRect] = useState<React.CSSProperties>({});
   const [dragging, setDragging] = useState(false);
-  // a Browser panel on the live board: laid over it, following it as it moves and resizes (never moved itself)
-  const dockEl = useBoardDock((d) => browserDockOf(d, sessionId));
-  const [dockRect, setDockRect] = useState<React.CSSProperties | null>(null);
-  useLayoutEffect(() => {
-    const box = dockEl?.closest('.focus') as HTMLElement | null;
-    if (!dockEl || !box) return void setDockRect(null);
-    let raf = 0;
-    let last = '';
-    const follow = () => {
-      const r = dockEl.getBoundingClientRect();
-      const b = box.getBoundingClientRect();
-      const at = { left: r.left - b.left - box.clientLeft, top: r.top - b.top - box.clientTop, width: r.width, height: r.height };
-      const k = `${at.left},${at.top},${at.width},${at.height}`;
-      if (k !== last) {
-        last = k;
-        setDockRect(at);
-      }
-      raf = requestAnimationFrame(follow);
-    };
-    follow();
-    return () => cancelAnimationFrame(raf);
-  }, [dockEl]);
+  // over the Board (3D off): a drawer, sliding over it, never pushing it aside
+  const over = useBrain((st) => st.prefs.scene3d === false);
 
   // docked on the right of the scene area (all of it at full split); layout offsets, not bounding rects (the view
   // zooms in on each session switch)
@@ -646,8 +626,8 @@ export function WebPane({ view, sessionId }: { view: React.RefObject<HTMLDivElem
   };
 
   return (
-    <div className={`web-pane${shown ? '' : ' hidden'}${web.wide ? ' wide' : ''}${dragging ? ' dragging' : ''}${dockEl ? ' docked' : ''}`} style={web.wide ? { inset: 0 } : dockEl ? (dockRect ?? { display: 'none' }) : rect}>
-      {!web.wide && !dockEl ? (
+    <div className={`web-pane${shown ? '' : ' hidden'}${web.wide ? ' wide' : ''}${dragging ? ' dragging' : ''}${over && !web.wide ? ' over' : ''}`} style={web.wide ? { inset: 0 } : rect}>
+      {!web.wide ? (
         <div
           className="web-resize"
           title="Drag to resize (all the way left fills the scene area; double-click toggles)"

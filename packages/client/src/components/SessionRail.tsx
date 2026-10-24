@@ -15,6 +15,7 @@ import { openPalette } from './Palette';
 import { CiGlyph } from './CiStrip';
 import { ToolsDock } from './Tools';
 import { SecurityBadge } from './SecuritySettings';
+import { lockNow } from '../state/lock';
 import { CoraEye } from './CoraEye';
 import { InboxRow } from './Inbox';
 import { useOrch } from '../state/orchestrator';
@@ -274,6 +275,9 @@ function RailFooter() {
           <span>Settings</span>
         </button>
         <SecurityBadge />
+        <button className="rf-btn rf-lock" title="Lock Cora (Ctrl+Alt+L)" aria-label="Lock Cora" onClick={() => void lockNow()}>
+          <Icon name="Lock" size={14} />
+        </button>
       </div>
       {down && conn !== 'open' ? (
         <span className="rf-conn" title={conn === 'unauthorized' ? 'Not signed in: open the link printed by cora start' : conn === 'connecting' ? 'Connecting to the Cora server' : 'Lost the connection to the Cora server; retrying'}>
