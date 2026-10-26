@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { composerInbox } from './composer';
 import type { OrchMsg, OrchestratorStatus, PendingRequest, SessionInfo, UiCommand } from '@cora/shared';
 import { openTab } from './openTab';
 import { sessionEvents, setHiddenSession, useBrain } from './store';
@@ -177,6 +178,21 @@ export function runUi(cmd: UiCommand): void {
     case 'notify':
       if (!attentive()) desktop?.notify('Cora', cmd.text, '');
       if (st.prefs && useVoice.getState().settings.enabled && !useVoice.getState().settings.muted) void speak(`cora-notify-${Date.now()}`, cmd.text, 600, true);
+      return;    case 'compose': {
+      // what you selected in the IDE: the session in front, the code in its prompt box (you ask the question)
+      if (!st.sessions[cmd.sessionId]) return;
+      st.setFocus(cmd.sessionId);
+      let tries = 0;
+      const put = () => {
+        const take = composerInbox.get(cmd.sessionId);
+        if (take) return take(cmd.text);
+        if (++tries < 20) return void setTimeout(put, 100);
+        // no prompt box (it isn't hosted in Cora): on the clipboard instead
+        void navigator.clipboard?.writeText(cmd.text).catch(() => {});
+        desktop?.notify('Cora', 'Copied your selection: this session takes prompts in its own terminal.', '');
+      };
+      put();
       return;
+    }
   }
 }

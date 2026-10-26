@@ -35,7 +35,7 @@ function google(o: { history?: string[]; threads?: Record<string, string>; searc
     }
     const m = /\/messages\/(\w+)\?/.exec(url);
     if (m) return ok(o.msgs?.[m[1]] ?? msg(m[1]));
-    if (url.endsWith('/drafts')) return ok({ id: 'd1', message: { id: 'dm1' } });
+    if (url.endsWith('/drafts')) return ok({ id: 'd1', message: { id: 'dm1', threadId: '18f2c0aa9' } });
     return { ok: false, status: 404, json: async () => ({ error: { message: 'nope' } }) };
   }) as unknown as typeof fetch;
   return { calls, fetchFn };
@@ -109,6 +109,8 @@ describe('Gmail: your own Google app', () => {
     gm.setConfig({ drafts: true });
     const d = await gm.draft({ replyTo: 'c1', body: 'Sounds good.\nThanks' });
     expect(d).toMatchObject({ id: 'd1', to: 'Ana Ruiz <ana@acme.com>', subject: 'Re: Hi' });
+    // opened by its conversation, in the account's first slot (never /u/<email>/: Google turns that away)
+    expect(d.link).toBe('https://mail.google.com/mail/u/0/#drafts/18f2c0aa9');
     const sent = g.calls.find((c) => c.url.endsWith('/drafts'))!.body;
     expect(sent.message.threadId).toBe('tc1');
     const raw = Buffer.from(sent.message.raw.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString();

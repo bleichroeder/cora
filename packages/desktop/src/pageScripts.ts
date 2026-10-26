@@ -89,7 +89,7 @@ export const FIELD_KEY_JS = `
     cur = el;
     if (!host.isConnected) (doc.body || doc.documentElement).appendChild(host);
     place();
-    say({ k: 'focus', r: rectOf(el) });
+    say({ k: 'focus', r: rectOf(el), v: !!el.value });
   };
   doc.addEventListener('focusin', function (e) { if (isLogin(e.target)) take(e.target); }, true);
   doc.addEventListener('focusout', function (e) {

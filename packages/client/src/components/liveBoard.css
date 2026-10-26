@@ -173,7 +173,7 @@
 .live-board .bd-tb:hover { background: var(--raise); color: var(--ink); }
 .live-board .bd-tb.on { background: color-mix(in srgb, var(--cora) 16%, var(--raise)); color: var(--ink); }
 .live-board .bd-tb.drop { transform: scale(1.12); background: color-mix(in srgb, var(--cora) 30%, var(--raise)); color: var(--ink); }
-.live-board .bd-sep { width: 1px; height: 16px; margin: 0 3px; background: var(--hair2); }
+.live-board .bd-sep { flex: none; width: 1px; height: 16px; margin: 0 3px; background: var(--hair2); }
 
 /* + Panel, readable: a search, then each group as a grid of tiles (its icon in the group's tint, its name, two lines on
    what it shows; on the board already: dimmed and said so), explains to pop out, and the layout's actions */
@@ -232,8 +232,9 @@
   .live-board .bd-ph { gap: 4px; padding-left: 9px; letter-spacing: .08em; }
 }
 /* something the board did (a panel sent to a page, a page a session added): in its bar, with the way there or back */
-.live-board .bd-note { display: inline-flex; align-items: center; gap: 7px; height: 26px; padding: 0 4px 0 9px; border-radius: 7px; background: color-mix(in srgb, var(--cora) 12%, transparent); color: var(--cora-hi); font: 500 11.5px var(--ui); white-space: nowrap; animation: bd-note .25s ease-out; }
+.live-board .bd-note { display: inline-flex; align-items: center; gap: 7px; min-width: 0; height: 26px; padding: 0 4px 0 9px; border-radius: 7px; background: color-mix(in srgb, var(--cora) 12%, transparent); color: var(--cora-hi); font: 500 11.5px var(--ui); white-space: nowrap; animation: bd-note .25s ease-out; }
 .live-board .bd-note > span { max-width: 260px; overflow: hidden; text-overflow: ellipsis; }
+.live-board .bd-note > svg, .live-board .bd-note button { flex: none; }
 .live-board .bd-note button { height: 20px; padding: 0 8px; border: 0; border-radius: 5px; background: color-mix(in srgb, var(--cora) 22%, var(--raise)); color: var(--ink); font: 600 11px var(--ui); cursor: pointer; }
 .live-board .bd-note button:hover { background: color-mix(in srgb, var(--cora) 34%, var(--raise)); }
 @keyframes bd-note { from { opacity: 0; transform: translateX(6px); } }
@@ -247,9 +248,15 @@
 .live-board .bd-menu .bd-name .lb-pop { flex: none; width: auto; padding: 2px 10px; }
 .live-board .bd-menu .bd-mt.yours { color: var(--ink); }
 /* the bar: the pages as named tabs, + for a new page, then + Panel and the Board's own menu */
-.live-board .bd-tabs { display: flex; align-items: center; gap: 2px; min-width: 0; }
-.live-board .bd-tabs > .bd-tabw:not(.add) { flex: 0 1 176px; min-width: 120px; }
-.live-board .bd-tabs .bd-tabw:not(.add) .bd-pg { width: 100%; min-width: 0; justify-content: flex-start; }
+/* narrow, the tabs scroll sideways in their strip (no scrollbar: the wheel, and the page you're on kept in view), a
+   clipped edge fading; ＋ and the rest of the bar never give way. A tab's menu opens outside the strip (which clips) */
+.live-board .bd-tabs { position: relative; flex: 0 1 auto; display: flex; align-items: center; gap: 2px; min-width: 0; }
+.live-board .bd-strip { position: relative; flex: 0 1 auto; display: flex; align-items: center; gap: 2px; min-width: 0; margin: -3px 0; padding: 3px 0; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
+.live-board .bd-strip.fade-l { -webkit-mask-image: linear-gradient(90deg, transparent, #000 18px); mask-image: linear-gradient(90deg, transparent, #000 18px); }
+.live-board .bd-strip.fade-r { -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 18px), transparent); mask-image: linear-gradient(90deg, #000 calc(100% - 18px), transparent); }
+.live-board .bd-strip.fade-l.fade-r { -webkit-mask-image: linear-gradient(90deg, transparent, #000 18px, #000 calc(100% - 18px), transparent); mask-image: linear-gradient(90deg, transparent, #000 18px, #000 calc(100% - 18px), transparent); }
+.live-board .bd-strip > .bd-tabw { flex: 0 1 176px; min-width: 120px; }
+.live-board .bd-strip > .bd-tabw .bd-pg { width: 100%; min-width: 0; justify-content: flex-start; }
 .live-board .bd-tabw { position: relative; flex: none; display: inline-flex; }
 .live-board .bd-sp { flex: 1; }
 .live-board .bd-tb.bd-pg { gap: 6px; padding: 0 4px 0 9px; }
@@ -276,3 +283,11 @@
 .live-board .bd-pg:hover .acts, .live-board .bd-pg .acts.open, .live-board .bd-pg:focus-visible .acts { max-width: 22px; margin-left: 0; opacity: 1; }
 .live-board .bd-pg .act { display: inline-grid; place-items: center; flex: none; width: 20px; height: 20px; border-radius: 5px; color: var(--ink3); }
 .live-board .bd-pg .act:hover { background: var(--raise2); color: var(--ink); }
+/* moving a panel: the Board's own edges as faint strips (drop on one: the full width or height along it); lit when over */
+.live-board .bd-edge { position: absolute; z-index: 4; box-sizing: border-box; border-radius: 6px; background: color-mix(in srgb, var(--cora) 6%, transparent); border: 1px dashed color-mix(in srgb, var(--cora) 30%, transparent); pointer-events: none; transition: background .12s, border-color .12s, box-shadow .12s; animation: bd-edge-in .18s ease-out; }
+.live-board .bd-edge.top { left: 0; right: 0; top: 0; height: calc(var(--edge) - 6px); }
+.live-board .bd-edge.bottom { left: 0; right: 0; bottom: 0; height: calc(var(--edge) - 6px); }
+.live-board .bd-edge.left { top: 0; bottom: 0; left: 0; width: calc(var(--edge) - 6px); }
+.live-board .bd-edge.right { top: 0; bottom: 0; right: 0; width: calc(var(--edge) - 6px); }
+.live-board .bd-edge.on { background: color-mix(in srgb, var(--cora) 24%, transparent); border: 1px solid var(--cora); box-shadow: 0 0 14px color-mix(in srgb, var(--cora) 40%, transparent); }
+@keyframes bd-edge-in { from { opacity: 0; } }

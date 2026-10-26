@@ -1,4 +1,5 @@
 import { setWakeMuted, useWake } from '../lib/wake/controller';
+import { useCoraLinksDriver, useReachHalo, useWidth } from './OrbReach';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { briefMe, setConsoleOpen, useCoraState, useOrch, type CoraState } from '../state/orchestrator';
 import { sessionEvents, useBrain } from '../state/store';
@@ -184,6 +185,11 @@ export function CoraEye() {
     } else void stopListening();
   };
 
+  // who Cora is reaching, and who's reaching it (its arm through the cards; a ring of a session's colour)
+  useCoraLinksDriver();
+  const cardW = useWidth(card);
+  const halo = useReachHalo();
+
   if (!enabled)
     return (
       <button className="cora-bridge off small" onClick={() => openSettings('orchestrator')} title="The Cora Orchestrator is off: turn it on in Settings">
@@ -226,9 +232,10 @@ export function CoraEye() {
           </button>
         </div>
       ) : null}
-      <div className="cb-orbit">
+      <div className="cb-orbit" style={halo ? ({ ['--reach' as string]: halo } as React.CSSProperties) : undefined}>
+        {orb && halo ? <span className="cb-reach" /> : null}
         <button className="cb-lens" onClick={() => (held.current ? (held.current = false) : toggle())} title={orb ? 'Cora: open its console (hold it, or Ctrl+Space, to talk)' : 'Cora: open its console (hold Ctrl+Space to talk)'}>
-          {orb ? <CoraOrb state={state} size={104} agent={agent} away={control} onHold={holdTalk} glow={card} /> : <CoraLens state={state} size={64} progress={goal?.progress} />}
+          {orb ? <CoraOrb state={state} size={104} agent={agent} away={control} onHold={holdTalk} glow={card} reach="cora" wide={cardW} master /> : <CoraLens state={state} size={64} progress={goal?.progress} />}
         </button>
         <Orbit />
         {/* with the orb: a goal's progress along the sessions' ring, out of the orb's way */}

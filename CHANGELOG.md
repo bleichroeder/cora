@@ -4,6 +4,47 @@ What changed in each release. Cora updates itself; each update's notes are on it
 
 ## Unreleased
 
+## 0.1.8
+
+- **An IDE panel: your own VS Code, in the Board.** + Panel › Tools › IDE runs your installed VS Code (its own web
+  interface, served on this PC only) opened at the session's folder: your extensions, the debugger, git, its terminal.
+  - It wears Cora: a Cora colour theme in your Cora colour, calmer defaults, and its own extensions and settings
+    (your desktop VS Code is untouched).
+  - Claude Code's VS Code extension comes in it, and sessions Cora starts connect to it by themselves (`--ide`): their
+    edits show as diffs there, and they see your selection and VS Code's problems.
+  - Cora and VS Code talk: a Changes row's IDE button (and the diff viewer's Open) shows Claude's change to a file as
+    a diff there; lines Claude wrote get a quiet mark; select some code and "Ask the session about this" puts it in
+    that session's prompt box; the status bar shows the session working there.
+  - It stays as you left it when you switch sessions or Board pages, and full size works too.
+- **Each session's own card**, at the top of the right column as a band in its own glow: its orb (Cora's, in the
+  session's colour, with all its moves; hold it to talk to the session), its branch, ticket, pipeline, context, model
+  and turn around it, what it changed and for how long it's been going under it, and Allow / Deny right there when it
+  asks. The Transcript, Explains and Changes tabs and the terminal and composer below it match: the right side reads
+  as one piece.
+- **Sessions' own voices.** Pick any of your voices on a session's card, or have new sessions each given one from a
+  set you choose (Settings › Voice).
+- **Cora's orb, in charge.** Your sessions ride rings round it as small orbs in their own colours (working ones pulse;
+  one that needs you glows red and comes closer), it's lit from within, and a ripple goes out when it directs one.
+  When Cora works with the session you have open, a small copy of it flies out of its card, circles that session's orb
+  and brings the answer home (and the other way round when a session has news); a session's row glows while they
+  talk.
+- **Send email from a session, on your say-so.** A session can ask for an email to be sent: it waits in Cora for you to
+  change it, Send it, finish it in Gmail, or discard it. Nothing goes without your click (off unless you turn it on:
+  Settings › Gmail).
+- **See what sessions change on the web.** A Jira comment, a moved ticket, a merge request's note: Cora loads it in
+  the session's browser at the change (in the background, or shown), notes it on the session's card, and lists it in
+  Changes under On the web.
+- **Links between notes:** `[[a note's title]]` links to it (typing `[[` offers your notes), a note shows what links
+  to it, and renaming one carries the links along.
+- **Each session's journal**, a markdown file in Documents\Cora\Journal: its milestones and wrap-up as it works, and
+  the Board's Journal panel to watch it.
+- **Deep freeze.** After the PC restarts, Cora offers to bring back the sessions and terminals that were open.
+- **The Board's bar** never runs its page tabs under its controls: narrow, they scroll in their own strip. The
+  timeline, turned off, is gone (Settings › Scene › Timeline brings it back).
+- **1Password** answers at once and stops suggesting over a page it just filled. Gmail drafts open, signed in as the
+  profile your Gmail is on.
+- A session's orb and card no longer show a finished command as still running after a restart. Packages updated.
+
 ## 0.1.7
 
 - **Lockdown.** Lock Cora behind a PIN when you step away: the lock button beside Settings, Ctrl+Alt+L, the tray, or

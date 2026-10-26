@@ -37,6 +37,8 @@ export const OPEN_TAB_TOOL = 'mcp__cora__open_tab';
 export const SPOTLIGHT_TOOL = 'mcp__cora__spotlight';
 /** a session lays out a page of the Board for what it's doing now (when the user lets it) */
 export const BOARD_TOOL = 'mcp__cora__board';
+/** a session adds to its journal (a milestone, its wrap-up) */
+export const JOURNAL_TOOL = 'mcp__cora__journal';
 /** Says a short spoken summary to the user (voice "summaries" reading mode). */
 export const SPEAK_TOOL = 'mcp__cora__speak';
 /** Which of the user's environments (their VPNs) is reachable right now: read-only, for every session. */

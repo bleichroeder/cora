@@ -1,4 +1,6 @@
 import { applyJira } from './jiraWatch';
+import { useMailOutbox } from '../components/MailOutbox';
+import { onWebChanges } from './webChanges';
 import { memePosted } from '../components/board/memeNews';
 import { applyInbox } from './inbox';
 import { create } from 'zustand';
@@ -54,6 +56,7 @@ function open() {
       }
       case 'events':
         s.applyEvents(msg.events);
+        onWebChanges(msg.events);
         break;
       case 'session':
         s.upsertSession(msg.session);
@@ -72,6 +75,9 @@ function open() {
         break;
       case 'deploys':
         useDeploys.getState().apply(msg);
+        break;
+      case 'mailOutbox':
+        useMailOutbox.getState().apply(msg);
         break;
       case 'notes':
         useNotes.getState().apply(msg);

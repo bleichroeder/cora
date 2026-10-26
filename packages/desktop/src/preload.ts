@@ -18,7 +18,7 @@ contextBridge.exposeInMainWorld('coraDesktop', {
   opSearch: (q: string) => ipcRenderer.invoke('ab:op-search', { q: String(q) }),
   opFill: (from: number, id: string, anySite = false) => ipcRenderer.invoke('ab:op-fill', { from, id: String(id), anySite: anySite === true }),
   opPrefs: (p: { on: boolean; otp: boolean; tools: boolean }) => ipcRenderer.send('ab:op-prefs', p),
-  onOpField: (cb: (m: { from: number; k: 'focus' | 'blur' | 'open'; r?: { x: number; y: number; w: number; h: number }; unlocked: boolean }) => void) => {
+  onOpField: (cb: (m: { from: number; k: 'focus' | 'blur' | 'open'; r?: { x: number; y: number; w: number; h: number }; unlocked: boolean; v?: boolean }) => void) => {
     const h = (_e: unknown, m: Parameters<typeof cb>[0]) => cb(m);
     ipcRenderer.on('ab:op-field', h);
     return () => ipcRenderer.removeListener('ab:op-field', h);
@@ -58,6 +58,8 @@ contextBridge.exposeInMainWorld('coraDesktop', {
   openExternal: (url: string) => ipcRenderer.send('ab:open-external', String(url)),
   // restart the app (sessions keep running): installs a waiting update
   restartApp: () => ipcRenderer.send('ab:restart'),
+  // sessions' journals: their folder, in Explorer
+  openJournal: (file?: string) => ipcRenderer.send('ab:open-journal', file == null ? undefined : String(file)),
   // installed Cora: a new version downloaded (restartApp installs it)
   updateReady: () => ipcRenderer.invoke('ab:update-ready') as Promise<string | null>,
   // what this copy is: its version, installed or from source, its Electron and Chromium

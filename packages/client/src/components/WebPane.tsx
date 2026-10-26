@@ -3,7 +3,7 @@ import { create } from 'zustand';
 import { useWeb } from '../state/web';
 import { useBrain } from '../state/store';
 import { useTools } from '../state/tools';
-import { BROWSER_ID, browserGroup, panelGroup, partitionOfGroup, profileOfGroup, useBrowserProfile, useBrowserSettings, usePanelProfile } from '../state/browser';
+import { BROWSER_ID, browserGroup, panelGroup, partitionOfTab, profileOfGroup, useBrowserProfile, useBrowserSettings, usePanelProfile, useSessionProfile, sessionProfile } from '../state/browser';
 import { openSettings } from './SettingsModal';
 import { hostOf, openOpMenu, useOp } from '../state/onepassword';
 import './onepassword.css';
@@ -75,7 +75,7 @@ function Page({ tab, visible, onState, onVisit }: { tab: WebTab; visible: boolea
   const el = useRef<Webview>(null);
   const first = useRef(tab.url); // src is set once; later navigation goes through loadURL
   // its profile's sign-ins, fixed when it's made (a webview can't change them)
-  const partition = useRef(partitionOfGroup(tab.sessionId));
+  const partition = useRef(partitionOfTab(tab));
   const ready = useRef(false);
   const navSeen = useRef(tab.nav);
 
@@ -147,6 +147,8 @@ function BrowserView({ group, shown, keys, buttons, intro }: { group: string; sh
   // whose bookmarks and history: the group's profile (followed as Settings change)
   const loaded = useBrowserSettings((b) => b.loaded);
   useBrowserSettings((b) => b.profiles);
+  // (a session's browser switched to another profile: its pages are made again, signed in as it)
+  useSessionProfile((p) => p.by[group]);
   const profile = profileOfGroup(group);
   const q = profile ? `profile=${encodeURIComponent(profile)}` : '';
   const s = web.sessions[group];
@@ -435,7 +437,8 @@ function BrowserView({ group, shown, keys, buttons, intro }: { group: string; sh
         {web.order
           .filter((id) => loaded && mounted.has(id) && web.tabs[id]?.url)
           .map((id) => (
-            <Page key={id} tab={web.tabs[id]} visible={shown && id === activeId} onState={onState} onVisit={onVisit} />
+            // (a profile switched: each page made again, signed in as it)
+            <Page key={`${id}@${partitionOfTab(web.tabs[id])}`} tab={web.tabs[id]} visible={shown && id === activeId} onState={onState} onVisit={onVisit} />
           ))}
         {active && !active.url ? (
           <div className="web-start">
@@ -577,6 +580,9 @@ export function WebPane({ view, sessionId }: { view: React.RefObject<HTMLDivElem
   const panelIn = usePanelIn((p) => p.sid === sessionId);
   const [rect, setRect] = useState<React.CSSProperties>({});
   const [dragging, setDragging] = useState(false);
+  // your browser profiles: the session's browser can switch who it's signed in as (Settings › Tools brings them in)
+  const profiles = useBrowserSettings((b) => b.profiles);
+  useSessionProfile((p) => p.by[sessionId]);
   // over the Board (3D off): a drawer, sliding over it, never pushing it aside
   const over = useBrain((st) => st.prefs.scene3d === false);
 
@@ -642,6 +648,7 @@ export function WebPane({ view, sessionId }: { view: React.RefObject<HTMLDivElem
         intro="Each session keeps its own tabs. Links you click in the app open here (Ctrl+click uses your usual browser); sign in to a site once and every session's tabs share it."
         buttons={
           <>
+            {profiles.length > 1 ? <ProfileSwitch profiles={profiles} current={sessionProfile(sessionId)} pick={(id) => useSessionProfile.getState().set(sessionId, id)} /> : null}
             <button className="ib" onClick={() => web.setWide(!web.wide)} title={web.wide ? 'Back to the scene area' : 'Use the whole width'}>
               <Icon name={web.wide ? 'Minimize2' : 'Maximize2'} size={13} />
             </button>
@@ -741,7 +748,7 @@ const AVATAR = ['#f472b6', '#38bdf8', '#a78bfa', '#34d399', '#fbbf24', '#fb923c'
 const avatarOf = (id: string) => AVATAR[[...id].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7) % AVATAR.length];
 
 /** Chrome's profile button: who you're browsing as; pick another (its tabs come back as they were). */
-function ProfileSwitch({ profiles, current, pick, groupOf }: { profiles: Array<{ id: string; name: string }>; current: string; pick(id: string): void; groupOf(id: string): string }) {
+function ProfileSwitch({ profiles, current, pick, groupOf }: { profiles: Array<{ id: string; name: string }>; current: string; pick(id: string): void; /** each profile's own tabs (none: one set of tabs, switching who they're signed in as) */ groupOf?(id: string): string }) {
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLSpanElement>(null);
   const me = profiles.find((p) => p.id === current);
@@ -757,7 +764,7 @@ function ProfileSwitch({ profiles, current, pick, groupOf }: { profiles: Array<{
     };
   }, [open]);
   const web = useWeb();
-  const count = (id: string) => web.sessions[groupOf(id)]?.tabs.filter((t) => web.tabs[t]?.url).length ?? 0;
+  const count = (id: string) => (groupOf ? (web.sessions[groupOf(id)]?.tabs.filter((t) => web.tabs[t]?.url).length ?? 0) : 0);
   return (
     <span className="web-prof" ref={box}>
       <button className={`web-prof-b${open ? ' on' : ''}`} title={`${me?.name ?? 'You'}: switch profile`} onClick={() => setOpen(!open)}>

@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { parseScratch, formatScratch, toggleTask } from '@cora/shared';
+import { parseScratch, formatScratch, toggleTask, noteLinks, renameNoteLinks, linkifyNotes } from '@cora/shared';
 import { Notes } from '../src/notes';
 
 const dir = () => join(mkdtempSync(join(tmpdir(), 'cora-notes-')), 'notes');
@@ -144,5 +144,24 @@ describe('notes over HTTP', () => {
     } finally {
       await srv.close();
     }
+  });
+
+  it('links between notes: [[Title]] (not in code), what links here, and a rename carries the links along', () => {
+    expect(noteLinks('see [[Deploy notes]] and [[runbook|the runbook]]; `[[not this]]`\n```\n[[nor this]]\n```\n[[deploy NOTES]]')).toEqual(['Deploy notes', 'runbook']);
+    expect(renameNoteLinks('[[Deploy notes]], [[deploy notes|here]], `[[Deploy notes]]`', 'Deploy notes', 'Deploys')).toBe('[[Deploys]], [[Deploys|here]], `[[Deploy notes]]`');
+    expect(linkifyNotes('go [[Run book|the book]] or [[Deploys]]')).toBe('go [the book](#note:Run%20book) or [Deploys](#note:Deploys)');
+    let now = 1_000;
+    const n = new Notes({ dir: dir(), now: () => (now += 1000) });
+    const deploy = n.create('Deploy notes', '# Dev bumps');
+    const daily = n.create('Daily', 'standup\n- check [[deploy notes]] first\n');
+    n.jot('remember [[Deploy notes|the deploy list]]');
+    expect(n.read(deploy).backlinks).toEqual([
+      { id: daily, title: 'Daily', line: '- check [[deploy notes]] first' },
+      { id: 'scratch', title: 'Scratch', line: 'remember [[Deploy notes|the deploy list]]' },
+    ]);
+    const v = n.read(daily).version;
+    n.rename(deploy, 'Deploys');
+    expect(n.read(daily)).toMatchObject({ text: 'standup\n- check [[Deploys]] first\n', version: v + 1 });
+    expect(n.read(deploy).backlinks?.map((b) => b.id)).toContain(daily);
   });
 });

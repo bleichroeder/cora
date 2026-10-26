@@ -33,6 +33,8 @@ void main(){ vP=position; vec4 mv=modelViewMatrix*vec4(position,1.0); vN=normali
 /** A plasma core with a lit rim. Filaments speed up and brighten with uThink; uAlert shifts it red. */
 export const ORB_FS = /* glsl */ `
 uniform vec3 uColor; uniform float uTime, uThink, uEnergy, uAlert, uVis, uNeural, uDeep;
+// lit from within (Cora's orb: a core, where sessions' are lit on their surface only)
+uniform float uCore;
 uniform vec3 uFireDir[6]; uniform float uFireAge[6];
 varying vec3 vN; varying vec3 vV; varying vec3 vP;
 ${NOISE}
@@ -62,6 +64,9 @@ void main(){
   col+=vec3(0.85,0.95,1.0)*fire*1.6*uNeural;
   col+=base*pow(facing,3.0)*0.3;
   col+=base*uEnergy*0.55;
+  // a light inside it: hot toward its middle, through the fluid (its noise and filaments show against it)
+  col+=mix(base,vec3(1.0),0.4)*pow(facing,2.4)*uCore*(0.45+0.35*(n*0.5+0.5));
+  col+=hot*fil*uCore*0.35;
   gl_FragColor=vec4(col*uVis,1.0);
 }`;
 
@@ -136,6 +141,9 @@ export const FLUID_VS = /* glsl */ `
 uniform float uTime, uThink, uWork, uBusy, uShiver, uLean, uFerro;
 uniform vec3 uTarget;
 uniform vec3 uRipDir[6]; uniform float uRipAge[6]; uniform float uRipAmp[6];
+// reaching (Cora's card and the open session's): the surface drawn out toward uReachDir into one long smooth arm,
+// uReach times its radius long, as wide as the cap whose edge is at cos = uReachW (0: not reaching)
+uniform vec3 uReachDir; uniform float uReach, uReachW;
 varying vec3 vN; varying vec3 vV; varying vec3 vP;
 ${NOISE}
 float disp(vec3 n){
@@ -152,6 +160,7 @@ float disp(vec3 n){
     d+=exp(-pow((th-uRipAge[i]*3.4)/0.22,2.0))*uRipAmp[i]*(1.0-uRipAge[i]/1.2);
   }
   d+=snoise(n*9.0+vec3(t*6.0))*0.05*uShiver;
+  if(uReach>0.0){ float f=smoothstep(uReachW,1.0,dot(n,uReachDir)); d+=uReach*pow(f,0.75); }
   return d;
 }
 vec3 displaced(vec3 p){ vec3 n=normalize(p); return n*(length(p)*(1.0+disp(n))); }

@@ -7,6 +7,7 @@ import { highlight, langOf } from '../lib/highlight';
 import { clock } from '../lib/format';
 import { desktop } from '../lib/desktop';
 import { Icon } from './Icon';
+import { showInIde } from './board/IdePanel';
 import './viewer.css';
 
 type Row = { t: 'c'; o: number; n: number; s: string } | { t: 'p'; d?: string; a?: string; o: number | null; n: number | null };
@@ -48,7 +49,7 @@ function words(oldS: string, newS: string, lang: string | null) {
 const html = (h: string) => ({ dangerouslySetInnerHTML: { __html: h || '&#8203;' } });
 const sig = (h: Hunk) => h.lines.join('\n');
 
-function HunkView({ h, lang, split, fresh, cur, onAsk, href }: { h: Hunk; lang: string | null; split: boolean; fresh: boolean; cur: boolean; onAsk(a: number, b: number): void; href: (line: number) => string }) {
+function HunkView({ h, lang, split, fresh, cur, onAsk, href, onOpen }: { h: Hunk; lang: string | null; split: boolean; fresh: boolean; cur: boolean; onAsk(a: number, b: number): void; href: (line: number) => string; onOpen(e: React.MouseEvent, line: number): void }) {
   const rs = useMemo(() => rows(h), [h]);
   const first = Math.max(1, h.newStart);
   const last = h.newStart + Math.max(0, h.newLines - 1);
@@ -57,7 +58,7 @@ function HunkView({ h, lang, split, fresh, cur, onAsk, href }: { h: Hunk; lang: 
       <div className={`dh-h${cur ? ' cur' : ''}`}>
         <span>@@ −{h.oldStart},{h.oldLines} +{h.newStart},{h.newLines} @@</span>
         <span className="sp" />
-        <a className="dh-b" href={href(first)} title="Open in VS Code at this line">open</a>
+        <a className="dh-b" href={href(first)} onClick={(e) => onOpen(e, first)} title="Open at this line: in the IDE panel (or in your VS Code)">open</a>
         <button className="dh-b" onClick={() => onAsk(first, last)} title="Put a reference to these lines into your prompt">ask Claude about this</button>
       </div>
       {split ? (
@@ -218,6 +219,19 @@ export function DiffView({ sessionId }: { sessionId: string }) {
   const lang = langOf(d.path);
   const rel = relPath(d.path, cwd);
   const href = (line: number) => `vscode://file/${d.path.replace(/\\/g, '/')}:${line}`;
+  // "open": in the IDE panel when one is open on the file's folder (the turn's change as a diff there, or the file at a
+  // line); else your VS Code, as before
+  const openAt = (e: React.MouseEvent, line: number | null) => {
+    e.preventDefault();
+    const span = line == null && d.mode === 'turn' && d.from ? { from: d.from, to: d.to ?? null } : { line: line ?? 1 };
+    void showInIde(d.sessionId, d.path, span).then((ok) => {
+      if (ok) return;
+      // as the link did before (the app hands vscode:// links to VS Code)
+      const a = document.createElement('a');
+      a.href = href(line ?? hunks?.[0]?.newStart ?? 1);
+      a.click();
+    });
+  };
 
   // hunks that weren't there before this render slide in
   const fresh = useMemo(() => {
@@ -325,7 +339,7 @@ export function DiffView({ sessionId }: { sessionId: string }) {
             <button className={`seg-b${split ? ' on' : ''}`} onClick={() => setSplit(true)}>Split</button>
           </div>
           <span className="dv-vr" />
-          <a className="btn ghost" href={href(hunks?.[0]?.newStart ?? 1)} title="Open in VS Code">
+          <a className="btn ghost" href={href(hunks?.[0]?.newStart ?? 1)} onClick={(e) => openAt(e, null)} title={d.mode === 'turn' ? "Open: Claude's change as a diff in the IDE panel (or in your VS Code)" : 'Open: in the IDE panel (or in your VS Code)'}>
             <Icon name="ExternalLink" size={13} /> Open
           </a>
           <button className="btn ghost" onClick={copy} disabled={!hunks?.length}>
@@ -354,7 +368,7 @@ export function DiffView({ sessionId }: { sessionId: string }) {
           ) : !hunks.length ? (
             <div className="dv-empty">No changes{d.mode === 'turn' && d.to == null ? ' (the file is back where it started)' : ''}.</div>
           ) : (
-            hunks.map((h, i) => <HunkView key={`${sig(h)}:${i}`} h={h} lang={lang} split={split} fresh={fresh.has(sig(h))} cur={wide && i === cur} onAsk={(a, b) => void ask(a, b)} href={href} />)
+            hunks.map((h, i) => <HunkView key={`${sig(h)}:${i}`} h={h} lang={lang} split={split} fresh={fresh.has(sig(h))} cur={wide && i === cur} onAsk={(a, b) => void ask(a, b)} href={href} onOpen={openAt} />)
           )}
         </div>
       </div>

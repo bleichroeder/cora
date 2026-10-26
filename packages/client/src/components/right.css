@@ -273,3 +273,44 @@
 .journal .queued .q-tag { flex: none; display: inline-flex; align-items: center; gap: 4px; color: var(--think); font: 600 9.5px var(--code); letter-spacing: .12em; text-transform: uppercase; }
 .journal .queued .q-t { min-width: 0; overflow: hidden; color: var(--ink); font: 400 12.5px/1.45 var(--ui); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; }
 .journal .queued .q-note { color: var(--ink4); font: 400 10.5px var(--code); }
+
+/* a Changes row's "in the IDE" (Claude's change as a diff there), as you come near; says so when no IDE panel is open */
+.ch-f .ch-ide { display: inline-grid; place-items: center; flex: none; min-width: 22px; height: 20px; margin-left: 4px; padding: 0 4px; border-radius: 5px; color: var(--ink4); opacity: 0; transition: opacity .15s; cursor: pointer; }
+.ch-f:hover .ch-ide, .ch-f .ch-ide.miss { opacity: 1; }
+.ch-f .ch-ide:hover { background: var(--raise2); color: var(--ink); }
+.ch-f .ch-ide.miss { color: var(--think); font: 500 10.5px var(--ui); white-space: nowrap; }
+
+/* the bottom band, mirroring the session card's: the Claude status line (on the Transcript), the terminal's bar and
+   the composer, as one band; its top edge straight, its corners curving out and up into the column's sides. It starts
+   at the status line when there is one, else at the terminal's bar */
+.rightcol { --band: var(--raise); }
+.rightcol .activity, .rightcol > .term-pane, .rightcol > .composer { background: var(--band); }
+.rightcol .activity, .rightcol > .term-pane { position: relative; border-top: 1px solid var(--hair2); }
+.rightcol .activity::before, .rightcol .activity::after, .rightcol > .term-pane::before, .rightcol > .term-pane::after { content: ''; position: absolute; bottom: 100%; width: 16px; height: 16px; margin-bottom: 1px; pointer-events: none; }
+.rightcol .activity::before, .rightcol > .term-pane::before { left: 0; background: radial-gradient(circle at 100% 0%, transparent 15px, var(--hair2) 15.5px, var(--hair2) 16px, var(--band) 16.5px); }
+.rightcol .activity::after, .rightcol > .term-pane::after { right: 0; background: radial-gradient(circle at 0% 0%, transparent 15px, var(--hair2) 15.5px, var(--hair2) 16px, var(--band) 16.5px); }
+/* the status line opens the band: the terminal's bar carries on from it */
+.rightcol:has(.rc-pane .activity) > .term-pane { border-top: 0; }
+.rightcol:has(.rc-pane .activity) > .term-pane::before, .rightcol:has(.rc-pane .activity) > .term-pane::after { display: none; }
+/* the terminal's divider, inside the band: the band's colour (clear when the band starts at the terminal); your colour
+   as you come to drag it */
+.rightcol > .drag-row { background: transparent; }
+.rightcol:has(.rc-pane .activity) > .drag-row { background: var(--band); }
+.rightcol > .drag-row:hover { background: var(--cora); }
+/* (its corners stick out above it: the status line doesn't clip, its lines do) */
+.rightcol .activity { overflow: visible; }
+.rightcol .activity .act-row { min-width: 0; overflow: hidden; }
+
+/* (round two) the bands' edges: no hairline along them or round their corners: just the band's colour */
+.rightcol .activity, .rightcol > .term-pane { border-top: 0; }
+.rightcol .activity::before, .rightcol > .term-pane::before { margin-bottom: 0; background: radial-gradient(circle at 100% 0%, transparent 15.5px, var(--band) 16px); }
+.rightcol .activity::after, .rightcol > .term-pane::after { margin-bottom: 0; background: radial-gradient(circle at 0% 0%, transparent 15.5px, var(--band) 16px); }
+/* the terminal's bar, part of the band: no strip or lines of its own; its tabs the same quiet caps as the column's
+   (the open one underlined in your colour) */
+.rightcol > .term-pane .term-h { height: 34px; padding: 0 8px 0 14px; border: 0; background: none; }
+.rightcol > .term-pane .term-tabs { gap: 16px; align-self: stretch; align-items: stretch; }
+.rightcol > .term-pane .term-tab { position: relative; height: auto; padding: 0; gap: 6px; border: 0; border-radius: 0; background: none; box-shadow: none; color: var(--ink4); font: 600 9.5px var(--code); letter-spacing: .18em; text-transform: uppercase; }
+.rightcol > .term-pane .term-tab:hover { background: none; color: var(--ink2); }
+.rightcol > .term-pane .term-tab.on { background: none; box-shadow: none; color: var(--ink); }
+.rightcol > .term-pane .term-tab.on::after { content: ''; position: absolute; left: 0; right: 0; bottom: 4px; height: 2px; border-radius: 2px; background: var(--cora); }
+.rightcol > .term-pane .term-tab .tt-t { font-weight: 600; }

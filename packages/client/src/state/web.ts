@@ -12,7 +12,7 @@ const load = () => {
 
 type Actions = {
   /** Open a link in the session's browser (its tab if already open there, else a new one). */
-  open(sid: string, url: string, o?: { after?: string; background?: boolean; reload?: boolean }): void;
+  open(sid: string, url: string, o?: { after?: string; background?: boolean; reload?: boolean; profile?: string }): void;
   newTab(sid: string, url?: string, o?: { after?: string; background?: boolean }): void;
   closeTab(id: string): void;
   /** a tab dragged to another place in its strip */

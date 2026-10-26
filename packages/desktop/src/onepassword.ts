@@ -55,7 +55,10 @@ export function parseItem(json: string): { username?: string; password?: string;
   return { ...(typeof username === 'string' && username ? { username } : {}), ...(typeof password === 'string' && password ? { password } : {}), ...(typeof totp === 'string' && totp ? { totp } : {}) };
 }
 
+/** The list of logins (titles, usernames, sites: never a secret) is fresh this long; after it, the kept one answers at
+ * once while a fresh one is asked for behind it, up to STALE_MS (then it waits for the fresh one). */
 const LIST_MS = 60_000;
+const STALE_MS = 30 * 60_000;
 
 /** 1Password's command line stays unlocked this long after it was last used (its own default): no Windows Hello then. */
 const UNLOCKED_MS = 10 * 60_000;
@@ -95,17 +98,30 @@ export class OnePassword {
     }
   }
 
-  /** Your logins (no secrets), kept a minute so pages don't keep waking 1Password. */
+  /**
+   * Your logins (no secrets). Fresh for a minute; then the kept list answers at once while a fresh one is asked for
+   * behind it (1Password's command line takes a second or two), up to half an hour.
+   */
   async logins(): Promise<OpLogin[]> {
-    if (this.list && this.now() - this.list.at < LIST_MS) return this.list.logins;
-    this.listing ??= this.run(['item', 'list', '--categories', 'Login', '--format', 'json'])
+    const age = this.list ? this.now() - this.list.at : Infinity;
+    if (age < LIST_MS) return this.list!.logins;
+    const fresh = (this.listing ??= this.run(['item', 'list', '--categories', 'Login', '--format', 'json'])
       .then((out) => {
         const logins = parseItemList(out);
         this.list = { at: this.now(), logins };
         return logins;
       })
-      .finally(() => (this.listing = null));
-    return this.listing;
+      .finally(() => (this.listing = null)));
+    if (this.list && age < STALE_MS) {
+      fresh.catch(() => {});
+      return this.list.logins;
+    }
+    return fresh;
+  }
+
+  /** Forget the kept list (Cora locked): the next ask goes to 1Password again. */
+  forget(): void {
+    this.list = null;
   }
 
   /** One login's username, password and current code: asked for only when you pick it, never kept. */

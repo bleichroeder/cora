@@ -6,13 +6,15 @@ export type Px = { left: number; top: number; width: number; height: number };
 /** Within this of the board's own edge (or past it), a drop runs the full width or height along that side. */
 export const BOARD_EDGE = 26;
 
-/** How far in from a panel's edge a drop takes that half (at most: a share of a small panel). */
-export const EDGE_BAND = 72;
+/** How far in from a panel's edge a drop takes that half: a share of it, at least this much and at most that. */
+export const EDGE_SHARE = 0.28;
+export const EDGE_MIN = 48;
+export const EDGE_MAX = 180;
 
 /**
  * Where a dragged panel would land, from the pointer: the panel under it (the gaps between panels count as the
- * nearest panel's, so crossing one never flickers to "nothing"), then near an edge (a fixed band, in pixels) that half
- * of it, otherwise a swap. Too small to halve on that side: a swap, said so (`fallback`). At the board's own edges
+ * nearest panel's, so crossing one never flickers to "nothing"), then near an edge (its outer share, within bounds) that
+ * half of it, otherwise a swap. Too small to halve on that side: a swap, said so (`fallback`). At the board's own edges
  * (`board`: its size), the whole side (`edge`).
  */
 export function dropTarget(items: BoardItem[], id: string, x: number, y: number, rectOf: (i: BoardItem) => Px, gap: number, board?: { width: number; height: number }): { id: string; how: Drop; fallback?: boolean; edge?: boolean } | null {
@@ -41,7 +43,8 @@ export function dropTarget(items: BoardItem[], id: string, x: number, y: number,
   }
   if (!best) return null;
   const { o, r } = best;
-  const band = (len: number) => Math.min(EDGE_BAND, len * 0.3);
+  // (a share of the panel, so a tall one's whole top part means its top half; never past a third of it)
+  const band = (len: number) => Math.min(len / 3, Math.max(EDGE_MIN, Math.min(EDGE_MAX, len * EDGE_SHARE)));
   const near: Array<[number, Exclude<Drop, 'swap'>]> = (
     [
       [x - r.left, 'left'],

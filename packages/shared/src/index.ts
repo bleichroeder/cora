@@ -26,3 +26,5 @@ export * from './naming';
 export * from './boardLayouts';
 export * from './lock';
 export * from './orbShaders';
+export * from './webChange';
+export * from './ide';

@@ -28,9 +28,9 @@ const NOT_FOR_YOU = ['CATEGORY_PROMOTIONS', 'CATEGORY_SOCIAL', 'CATEGORY_UPDATES
 const MAX_BODY = 12_000;
 
 export type GoogleClient = { clientId: string; clientSecret: string; projectId?: string; authUri: string; tokenUri: string };
-type Stored = { refresh: string; email: string; historyId?: string; watch?: boolean; rules?: MailRule[]; important?: boolean; drafts?: boolean; draftTo?: string[] };
+type Stored = { refresh: string; email: string; historyId?: string; watch?: boolean; rules?: MailRule[]; important?: boolean; drafts?: boolean; draftTo?: string[]; send?: boolean };
 /** What the user set: what Cora watches for, and who its drafts may go to. */
-export type MailConfig = { rules?: MailRule[]; important?: boolean; drafts?: boolean; draftTo?: string[] };
+export type MailConfig = { rules?: MailRule[]; important?: boolean; drafts?: boolean; draftTo?: string[]; send?: boolean };
 
 export class GmailError extends Error {
   constructor(
@@ -168,6 +168,7 @@ export function checkConfig(c: MailConfig): MailConfig {
   }
   if (c.important !== undefined) out.important = !!c.important;
   if (c.drafts !== undefined) out.drafts = !!c.drafts;
+  if (c.send !== undefined) out.send = !!c.send;
   if (c.draftTo !== undefined) {
     if (!Array.isArray(c.draftTo) || c.draftTo.length > 50) throw new GmailError('bad_config', 'At most 50 addresses or domains.');
     out.draftTo = c.draftTo.map((x) => String(x).trim().toLowerCase()).filter(Boolean);
@@ -238,6 +239,7 @@ export class Gmail {
       important: !!this.stored?.important,
       drafts: !!this.stored?.drafts,
       draftTo: this.stored?.draftTo ?? [],
+      send: !!this.stored?.send,
       watches: this.o.watches?.list() ?? [],
       ...(this.lastError ? { error: this.lastError } : {}),
       ...(this.lastCheck ? { lastCheck: this.lastCheck } : {}),
@@ -289,7 +291,7 @@ export class Gmail {
     if (granted && !granted.includes('gmail.readonly')) throw new GmailError('scope', 'Cora needs permission to read your mail: tick it on the sign-in page.');
     const prof: any = await this.apiWith(j.access_token, '/profile');
     const keep = this.stored ?? this.kept;
-    this.stored = { refresh: j.refresh_token, email: String(prof.emailAddress ?? ''), historyId: String(prof.historyId ?? ''), watch: keep?.watch, rules: keep?.rules, important: keep?.important, drafts: keep?.drafts, draftTo: keep?.draftTo };
+    this.stored = { refresh: j.refresh_token, email: String(prof.emailAddress ?? ''), historyId: String(prof.historyId ?? ''), watch: keep?.watch, rules: keep?.rules, important: keep?.important, drafts: keep?.drafts, draftTo: keep?.draftTo, send: keep?.send };
     this.save();
     this.lastError = undefined;
     this.o.onChange?.();
@@ -407,7 +409,7 @@ export class Gmail {
    * A draft in the user's Gmail. `byUser`: they wrote it themselves (the Inbox's reply), so Cora's own limits on drafts
    * (whether it may write any, and to whom) don't apply (audit B12).
    */
-  async draft(d: { to?: string; cc?: string; subject?: string; body: string; replyTo?: string; byUser?: boolean }): Promise<{ id: string; messageId: string; link: string; to: string; subject: string }> {
+  async draft(d: { to?: string; cc?: string; subject?: string; body: string; replyTo?: string; byUser?: boolean }): Promise<{ id: string; messageId: string; link: string; to: string; subject: string; threadId?: string; inReplyTo?: string; references?: string }> {
     if (!d.byUser && !this.stored?.drafts) throw new GmailError('drafts_off', "The user hasn't let Cora write email drafts (Settings → Gmail → Drafts is off). Tell them; don't try again.");
     let to = d.to?.trim() ?? '';
     let subject = d.subject?.trim() ?? '';
@@ -430,7 +432,33 @@ export class Gmail {
     const raw = b64url(Buffer.from(mime({ to, ...(d.cc ? { cc: d.cc } : {}), subject, body: d.body, ...(inReplyTo ? { inReplyTo } : {}), ...(references ? { references } : {}) }), 'utf8'));
     const r = await this.api('/drafts', { method: 'POST', body: { message: { raw, ...(threadId ? { threadId } : {}) } } });
     const messageId = String(r.message?.id ?? '');
-    return { id: String(r.id), messageId, link: `https://mail.google.com/mail/u/${encodeURIComponent(this.stored?.email ?? '0')}/#drafts?compose=${messageId}`, to, subject };
+    const thread = String(r.message?.threadId ?? '');
+    // the account's first slot (/u/0): Google turns away a link naming the account in its path ("account temporarily
+    // unavailable") in Cora's browser (Settings > Tools > Gmail opens as picks the profile signed in to it). The draft by
+    // its conversation: Gmail's ?compose= wants an id of its own, not the API's (it only opened the Drafts folder)
+    return { id: String(r.id), messageId, link: `https://mail.google.com/mail/u/0/#drafts${/^[0-9a-f]+$/i.test(thread) ? `/${thread}` : ''}`, to, subject, ...(thread ? { threadId: thread } : {}), ...(inReplyTo ? { inReplyTo } : {}), ...(references ? { references } : {}) };
+  }
+
+  /** May sessions ask for an email to be sent (Settings → Gmail)? It still waits for the user's Send. */
+  sendAllowed(): boolean {
+    return !!this.stored?.send;
+  }
+
+  /** Send a draft (the user said Send, in Cora's outbox). */
+  async sendDraft(id: string): Promise<{ id: string; threadId: string }> {
+    const r = await this.api('/drafts/send', { method: 'POST', body: { id } });
+    return { id: String(r.id ?? ''), threadId: String(r.threadId ?? '') };
+  }
+
+  /** A draft as the user changed it (in Cora's outbox, before sending): same thread, same reply headers. */
+  async updateDraft(id: string, d: { to: string; cc?: string; subject: string; body: string; threadId?: string; inReplyTo?: string; references?: string }): Promise<void> {
+    const raw = b64url(Buffer.from(mime({ to: d.to, ...(d.cc ? { cc: d.cc } : {}), subject: d.subject, body: d.body, ...(d.inReplyTo ? { inReplyTo: d.inReplyTo } : {}), ...(d.references ? { references: d.references } : {}) }), 'utf8'));
+    await this.api(`/drafts/${encodeURIComponent(id)}`, { method: 'PUT', body: { id, message: { raw, ...(d.threadId ? { threadId: d.threadId } : {}) } } });
+  }
+
+  /** Delete a draft (the user discarded the email). */
+  async deleteDraft(id: string): Promise<void> {
+    await this.api(`/drafts/${encodeURIComponent(id)}`, { method: 'DELETE' });
   }
 
   /**

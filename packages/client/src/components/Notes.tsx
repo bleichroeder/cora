@@ -166,7 +166,7 @@ export function NotesPane({ visible }: { visible: boolean }) {
             <Icon name="ChevronLeft" size={13} /> All notes
           </button>
         ) : null}
-        {sel === SCRATCH_ID ? <Scratch visible={visible} /> : <NoteEditor key={sel} id={sel} onGone={() => setSel(SCRATCH_ID)} onRedraft={(template, asks) => setFill({ template, note: sel, asks })} />}
+        {sel === SCRATCH_ID ? <Scratch visible={visible} /> : <NoteEditor key={sel} id={sel} onGone={() => setSel(SCRATCH_ID)} onRedraft={(template, asks) => setFill({ template, note: sel, asks })} onOpen={pick} />}
         {fill ? <FillSheet template={fill.template} note={fill.note} asks={fill.asks} onPicked={pick} onClose={() => setFill(null)} /> : null}
       </div>
     </div>
@@ -440,7 +440,10 @@ function JotRow({ j, onDelete }: { j: Jot; onDelete: () => void }) {
 // ---------------------------------------------------------------------------------------------------------------
 
 /** A named note: its title and its text, saved as you type. */
-function NoteEditor({ id, onGone, onRedraft }: { id: string; onGone: () => void; onRedraft: (template: string, asks?: string) => void }) {
+/** A note by its title (any case), for `[[links]]`: its id, or none. */
+const noteByTitle = (title: string) => useNotes.getState().list.find((n) => n.kind !== 'template' && n.title.toLowerCase() === title.trim().toLowerCase())?.id ?? null;
+
+function NoteEditor({ id, onGone, onRedraft, onOpen }: { id: string; onGone: () => void; onRedraft: (template: string, asks?: string) => void; /** open another note (a link to it) */ onOpen: (id: string) => void }) {
   const dirty = useRef(false);
   const drafting = useNotes((s) => !!s.drafting[id]);
   const draftError = useNotes((s) => s.draftError[id]);
@@ -510,6 +513,45 @@ function NoteEditor({ id, onGone, onRedraft }: { id: string; onGone: () => void;
       setDoc({ ...doc, title: t });
     } else if (doc) setTitle(doc.title);
   };
+  const titles = useNotes((s) => s.list);
+  const links = useMemo(
+    () => ({
+      has: (t: string) => !!noteByTitle(t),
+      open: (t: string) => {
+        const found = noteByTitle(t);
+        if (found) return onOpen(found);
+        void notesApi.create(t.trim()).then((r) => r.ok && onOpen(r.v.id));
+      },
+    }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [titles, onOpen],
+  );
+  // typing `[[`: the notes it could link to, under the caret
+  const [ac, setAc] = useState<{ q: string; at: number; x: number; y: number; i: number } | null>(null);
+  const acList = useMemo(() => {
+    if (!ac) return [];
+    const q = ac.q.trim().toLowerCase();
+    const all = titles.filter((n) => n.kind === 'note' && n.id !== id).map((n) => n.title);
+    return [...all.filter((t) => t.toLowerCase().startsWith(q)), ...all.filter((t) => !t.toLowerCase().startsWith(q) && t.toLowerCase().includes(q))].slice(0, 8);
+  }, [ac, titles, id]);
+  const lookForLink = (el: HTMLTextAreaElement) => {
+    const at = el.selectionStart;
+    const m = /\[\[([^[\]|\n]{0,60})$/.exec(el.value.slice(0, at));
+    if (!m || el.selectionEnd !== at) return setAc(null);
+    const c = caretXY(el, at);
+    setAc((cur) => ({ q: m[1], at: at - m[1].length, x: c.x, y: c.y, i: cur && cur.at === at - m[1].length ? cur.i : 0 }));
+  };
+  const takeLink = (title: string) => {
+    const el = ta.current;
+    if (!el || !ac) return;
+    const end = el.selectionStart;
+    const closes = el.value.slice(end, end + 2) === ']]';
+    const next = `${el.value.slice(0, ac.at)}${title}]]${el.value.slice(closes ? end + 2 : end)}`;
+    const caret = ac.at + title.length + 2;
+    change(next);
+    setAc(null);
+    requestAnimationFrame(() => (el.focus(), el.setSelectionRange(caret, caret)));
+  };
   if (err) return <div className="nt-none">{err === 'no such note' ? 'This note is gone.' : err}</div>;
   if (!doc || text == null) return <div className="nt-none">Opening…</div>;
   return (
@@ -577,7 +619,7 @@ function NoteEditor({ id, onGone, onRedraft }: { id: string; onGone: () => void;
       ) : null}
       {reading ? (
         <div className="nt-read" onDoubleClick={() => setReading(false)}>
-          {text.trim() ? <Markdown text={text} onTask={tick} /> : <div className="nt-none">Empty. Double-click to write.</div>}
+          {text.trim() ? <Markdown text={text} onTask={tick} notes={links} /> : <div className="nt-none">Empty. Double-click to write.</div>}
         </div>
       ) : (
         <textarea
@@ -586,14 +628,58 @@ function NoteEditor({ id, onGone, onRedraft }: { id: string; onGone: () => void;
           value={text}
           readOnly={drafting}
           spellCheck
-          placeholder="Write anything. Markdown is fine: - [ ] makes a task (Ctrl+Enter ticks it). It saves as you type."
-          onChange={(e) => change(e.target.value)}
+          placeholder="Write anything. Markdown is fine: - [ ] makes a task (Ctrl+Enter ticks it), [[a note's title]] links to it. It saves as you type."
+          onChange={(e) => (change(e.target.value), lookForLink(e.currentTarget))}
+          onClick={(e) => lookForLink(e.currentTarget)}
+          onBlur={() => setTimeout(() => setAc(null), 150)}
           onKeyDown={(e) => {
+            if (ac && acList.length) {
+              if (e.key === 'ArrowDown' || e.key === 'ArrowUp') return (e.preventDefault(), setAc({ ...ac, i: (ac.i + (e.key === 'ArrowDown' ? 1 : acList.length - 1)) % acList.length }));
+              if (e.key === 'Enter' || e.key === 'Tab') return (e.preventDefault(), takeLink(acList[ac.i] ?? acList[0]));
+              if (e.key === 'Escape') return (e.preventDefault(), setAc(null));
+            }
             if (e.key === 'Enter' && e.ctrlKey) (e.preventDefault(), tickHere(e.currentTarget));
           }}
         />
       )}
+      {ac && acList.length && !reading ? (
+        <div className="nt-ac" style={{ left: ac.x, top: ac.y }}>
+          {acList.map((t, i) => (
+            <button key={t} className={i === ac.i ? 'on' : ''} onMouseDown={(e) => (e.preventDefault(), takeLink(t))}>
+              <Icon name="FileText" size={12} /> {t}
+            </button>
+          ))}
+        </div>
+      ) : null}
+      {doc.backlinks?.length ? (
+        <div className="nt-linked">
+          <span className="nt-linked-h">Linked from</span>
+          {doc.backlinks.map((b) => (
+            <button key={b.id} className="nt-linked-r" onClick={() => onOpen(b.id)} title={`Open “${b.title}”`}>
+              <b>{b.title}</b>
+              <span>{b.line}</span>
+            </button>
+          ))}
+        </div>
+      ) : null}
       {doc.draft && !drafting ? <div className="nt-src">read {doc.draft.read}</div> : null}
     </div>
   );
+}
+
+/** Where the caret at `pos` is drawn in a textarea, relative to its box (a hidden copy with the same text measures it). */
+function caretXY(el: HTMLTextAreaElement, pos: number): { x: number; y: number } {
+  const cs = getComputedStyle(el);
+  const div = document.createElement('div');
+  for (const k of ['boxSizing', 'width', 'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft', 'borderTopWidth', 'borderLeftWidth', 'fontFamily', 'fontSize', 'fontWeight', 'lineHeight', 'letterSpacing', 'tabSize'] as const) div.style[k] = cs[k];
+  Object.assign(div.style, { position: 'absolute', visibility: 'hidden', whiteSpace: 'pre-wrap', wordWrap: 'break-word', overflow: 'hidden', top: '0', left: '-9999px' });
+  div.textContent = el.value.slice(0, pos);
+  const mark = document.createElement('span');
+  mark.textContent = '\u200b';
+  div.appendChild(mark);
+  document.body.appendChild(div);
+  const x = mark.offsetLeft + el.offsetLeft;
+  const y = mark.offsetTop + el.offsetTop - el.scrollTop + parseFloat(cs.lineHeight || '18');
+  div.remove();
+  return { x: Math.min(x, el.offsetLeft + el.clientWidth - 220), y };
 }

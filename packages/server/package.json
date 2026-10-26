@@ -1,6 +1,6 @@
 {
   "name": "@cora/server",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "license": "MIT",
   "private": true,
   "type": "module",
@@ -11,14 +11,14 @@
   "dependencies": {
     "@cora/shared": "*",
     "@fastify/cookie": "^11.0.0",
-    "@fastify/static": "^10.1.6",
+    "@fastify/static": "^10.1.7",
     "@fastify/websocket": "^11.0.0",
     "@lydell/node-pty": "^1.2.0-beta.15",
-    "@modelcontextprotocol/sdk": "^1.32.1",
+    "@modelcontextprotocol/sdk": "^1.32.2",
     "@xterm/headless": "^6.0.0",
     "chokidar": "^4.0.0",
     "diff": "^9.0.0",
-    "fastify": "^5.2.0",
+    "fastify": "^5.12.7",
     "zod": "^3.25.76"
   },
   "devDependencies": {

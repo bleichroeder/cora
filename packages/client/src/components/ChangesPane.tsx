@@ -4,6 +4,10 @@ import { changeTurns, openChanges, relPath, samePath } from '../lib/changes';
 import { clock } from '../lib/format';
 import { Counts } from './DiffView';
 import { Icon } from './Icon';
+import { webChangeText } from '@cora/shared';
+import { webChangeLink } from '../state/webChanges';
+import { useWeb } from '../state/web';
+import { showInIde } from './board/IdePanel';
 
 type GitFile = { path: string; status: string; add: number; del: number; binary?: boolean };
 const STATUS: Record<string, string> = { M: 'modified', A: 'added', D: 'deleted', R: 'renamed', '??': 'new, untracked', AM: 'added', MM: 'modified' };
@@ -14,7 +18,7 @@ export function ChangesPane({ sessionId }: { sessionId: string }) {
   const cwd = useBrain((s) => s.sessions[sessionId]?.cwd);
   const diff = useBrain((s) => s.diff);
   const turns = useMemo(() => changeTurns(sessionEvents(sessionId), cwd), [sessionId, cwd, version]);
-  const [git, setGit] = useState<{ repo: boolean; branch?: string; files: GitFile[] } | null>(null);
+  const [git, setGit] = useState<{ repo: boolean; root?: string; branch?: string; files: GitFile[] } | null>(null);
   const [gitOpen, setGitOpen] = useState(true);
 
   // git status: on open, and a moment after changes land
@@ -36,6 +40,23 @@ export function ChangesPane({ sessionId }: { sessionId: string }) {
   // files counted once however many turns touched them (the tab's count does the same)
   const total = { ...turns.reduce((o, t) => ({ add: o.add + t.add, del: o.del + t.del }), { add: 0, del: 0 }), n: new Set(edited).size };
   const live = turns.at(-1)?.to == null;
+  // "in the IDE": a turn's change to a file as a diff there (or the file); says so when no IDE panel is open
+  const [ideMiss, setIdeMiss] = useState<string | null>(null);
+  const toIde = (e: React.MouseEvent, path: string, span?: { from: number; to: number | null }) => {
+    e.stopPropagation();
+    void showInIde(sessionId, path, span ?? {}).then((ok) => {
+      if (ok) return;
+      setIdeMiss(path);
+      setTimeout(() => setIdeMiss((p) => (p === path ? null : p)), 3500);
+    });
+  };
+  const ideBtn = (path: string, span?: { from: number; to: number | null }) => (
+    <span role="button" tabIndex={-1} className={`ch-ide${ideMiss === path ? ' miss' : ''}`} title={span ? "Claude's change to it, as a diff in the IDE panel" : 'Open it in the IDE panel'} onClick={(e) => toIde(e, path, span)}>
+      {ideMiss === path ? 'open an IDE panel' : <Icon name="Code" size={12} />}
+    </span>
+  );
+  // what it changed on the web (newest first): each opens in its browser, at the change
+  const web = useMemo(() => sessionEvents(sessionId).filter((e) => e.kind === 'tool' && e.phase === 'end' && e.tool?.web).reverse(), [sessionId, version]);
 
   return (
     <div className="changes">
@@ -64,6 +85,27 @@ export function ChangesPane({ sessionId }: { sessionId: string }) {
           </button>
         ) : null}
       </div>
+      {web.length ? (
+        <div className="ch-turn ch-web">
+          <div className="ch-th">
+            <span className="p">On the web</span>
+            <span className="ch-rule" />
+          </div>
+          {web.map((e) => {
+            const url = webChangeLink(e);
+            return (
+              <button key={e.id} className="ch-f" disabled={!url} title={url ?? 'No link to it (or not on one of your sites)'} onClick={() => url && (useWeb.getState().open(sessionId, url, { reload: true }), useWeb.getState().setShown(sessionId, true))}>
+                <span className="fn">
+                  <span className="nm">
+                    <Icon name="Globe" size={11} /> {webChangeText(e.tool!.web!)}
+                  </span>
+                </span>
+                <span className="dsrc">{clock(e.ts)}</span>
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
       {!turns.length ? <div className="ch-empty">No file changes yet in this session. Edits Claude makes show up here as they happen; click a file to see exactly what changed.</div> : null}
       {[...turns].reverse().map((t, i) => (
         <div key={t.key} className="ch-turn">
@@ -82,6 +124,7 @@ export function ChangesPane({ sessionId }: { sessionId: string }) {
                 </span>
                 {f.isNew ? <span className="dsrc new">new</span> : f.edits.length > 1 ? <span className="dsrc">{f.edits.length} edits</span> : null}
                 <Counts add={f.add} del={f.del} />
+                {ideBtn(f.path, { from: t.from, to: t.to ?? null })}
               </button>
             );
           })}
@@ -110,6 +153,7 @@ export function ChangesPane({ sessionId }: { sessionId: string }) {
                     </span>
                     {!byClaude ? <span className="dsrc git" title="Not changed by Claude's edit tools this session: a shell command, a script, or you">other</span> : null}
                     {f.binary ? <span className="dsrc">binary</span> : <Counts add={f.add} del={f.del} />}
+                    {git?.root ? ideBtn(`${git.root.replace(/[\\/]+$/, '')}/${f.path}`) : null}
                   </button>
                 );
               })

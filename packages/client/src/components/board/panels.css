@@ -207,7 +207,7 @@
 .web-pane.docked { border-radius: 0 0 12px 12px; }
 
 /* panels that lay out their own scrolling (a list beside a diff, a pinned input, a terminal, a page): the panel doesn't scroll */
-.live-board .bd-pb:has(> .lb-split, > .lb-notes, > .lb-term, > .lb-browser, > .lb-ctx, > .lb-spot, > .lb-frame, > .lb-exs, > .mm-wall, > .lb-memes),
+.live-board .bd-pb:has(> .lb-split, > .lb-notes, > .lb-term, > .lb-browser, > .lb-ide, > .lb-ctx, > .lb-spot, > .lb-frame, > .lb-exs, > .mm-wall, > .lb-memes),
 .live-board .lb-spot-b:has(> .lb-split, > .lb-notes, > .lb-term, > .lb-browser, > .lb-ctx, > .lb-frame) { overflow: hidden; }
 
 /* the Spotlight: what it shows and why, then the panel itself (fading in as it changes) */
@@ -256,3 +256,31 @@
 .lb-tnone { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; padding: 16px; color: var(--ink4); font: 400 12px var(--ui); text-align: center; }
 .lb-tnone b { color: var(--ink3); font: 600 12.5px var(--ui); }
 .lb-tnone svg { opacity: .6; }
+/* the Journal panel: the session's journal, newest at the bottom; its file and Open above */
+.lb-journal { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.lb-jbar { flex: none; display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 8px 0 12px; border-bottom: 1px solid var(--hair); }
+.lb-jbar .f { flex: 1; min-width: 0; overflow: hidden; color: var(--ink4); font: 400 10.5px var(--code); text-overflow: ellipsis; white-space: nowrap; }
+.lb-jbody { flex: 1; min-height: 0; overflow-y: auto; }
+.lb-jempty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; height: 100%; padding: 16px; color: var(--ink4); font: 400 12px/1.5 var(--ui); text-align: center; }
+.lb-jempty b { color: var(--ink3); font-weight: 600; }
+.lb-jempty span { max-width: 280px; }
+
+/* the IDE panel: VS Code filling it, or how to start it */
+.live-board .bd-pb:has(> .lb-ide) { position: relative; padding: 0; }
+.lb-ide { position: absolute; inset: 0; display: flex; border-radius: 0 0 12px 12px; overflow: hidden; }
+.lb-ide webview, .lb-ide iframe { flex: 1; width: 100%; height: 100%; border: 0; }
+.lb-ide-start { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; height: 100%; padding: 20px; text-align: center; color: var(--ink3); font: 400 12.5px/1.5 var(--ui); }
+.lb-ide-start > svg { color: var(--ink4); }
+.lb-ide-start b { display: inline-flex; align-items: center; gap: 8px; color: var(--ink); font-weight: 600; font-size: 13.5px; }
+.lb-ide-start span { max-width: 420px; }
+.lb-ide-start .lic { color: var(--ink4); font-size: 11.5px; }
+.lb-ide-start a { color: var(--cora); }
+.lb-ide-start .btn { margin-top: 6px; }
+.lb-ide-note { position: absolute; right: 12px; bottom: 30px; padding: 5px 10px; border-radius: 7px; background: var(--raise2); box-shadow: inset 0 0 0 1px var(--hair2), 0 8px 20px rgba(0, 0, 0, .4); color: var(--ink2); font: 500 11.5px var(--ui); pointer-events: none; }
+
+/* the IDE layer: VS Code pages kept alive, each laid over its panel's box (or hidden off to the side) */
+/* (no level of its own: each page sits just over the panel it's laid on, a full-size panel's too) */
+.ide-host { position: fixed; inset: 0; pointer-events: none; }
+.ide-view { position: fixed; display: flex; overflow: hidden; border-radius: 0 0 12px 12px; pointer-events: none; }
+.ide-view.on { pointer-events: auto; }
+.ide-view webview, .ide-view iframe { flex: 1; width: 100%; height: 100%; border: 0; }

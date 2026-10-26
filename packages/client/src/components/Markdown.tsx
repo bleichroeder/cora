@@ -6,6 +6,7 @@ import { jiraLink } from '../lib/jira';
 import { CHIP_TAG, remarkJira } from '../lib/remarkJira';
 import { jiraAvailable, jiraSite, useJira, useKnownKey } from '../state/jira';
 import { JiraChip } from './JiraChip';
+import { linkifyNotes } from '@cora/shared';
 
 /** A link's text, flattened (to tell a bare address, autolinked, from a link with words of its own). */
 const textOf = (c: React.ReactNode): string => (typeof c === 'string' || typeof c === 'number' ? String(c) : Array.isArray(c) ? c.map(textOf).join('') : '');
@@ -14,7 +15,7 @@ const textOf = (c: React.ReactNode): string => (typeof c === 'string' || typeof 
  * GitHub-flavoured markdown. Raw HTML in the source is NOT rendered (react-markdown default). Ticket keys and bare
  * Jira links become chips (not in code); `chips={false}` for a static copy where chips can't work.
  */
-export const Markdown = memo(function Markdown({ text, className = '', chips = true, onTask }: { text: string; className?: string; chips?: boolean; /** task boxes (`- [ ]`) can be ticked: the line (1-based) clicked */ onTask?: (line: number) => void }) {
+export const Markdown = memo(function Markdown({ text, className = '', chips = true, onTask, notes }: { text: string; className?: string; chips?: boolean; /** task boxes (`- [ ]`) can be ticked: the line (1-based) clicked */ onTask?: (line: number) => void; /** `[[Title]]` links between notes: open one, and whether there's a note by that name */ notes?: { open(title: string): void; has(title: string): boolean } }) {
   const known = useKnownKey();
   const site = useJira((st) => jiraSite(st));
   const on = chips && jiraAvailable();
@@ -22,6 +23,15 @@ export const Markdown = memo(function Markdown({ text, className = '', chips = t
   const components = useMemo<Components>(
     () => ({
       a: ({ href, children }) => {
+        if (notes && href?.startsWith('#note:')) {
+          const title = decodeURIComponent(href.slice(6));
+          const has = notes.has(title);
+          return (
+            <a href={href} className={`md-note${has ? '' : ' new'}`} title={has ? `Open “${title}”` : `No note called “${title}” yet: click to make it`} onClick={(e) => (e.preventDefault(), notes.open(title))}>
+              {children}
+            </a>
+          );
+        }
         const j = on && href ? jiraLink(href, site) : null;
         const t = textOf(children).trim();
         if (j && (t === href || t === j.key)) return <JiraChip jref={j} />;
@@ -53,7 +63,7 @@ export const Markdown = memo(function Markdown({ text, className = '', chips = t
       // the element remarkJira turns a key into
       ...({ [CHIP_TAG]: ({ node }: { node?: { properties?: { dataKey?: unknown } } }) => <JiraChip jref={{ key: String(node?.properties?.dataKey ?? '') }} /> } as Components),
     }),
-    [on, site, onTask],
+    [on, site, onTask, notes],
   );
   return (
     <div
@@ -68,7 +78,7 @@ export const Markdown = memo(function Markdown({ text, className = '', chips = t
       }}
     >
       <ReactMarkdown remarkPlugins={plugins as never} components={components}>
-        {text}
+        {notes ? linkifyNotes(text) : text}
       </ReactMarkdown>
     </div>
   );

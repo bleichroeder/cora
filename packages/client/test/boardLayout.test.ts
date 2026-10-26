@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { COLS, DEFAULT_BOARD, LAYOUTS, ROWS, shellsOf, addLayoutPage, duplicatePage, moveName, movePage, movedTo, addPanel, asLayout, fromLayout, namesWithout, crossings, moveMeet, dropEdge, dropOn, keepBoards, lineAt, lines, merge, moveEdge, moveLine, normalize, pageCount, popExplain, removePage, removePanel, sendToPage, shareOut, template, tile, tiles, visible, type BoardItem, type PanelKind } from '../src/lib/boardLayout';
+import { COLS, DEFAULT_BOARD, LAYOUTS, ROWS, shellsOf, addLayoutPage, duplicatePage, moveName, movePage, movedTo, addPanel, asLayout, fromLayout, namesWithout, crossings, moveMeet, dropEdge, dropOn, keepBoards, lineAt, lines, merge, moveEdge, moveLine, normalize, pageCount, popExplain, removePage, removePanel, scrollToShow, sendToPage, shareOut, template, tile, tiles, visible, type BoardItem, type PanelKind } from '../src/lib/boardLayout';
 
 const at = (items: BoardItem[]) => Object.fromEntries(items.map((i) => [i.id, [i.x, i.y, i.w, i.h]]));
 const it_ = (id: string, x: number, y: number, w: number, h: number): BoardItem => ({ id, k: 'agents', x, y, w, h });
@@ -231,5 +231,21 @@ describe("the live board's grid", () => {
     const boards = keepBoards({ gone: { items: [] }, s1: { items: DEFAULT_BOARD } }, 's2', { items: t, page: 1 }, (id) => id !== 'gone');
     expect(Object.keys(boards)).toEqual(['s1', 's2']);
     expect(boards.s2.page).toBe(1);
+  });
+});
+
+describe("the bar's strip of page tabs", () => {
+  it('scrolls only as far as it takes to show a tab whole, clear of the fade', () => {
+    // a 300-wide strip scrolled to 100: 100..400 shows
+    expect(scrollToShow(100, 300, 150, 120, 18)).toBe(100);
+    // cut on the right: brought in so its end clears the fade
+    expect(scrollToShow(100, 300, 350, 120, 18)).toBe(188);
+    // cut on the left: its start clears the fade, but never past the strip's start
+    expect(scrollToShow(100, 300, 60, 120, 18)).toBe(42);
+    expect(scrollToShow(100, 300, 0, 120, 18)).toBe(0);
+  });
+
+  it('a tab wider than the strip shows from its start', () => {
+    expect(scrollToShow(0, 100, 200, 176, 18)).toBe(182);
   });
 });

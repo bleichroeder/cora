@@ -22,6 +22,8 @@ export interface PtyBackend {
   onExit(cb: (id: string, code: number) => void): void;
   /** the server is stopping: end the terminals, or leave them running in the host */
   close(endTerminals: boolean): Promise<void>;
+  /** the terminal host went away (the PC shutting down, or it crashed), taking its terminals with it */
+  readonly lost?: boolean;
 }
 
 class Emitter {
@@ -81,12 +83,14 @@ export class HostBackend extends Emitter implements PtyBackend {
   readonly persistent = true;
   private live = new Set<string>();
   private closing = false;
+  lost = false;
   private constructor(private sock: Socket, readonly restored: HostTerm[], readonly hostPid: number) {
     super();
     for (const t of restored) if (t.alive) this.live.add(t.id);
     // The host going away takes its terminals with it.
     sock.on('close', () => {
       if (this.closing) return;
+      this.lost = true;
       for (const id of this.live) this.exit(id, -1);
       this.live.clear();
     });

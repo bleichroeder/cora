@@ -367,6 +367,13 @@ export function ToolsSection({ server, save }: { server?: Settings | null; save?
             onChange={(on) => void save({ browser: { chrome: on } })}
           />
           {server.browser?.chrome !== false ? <BrowserProfileRows server={server} save={save} /> : null}
+          <Row label="What sessions change on the web" hint="A Jira comment, a moved ticket, a merge request or its notes: load it in the session's browser, at the change (the site highlights it), and note it on the session's card and in Changes.">
+            <select value={server.browser?.webChanges ?? 'tab'} onChange={(e) => void save({ browser: { webChanges: e.target.value as 'tab' | 'show' | 'off' } })}>
+              <option value="tab">Load it in the background</option>
+              <option value="show">Load it and show it</option>
+              <option value="off">Just note it</option>
+            </select>
+          </Row>
         </Group>
       ) : null}
       <Group label="Notes templates">

@@ -78,6 +78,18 @@ export function BrowserProfileRows({ server, save }: { server: Settings; save(p:
           </select>
         </Row>
       ) : null}
+      {mine.length > 1 ? (
+        <Row label="Gmail opens as" hint="The profile signed in to your Gmail: a draft a session wrote (and any Gmail link it opens) opens in a tab signed in as it, whatever profile that browser is on. Google turns away a link to an account the profile isn't signed in to.">
+          <select className="set-input" value={server.browser?.mail ?? ''} onChange={(e) => void put({ mail: e.target.value })}>
+            <option value="">The browser's own profile</option>
+            {mine.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </select>
+        </Row>
+      ) : null}
       {err ? <div className="ny-err">{err}</div> : null}
     </>
   );

@@ -77,7 +77,19 @@ export const setOverMenu = (on: boolean) => void (overMenu = on);
  * remembers it, and suggests the site's logins there when that's on and 1Password is unlocked; left closes a
  * suggestion. `allowed`: a page that may be filled from here (a session's tab, or a Tool when that's on).
  */
-export function onField(m: { from: number; k: 'focus' | 'blur' | 'open'; r?: PageRect; unlocked: boolean }, allowed: boolean): void {
+/** Pages just filled (when): the fill puts the cursor in each field, which mustn't bring the suggestions back over the
+ * page (they covered its Log in button). Until the page goes somewhere else, or a couple of minutes. */
+const filled = new Map<number, { at: number; url: string }>();
+const FILLED_MS = 2 * 60_000;
+const justFilled = (from: number) => {
+  const f = filled.get(from);
+  if (!f) return false;
+  const url = useOp.getState().forms[from]?.url;
+  if (Date.now() - f.at > FILLED_MS || (url && url !== f.url)) return void filled.delete(from), false;
+  return true;
+};
+
+export function onField(m: { from: number; k: 'focus' | 'blur' | 'open'; r?: PageRect; unlocked: boolean; v?: boolean }, allowed: boolean): void {
   const st = useOp.getState();
   if (m.k === 'blur') {
     const field = { ...st.field };
@@ -93,8 +105,8 @@ export function onField(m: { from: number; k: 'focus' | 'blur' | 'open'; r?: Pag
   if (m.r) useOp.setState({ field: { ...st.field, [m.from]: m.r } });
   if (!allowed) return;
   if (m.k === 'open') return openOpMenu(m.from, { ...(m.r ? { at: m.r } : {}) });
-  // focus: suggest, unless a menu you opened is showing
-  if (m.unlocked && st.settings.suggest && !(st.menu && !st.menu.suggest)) openOpMenu(m.from, { ...(m.r ? { at: m.r } : {}), suggest: true });
+  // focus: suggest, unless a menu you opened is showing, the field has something in it, or the page was just filled
+  if (m.unlocked && st.settings.suggest && !m.v && !justFilled(m.from) && !(st.menu && !st.menu.suggest)) openOpMenu(m.from, { ...(m.r ? { at: m.r } : {}), suggest: true });
 }
 
 /** The page's logins (asking 1Password: it may ask you to unlock). Remembers how many, to light the key. */
@@ -104,7 +116,14 @@ export async function loginsFor(from: number): Promise<{ url?: string; logins?: 
   return r;
 }
 export const searchOp = async (q: string) => (await desktop?.opSearch?.(q)) ?? { error: 'not in the desktop app' };
-export const fillOp = async (from: number, id: string, anySite = false) => (await desktop?.opFill?.(from, id, anySite)) ?? { error: 'not in the desktop app' };
+export async function fillOp(from: number, id: string, anySite = false) {
+  const r = (await desktop?.opFill?.(from, id, anySite)) ?? { error: 'not in the desktop app' };
+  if (!('error' in r && r.error)) {
+    filled.set(from, { at: Date.now(), url: useOp.getState().forms[from]?.url ?? '' });
+    closeOpMenu();
+  }
+  return r;
+}
 export const opStatus = async (): Promise<OpStatus | null> => (await desktop?.opStatus?.()) ?? null;
 
 if (desktop?.onLoginForm) {

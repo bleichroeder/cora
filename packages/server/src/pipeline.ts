@@ -23,6 +23,8 @@ export type PipelineOptions = {
   onEvent?: (e: BrainEvent) => void;
   /** a slash command typed in a main session, read from its transcript (a session's ticket) */
   onCommand?: (sessionId: string, c: { id: string; text: string; ts: number }) => void;
+  /** a recap Cora hadn't seen (Claude Code wrote it as you came back) */
+  onRecap?: (sessionId: string, r: { text: string; at: number }) => void;
 };
 
 /** Wires parsers → store → registry → hub. */
@@ -65,7 +67,7 @@ export function createPipeline(store: Store, registry: Registry, hub: Hub, pendi
           meta.transcriptPath = file;
         }
         if (r.meta.recap && info.agentId === 'main') {
-          store.addRecap({ ...r.meta.recap, sessionId: info.sessionId });
+          if (store.addRecap({ ...r.meta.recap, sessionId: info.sessionId })) opts.onRecap?.(info.sessionId, r.meta.recap);
           const cur = store.getSession(info.sessionId)?.recap;
           if (!cur || cur.at < r.meta.recap.at) meta.recap = { text: r.meta.recap.text, at: r.meta.recap.at };
         }

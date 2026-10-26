@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { sessionVoice } from './sessionVoices';
 import { enqueueLine, nextUp, type Line } from './voiceQueue';
 import { DEFAULT_VOICE, type VoiceKeyInfo, type VoiceSettings } from '@cora/shared';
 import { sentenceAt, sentences, speakable } from './speakable';
@@ -136,10 +137,12 @@ export function finishedSpeaking(o: { heard: boolean; lastSpeech: number; starte
 export const coraLine = (id: string, sessionId?: string) => id.startsWith('cora') || (!!sessionId && coraSession(sessionId));
 /** Is what's being read aloud Cora's own (so its lens moves), not a session's? */
 export const coraReading = (r: VoiceState['reading']) => !!r && coraLine(r.id, r.sessionId);
-/** The voice for a line: Cora's own, when it has one and it's Cora speaking; else the sessions' (the server's default). */
+/** The voice for a line: Cora's own, when it has one and it's Cora speaking; else the session's (picked on its card, or given from your set), else the sessions' (the server's default). */
 export function voiceFor(id: string, sessionId?: string): string | undefined {
-  const own = useVoice.getState().settings.coraVoiceId;
-  return own && coraLine(id, sessionId) ? own : undefined;
+  const v = useVoice.getState().settings;
+  if (coraLine(id, sessionId)) return v.coraVoiceId || undefined;
+  // the voice you picked on the session's card, else one given from your set (Settings › Voice), else the sessions' one
+  return sessionId ? sessionVoice(sessionId, v, () => Object.values(useBrain.getState().sessions).filter((s) => s.state !== 'ended').map((s) => s.id))?.id : undefined;
 }
 
 /** A spoken line finished on its own (not stopped): who wants to know (the wake word's follow-up). */

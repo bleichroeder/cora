@@ -21,6 +21,8 @@ export type ToolInfo = {
   resource?: string;
   /** Edit/Write/MultiEdit/NotebookEdit: the file and the hunks the tool changed */
   change?: import('./summarize').FileChange;
+  /** what it changed on the web (a Jira comment, a merge request…): its link, to show it */
+  web?: import('./webChange').WebChange;
   /** a shell command sent to the background: its task id and where its output goes */
   background?: { taskId: string; outputFile?: string };
 };
@@ -137,6 +139,8 @@ export type VoiceSettings = {
   /** Cora's own voice (its console, its notes, its replies), so it sounds unlike your sessions; empty: the same one */
   coraVoiceId?: string;
   coraVoiceName?: string;
+  /** each session its own voice (`each`), from this set (none: they all speak with `voiceId`) */
+  sessionVoices?: { each: boolean; pool: Array<{ id: string; name: string }> };
   /**
    * speaker buttons only; summaries (the short lines Claude writes for you with its `speak` tool, in any session);
    * or full replies (each finished turn's reply in the session you're looking at). Saved 'auto' means 'full'.
@@ -271,6 +275,8 @@ export type Settings = {
   memes?: { mode: import('./memes').MemeMode };
   /** sessions and the Board: whether they may add (and show) a page laid out for what they're doing */
   board?: { pages: import('./boardLayouts').BoardPageMode };
+  /** each session's journal (Documents\\Cora\\Journal): its milestones, its wrap-up, recaps (on unless you turn it off) */
+  journal?: { on: boolean };
   /** the Cora Orchestrator (off by default) */
   orchestrator: import('./orchestrator').OrchestratorSettings;
   /** Jira: watching it for you (off by default) */
@@ -287,7 +293,7 @@ export type Settings = {
    * in, each with its own sign-ins (Cora's Browser switches between them); none: one profile with all of them.
    * `sessions`: the profile sessions' browsers use.
    */
-  browser: { chrome: boolean; profiles?: BrowserProfile[]; sessions?: string };
+  browser: { chrome: boolean; profiles?: BrowserProfile[]; sessions?: string; /** the profile signed in to your Gmail: Gmail links (drafts) open signed in as it */ mail?: string; /** a session changed something on the web (a Jira comment, a merge request): load it in its browser in the background (`tab`, the default), and show it too (`show`), or neither (`off`) */ webChanges?: 'tab' | 'show' | 'off' };
   /** 1Password in Cora's browser: fill logins, one-time codes, in Tools too */
   onepassword: import('./onepassword').OnePasswordSettings;
   /** setting Cora up: the features you skipped, and whether the first run was seen */
@@ -301,6 +307,7 @@ export const DEFAULT_SETTINGS: Settings = {
   autoName: false,
   memes: { mode: 'off' },
   board: { pages: 'show' },
+  journal: { on: true },
   orchestrator: { enabled: false, model: 'opus', speak: true, mandate: { repos: [], deploy: false, slack: [] }, budget: 5_000_000, events: 'important', briefs: 'welcome' },
   jira: { watch: DEFAULT_JIRA_WATCH, ticket: DEFAULT_TICKET_START },
   gitlab: { host: 'gitlab.com', todos: true, start: 'offer' },
@@ -452,6 +459,7 @@ export type ExplainDataMsg = { t: 'explain-data'; sessionId: string; slug: strin
 
 export type ServerMsg =
   | CiMsg
+  | import('./gmail').MailOutboxMsg
   | import('./deploys').DeploysMsg
   | import('./notes').NotesMsg
   | import('./slack').SlackMsg

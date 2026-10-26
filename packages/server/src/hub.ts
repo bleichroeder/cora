@@ -23,6 +23,8 @@ export class Hub {
   jiraSnapshot?: () => JiraMsg;
   /** Cora's Inbox: everything it told you */
   inboxSnapshot?: () => InboxMsg;
+  /** emails sessions asked to send, waiting for you */
+  mailOutboxSnapshot?: () => import('@cora/shared').MailOutboxMsg;
   /** the security check's last report */
   securitySnapshot?: () => SecurityMsg;
   /** the Cora Orchestrator: on or off, running, its approvals */
@@ -60,6 +62,7 @@ export class Hub {
     if (this.slackSnapshot) this.send(sock, this.slackSnapshot());
     if (this.jiraSnapshot) this.send(sock, this.jiraSnapshot());
     if (this.inboxSnapshot) this.send(sock, this.inboxSnapshot());
+    if (this.mailOutboxSnapshot) this.send(sock, this.mailOutboxSnapshot());
     if (this.securitySnapshot) this.send(sock, this.securitySnapshot());
     if (this.orchestratorSnapshot) this.send(sock, this.orchestratorSnapshot());
     if (lastSeq > 0 && current - lastSeq <= MAX_REPLAY && lastSeq <= current) {
@@ -108,6 +111,10 @@ export class Hub {
   }
 
   publishInbox(m: InboxMsg): void {
+    this.broadcast(m);
+  }
+
+  publishMailOutbox(m: import('@cora/shared').MailOutboxMsg): void {
     this.broadcast(m);
   }
 

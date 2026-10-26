@@ -30,7 +30,7 @@ export const MAX_DRAFT_ASKS = 1000;
 
 export type Jot = { id: string; at: number; text: string; /** a session's (its name) */ by?: string; /** yours, taken from a session (its name) */ src?: string };
 
-export type NoteDoc = NoteSummary & { text: string; version: number; jots?: Jot[]; /** the template it was made from */ from?: string; draft?: NoteDraft };
+export type NoteDoc = NoteSummary & { text: string; version: number; jots?: Jot[]; /** the template it was made from */ from?: string; draft?: NoteDraft; /** the notes that link to it (`[[its title]]`) */ backlinks?: Backlink[] };
 
 export type NotesMsg = { t: 'notes'; list: NoteSummary[] };
 
@@ -88,3 +88,43 @@ export const slugOf = (title: string) =>
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
     .slice(0, 60) || 'note';
+
+// ---------------------------------------------------------------------------------------------------------------
+// Links between notes: `[[Title]]`, or `[[Title|what it says]]` (not inside code)
+
+/** A note that links to another, and the line it does it on. */
+export type Backlink = { id: string; title: string; line: string };
+
+const LINK = /\[\[([^[\]|\n]{1,120}?)(?:\|([^[\]\n]{1,120}))?\]\]/g;
+const same = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
+
+/** `f` applied to the text outside code (fenced blocks and `inline code` stay as they are). */
+function outsideCode(text: string, f: (s: string) => string): string {
+  return text
+    .split(/(^```[\s\S]*?^```[^\n]*$|^~~~[\s\S]*?^~~~[^\n]*$)/m)
+    .map((block, i) => (i % 2 ? block : block.split(/(`[^`\n]*`)/).map((s, j) => (j % 2 ? s : f(s))).join('')))
+    .join('');
+}
+
+/** The notes a text links to, by title (each once, as first written). */
+export function noteLinks(text: string): string[] {
+  const out: string[] = [];
+  outsideCode(text, (s) => {
+    for (const m of s.matchAll(LINK)) if (!out.some((t) => same(t, m[1]))) out.push(m[1].trim());
+    return s;
+  });
+  return out;
+}
+
+/** Whether a line links to the note called `title`. */
+export const linksTo = (line: string, title: string) => noteLinks(line).some((t) => same(t, title));
+
+/** Links to the note called `from` made to point at `to` (a renamed note); what they say (`|…`) stays. */
+export function renameNoteLinks(text: string, from: string, to: string): string {
+  return outsideCode(text, (s) => s.replace(LINK, (all, t: string, shown?: string) => (same(t, from) ? `[[${to}${shown ? `|${shown}` : ''}]]` : all)));
+}
+
+/** For showing: each link as a markdown link to `#note:<title>` (what it says, or the title). */
+export function linkifyNotes(text: string): string {
+  return outsideCode(text, (s) => s.replace(LINK, (_all, t: string, shown?: string) => `[${(shown ?? t).trim().replace(/[[\]]/g, '')}](#note:${encodeURIComponent(t.trim())})`));
+}

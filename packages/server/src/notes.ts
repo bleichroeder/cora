@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import { SCRATCH_ID, addedBlock, formatScratch, parseScratch, slugOf, type Jot, type NoteDoc, type NoteDraft, type NoteSummary } from '@cora/shared';
+import { SCRATCH_ID, addedBlock, formatScratch, linksTo, parseScratch, renameNoteLinks, slugOf, type Backlink, type Jot, type NoteDoc, type NoteDraft, type NoteSummary } from '@cora/shared';
 import { DEFAULT_TEMPLATES, fillDate, parseTemplate, stripHints, type Template } from './noteTemplates';
 import { writeFileAtomic } from './fsx';
 
@@ -184,7 +184,22 @@ export class Notes {
     const m = this.meta(id);
     if (o.seen && (m.addedAt ?? 0) > (m.seenAt ?? 0)) (m.seenAt = this.now()), this.saveIndex();
     const text = this.readText(id);
-    return { id, title: m.title, kind: m.template ? 'template' : 'note', pinned: !!m.pinned, updatedAt: this.mtime(id), preview: preview(text), unseen: (m.addedAt ?? 0) > (m.seenAt ?? 0), text, version: m.version, ...(m.from ? { from: m.from } : {}), ...(m.draft ? { draft: m.draft } : {}), ...(m.template ? { fill: parseTemplate(text, m.title).fill } : {}) };
+    return { id, title: m.title, kind: m.template ? 'template' : 'note', pinned: !!m.pinned, updatedAt: this.mtime(id), preview: preview(text), unseen: (m.addedAt ?? 0) > (m.seenAt ?? 0), text, version: m.version, ...(m.from ? { from: m.from } : {}), ...(m.draft ? { draft: m.draft } : {}), ...(m.template ? { fill: parseTemplate(text, m.title).fill } : {}), ...(m.template ? {} : { backlinks: this.backlinks(id) }) };
+  }
+
+  /** The notes (and Scratch's jots) that link to this one, with the line each does it on. */
+  backlinks(id: string): Backlink[] {
+    const title = this.meta(id).title;
+    const out: Backlink[] = [];
+    const clip = (l: string) => (l.trim().length > 160 ? `${l.trim().slice(0, 159)}…` : l.trim());
+    for (const [nid, m] of this.notes()) {
+      if (nid === id) continue;
+      const line = this.readText(nid).split(/\r?\n/).find((l) => linksTo(l, title));
+      if (line) out.push({ id: nid, title: m.title, line: clip(line) });
+    }
+    const jot = this.jots().find((j) => linksTo(j.text, title));
+    if (jot) out.push({ id: SCRATCH_ID, title: 'Scratch', line: clip(jot.text.split(/\r?\n/).find((l) => linksTo(l, title)) ?? jot.text) });
+    return out;
   }
 
   /** Find a note by id or title (any case). */
@@ -222,10 +237,20 @@ export class Notes {
     return { version: m.version, text: t };
   }
 
+  /** A new title; the links to it in the other notes follow (`[[Old]]` → `[[New]]`). */
   rename(id: string, title: string): void {
     const t = title.trim().slice(0, 120);
     if (!t) throw new NoteError('a title, please');
-    this.meta(id).title = t;
+    const m = this.meta(id);
+    const old = m.title;
+    m.title = t;
+    if (old.toLowerCase() !== t.toLowerCase())
+      for (const [nid, o] of this.notes()) {
+        if (nid === id) continue;
+        const text = this.readText(nid);
+        const next = renameNoteLinks(text, old, t);
+        if (next !== text) (writeFileAtomic(this.path(nid), next), o.version++);
+      }
     this.saveIndex();
   }
 

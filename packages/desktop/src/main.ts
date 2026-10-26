@@ -17,7 +17,7 @@ import { ensureServer, liveTerminals, probe, runningText, type ServerHandle } fr
 import { runtimeFor } from './runtime';
 import { startUpdates } from './updates';
 import { saveExplain } from './explainFile';
-import { setupOnePassword } from './opFill';
+import { forgetLogins, setupOnePassword } from './opFill';
 import { setupLockdown } from './lockdown';
 
 const PORT = Number(process.env.CORA_PORT ?? process.env.AGENT_BRAIN_PORT ?? 4317);
@@ -74,6 +74,7 @@ const lockdown = setupLockdown({
     if (locked) {
       hideToolWindows();
       hideCapture();
+      forgetLogins();
       for (const w of popouts) if (!w.isDestroyed()) w.hide();
       // Cora's talk hotkeys: the dashboard turns them back on when it's back
       for (const k of [CORA_HOTKEY, CORA_STANDDOWN]) if (globalShortcut.isRegistered(k)) globalShortcut.unregister(k);
@@ -147,7 +148,8 @@ function createWindow() {
     // no Windows title bar: the app runs to the top, and Windows' own buttons sit over its top-right corner, as tall
     // as the app's top row (40 px, its hairline left showing) on its dark; the rows' empty parts move the window
     titleBarStyle: 'hidden',
-    titleBarOverlay: { color: '#0b0e14', symbolColor: '#a4afbf', height: 39 },
+    // the window's buttons on a clear ground: what's under them (the session card's band, its glow) shows through
+    titleBarOverlay: { color: '#00000000', symbolColor: '#a4afbf', height: 39 },
     // autoplay: voice speaks on its own (a spoken summary right after a restart, before you've clicked anything)
     webPreferences: { preload: join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true, webviewTag: true, autoplayPolicy: 'no-user-gesture-required', backgroundThrottling: false, devTools: DEVTOOLS },
   });
@@ -479,6 +481,16 @@ function wireIpc() {
     if (!win || e.sender !== win.webContents) return { text: '', image: false };
     const text = await clipboard.readText().catch(() => '');
     return { text, image: !text && (await clipboard.has('image/png').catch(() => false)) };
+  });
+  // sessions' journals: Documents\Cora\Journal, opened in Explorer (made first if it isn't there yet)
+  ipcMain.on('ab:open-journal', (e, file: unknown) => {
+    if (!fromOurWindow(e)) return;
+    const dir = join(app.getPath('documents'), 'Cora', 'Journal');
+    mkdirSync(dir, { recursive: true });
+    // one journal: only a markdown file inside that folder
+    const f = typeof file === 'string' ? resolve(file) : null;
+    if (f && f.toLowerCase().startsWith(resolve(dir).toLowerCase() + '\\') && f.toLowerCase().endsWith('.md') && existsSync(f)) void shell.openPath(f);
+    else void shell.openPath(dir);
   });
   ipcMain.on('ab:restart', (e) => {
     if (fromOurWindow(e)) restartKeeping();

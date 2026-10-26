@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { useCoraLinks } from '../lib/coraLinks';
 import { desktop } from '../lib/desktop';
 import type { SessionInfo } from '@cora/shared';
 import { useBrain } from '../state/store';
@@ -53,6 +54,8 @@ function Entry({ s, onMenu, drag, setDrag }: { s: SessionInfo; onMenu(e: React.M
   });
   // started by Cora on a ticket assigned to you: its ring too
   const fromJira = useOrch((st) => st.status?.jiraStarted?.find((r) => r.sessionId === s.id)?.key);
+  // Cora and it talking (either way, open or not): a glow in Cora's colour on its row
+  const reached = useCoraLinks((st) => !!st.links[s.id]);
   const movable = s.state !== 'ended';
   // selected from anywhere (a launch, a toast, the overview): bring it into view in the rail
   const ref = useRef<HTMLButtonElement>(null);
@@ -79,7 +82,7 @@ function Entry({ s, onMenu, drag, setDrag }: { s: SessionInfo; onMenu(e: React.M
       {peek && s.recap && ref.current ? <RecapPeek sessionId={s.id} row={ref.current} /> : null}
       <button
         ref={ref}
-        className={`ses${st}${fresh ? ' fresh' : ''}${speaking ? ' speaking' : ''}${focus === s.id ? ' on' : ''}${byCora || fromJira ? ' cora' : ''}${isDismissed(s) ? ' dismissed' : ''}${drag?.id === s.id ? ' dragging' : ''}${hint}`}
+        className={`ses${st}${fresh ? ' fresh' : ''}${speaking ? ' speaking' : ''}${focus === s.id ? ' on' : ''}${byCora || fromJira ? ' cora' : ''}${isDismissed(s) ? ' dismissed' : ''}${drag?.id === s.id ? ' dragging' : ''}${reached ? ' reached' : ''}${hint}`}
         style={{ ['--sc' as any]: sessionColor(s) }}
         onClick={() => (unpeek(), setFocus(s.id))}
         onContextMenu={(e) => (unpeek(), onMenu(e, s))}

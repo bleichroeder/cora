@@ -24,7 +24,7 @@ describe('open_tab', () => {
     const { sent, call } = setup();
     expect((await call('https://github.com/acme/app/pull/3')).content[0].text).toMatch(/^Opened/);
     expect((await call('https://gitlab.acme.io/team/app/-/merge_requests/9')).content[0].text).toMatch(/^Opened/);
-    expect((await call('https://evil.example/?d=secrets')).content[0].text).toMatch(/Asked the user whether to open evil\.example/);
+    expect((await call('https://evil.example/?d=secrets')).content[0].text).toMatch(/otherwise they're asked first/);
     expect(sent).toEqual([
       { action: 'open_tab', url: 'https://github.com/acme/app/pull/3', known: true, sessionId: 'sess-open-1' },
       { action: 'open_tab', url: 'https://gitlab.acme.io/team/app/-/merge_requests/9', known: true, sessionId: 'sess-open-1' },

@@ -67,7 +67,7 @@ export function GmailSection() {
     const r = await call('POST', '/api/gmail/disconnect');
     if (r.ok) setSt(r.v);
   };
-  const config = async (c: { rules?: MailRule[]; important?: boolean; drafts?: boolean; draftTo?: string[] }) => {
+  const config = async (c: { rules?: MailRule[]; important?: boolean; drafts?: boolean; draftTo?: string[]; send?: boolean }) => {
     setErr(null);
     const r = await call('POST', '/api/gmail/config', c);
     if (r.ok) setSt(r.v);
@@ -235,6 +235,14 @@ export function GmailSection() {
             onChange={(drafts) => void config({ drafts })}
           />
           {st.drafts ? <DraftTo list={st.draftTo} onSave={(draftTo) => config({ draftTo })} /> : null}
+          {st.drafts ? (
+            <Toggle
+              label="Sessions can ask to send"
+              hint="When you ask a session to send an email, it waits in Cora for your Send: change who it's to, the subject or the words first, finish it in Gmail, or discard it. Nothing is ever sent without your click. Off: it stays a draft in Gmail."
+              checked={!!st.send}
+              onChange={(send) => void config({ send })}
+            />
+          ) : null}
         </Group>
       ) : null}
       {err && st?.connected ? <div className="ny-err">{err}</div> : null}

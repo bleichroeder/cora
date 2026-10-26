@@ -157,6 +157,51 @@ export function VoiceSection() {
                   </button>
                 </span>
               </Row>
+              <Row
+                label="Sessions' voices"
+                hint={
+                  v.sessionVoices?.each
+                    ? "A new session is given one of the voices ticked here (the least in use among your open sessions) and keeps it. Any session can have any of your voices: pick it from the voice icon on its card."
+                    : "Every session speaks with the voice above, unless you pick one from the voice icon on its card. Or give each new one its own, so you can tell which one is talking."
+                }
+                wide={!!v.sessionVoices?.each}
+              >
+                <span className="vkey" style={{ flexWrap: 'wrap', gap: 6 }}>
+                  <select
+                    value={v.sessionVoices?.each ? 'each' : 'one'}
+                    onChange={(e) => {
+                      const each = e.target.value === 'each';
+                      const pool = v.sessionVoices?.pool?.length ? v.sessionVoices.pool : [{ id: v.voiceId, name: v.voiceName }];
+                      void save({ sessionVoices: { each, pool } });
+                    }}
+                  >
+                    <option value="one">The same voice for all</option>
+                    <option value="each">Each its own</option>
+                  </select>
+                  {v.sessionVoices?.each
+                    ? (voices?.voices ?? [])
+                        .filter((o) => o.id !== v.coraVoiceId)
+                        .map((o) => {
+                          const pool = v.sessionVoices?.pool ?? [];
+                          const on = pool.some((p) => p.id === o.id);
+                          return (
+                            <button
+                              key={o.id}
+                              className={`btn${on ? ' on' : ' ghost'}`}
+                              title={on ? 'Sessions can have this voice (click to leave it out)' : 'Let sessions have this voice'}
+                              onClick={() => {
+                                const next = on ? pool.filter((p) => p.id !== o.id) : [...pool, { id: o.id, name: o.name }];
+                                if (next.length) void save({ sessionVoices: { each: true, pool: next.slice(0, 12) } });
+                              }}
+                            >
+                              {on ? <Icon name="Check" size={11} /> : null}
+                              {o.name}
+                            </button>
+                          );
+                        })
+                    : null}
+                </span>
+              </Row>
               <Row label={voices?.builtin ? 'Or a voice ID' : 'Voice ID'}>
                 <span className="vkey">
                   <input type="text" placeholder="paste from a voice's page" value={customId} onChange={(e) => setCustomId(e.target.value.trim())} />

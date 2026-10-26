@@ -71,11 +71,11 @@ describe('settings', () => {
   it('hosted sessions get open_tab; explains are written in the reply (no present tool), only when they are on', () => {
     const cfg = loadConfig({ dataDir: mkdtempSync(join(tmpdir(), 'ab-host-')), hookToken: 't', uiToken: 'u' });
     const off = hostedArgs(cfg, { ...DEFAULT_SETTINGS, explains: { ...DEFAULT_SETTINGS.explains, mode: 'off' } });
-    expect(off[off.indexOf('--allowedTools') + 1]).toBe('mcp__cora__open_tab,mcp__cora__spotlight,mcp__cora__board,mcp__cora__environment,mcp__cora__deploys,mcp__cora__notes_list,mcp__cora__notes_search,mcp__cora__notes_read,mcp__cora__notes_add,mcp__cora__slack_find,mcp__cora__slack_read,mcp__cora__slack_send');
+    expect(off[off.indexOf('--allowedTools') + 1]).toBe('mcp__cora__open_tab,mcp__cora__spotlight,mcp__cora__board,mcp__cora__journal,mcp__cora__environment,mcp__cora__deploys,mcp__cora__notes_list,mcp__cora__notes_search,mcp__cora__notes_read,mcp__cora__notes_add,mcp__cora__slack_find,mcp__cora__slack_read,mcp__cora__slack_send');
     expect(readFileSync(off[off.indexOf('--append-system-prompt-file') + 1], 'utf8')).not.toMatch(/cora:explain/);
     const args = hostedArgs(cfg, DEFAULT_SETTINGS);
     // with HTML explains on: live explains too, and editing in their folder (only there in Cora's) with no prompt
-    expect(args[args.indexOf('--allowedTools') + 1]).toBe(`mcp__cora__open_tab,mcp__cora__spotlight,mcp__cora__board,mcp__cora__environment,mcp__cora__deploys,mcp__cora__notes_list,mcp__cora__notes_search,mcp__cora__notes_read,mcp__cora__notes_add,mcp__cora__slack_find,mcp__cora__slack_read,mcp__cora__slack_send,mcp__cora__live_explain,Edit(${ruleFor(join(cfg.dataDir, 'explains'))}/**)`);
+    expect(args[args.indexOf('--allowedTools') + 1]).toBe(`mcp__cora__open_tab,mcp__cora__spotlight,mcp__cora__board,mcp__cora__journal,mcp__cora__environment,mcp__cora__deploys,mcp__cora__notes_list,mcp__cora__notes_search,mcp__cora__notes_read,mcp__cora__notes_add,mcp__cora__slack_find,mcp__cora__slack_read,mcp__cora__slack_send,mcp__cora__live_explain,Edit(${ruleFor(join(cfg.dataDir, 'explains'))}/**)`);
     expect(args.slice(args.indexOf('--add-dir') + 1, args.indexOf('--add-dir') + 3)).toEqual([join(cfg.dataDir, 'attachments'), join(cfg.dataDir, 'explains')]);
     expect(off.slice(off.indexOf('--add-dir') + 1, off.indexOf('--add-dir') + 3)).toEqual([join(cfg.dataDir, 'attachments'), '--mcp-config']);
     const guide = readFileSync(args[args.indexOf('--append-system-prompt-file') + 1], 'utf8');
@@ -272,6 +272,12 @@ describe("the browser's profiles", () => {
     p.update({ browser: { home: 'chrome:Profile 2' } });
     expect(p.get().browser.profiles!.map((x) => x.partition)).toEqual(['persist:web-chrome-default', 'persist:web']);
     expect(() => p.update({ browser: { home: 'edge:Default' } })).toThrow(/one of the profiles/);
+    // the profile your Gmail is on: one of them, or none
+    p.update({ browser: { mail: 'chrome:Profile 2' } });
+    expect(new Prefs(file).get().browser.mail).toBe('chrome:Profile 2');
+    expect(() => p.update({ browser: { mail: 'edge:Default' } })).toThrow(/browser.mail/);
+    p.update({ browser: { mail: '' } });
+    expect(p.get().browser.mail).toBeUndefined();
     // none: as before (one profile, every browser's bookmarks)
     p.update({ browser: { profiles: [] } });
     expect(p.get().browser).toEqual({ chrome: true });

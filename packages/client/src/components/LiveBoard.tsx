@@ -46,7 +46,7 @@ import {
   type SessionBoard,
 } from '../lib/boardLayout';
 import { fitGrid } from '../lib/fitGrid';
-import { dropLabel, dropTarget } from '../lib/boardDrag';
+import { BOARD_EDGE, dropLabel, dropTarget } from '../lib/boardDrag';
 import { liveKey, loadLiveData, useLiveData } from '../state/liveExplains';
 import { explainShim, themeVars } from '../lib/explainShim';
 import { fetchToolDetail } from '../state/ws';
@@ -230,7 +230,7 @@ type Act = {
   result: BoardItem[];
   /** moving: where the pointer is (the chip), and where it would land and what that does */
   at?: { x: number; y: number };
-  land?: { px: { left: number; top: number; width: number; height: number }; label: string; swap?: boolean; edge?: boolean };
+  land?: { px: { left: number; top: number; width: number; height: number }; label: string; swap?: boolean; /** the Board's own edge it goes along */ edge?: 'left' | 'right' | 'top' | 'bottom' };
   /** over a page's tab: it goes to that page */
   toPage?: number;
   /** a line: it can't go further that way */
@@ -445,7 +445,7 @@ export function LiveBoard({ sessionId }: { sessionId: string }) {
           key = k;
           if (on?.edge && on.how !== 'swap') {
             const result = dropEdge(items, it.id, on.how);
-            cur = { id: it.id, mode, preview: items, result, at, land: { px: rect(result.find((o) => o.id === it.id)!), label: dropLabel(on.how, '', false, true), edge: true } };
+            cur = { id: it.id, mode, preview: items, result, at, land: { px: rect(result.find((o) => o.id === it.id)!), label: dropLabel(on.how, '', false, true), edge: on.how } };
           } else if (on) {
             const result = dropOn(items, it.id, on.id, on.how);
             const t = items.find((o) => o.id === on.id)!;
@@ -635,6 +635,13 @@ export function LiveBoard({ sessionId }: { sessionId: string }) {
                     onPointerDown={(e) => start(e, items.find((i) => i.id === c.vs[0].id)!, 'cross', { cross: c })}
                   />
                 ))}
+            {/* moving a panel: the Board's own edges, faintly (drop on one: the full width or height along it); the one
+                you're over lit */}
+            {act?.mode === 'move' && !narrow
+              ? (['top', 'bottom', 'left', 'right'] as const).map((side) => (
+                  <div key={side} className={`bd-edge ${side}${act.land?.edge === side ? ' on' : ''}`} style={{ ['--edge' as string]: `${BOARD_EDGE}px` }} />
+                ))
+              : null}
             {act?.land ? (
               <div className={`bd-land${act.land.swap ? ' swap' : ''}${act.land.edge ? ' edge' : ''}`} style={{ transform: `translate(${act.land.px.left}px, ${act.land.px.top}px)`, width: act.land.px.width, height: act.land.px.height }}>
                 <span>{act.land.label}</span>

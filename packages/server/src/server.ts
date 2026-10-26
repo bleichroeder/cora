@@ -1,8 +1,14 @@
 import { EVENT_ICON, PRESENT_TOOL, iconFor, isShell, summarizeTool, SLACK_SEND_TOOL, TODO_PINGS, todoWhy, type JiraMsg, type OrchestratorStatus } from '@cora/shared';
+import { IdeBridge } from './ideBridge';
+import { Ide } from './ide';
+import { MailOutbox } from './mailOutbox';
 import { GitlabIssues } from './gitlabIssues';
 import { Memes } from './memes';
 import { SessionNames } from './sessionNames';
 import { Lock } from './lock';
+import { Freeze } from './freeze';
+import { Journal, journalDir } from './journal';
+import { displayName, recapText } from '@cora/shared';
 import { LiveExplains } from './liveExplains';
 import { Environments, envLine } from './environments';
 import { homedir } from 'node:os';
@@ -124,6 +130,14 @@ export async function startServer(config: Config, opts: { tail?: boolean; listen
   let orch: OrchestratorManager | undefined;
   /** a simulation's stand-in for Cora's agent (see Running.sim) */
   let simCora: OrchestratorStatus | null = null;
+  // deep freeze: the terminals open, kept current, so they can be brought back after the PC restarts
+  const freeze = new Freeze(config.dbPath === ':memory:' ? null : config.dataDir);
+  // each session's journal (Documents\\Cora\\Journal): its milestones, its wrap-up, recaps
+  const journal = new Journal({ dir: journalDir, dataDir: config.dbPath === ':memory:' ? null : config.dataDir });
+  const journalAdd = (sid: string, kind: 'entry' | 'wrapup' | 'recap', text: string, at?: number) => {
+    const s = store.getSession(sid);
+    return journal.add({ id: sid, name: s ? displayName(s) : sid.slice(0, 8), cwd: s?.cwd ?? '', startedAt: s?.startedAt ?? Date.now(), ...(s?.ticket ? { ticket: `${s.ticket.key}${s.ticket.summary ? ` · ${s.ticket.summary}` : ''}` } : {}) }, kind, text, at);
+  };
   const ptys = new PtyManager({
     audit,
     spawn: opts.spawn,
@@ -132,6 +146,7 @@ export async function startServer(config: Config, opts: { tail?: boolean; listen
     onChange: (list) => {
       hub?.publishTerminals(list);
       orch?.changed();
+      freeze.update(list, !!opts.ptyBackend?.lost);
     },
     onExit: (t) => {
       registry.sessionExited(t.sessionId, Date.now());
@@ -367,6 +382,12 @@ export async function startServer(config: Config, opts: { tail?: boolean; listen
       // Cora's reply to what you wrote it in Slack goes back there
       if (o.isAgent(e.sessionId)) bot?.agentEvent(e);
     },
+    // a fresh recap (one written now, not an old one read from a transcript at start) goes in the session's journal
+    onRecap: (sid, r) => {
+      if (o.isAgent(sid) || prefs.get().journal?.on === false || r.at < Date.now() - 15 * 60_000) return;
+      const text = recapText(r.text);
+      if (text) journalAdd(sid, 'recap', text, r.at);
+    },
     // the orchestrator's own session isn't about a ticket and keeps its name
     onCommand: (sid, c) => void (!o.isAgent(sid) && tickets.consider(sid, c.text, c.ts, c.id)),
     onPrompt: (e) => {
@@ -420,6 +441,12 @@ export async function startServer(config: Config, opts: { tail?: boolean; listen
     },
   }) : undefined;
   if (opts.listen !== false) gmail?.start();
+  // the IDE panel's VS Code: started when a panel asks, stopped with Cora
+  const ideBridge = new IdeBridge();
+  const ide = new Ide({ dataDir: config.dataDir, log: (m) => console.log(`  ide: ${m}`), bridge: { url: `http://127.0.0.1:${config.port}`, token: ideBridge.token } });
+  // emails sessions asked to send, each waiting for your Send (a draft in Gmail meanwhile)
+  const mailOutbox = gmail ? new MailOutbox({ drafts: gmail, file: join(config.dataDir, 'mail-outbox.json'), onChange: () => hub?.publishMailOutbox({ t: 'mailOutbox', drafts: mailOutbox!.list() }) }) : undefined;
+  if (mailOutbox) hub.mailOutboxSnapshot = () => ({ t: 'mailOutbox', drafts: mailOutbox.list() });
   // watching Jira: what the desktop app finds is told to the dashboard (and, held, to Cora)
   const jiraMsg = (f?: JiraFresh): JiraMsg => ({ t: 'jira', status: jira.status(), ...(f ? { events: f.events, ...(f.summary ? { summary: f.summary } : {}) } : {}) });
   const jira: JiraFeed = new JiraFeed({
@@ -522,7 +549,7 @@ export async function startServer(config: Config, opts: { tail?: boolean; listen
     ...(opts.draftRun ? { run: opts.draftRun } : {}),
   });
   if (config.dbPath !== ':memory:' && opts.ci) deploys.start();
-  const app = await buildApp({ config, store, hub, pipeline, pending, ptys, live: liveExplains, registry, prefs, voice, voiceFront, gmail, mailWatches, namer, tickets, jira, environments, deploys, notes, drafts, bot, inbox, ...(opts.claudeSettingsFile ? { claudeSettingsFile: opts.claudeSettingsFile } : {}), ...(opts.setupChecks ? { setupChecks: opts.setupChecks } : {}), onShutdown: opts.onShutdown, ci: () => ci, slack: { slack, outbox, live, cwdOf: (sid) => store.getSession(sid)?.cwd }, security: security ?? undefined, orchestrator: o, gitlabIssues, memes, sessionNames, lock });
+  const app = await buildApp({ config, store, hub, pipeline, pending, ptys, live: liveExplains, registry, prefs, voice, voiceFront, gmail, mailWatches, mailOutbox, ide, ideBridge, namer, tickets, jira, environments, deploys, notes, drafts, bot, inbox, ...(opts.claudeSettingsFile ? { claudeSettingsFile: opts.claudeSettingsFile } : {}), ...(opts.setupChecks ? { setupChecks: opts.setupChecks } : {}), onShutdown: opts.onShutdown, ci: () => ci, slack: { slack, outbox, live, cwdOf: (sid) => store.getSession(sid)?.cwd }, security: security ?? undefined, orchestrator: o, gitlabIssues, memes, sessionNames, lock, freeze, journal: { add: (sid, kind, text) => journalAdd(sid, kind, text), read: (sid) => journal.read(sid) } });
 
   let tailer: Tailer | undefined;
   if (opts.tail !== false) {
@@ -616,6 +643,7 @@ export async function startServer(config: Config, opts: { tail?: boolean; listen
       },
     },
     async close(o) {
+      freeze.flush();
       await ptys.disposeAll(o?.endTerminals ?? false);
       clearInterval(ticker);
       liveExplains.stop();
@@ -624,6 +652,7 @@ export async function startServer(config: Config, opts: { tail?: boolean; listen
       bot?.stop();
       voiceFront?.stop();
       gmail?.stop();
+      ide.stop();
       todos.stop();
       orch?.dispose();
       live.stop();

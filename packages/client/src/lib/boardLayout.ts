@@ -24,6 +24,7 @@ export type PanelKind =
   | 'background'
   | 'terminal'
   | 'browser'
+  | 'ide'
   | 'pipeline'
   | 'deploys'
   | 'ticket'
@@ -34,6 +35,7 @@ export type PanelKind =
   | 'usage'
   | 'recap'
   | 'memes'
+  | 'journal'
   | 'explain';
 export type BoardItem = {
   id: string;
@@ -73,11 +75,11 @@ const OLD_COLS = 12;
 
 /** Each panel's icon (Lucide) in the + Panel menu and its header. */
 export const PANEL_ICON: Record<Exclude<PanelKind, 'explain'>, string> = {
-  spotlight: 'Sparkles', agents: 'Bot', touching: 'Activity', tasks: 'ListChecks', explains: 'FileText', goal: 'Target', memes: 'PartyPopper', recap: 'ScrollText', context: 'Gauge',
+  spotlight: 'Sparkles', agents: 'Bot', touching: 'Activity', tasks: 'ListChecks', explains: 'FileText', goal: 'Target', memes: 'PartyPopper', recap: 'ScrollText', journal: 'BookOpen', context: 'Gauge',
   changes: 'FileDiff', git: 'GitBranch', tests: 'FlaskConical', background: 'Loader',
   pipeline: 'GitPullRequest', deploys: 'Rocket', ticket: 'Ticket',
   needs: 'Hand', mentions: 'AtSign', notes: 'NotebookPen', usage: 'ChartPie', sessions: 'LayoutList',
-  terminal: 'SquareTerminal', browser: 'Globe',
+  terminal: 'SquareTerminal', browser: 'Globe', ide: 'Code',
 };
 
 /** Where a panel sits in the + Panel menu. */
@@ -93,6 +95,7 @@ export const PANELS: Record<Exclude<PanelKind, 'explain'>, { name: string; hint:
   explains: { name: 'Explains', hint: "This session's explains, with previews", group: 'This session' },
   goal: { name: 'Goal', hint: 'What the session was asked, and the latest ask', group: 'This session', size: [10, 8] },
   memes: { name: 'Vibes', hint: "Memes and GIFs the session sticks up about what's happening (turn them on in Settings › Sessions › Vibes)", group: 'This session', size: [8, 12] },
+  journal: { name: 'Journal', hint: "This session's journal: its milestones, its wrap-up, and recaps, as it writes them", group: 'This session', size: [10, 12] },
   recap: { name: 'Recap', hint: "Claude Code's recaps of the session, newest first: where it stands, what's next", group: 'This session', size: [10, 12] },
   context: { name: 'Context', hint: 'How full the context window is, and how fast it fills', group: 'This session', size: [8, 8] },
   changes: { name: 'Changes', hint: 'Files changed this session, with their diffs', group: 'Code', size: [14, 14] },
@@ -109,6 +112,7 @@ export const PANELS: Record<Exclude<PanelKind, 'explain'>, { name: string; hint:
   sessions: { name: 'All sessions', hint: "Every session and what it's doing; click one to go there", group: 'Around you', size: [10, 14] },
   terminal: { name: 'Terminal', hint: "The session's terminal or a shell, live (to watch; type in the terminal pane)", group: 'Tools', size: [14, 14] },
   browser: { name: 'Browser', hint: 'A browser of its own, with its own tabs and profiles', group: 'Tools', size: [14, 16] },
+  ide: { name: 'IDE', hint: "Your VS Code (extensions, debugger, git, its terminal), opened at the session's folder", group: 'Tools', size: [16, 18] },
 };
 
 export const DEFAULT_BOARD: BoardItem[] = [
@@ -668,4 +672,14 @@ export function duplicatePage(all: BoardItem[], sid: string, pg: number, made: n
   const stamp = Date.now().toString(36);
   const copy = visible(all, sid, pg).map(({ term: _t, terms: _ts, ...p }, i) => ({ ...p, id: `${p.k}:${stamp}${i}`, pg: page }));
   return { items: [...all, ...copy], page };
+}
+
+/**
+ * Where the bar's strip of page tabs (`view` wide, scrolled to `scroll`) scrolls to show a tab (at `at`, `size` wide)
+ * whole, `pad` clear of the fade at either edge; it stays put when the tab already shows. Wider than the strip: its start.
+ */
+export function scrollToShow(scroll: number, view: number, at: number, size: number, pad = 0): number {
+  if (at - pad < scroll) return Math.max(0, at - pad);
+  if (at + size + pad > scroll + view) return Math.max(0, Math.min(at - pad, at + size + pad - view));
+  return scroll;
 }

@@ -32,7 +32,7 @@ export function browserProfiles(raw: unknown, cur: BrowserProfile[] | undefined,
   return out;
 }
 
-type Patch = { explains?: Partial<Settings['explains']>; retentionDays?: number; presets?: unknown; voice?: Partial<VoiceSettings>; autoName?: boolean; memes?: { mode?: unknown }; board?: { pages?: unknown }; orchestrator?: Partial<Omit<OrchestratorSettings, 'mandate'>> & { mandate?: Partial<OrchestratorSettings['mandate']> }; jira?: { watch?: Partial<Omit<JiraWatchSettings, 'kinds'>> & { kinds?: Partial<JiraWatchSettings['kinds']> }; ticket?: Partial<TicketStart> }; gitlab?: { host?: string; todos?: unknown; start?: unknown }; slackBot?: Partial<Omit<SlackBotSettings, 'ping' | 'quiet'>> & { ping?: Partial<SlackBotSettings['ping']>; quiet?: Partial<SlackBotSettings['quiet']> }; slack?: { follow?: unknown; sign?: unknown }; browser?: { chrome?: unknown; profiles?: unknown; sessions?: unknown; home?: unknown }; onepassword?: { on?: unknown; otp?: unknown; tools?: unknown; suggest?: unknown }; setup?: { skipped?: unknown; seen?: unknown } };
+type Patch = { explains?: Partial<Settings['explains']>; retentionDays?: number; presets?: unknown; voice?: Partial<VoiceSettings>; autoName?: boolean; memes?: { mode?: unknown }; board?: { pages?: unknown }; journal?: { on?: unknown }; orchestrator?: Partial<Omit<OrchestratorSettings, 'mandate'>> & { mandate?: Partial<OrchestratorSettings['mandate']> }; jira?: { watch?: Partial<Omit<JiraWatchSettings, 'kinds'>> & { kinds?: Partial<JiraWatchSettings['kinds']> }; ticket?: Partial<TicketStart> }; gitlab?: { host?: string; todos?: unknown; start?: unknown }; slackBot?: Partial<Omit<SlackBotSettings, 'ping' | 'quiet'>> & { ping?: Partial<SlackBotSettings['ping']>; quiet?: Partial<SlackBotSettings['quiet']> }; slack?: { follow?: unknown; sign?: unknown }; browser?: { chrome?: unknown; profiles?: unknown; sessions?: unknown; home?: unknown; mail?: unknown; webChanges?: unknown }; onepassword?: { on?: unknown; otp?: unknown; tools?: unknown; suggest?: unknown }; setup?: { skipped?: unknown; seen?: unknown } };
 
 const num = (v: unknown, name: string, lo: number, hi: number) => {
   const n = Number(v);
@@ -55,6 +55,17 @@ function voicePatch(cur: VoiceSettings, v: Partial<VoiceSettings>): VoiceSetting
     next.coraVoiceId = v.coraVoiceId;
   }
   if (v.coraVoiceName !== undefined) next.coraVoiceName = String(v.coraVoiceName).slice(0, 80);
+  // each session its own voice, from a set of yours
+  if (v.sessionVoices !== undefined) {
+    const sv = v.sessionVoices as { each?: unknown; pool?: unknown };
+    if (!sv || typeof sv !== 'object' || typeof sv.each !== 'boolean' || !Array.isArray(sv.pool)) throw new Error('voice.sessionVoices must be { each, pool }');
+    if (sv.pool.length > 12) throw new Error('voice.sessionVoices.pool: at most 12 voices');
+    const pool = sv.pool.map((p: any) => {
+      if (!p || typeof p.id !== 'string' || !/^[A-Za-z0-9]{8,40}$/.test(p.id)) throw new Error('voice.sessionVoices.pool: ElevenLabs voice IDs (letters and digits)');
+      return { id: p.id, name: String(p.name ?? '').slice(0, 80) || 'Voice' };
+    });
+    next.sessionVoices = { each: sv.each, pool };
+  }
   if (v.read !== undefined) {
     // 'auto' is what reading full replies was called before summaries existed
     const read = (v.read as string) === 'auto' ? 'full' : v.read;
@@ -128,7 +139,7 @@ export function migrateVoice(saved: Partial<VoiceSettings> | undefined): Partial
 
 /** Validates a settings patch; throws with a user-facing message on bad values. */
 export function applyPatch(cur: Settings, patch: Patch): Settings {
-  const next: Settings = { explains: { ...cur.explains }, retentionDays: cur.retentionDays, presets: cur.presets ?? [], voice: { ...DEFAULT_VOICE, ...cur.voice }, autoName: cur.autoName ?? false, memes: { mode: cur.memes?.mode ?? 'off' }, board: { pages: cur.board?.pages ?? 'show' }, orchestrator: { ...DEFAULT_ORCHESTRATOR, ...cur.orchestrator, mandate: { ...DEFAULT_MANDATE, ...cur.orchestrator?.mandate } }, jira: { watch: { ...DEFAULT_JIRA_WATCH, ...cur.jira?.watch, kinds: { ...DEFAULT_JIRA_WATCH.kinds, ...cur.jira?.watch?.kinds } }, ticket: { ...DEFAULT_TICKET_START, ...cur.jira?.ticket } }, gitlab: { host: cur.gitlab?.host || DEFAULT_GITLAB_HOST, todos: cur.gitlab?.todos ?? true, start: cur.gitlab?.start ?? 'offer' }, slackBot: { ...DEFAULT_SLACK_BOT, ...cur.slackBot, ping: { ...DEFAULT_SLACK_BOT.ping, ...cur.slackBot?.ping }, quiet: { ...DEFAULT_SLACK_BOT.quiet, ...cur.slackBot?.quiet } }, slack: { follow: cur.slack?.follow ?? [], sign: cur.slack?.sign ?? ':cora:' }, browser: { chrome: cur.browser?.chrome ?? true, ...(cur.browser?.profiles?.length ? { profiles: cur.browser.profiles } : {}), ...(cur.browser?.sessions ? { sessions: cur.browser.sessions } : {}) }, onepassword: { on: cur.onepassword?.on ?? true, otp: cur.onepassword?.otp ?? true, tools: cur.onepassword?.tools ?? true, suggest: cur.onepassword?.suggest ?? true }, setup: { skipped: cur.setup?.skipped ?? [], seen: cur.setup?.seen ?? false } };
+  const next: Settings = { explains: { ...cur.explains }, retentionDays: cur.retentionDays, presets: cur.presets ?? [], voice: { ...DEFAULT_VOICE, ...cur.voice }, autoName: cur.autoName ?? false, memes: { mode: cur.memes?.mode ?? 'off' }, board: { pages: cur.board?.pages ?? 'show' }, journal: { on: cur.journal?.on ?? true }, orchestrator: { ...DEFAULT_ORCHESTRATOR, ...cur.orchestrator, mandate: { ...DEFAULT_MANDATE, ...cur.orchestrator?.mandate } }, jira: { watch: { ...DEFAULT_JIRA_WATCH, ...cur.jira?.watch, kinds: { ...DEFAULT_JIRA_WATCH.kinds, ...cur.jira?.watch?.kinds } }, ticket: { ...DEFAULT_TICKET_START, ...cur.jira?.ticket } }, gitlab: { host: cur.gitlab?.host || DEFAULT_GITLAB_HOST, todos: cur.gitlab?.todos ?? true, start: cur.gitlab?.start ?? 'offer' }, slackBot: { ...DEFAULT_SLACK_BOT, ...cur.slackBot, ping: { ...DEFAULT_SLACK_BOT.ping, ...cur.slackBot?.ping }, quiet: { ...DEFAULT_SLACK_BOT.quiet, ...cur.slackBot?.quiet } }, slack: { follow: cur.slack?.follow ?? [], sign: cur.slack?.sign ?? ':cora:' }, browser: { chrome: cur.browser?.chrome ?? true, ...(cur.browser?.profiles?.length ? { profiles: cur.browser.profiles } : {}), ...(cur.browser?.sessions ? { sessions: cur.browser.sessions } : {}), ...(cur.browser?.mail ? { mail: cur.browser.mail } : {}), ...(cur.browser?.webChanges ? { webChanges: cur.browser.webChanges } : {}) }, onepassword: { on: cur.onepassword?.on ?? true, otp: cur.onepassword?.otp ?? true, tools: cur.onepassword?.tools ?? true, suggest: cur.onepassword?.suggest ?? true }, setup: { skipped: cur.setup?.skipped ?? [], seen: cur.setup?.seen ?? false } };
   const e = patch.explains ?? {};
   if (e.mode !== undefined) {
     if (!MODES.includes(e.mode as any)) throw new Error(`explains.mode must be one of ${MODES.join(', ')}`);
@@ -220,6 +231,10 @@ export function applyPatch(cur: Settings, patch: Patch): Settings {
     if (!(MEME_MODES as readonly unknown[]).includes(patch.memes.mode)) throw new Error(`memes.mode must be one of ${MEME_MODES.join(', ')}`);
     next.memes = { mode: patch.memes.mode as MemeMode };
   }
+  if (patch.journal?.on !== undefined) {
+    if (typeof patch.journal.on !== 'boolean') throw new Error('journal.on must be true or false');
+    next.journal = { on: patch.journal.on };
+  }
   if (patch.board?.pages !== undefined) {
     if (!(BOARD_PAGE_MODES as readonly unknown[]).includes(patch.board.pages)) throw new Error(`board.pages must be one of ${BOARD_PAGE_MODES.join(', ')}`);
     next.board = { pages: patch.board.pages as BoardPageMode };
@@ -299,6 +314,10 @@ export function applyPatch(cur: Settings, patch: Patch): Settings {
     if (typeof v !== 'boolean') throw new Error(`onepassword.${k} must be true or false`);
     next.onepassword = { ...next.onepassword, [k]: v };
   }
+  if (patch.browser?.webChanges !== undefined) {
+    if (!['tab', 'show', 'off'].includes(patch.browser.webChanges as string)) throw new Error('browser.webChanges must be tab, show or off');
+    next.browser = { ...next.browser, webChanges: patch.browser.webChanges as 'tab' | 'show' | 'off' };
+  }
   if (patch.browser?.chrome !== undefined) {
     if (typeof patch.browser.chrome !== 'boolean') throw new Error('browser.chrome must be true or false');
     next.browser = { ...next.browser, chrome: patch.browser.chrome };
@@ -319,6 +338,13 @@ export function applyPatch(cur: Settings, patch: Patch): Settings {
     if (sessions && !kept && patch.browser.sessions !== undefined) throw new Error('browser.sessions must be one of the profiles');
     const { profiles: _p, sessions: _s, ...rest } = next.browser;
     next.browser = { ...rest, ...(profiles.length ? { profiles } : {}), ...(kept ? { sessions } : {}) };
+  }
+  // the profile signed in to your Gmail (Gmail links open signed in as it); '' for none
+  if (patch.browser?.mail !== undefined) {
+    const mail = patch.browser.mail;
+    if (typeof mail !== 'string' || (mail && !(next.browser.profiles ?? []).some((p) => p.id === mail))) throw new Error('browser.mail must be one of the profiles, or empty');
+    const { mail: _m, ...rest } = next.browser;
+    next.browser = { ...rest, ...(mail ? { mail } : {}) };
   }
   // the sign-off on what Cora sends for you: an emoji (:name:) or a few words, or nothing
   if (patch.slack?.sign !== undefined) {
@@ -376,7 +402,7 @@ export class Prefs {
     // 0.1.0's workplace preset (its labels are kept: see hadPreset; Deploys finds a project's prefix on its own)
     const old = (fromFile as { preset?: unknown }).preset;
     if (typeof old === 'string' && old !== 'none') this.hadPreset = old;
-    const parts: Patch = { explains: fromFile.explains, retentionDays: fromFile.retentionDays, presets: fromFile.presets, voice: migrateVoice(fromFile.voice), autoName: fromFile.autoName, memes: fromFile.memes, board: fromFile.board, orchestrator: fromFile.orchestrator, jira: fromFile.jira, slackBot: fromFile.slackBot, slack: fromFile.slack, browser: fromFile.browser, onepassword: fromFile.onepassword, setup: fromFile.setup, gitlab: fromFile.gitlab };
+    const parts: Patch = { explains: fromFile.explains, retentionDays: fromFile.retentionDays, presets: fromFile.presets, voice: migrateVoice(fromFile.voice), autoName: fromFile.autoName, memes: fromFile.memes, board: fromFile.board, journal: fromFile.journal, orchestrator: fromFile.orchestrator, jira: fromFile.jira, slackBot: fromFile.slackBot, slack: fromFile.slack, browser: fromFile.browser, onepassword: fromFile.onepassword, setup: fromFile.setup, gitlab: fromFile.gitlab };
     try {
       this.cur = applyPatch(DEFAULT_SETTINGS, parts);
     } catch {
@@ -425,7 +451,7 @@ export class Prefs {
       }
       delete raw.preset;
       delete raw.deploys;
-      writeFileAtomic(this.file, JSON.stringify({ ...raw, explains: this.cur.explains, retentionDays: this.cur.retentionDays, presets: this.cur.presets, voice: this.cur.voice, autoName: this.cur.autoName, memes: this.cur.memes, board: this.cur.board, orchestrator: this.cur.orchestrator, jira: this.cur.jira, slackBot: this.cur.slackBot, slack: this.cur.slack, browser: this.cur.browser, onepassword: this.cur.onepassword, setup: this.cur.setup, gitlab: this.cur.gitlab }, null, 2) + '\n');
+      writeFileAtomic(this.file, JSON.stringify({ ...raw, explains: this.cur.explains, retentionDays: this.cur.retentionDays, presets: this.cur.presets, voice: this.cur.voice, autoName: this.cur.autoName, memes: this.cur.memes, board: this.cur.board, journal: this.cur.journal, orchestrator: this.cur.orchestrator, jira: this.cur.jira, slackBot: this.cur.slackBot, slack: this.cur.slack, browser: this.cur.browser, onepassword: this.cur.onepassword, setup: this.cur.setup, gitlab: this.cur.gitlab }, null, 2) + '\n');
     }
     return this.cur;
   }

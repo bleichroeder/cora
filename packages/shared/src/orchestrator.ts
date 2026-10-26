@@ -141,7 +141,9 @@ export type UiCommand =
   | { action: 'show_explain'; id: string; sessionId: string }
   | { action: 'notify'; text: string }
   /** a session's open_tab, after its checks: a site Cora knows opens; another waits for the user's OK (audit S15) */
-  | { action: 'open_tab'; url: string; sessionId?: string; known: boolean };
+  | { action: 'open_tab'; url: string; sessionId?: string; known: boolean }
+  /** what you selected in the IDE panel, into that session's prompt box for you to ask about */
+  | { action: 'compose'; sessionId: string; text: string };
 
 export type UiCommandMsg = { t: 'ui'; cmd: UiCommand };
 

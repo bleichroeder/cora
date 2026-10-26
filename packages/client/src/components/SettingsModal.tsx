@@ -295,6 +295,24 @@ export function SettingsModal() {
                     <Choice value={server.board?.pages ?? 'show'} onChange={(m) => void save({ board: { pages: m } })} options={[['off', 'Off'], ['add', 'Add pages'], ['show', 'Add and show']]} />
                   </Row>
                 ) : null}
+                {server ? (
+                  <Toggle
+                    label="Journal"
+                    hint={
+                      <>
+                        Each session keeps a journal: a markdown file of its milestones, its wrap-up when the work is done, and Claude Code&rsquo;s recaps, in Documents\Cora\Journal.{' '}
+                        {desktop?.openJournal ? (
+                          <button className="btn ghost" style={{ height: 22, padding: '0 6px' }} onClick={() => desktop?.openJournal?.()}>
+                            Open the folder
+                          </button>
+                        ) : null}{' '}
+                        For sessions started from now on.
+                      </>
+                    }
+                    checked={server.journal?.on !== false}
+                    onChange={(on) => void save({ journal: { on } })}
+                  />
+                ) : null}
                 {server ? <MemeRows server={server} save={trySave} /> : null}
                 <Row label="Ended sessions" hint="Take them off the list. Their transcripts stay.">
                   <button className="btn" onClick={async () => { await clearEnded(); setCleared(true); }}>

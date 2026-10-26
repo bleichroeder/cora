@@ -42,7 +42,8 @@ describe('the key in a login field', () => {
     p.run();
     p.fire('focusin', p.els[1]);
     expect(p.btn.style.display).toBe('flex');
-    expect(p.said).toEqual(['NONCE:{"k":"focus","r":{"x":10,"y":20,"w":200,"h":32}}']);
+    // (and whether it has something in it already: no suggestions then)
+    expect(p.said).toEqual(['NONCE:{"k":"focus","r":{"x":10,"y":20,"w":200,"h":32},"v":false}']);
     p.click();
     expect(p.said.at(-1)).toBe('NONCE:{"k":"open","r":{"x":10,"y":20,"w":200,"h":32}}');
   });

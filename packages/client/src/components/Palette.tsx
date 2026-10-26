@@ -24,6 +24,7 @@ import { EndSessionConfirm } from './EndSession';
 import { clearEnded, dismissSession, showSession, suggestName } from './SessionMenu';
 import { Icon } from './Icon';
 import { lockNow } from '../state/lock';
+import { useThaw } from './Thaw';
 import './dialogs.css';
 import './palette.css';
 
@@ -147,6 +148,8 @@ function useEntries(): PEntry[] {
   const sessions = useBrain((s) => s.sessions);
   const focus = useBrain((s) => s.focus);
   const overview = useBrain((s) => s.overview);
+  // deep freeze: sessions from before the restart still to bring back
+  const thawing = useThaw((t) => t.items.length > 0);
   const cursor = useBrain((s) => s.cursor);
   const viewer = useBrain((s) => s.viewer);
   const prefs = useBrain((s) => s.prefs);
@@ -288,6 +291,7 @@ function useEntries(): PEntry[] {
     cmd('overview', overview ? 'Back to the session' : 'Overview', 'LayoutGrid', () => st().toggleOverview(), { keywords: 'grid galaxy all sessions G', featured: true, boost: 3 });
     cmd('settings', 'Settings', 'Settings', () => openSettings(), { keywords: 'preferences options', featured: true, boost: 2 });
     cmd('lock', 'Lock Cora', 'Lock', () => void lockNow(), { keywords: 'lockdown away pin secure screen' });
+    if (thawing) cmd('thaw', 'Bring back sessions from before the restart…', 'Snowflake', () => useThaw.setState({ open: true }), { keywords: 'deep freeze restore resume reopen last time shutdown', boost: 3 });
     for (const sec of SETTINGS_SECTIONS) if (!sec.desktop || desktop) cmd(`settings:${sec.id}`, `Settings: ${sec.label}`, sec.icon, () => openSettings(sec.id), { keywords: 'preferences options' });
     cmd('grid', 'Overview as a grid', 'LayoutGrid', () => (st().setPrefs({ overviewStyle: 'grid' }), st().toggleOverview(true)), { keywords: 'cards' });
     cmd('galaxy', 'Overview as a galaxy', 'Orbit', () => (st().setPrefs({ overviewStyle: 'galaxy' }), st().toggleOverview(true)), { keywords: 'stars space' });
@@ -325,7 +329,7 @@ function useEntries(): PEntry[] {
     cmd('tubes', prefs.flowLinks ? 'Scene: lines with comets' : 'Scene: flowing tubes', 'Orbit', () => st().setPrefs({ flowLinks: !prefs.flowLinks }), { keywords: 'connections links' });
     if (prefs.inputMode === 'terminal') cmd('compact', prefs.compactTerminal ? 'Terminal: show all of it' : 'Terminal: show only Claude’s input area', 'SquareTerminal', () => st().setPrefs({ compactTerminal: !prefs.compactTerminal }), { keywords: 'compact' });
     return out;
-  }, [sessions, focus, overview, cursor, viewer, prefs, hosted, voice, voiceKey, webShown, history, explains, presets, notes]);
+  }, [sessions, focus, overview, cursor, viewer, prefs, hosted, voice, voiceKey, webShown, history, explains, presets, notes, thawing]);
 }
 
 /** Transcript lines matching the query: the focused session's first, then the rest, newest first. */

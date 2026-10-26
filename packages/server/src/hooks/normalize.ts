@@ -1,4 +1,4 @@
-import { EVENT_ICON, iconFor, isSafeId, summarizeTool } from '@cora/shared';
+import { webChangeOf, EVENT_ICON, iconFor, isSafeId, summarizeTool } from '@cora/shared';
 import type { NewEvent, SessionInfo } from '@cora/shared';
 import type { LinkMeta } from '../transcript/parse';
 
@@ -44,13 +44,14 @@ export function hookToEvents(event: string, p: any, now = Date.now()): HookResul
     case 'PostToolUseFailure': {
       const failed = event === 'PostToolUseFailure';
       const s = summarizeTool(p.tool_name, p.tool_input, failed ? p.error : undefined, failed ? undefined : p.tool_response, cwd, failed);
+      const web = failed || s.failed ? null : webChangeOf(p.tool_name, p.tool_input, p.tool_response);
       const out: HookResult = {
         session,
         events: [{
           ...base, id: `tool:${p.tool_use_id}:end`, kind: 'tool', phase: 'end', toolUseId: p.tool_use_id,
           icon: s.failed ? EVENT_ICON.fail : iconFor(p.tool_name, p.tool_input),
           ...(p.duration_ms != null ? { durationMs: Number(p.duration_ms) } : {}),
-          tool: { name: p.tool_name, input: p.tool_input, summary: s.summary, resultSummary: s.resultSummary, preview: s.preview, resource: s.resource, ...(s.failed ? { failed: true } : {}), ...(s.change ? { change: s.change } : {}), ...(s.background ? { background: s.background } : {}) },
+          tool: { name: p.tool_name, input: p.tool_input, summary: s.summary, resultSummary: s.resultSummary, preview: s.preview, resource: s.resource, ...(s.failed ? { failed: true } : {}), ...(s.change ? { change: s.change } : {}), ...(s.background ? { background: s.background } : {}), ...(web ? { web } : {}) },
         }],
       };
       const r = p.tool_response;

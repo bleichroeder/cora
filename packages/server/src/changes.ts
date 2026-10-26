@@ -85,17 +85,25 @@ export type NetChange = { hunks: Hunk[] | null; add: number; del: number; exact:
  * snapshot) against the file at the next prompt's snapshot, or on disk now. Includes changes made any way during
  * the span (edit tools, scripts, shell). `exact: false` when there's no snapshot to start from.
  */
-export function netChange(o: { transcript: string; sessionId: string; path: string; from: number; to: number | null; home?: string }): NetChange {
+/**
+ * A file as it was when a span's prompt was sent (Claude Code's snapshot then): '' when it didn't exist yet, null
+ * when there's no snapshot of it.
+ */
+export function turnBefore(o: { transcript: string; sessionId: string; path: string; from: number; home?: string }): string | null {
   const key = normPath(o.path);
   const list = snapshots.read(o.transcript);
   // the snapshot taken when this span's prompt was sent (a moment after the prompt's own timestamp)
   const start = list.filter((s) => s.ts <= o.from + 10_000 && s.files.has(key)).pop() ?? list.find((s) => s.ts >= o.from - 10_000 && s.files.has(key));
+  if (!start) return null;
+  const b = start.files.get(key)!;
+  return b.name ? readText(join(fileHistoryDir(o.sessionId, o.home), b.name)) : ''; // no backup: the file didn't exist yet
+}
+
+export function netChange(o: { transcript: string; sessionId: string; path: string; from: number; to: number | null; home?: string }): NetChange {
+  const key = normPath(o.path);
+  const list = snapshots.read(o.transcript);
   const dir = fileHistoryDir(o.sessionId, o.home);
-  let before: string | null = null;
-  if (start) {
-    const b = start.files.get(key)!;
-    before = b.name ? readText(join(dir, b.name)) : ''; // no backup: the file didn't exist yet
-  }
+  let before = turnBefore(o);
   if (before == null) return { hunks: null, add: 0, del: 0, exact: false, before: 'none' };
   // the end: the next prompt's snapshot of the file, or the file now
   let after: string | null = null;

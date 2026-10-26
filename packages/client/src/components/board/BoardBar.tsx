@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { BOARD_LAYOUTS, BOARD_LAYOUT_INFO } from '@cora/shared';
-import { LAYOUTS, MAX_PAGES, PANELS, type SavedLayout } from '../../lib/boardLayout';
+import { LAYOUTS, MAX_PAGES, PANELS, scrollToShow, type SavedLayout } from '../../lib/boardLayout';
 import { Icon } from '../Icon';
 
 /** Something the Board did that you'd want to know, in its bar: `go` offers that page; `undo` puts the Board back. */
@@ -8,10 +8,14 @@ export type BoardNote = { text: string; icon: string; go?: number; undo?: true; 
 
 type Placed = SavedLayout['items'];
 
+/** How far the strip's fade reaches in from a clipped edge (a tab brought into view clears it). */
+const FADE = 18;
+
 /**
  * The Board's bar, along its foot: the pages as named tabs (click to go, double-click to rename; on hover a tab shows
  * its ⋯ menu beside the name (all tabs one width): rename, save as a layout, duplicate, move, remove; right-click works too; drag one to reorder; drag a panel onto one to send it there), ＋ for a new page (blank, or laid out for a
- * kind of work, or one of yours), then + Panel, and ⋯ for the Board as a whole.
+ * kind of work, or one of yours), then + Panel, and ⋯ for the Board as a whole. Narrow, the tabs scroll sideways in
+ * their strip (the wheel scrolls it, the page you're on is kept in view, a clipped edge fades) and the rest stays put.
  */
 export function BoardBar(o: {
   pages: number;
@@ -55,107 +59,155 @@ export function BoardBar(o: {
     setRenaming(null);
   };
   const closeAll = () => (setTabMenu(null), setNewMenu(false), setBoardMenu(false), setSavingAs(null));
+  const strip = useRef<HTMLDivElement>(null);
+  const [fade, setFade] = useState('');
+  const [menuAt, setMenuAt] = useState(0);
+  const tabOf = (n: number) => strip.current?.children[n] as HTMLElement | undefined;
+  /** page n's tab whole in the strip, clear of the fade */
+  const show = (n: number, smooth = false) => {
+    const s = strip.current;
+    const t = tabOf(n);
+    if (!s || !t) return;
+    const to = scrollToShow(s.scrollLeft, s.clientWidth, t.offsetLeft, t.offsetWidth, FADE);
+    if (to !== s.scrollLeft) s.scrollTo({ left: to, behavior: smooth ? 'smooth' : 'auto' });
+  };
+  /** which edges of the strip have tabs past them: those fade */
+  const edges = () => {
+    const s = strip.current;
+    if (s) setFade(`${s.scrollLeft > 1 ? ' fade-l' : ''}${s.scrollLeft + s.clientWidth < s.scrollWidth - 1 ? ' fade-r' : ''}`);
+  };
+  useEffect(() => {
+    const s = strip.current;
+    if (!s) return;
+    const ro = new ResizeObserver(edges);
+    ro.observe(s);
+    return () => ro.disconnect();
+  }, []);
+  useEffect(edges, [o.pages, o.names, renaming]);
+  // the page you're on stays in view (a new one, one moved, one gone to from elsewhere)
+  useEffect(() => show(o.pg, true), [o.pg, o.pages]);
+  // a tab's menu sits outside the strip (which clips) over its tab, brought whole into view, and follows it as it scrolls
+  useLayoutEffect(() => {
+    const s = strip.current;
+    if (tabMenu == null || !s) return;
+    show(tabMenu);
+    const place = () => setMenuAt(Math.max(0, s.offsetLeft + (tabOf(tabMenu)?.offsetLeft ?? 0) - s.scrollLeft));
+    place();
+    s.addEventListener('scroll', place);
+    return () => s.removeEventListener('scroll', place);
+  }, [tabMenu]);
+  /** a page's menu (from its ⋯ or a right-click), over its tab */
+  const pageMenu = (n: number) => (
+    <Pop onClose={() => (setTabMenu(null), setSavingAs(null))} className="bd-tabmenu" style={{ left: menuAt }} near={() => tabOf(n)}>
+      {savingAs != null ? (
+        <label className="bd-mx bd-name">
+          <Icon name="Bookmark" size={13} />
+          <input
+            autoFocus
+            value={savingAs}
+            maxLength={40}
+            placeholder="Name this layout"
+            onChange={(e) => setSavingAs(e.target.value)}
+            onKeyDown={(e) => {
+              e.stopPropagation();
+              if (e.key === 'Enter' && savingAs.trim()) (o.onSaveLayout(n, savingAs.trim()), closeAll());
+              if (e.key === 'Escape') setSavingAs(null);
+            }}
+          />
+          <button className="lb-pop" disabled={!savingAs.trim()} onClick={() => savingAs.trim() && (o.onSaveLayout(n, savingAs.trim()), closeAll())}>
+            Save
+          </button>
+        </label>
+      ) : (
+        <>
+          <button className="bd-mx" onClick={() => rename(n)}>
+            <Icon name="Pencil" size={13} /> Rename
+          </button>
+          <button className="bd-mx" onClick={() => setSavingAs(o.names[n] ?? '')}>
+            <Icon name="Bookmark" size={13} /> Save as a layout
+          </button>
+          <button className="bd-mx" disabled={o.pages >= MAX_PAGES} onClick={() => (closeAll(), o.onDuplicate(n))}>
+            <Icon name="Copy" size={13} /> Duplicate
+          </button>
+          <button className="bd-mx" disabled={n === 0} onClick={() => (closeAll(), o.onMove(n, n - 1))}>
+            <Icon name="ArrowLeft" size={13} /> Move left
+          </button>
+          <button className="bd-mx" disabled={n === o.pages - 1} onClick={() => (closeAll(), o.onMove(n, n + 1))}>
+            <Icon name="ArrowRight" size={13} /> Move right
+          </button>
+          <div className="sep" />
+          <button className="bd-mx bad" disabled={o.pages < 2} onClick={() => (closeAll(), o.onRemove(n))}>
+            <Icon name="Trash2" size={13} /> Remove page
+            <span className="d">{o.pages < 2 ? 'the only page' : 'Undo after'}</span>
+          </button>
+        </>
+      )}
+    </Pop>
+  );
   return (
     <div className={`bd-add${o.moving ? ' moving' : ''}`} role="toolbar" aria-label="Board">
-      <div className="bd-tabs" role="tablist">
-        {Array.from({ length: o.pages }, (_, n) => (
-          <span key={n} className="bd-tabw">
-            {renaming === n ? (
-              <span className="bd-tb bd-pg on renaming">
-                <span className="num">{n + 1}</span>
-                <input
-                  autoFocus
-                  value={draft}
-                  maxLength={32}
-                  placeholder={`Page ${n + 1}`}
-                  onChange={(e) => setDraft(e.target.value)}
-                  onBlur={() => doneRenaming(true)}
-                  onKeyDown={(e) => {
-                    e.stopPropagation();
-                    if (e.key === 'Enter') doneRenaming(true);
-                    if (e.key === 'Escape') doneRenaming(false);
-                  }}
-                />
-              </span>
-            ) : (
-              <button
-                role="tab"
-                aria-selected={n === o.pg}
-                className={`bd-tb bd-pg${n === o.pg ? ' on' : ''}${o.dropPage === n ? ' drop' : ''}${dragging === n ? ' lifting' : ''}`}
-                data-pg={n}
-                title={n === o.pg ? `${label(n)}: double-click to rename, right-click for more` : o.moving ? `Drop here: send it to ${label(n)}` : label(n)}
-                draggable={!o.moving}
-                onDragStart={(e) => (setDragging(n), e.dataTransfer.setData('text/x-cora-page', String(n)), (e.dataTransfer.effectAllowed = 'move'))}
-                onDragEnd={() => setDragging(null)}
-                onDragOver={(e) => dragging != null && dragging !== n && (e.preventDefault(), (e.dataTransfer.dropEffect = 'move'))}
-                onDrop={(e) => {
-                  const from = Number(e.dataTransfer.getData('text/x-cora-page'));
-                  if (Number.isInteger(from) && from !== n) o.onMove(from, n);
-                  setDragging(null);
-                }}
-                onClick={() => o.onGo(n)}
-                onDoubleClick={() => rename(n)}
-                onContextMenu={(e) => (e.preventDefault(), closeAll(), setTabMenu(n))}
-              >
-                <span className="num">{n + 1}</span>
-                <span className="pn">{label(n)}</span>
-                {/* on hover its menu shows beside the name (the name gives way: every tab stays one width) */}
-                <span className={`acts${tabMenu === n ? ' open' : ''}`}>
-                  <span className="act" role="button" title="More" aria-label={`${label(n)}: more`} onClick={(e) => (e.stopPropagation(), closeAll(), setTabMenu(tabMenu === n ? null : n))}>
-                    <Icon name="Ellipsis" size={12} />
-                  </span>
+      <div className="bd-tabs">
+        <div
+          ref={strip}
+          className={`bd-strip${fade}`}
+          role="tablist"
+          onScroll={edges}
+          onWheel={(e) => Math.abs(e.deltaY) > Math.abs(e.deltaX) && (e.currentTarget.scrollLeft += e.deltaY)}
+        >
+          {Array.from({ length: o.pages }, (_, n) => (
+            <span key={n} className="bd-tabw">
+              {renaming === n ? (
+                <span className="bd-tb bd-pg on renaming">
+                  <span className="num">{n + 1}</span>
+                  <input
+                    autoFocus
+                    value={draft}
+                    maxLength={32}
+                    placeholder={`Page ${n + 1}`}
+                    onChange={(e) => setDraft(e.target.value)}
+                    onBlur={() => doneRenaming(true)}
+                    onKeyDown={(e) => {
+                      e.stopPropagation();
+                      if (e.key === 'Enter') doneRenaming(true);
+                      if (e.key === 'Escape') doneRenaming(false);
+                    }}
+                  />
                 </span>
-              </button>
-            )}
-            {tabMenu === n ? (
-              <Pop onClose={() => (setTabMenu(null), setSavingAs(null))} className="bd-tabmenu">
-                {savingAs != null ? (
-                  <label className="bd-mx bd-name">
-                    <Icon name="Bookmark" size={13} />
-                    <input
-                      autoFocus
-                      value={savingAs}
-                      maxLength={40}
-                      placeholder="Name this layout"
-                      onChange={(e) => setSavingAs(e.target.value)}
-                      onKeyDown={(e) => {
-                        e.stopPropagation();
-                        if (e.key === 'Enter' && savingAs.trim()) (o.onSaveLayout(n, savingAs.trim()), closeAll());
-                        if (e.key === 'Escape') setSavingAs(null);
-                      }}
-                    />
-                    <button className="lb-pop" disabled={!savingAs.trim()} onClick={() => savingAs.trim() && (o.onSaveLayout(n, savingAs.trim()), closeAll())}>
-                      Save
-                    </button>
-                  </label>
-                ) : (
-                  <>
-                    <button className="bd-mx" onClick={() => rename(n)}>
-                      <Icon name="Pencil" size={13} /> Rename
-                    </button>
-                    <button className="bd-mx" onClick={() => setSavingAs(o.names[n] ?? '')}>
-                      <Icon name="Bookmark" size={13} /> Save as a layout
-                    </button>
-                    <button className="bd-mx" disabled={o.pages >= MAX_PAGES} onClick={() => (closeAll(), o.onDuplicate(n))}>
-                      <Icon name="Copy" size={13} /> Duplicate
-                    </button>
-                    <button className="bd-mx" disabled={n === 0} onClick={() => (closeAll(), o.onMove(n, n - 1))}>
-                      <Icon name="ArrowLeft" size={13} /> Move left
-                    </button>
-                    <button className="bd-mx" disabled={n === o.pages - 1} onClick={() => (closeAll(), o.onMove(n, n + 1))}>
-                      <Icon name="ArrowRight" size={13} /> Move right
-                    </button>
-                    <div className="sep" />
-                    <button className="bd-mx bad" disabled={o.pages < 2} onClick={() => (closeAll(), o.onRemove(n))}>
-                      <Icon name="Trash2" size={13} /> Remove page
-                      <span className="d">{o.pages < 2 ? 'the only page' : 'Undo after'}</span>
-                    </button>
-                  </>
-                )}
-              </Pop>
-            ) : null}
-          </span>
-        ))}
+              ) : (
+                <button
+                  role="tab"
+                  aria-selected={n === o.pg}
+                  className={`bd-tb bd-pg${n === o.pg ? ' on' : ''}${o.dropPage === n ? ' drop' : ''}${dragging === n ? ' lifting' : ''}`}
+                  data-pg={n}
+                  title={n === o.pg ? `${label(n)}: double-click to rename, right-click for more` : o.moving ? `Drop here: send it to ${label(n)}` : label(n)}
+                  draggable={!o.moving}
+                  onDragStart={(e) => (setDragging(n), e.dataTransfer.setData('text/x-cora-page', String(n)), (e.dataTransfer.effectAllowed = 'move'))}
+                  onDragEnd={() => setDragging(null)}
+                  onDragOver={(e) => dragging != null && dragging !== n && (e.preventDefault(), (e.dataTransfer.dropEffect = 'move'))}
+                  onDrop={(e) => {
+                    const from = Number(e.dataTransfer.getData('text/x-cora-page'));
+                    if (Number.isInteger(from) && from !== n) o.onMove(from, n);
+                    setDragging(null);
+                  }}
+                  onClick={() => o.onGo(n)}
+                  onFocus={(e) => e.currentTarget.matches(':focus-visible') && show(n)}
+                  onDoubleClick={() => rename(n)}
+                  onContextMenu={(e) => (e.preventDefault(), closeAll(), setTabMenu(n))}
+                >
+                  <span className="num">{n + 1}</span>
+                  <span className="pn">{label(n)}</span>
+                  {/* on hover its menu shows beside the name (the name gives way: every tab stays one width) */}
+                  <span className={`acts${tabMenu === n ? ' open' : ''}`}>
+                    <span className="act" role="button" title="More" aria-label={`${label(n)}: more`} onClick={(e) => (e.stopPropagation(), closeAll(), setTabMenu(tabMenu === n ? null : n))}>
+                      <Icon name="Ellipsis" size={12} />
+                    </span>
+                  </span>
+                </button>
+              )}
+            </span>
+          ))}
+        </div>
+        {tabMenu != null ? pageMenu(tabMenu) : null}
         {o.pages < MAX_PAGES ? (
           <span className="bd-tabw add">
             <button
@@ -237,11 +289,11 @@ export function BoardBar(o: {
   );
 }
 
-/** A menu over the bar: goes on a click elsewhere or Esc. */
-function Pop({ children, onClose, className = '' }: { children: ReactNode; onClose(): void; className?: string }) {
+/** A menu over the bar: goes on a click elsewhere (than it and what it opened from: its parent, or `near`) or Esc. */
+function Pop({ children, onClose, className = '', style, near }: { children: ReactNode; onClose(): void; className?: string; style?: CSSProperties; near?(): Element | undefined }) {
   const box = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    const away = (e: MouseEvent) => !box.current?.parentElement?.contains(e.target as Node) && onClose();
+    const away = (e: MouseEvent) => !box.current?.contains(e.target as Node) && !(near?.() ?? box.current?.parentElement)?.contains(e.target as Node) && onClose();
     const esc = (e: KeyboardEvent) => e.key === 'Escape' && (e.stopPropagation(), onClose());
     window.addEventListener('mousedown', away);
     window.addEventListener('keydown', esc, true);
@@ -251,7 +303,7 @@ function Pop({ children, onClose, className = '' }: { children: ReactNode; onClo
     };
   }, [onClose]);
   return (
-    <div className={`bd-menu bd-pop ${className}`} ref={box} role="menu">
+    <div className={`bd-menu bd-pop ${className}`} ref={box} role="menu" style={style}>
       {children}
     </div>
   );

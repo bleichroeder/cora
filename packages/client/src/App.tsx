@@ -1,4 +1,6 @@
 import { startWake } from './lib/wake/controller';
+import { IdeHost } from './components/board/IdeHost';
+import { MailOutbox } from './components/MailOutbox';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { OpMenu } from './components/OpMenu';
 import { onField, openOpMenu, useOp } from './state/onepassword';
@@ -17,6 +19,8 @@ import { EmptyMain } from './components/EmptyMain';
 import { BootScreen } from './components/BootScreen';
 import { SessionSwitcher } from './components/SessionSwitcher';
 import { LockSetup } from './components/LockSettings';
+import { SessionCard } from './components/SessionCard';
+import { ThawCard, loadThaw } from './components/Thaw';
 import { lockNow } from './state/lock';
 import { RecapBar } from './components/Recap';
 import { IssueChip } from './components/IssuePicker';
@@ -113,15 +117,20 @@ function RightColumn({ sessionId }: { sessionId: string }) {
   }, [sessionId, version, cwd]);
   const col = useRef<HTMLDivElement>(null);
   const base = useRef(ratio);
-  // the transcript (or explains) lifts in when the session changes; the tabs and terminal stay put
+  // the transcript (or explains) lifts in when the session changes; the card, the tabs and the terminal stay put
   useEffect(() => {
-    (col.current?.children[1] as HTMLElement | undefined)?.animate(LIFT, { duration: 320, easing: 'cubic-bezier(.2,.7,.2,1)' });
+    (col.current?.children[2] as HTMLElement | undefined)?.animate(LIFT, { duration: 320, easing: 'cubic-bezier(.2,.7,.2,1)' });
   }, [sessionId]);
   // a hidden or input-only Claude terminal and not-hosted panes size to their content; otherwise a draggable split
   // (a shell tab on show always gets the split). The composer takes the last row, at its own height.
   const auto = !view.onShell && (!view.claudeShown || view.claudeCompact || !hasTerminal);
   return (
-    <div className="rightcol" ref={col} style={{ gridTemplateRows: auto ? 'auto minmax(0, 1fr) auto auto' : `auto minmax(0, ${1 - ratio}fr) 6px minmax(0, ${ratio}fr) auto` }}>
+    <div className="rightcol" ref={col} style={{ gridTemplateRows: auto ? 'auto auto minmax(0, 1fr) auto auto' : `auto auto minmax(0, ${1 - ratio}fr) 6px minmax(0, ${ratio}fr) auto` }}>
+      {/* the session's own card at the top (the window's top strip: it drags the window, its buttons sit over its corner):
+          its orb (hold it to talk to it), what it is, what it's waiting on; its tabs under it */}
+      <Boundary quiet name="session card">
+        <SessionCard sessionId={sessionId} />
+      </Boundary>
       <div className="rtabs">
         <button className={`rtab${tab === 'transcript' ? ' on' : ''}`} onClick={() => setTab('transcript')}>Transcript</button>
         <button className={`rtab${tab === 'explains' ? ' on' : ''}`} onClick={() => setTab('explains')}>Explains{counts.explains ? <span className="rt-n">{counts.explains}</span> : null}</button>
@@ -252,8 +261,8 @@ function Focus({ sessionId }: { sessionId: string }) {
 }
 
 /**
- * The timeline under the scene, folded away with the tab on its edge (folded, it isn't there at all: nothing ticks).
- * With the 3D scene it starts open, with the live board folded (it rewinds the scene, not the board); each as you left it.
+ * The timeline under the scene, or nothing when it's off (Settings › Scene › Timeline; its own fold button turns it off).
+ * With the 3D scene it starts on, with the live board off (it rewinds the scene, not the board); each as you left it.
  */
 function Timeline({ sessionId }: { sessionId: string }) {
   const scene3d = useBrain((s) => s.prefs.scene3d !== false);
@@ -264,20 +273,15 @@ function Timeline({ sessionId }: { sessionId: string }) {
     if (!on) st.setCursor(null);
     st.setPrefs({ timeline: { ...st.prefs.timeline, [scene3d ? 'scene' : 'board']: on } });
   };
+  // off: nothing at all (no tab to bring it back: that's Settings › Scene › Timeline)
   return shown ? (
     <div className="tl-dock">
-      <button className="tl-fold" onClick={() => set(false)} title="Hide the timeline">
+      <button className="tl-fold" onClick={() => set(false)} title="Turn the timeline off (Settings › Scene › Timeline brings it back)">
         <Icon name="ChevronDown" size={12} />
       </button>
       <Strip sessionId={sessionId} />
     </div>
-  ) : (
-    <div className="tl-dock folded">
-      <button className="tl-fold" onClick={() => set(true)} title="Show the timeline">
-        <Icon name="ChevronUp" size={12} /> Timeline
-      </button>
-    </div>
-  );
+  ) : null;
 }
 
 const STATE_LABEL: Record<string, string> = { 'needs-you': 'needs you', working: 'working', thinking: 'thinking', idle: 'idle', ended: 'ended' };
@@ -366,6 +370,10 @@ export function App() {
   const inControl = useInControl();
   const conn = useBrain((s) => s.conn);
   const ready = useBrain((s) => s.ready);
+  // deep freeze: what was open before the PC restarted, offered once Cora is up
+  useEffect(() => {
+    if (ready) void loadThaw(true);
+  }, [ready]);
   const focus = useBrain((s) => s.focus);
   const sessions = useBrain((s) => s.sessions);
   const overview = useBrain((s) => s.overview);
@@ -579,7 +587,9 @@ export function App() {
             <EmptyMain />
           )}
           <ToolDrawer />
+          <IdeHost />
           <SlackOutbox />
+          <MailOutbox />
           <CoraConsole />
           <InboxView />
           <CoraCommand />
@@ -591,6 +601,7 @@ export function App() {
       <PaletteHost />
       <SessionSwitcher />
       <LockSetup />
+      <ThawCard />
       <UsageView />
       {modal === 'new-session' ? <NewSessionModal /> : modal === 'history' ? <HistoryModal /> : modal === 'settings' ? <SettingsModal /> : null}
     </div>

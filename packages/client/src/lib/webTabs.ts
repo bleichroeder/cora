@@ -2,7 +2,7 @@
  * The built-in browser's tabs: each session has its own (a GitLab and a Jira tab per piece of work), all sharing one
  * set of logins. Pure state changes here; the store (state/web.ts) wires them up and keeps them across reloads.
  */
-export type WebTab = { id: string; sessionId: string; url: string; title: string; /** bumped for each navigation asked of the tab from outside */ nav: number };
+export type WebTab = { id: string; sessionId: string; url: string; title: string; /** bumped for each navigation asked of the tab from outside */ nav: number; /** signed in as this profile, whatever its browser is on (a Gmail draft: your Gmail's profile) */ profile?: string };
 export type SessionWeb = { tabs: string[]; active: string | null; shown: boolean };
 export type WebState = {
   tabs: Record<string, WebTab>;
@@ -26,7 +26,7 @@ const noHash = (u: string) => u.replace(/#.*$/, '');
 const sw = (st: WebState, sid: string): SessionWeb => st.sessions[sid] ?? { tabs: [], active: null, shown: false };
 
 /** A new tab in the session (after `after`, else after the active tab), shown and active unless `background`. */
-export function newTab(st: WebState, sid: string, url = '', o: { after?: string; background?: boolean } = {}): WebState {
+export function newTab(st: WebState, sid: string, url = '', o: { after?: string; background?: boolean; profile?: string } = {}): WebState {
   const s = sw(st, sid);
   const id = newId();
   const at = s.tabs.indexOf(o.after ?? s.active ?? '');
@@ -34,20 +34,20 @@ export function newTab(st: WebState, sid: string, url = '', o: { after?: string;
   tabs.splice(at < 0 ? tabs.length : at + 1, 0, id);
   return {
     ...st,
-    tabs: { ...st.tabs, [id]: { id, sessionId: sid, url, title: '', nav: 0 } },
+    tabs: { ...st.tabs, [id]: { id, sessionId: sid, url, title: '', nav: 0, ...(o.profile ? { profile: o.profile } : {}) } },
     order: [...st.order, id],
     sessions: { ...st.sessions, [sid]: { tabs, active: o.background && s.active ? s.active : id, shown: true } },
   };
 }
 
 /** Open a link in the session: its tab if one is already at that address, otherwise a new tab. */
-export function openUrl(st: WebState, sid: string, url: string, o: { after?: string; background?: boolean; reload?: boolean } = {}): WebState {
+export function openUrl(st: WebState, sid: string, url: string, o: { after?: string; background?: boolean; reload?: boolean; /** signed in as this profile (its own tab) */ profile?: string } = {}): WebState {
   const s = sw(st, sid);
-  const have = s.tabs.find((id) => noHash(st.tabs[id]?.url ?? '') === noHash(url));
+  const have = s.tabs.find((id) => noHash(st.tabs[id]?.url ?? '') === noHash(url) && (st.tabs[id]?.profile ?? '') === (o.profile ?? ''));
   // already open: switch to it (and, when asked, load it again so it shows the latest)
   if (have) return o.background ? st : activate(o.reload ? navigate(st, have, url) : st, have);
   // a blank active tab takes the link instead of leaving an empty tab behind
-  const blank = s.active && !st.tabs[s.active]?.url && !o.background ? s.active : null;
+  const blank = s.active && !st.tabs[s.active]?.url && !o.background && (st.tabs[s.active]?.profile ?? '') === (o.profile ?? '') ? s.active : null;
   if (blank) return { ...navigate(st, blank, url), sessions: { ...st.sessions, [sid]: { ...s, shown: true } } };
   return newTab(st, sid, url, o);
 }
@@ -115,7 +115,7 @@ export function cycle(st: WebState, sid: string, dir: 1 | -1): WebState {
 
 /** Kept across reloads: tabs and their addresses (the pages themselves reload when you come back to them). */
 export function serialize(st: WebState): string {
-  return JSON.stringify({ v: 2, wide: st.wide, split: st.split, sessions: st.sessions, tabs: Object.values(st.tabs).map(({ id, sessionId, url, title }) => ({ id, sessionId, url, title })) });
+  return JSON.stringify({ v: 2, wide: st.wide, split: st.split, sessions: st.sessions, tabs: Object.values(st.tabs).map(({ id, sessionId, url, title, profile }) => ({ id, sessionId, url, title, ...(profile ? { profile } : {}) })) });
 }
 
 export function deserialize(raw: string | null): WebState {
@@ -123,7 +123,7 @@ export function deserialize(raw: string | null): WebState {
     const d = JSON.parse(raw ?? '');
     if (d?.v !== 2) return EMPTY_WEB;
     const tabs: Record<string, WebTab> = {};
-    for (const t of d.tabs ?? []) if (typeof t?.id === 'string' && typeof t.sessionId === 'string' && (t.url === '' || /^https?:/i.test(t.url))) tabs[t.id] = { id: t.id, sessionId: t.sessionId, url: t.url, title: String(t.title ?? ''), nav: 0 };
+    for (const t of d.tabs ?? []) if (typeof t?.id === 'string' && typeof t.sessionId === 'string' && (t.url === '' || /^https?:/i.test(t.url))) tabs[t.id] = { id: t.id, sessionId: t.sessionId, url: t.url, title: String(t.title ?? ''), nav: 0, ...(typeof t.profile === 'string' && t.profile.length < 80 ? { profile: t.profile } : {}) };
     const sessions: Record<string, SessionWeb> = {};
     for (const [sid, s] of Object.entries<any>(d.sessions ?? {})) {
       const ids = (Array.isArray(s?.tabs) ? s.tabs : []).filter((id: string) => tabs[id]?.sessionId === sid);

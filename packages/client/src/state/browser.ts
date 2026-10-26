@@ -16,8 +16,8 @@ export const BROWSER_ID = 'cora:browser';
 
 /** The browser's profiles and the sessions' one, from the server's settings (Settings › Tools keeps it current). */
 /** `loaded`: pages wait for it, so each is made with its profile's sign-ins (a webview can't change them later). */
-export const useBrowserSettings = create<{ profiles: BrowserProfile[]; sessions?: string; loaded: boolean }>(() => ({ profiles: [], loaded: false }));
-export const setBrowserSettings = (b: Settings['browser'] | undefined) => useBrowserSettings.setState({ profiles: b?.profiles ?? [], sessions: b?.sessions, loaded: true });
+export const useBrowserSettings = create<{ profiles: BrowserProfile[]; sessions?: string; mail?: string; loaded: boolean }>(() => ({ profiles: [], loaded: false }));
+export const setBrowserSettings = (b: Settings['browser'] | undefined) => useBrowserSettings.setState({ profiles: b?.profiles ?? [], sessions: b?.sessions, mail: b?.mail, loaded: true });
 void fetch('/api/settings')
   .then((r) => (r.ok ? r.json() : null))
   .then((s: Settings | null) => setBrowserSettings(s?.browser))
@@ -44,8 +44,41 @@ export const sessionsProfile = (): string => {
   return list.find((p) => p.id === sessions)?.id ?? list.find((p) => p.partition === HOME_PARTITION)?.id ?? '';
 };
 
-/** Whose bookmarks and history a tab group shows: a Browser profile's, or for a session's tabs, the sessions' profile. */
-export const profileOfGroup = (g: string): string => (isBrowserGroup(g) ? (g === BROWSER_ID ? '' : g.slice(BROWSER_ID.length + 1)) : isPanelGroup(g) ? g.slice(g.lastIndexOf(':') + 1) : sessionsProfile());
+/** The profile each session's browser is on, when you switched it (else the sessions' one): kept across restarts. */
+const SESSION_KEY = 'cora.session.profile';
+export const useSessionProfile = create<{ by: Record<string, string>; set(sessionId: string, id: string): void }>((set, get) => ({
+  by: (() => {
+    try {
+      return JSON.parse(localStorage.getItem(SESSION_KEY) ?? '{}') as Record<string, string>;
+    } catch {
+      return {};
+    }
+  })(),
+  set: (sessionId, id) => {
+    const by = { ...get().by, [sessionId]: id };
+    set({ by });
+    try {
+      localStorage.setItem(SESSION_KEY, JSON.stringify(Object.fromEntries(Object.entries(by).slice(-300))));
+    } catch {
+      /* this time only */
+    }
+  },
+}));
+/** A session's browser's profile: the one you switched it to, else the sessions' one. */
+export const sessionProfile = (sessionId: string): string => {
+  const picked = useSessionProfile.getState().by[sessionId];
+  return picked && browserProfiles().some((p) => p.id === picked) ? picked : sessionsProfile();
+};
+
+/** Whose bookmarks and history a tab group shows: a Browser profile's, or for a session's tabs, its profile. */
+export const profileOfGroup = (g: string): string => (isBrowserGroup(g) ? (g === BROWSER_ID ? '' : g.slice(BROWSER_ID.length + 1)) : isPanelGroup(g) ? g.slice(g.lastIndexOf(':') + 1) : sessionProfile(g));
+/** A tab's sign-ins: its own profile's (a Gmail draft's), else its group's. */
+export const partitionOfTab = (t: { sessionId: string; profile?: string }): string => (t.profile && browserProfiles().some((p) => p.id === t.profile) ? partitionFor(t.profile) : partitionOfGroup(t.sessionId));
+/** Your Gmail's profile, if it's one there is. */
+export const mailProfile = (): string | undefined => {
+  const { mail, profiles } = useBrowserSettings.getState();
+  return mail && profiles.some((p) => p.id === mail) ? mail : undefined;
+};
 /** A tab group's sign-ins: its profile's (a page keeps the ones it was made with). */
 export const partitionOfGroup = (g: string): string => partitionFor(profileOfGroup(g));
 

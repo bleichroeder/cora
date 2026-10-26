@@ -344,3 +344,11 @@
 .orb-glyph.st-off, .orb-glyph.st-error, .orb-glyph.st-starting { --g: #64748b; }
 @keyframes orb-glyph-breathe { 50% { box-shadow: 0 0 0 1px color-mix(in srgb, var(--g) 45%, transparent), 0 0 20px color-mix(in srgb, var(--g) 70%, transparent); transform: scale(1.04); } }
 @media (prefers-reduced-motion: reduce) { .orb-glyph { animation: none !important; } }
+
+/* a session not open beside Cora's card reaching Cora: a soft ring of its colour around the orb (the arms between
+   Cora's card and the open session's are the orbs' own: CoraOrb) */
+.cb-reach { position: absolute; left: 50%; top: 50%; width: 128px; height: 128px; margin: -64px; border-radius: 50%; pointer-events: none; box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--reach) 70%, transparent), 0 0 22px 2px color-mix(in srgb, var(--reach) 40%, transparent), inset 0 0 18px color-mix(in srgb, var(--reach) 25%, transparent); animation: cb-reach-in .9s ease-out; }
+@keyframes cb-reach-in { from { opacity: 0; transform: scale(.92); } }
+
+/* Cora's orb wears its crown (CoraCrown): your sessions ride its rings, so the flat dots and the dashed ring go */
+.cora-bridge.orb-mode .cb-dots, .cora-bridge.orb-mode .cb-orbit::before { display: none; }

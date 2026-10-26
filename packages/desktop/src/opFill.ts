@@ -40,8 +40,12 @@ async function fill(wc: WebContents, id: string, anySite: boolean): Promise<{ us
   return (await wc.executeJavaScriptInIsolatedWorld(1003, [{ code: inPage(FILL_LOGIN_JS, creds) }])) as { username: boolean; password: boolean; totp: boolean };
 }
 
-/** The key in a page's login field: focused, left, or clicked (where the field is, in the page's own pixels). */
-export type FieldMsg = { k: 'focus' | 'blur' | 'open'; r?: { x: number; y: number; w: number; h: number } };
+/** The key in a page's login field: focused, left, or clicked (where the field is, in the page's own pixels; `v`: it has
+ * something in it already). */
+export type FieldMsg = { k: 'focus' | 'blur' | 'open'; r?: { x: number; y: number; w: number; h: number }; v?: boolean };
+
+/** Cora locked: the kept list of logins goes (no secret is ever kept). */
+export const forgetLogins = () => op.forget();
 
 /**
  * The key in the page's own login fields (FIELD_KEY_JS): put in once a page has a login form, and what it says read
@@ -55,7 +59,7 @@ function fieldKeys(wc: WebContents, on: (m: FieldMsg) => void): () => void {
     try {
       const m = JSON.parse(text.slice(nonce.length)) as FieldMsg;
       const r = m.r && [m.r.x, m.r.y, m.r.w, m.r.h].every((n) => typeof n === 'number' && Number.isFinite(n)) ? m.r : undefined;
-      if (m.k === 'focus' || m.k === 'blur' || m.k === 'open') on({ k: m.k, ...(r ? { r } : {}) });
+      if (m.k === 'focus' || m.k === 'blur' || m.k === 'open') on({ k: m.k, ...(r ? { r } : {}), ...(m.v === true ? { v: true } : {}) });
     } catch {
       /* not one of ours */
     }
@@ -78,6 +82,8 @@ export function watchLoginForms(wc: WebContents, tell: (m: { from: number; url: 
         if (wc.isDestroyed()) return;
         tell({ from: wc.id, url: wc.getURL(), form: !!form });
         if (form) keys?.();
+        // a login form, and 1Password unlocked a moment ago (no Windows Hello): its list ready before you need it
+        if (form && op.unlocked()) void op.logins().catch(() => {});
       })
       .catch(() => {});
   };

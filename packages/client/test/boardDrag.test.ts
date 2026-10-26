@@ -10,13 +10,16 @@ const GAP = 12;
 const rect = (i: BoardItem) => ({ left: i.x * 100, top: i.y * 100, width: i.w * 100 - GAP, height: i.h * 100 - GAP });
 
 describe('dropping a panel on the board', () => {
-  it('swaps in the middle of a panel and takes a half near its edge (a fixed band, not a share)', () => {
+  it('swaps in the middle of a panel and takes a half near its edge (its outer share, within bounds)', () => {
     expect(dropTarget([A, B], 'a', 900, 600, rect, GAP)).toEqual({ id: 'b', how: 'swap' });
     expect(dropTarget([A, B], 'a', 630, 600, rect, GAP)).toEqual({ id: 'b', how: 'left' });
     expect(dropTarget([A, B], 'a', 900, 20, rect, GAP)).toEqual({ id: 'b', how: 'top' });
     expect(dropTarget([A, B], 'a', 1170, 600, rect, GAP)).toEqual({ id: 'b', how: 'right' });
-    // 80 px in is past the band (72 px) on a wide panel: the middle
-    expect(dropTarget([A, B], 'a', 680, 600, rect, GAP)).toEqual({ id: 'b', how: 'swap' });
+    // the band is a share of the panel (28%, 48 to 180 px): 80 px into a 588 px wide one is still its left half; 200 px in, its middle
+    expect(dropTarget([A, B], 'a', 680, 600, rect, GAP)).toEqual({ id: 'b', how: 'left' });
+    expect(dropTarget([A, B], 'a', 800, 600, rect, GAP)).toEqual({ id: 'b', how: 'swap' });
+    // a tall one: its whole top part (180 px of 1188) is its top half
+    expect(dropTarget([A, B], 'a', 900, 170, rect, GAP)).toEqual({ id: 'b', how: 'top' });
   });
 
   it('counts the gap between panels as the nearest one, so crossing it never loses the target', () => {

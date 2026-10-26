@@ -42,6 +42,29 @@ describe('1Password through op', () => {
     await expect(op.secrets('--vault x')).rejects.toThrow(/not a 1Password item/);
   });
 
+  it('answers at once from the kept list once it is over a minute old (asking for a fresh one behind it), forgotten on lock', async () => {
+    let lists = 0;
+    let release: () => void = () => {};
+    let now = 0;
+    const op = new OnePassword({ now: () => now, run: (a) => (a[1] === 'list' ? (lists++, lists === 1 ? Promise.resolve(LIST) : new Promise((r) => (release = () => r(LIST)))) : Promise.resolve(ITEM)) });
+    const first = await op.logins();
+    now = 5 * 60_000;
+    // stale: the kept one, straight away, while 1Password is still answering
+    expect(await op.logins()).toBe(first);
+    expect(lists).toBe(2);
+    release();
+    // too old (over half an hour): waits for a fresh one
+    now = 40 * 60_000;
+    const waiting = op.logins();
+    release();
+    expect(await waiting).toHaveLength(first.length);
+    // Cora locked: nothing kept
+    op.forget();
+    const asked = lists;
+    void op.logins().catch(() => {});
+    expect(lists).toBe(asked + 1);
+  });
+
   it('says what is missing: the command line, or its connection to the app', async () => {
     const none = new OnePassword({ appPath: 'C:/nope/1Password.exe', run: async () => Promise.reject(new Error('not found')) });
     expect(await none.status()).toEqual({ app: false, cli: false, connected: false });

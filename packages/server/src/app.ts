@@ -1,4 +1,7 @@
 import { createHmac } from 'node:crypto';
+import { folderKey, inFolder, type IdeBridge } from './ideBridge';
+import type { Ide } from './ide';
+import type { MailOutbox } from './mailOutbox';
 import { GitlabIssues } from './gitlabIssues';
 import type { Memes } from './memes';
 import { SessionNames } from './sessionNames';
@@ -29,7 +32,7 @@ import { resolveTicketStart } from './ticketStart';
 import { setGitlabHost } from './gitlabHost';
 import type { Registry } from './registry';
 import { listDirs, listHistory } from './history';
-import { registerMcp, type McpSlack } from './mcp';
+import { registerMcp, type McpSlack , type McpJournal } from './mcp';
 import { SlackError, slackManifest } from './slack';
 import { KEEP_MS, type JiraBatch, type JiraFeed } from './jiraFeed';
 import type { SecurityWatch } from './security';
@@ -49,7 +52,7 @@ import { imageType } from './slackFiles';
 import { isNamerCwd, isNamerSlug, namerDir, type Namer, type RunFn } from './namer';
 import { HistoryIndex, askForSession } from './historySearch';
 import { ChromeData } from './chromeData';
-import { gitChanges, gitDiff, netChange, normPath, snapshots } from './changes';
+import { gitChanges, gitDiff, netChange, normPath, snapshots, turnBefore } from './changes';
 import { tailOutput, taskOutputFile } from './tasks';
 import { terminalInput } from './input';
 import { choiceOpen } from './screen';
@@ -63,6 +66,8 @@ import { connectedMcp } from './mcpServers';
 import { accountUsage } from './accountUsage';
 import { homedir } from 'node:os';
 import { Lock } from './lock';
+import { Freeze } from './freeze';
+import { journalDir } from './journal';
 import { join as joinPath } from 'node:path';
 
 /** How long the agent's start_session waits for the new session to take its prompt (its tool call times out at a minute). */
@@ -77,6 +82,10 @@ export type AppDeps = {
   sessionNames?: SessionNames;
   /** lockdown (tests: none, a fresh one) */
   lock?: Lock;
+  /** deep freeze: the terminals that were open, to bring back after a restart */
+  freeze?: Freeze;
+  /** sessions' journals (their tool adds to them) */
+  journal?: McpJournal;
   /** live explains: a session's page and data files */
   live?: import('./liveExplains').LiveExplains;
   /** your Chrome / Edge bookmarks and history (tests: a fake) */
@@ -101,6 +110,12 @@ export type AppDeps = {
   gmail?: Gmail;
   /** emails the user waits for, and what to do when each comes */
   mailWatches?: MailWatches;
+  /** emails sessions asked to send, waiting for you */
+  mailOutbox?: MailOutbox;
+  /** the IDE panel's VS Code */
+  ide?: Ide;
+  /** Cora and the IDE panel's VS Code talking */
+  ideBridge?: IdeBridge;
   /** session names from a quick Haiku call (auto-names, "Suggest a name") */
   namer?: Namer;
   /** GitLab pipelines (failed jobs' logs) */
@@ -416,7 +431,7 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
         throw new Error('nothing to do');
     }
   });
-  registerMcp(app, config.hookToken, () => prefs.get(), d.slack, d.orchestrator ? { isAgent: (sid) => d.orchestrator!.isAgent(sid), deps: orchDeps, userTurn: () => d.orchestrator!.userTurn() } : undefined, d.environments, d.deploys, d.notes ? { notes: d.notes, nameOf: (sid) => { const s = store.getSession(sid); return s ? nameOf(s) : 'a session'; } } : undefined, d.gmail ? { gmail: d.gmail, ...(d.mailWatches ? { watches: d.mailWatches } : {}), nameOf: (sid) => { const s = store.getSession(sid); return s ? nameOf(s) : 'a session'; } } : undefined, config.agentToken, (cmd) => hub.publishUi({ t: 'ui', cmd }), d.live, d.memes);
+  registerMcp(app, config.hookToken, () => prefs.get(), d.slack, d.orchestrator ? { isAgent: (sid) => d.orchestrator!.isAgent(sid), deps: orchDeps, userTurn: () => d.orchestrator!.userTurn() } : undefined, d.environments, d.deploys, d.notes ? { notes: d.notes, nameOf: (sid) => { const s = store.getSession(sid); return s ? nameOf(s) : 'a session'; } } : undefined, d.gmail ? { gmail: d.gmail, ...(d.mailWatches ? { watches: d.mailWatches } : {}), ...(d.mailOutbox ? { outbox: d.mailOutbox } : {}), nameOf: (sid) => { const s = store.getSession(sid); return s ? nameOf(s) : 'a session'; } } : undefined, config.agentToken, (cmd) => hub.publishUi({ t: 'ui', cmd }), d.live, d.memes, d.journal);
   // starting work from Jira launches the way the agent's start_session does
   d.orchestrator?.setLauncher((x) => orchDeps().launch(x));
 
@@ -930,15 +945,114 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
     return d.gmail.status();
   });
   // what Cora watches for (your rules, Gmail's important), and who its drafts may go to
-  app.post<{ Body: { rules?: any; important?: unknown; drafts?: unknown; draftTo?: any } }>('/api/gmail/config', { preHandler: requireAction }, async (req, reply) => {
+  app.post<{ Body: { rules?: any; important?: unknown; drafts?: unknown; draftTo?: any; send?: unknown } }>('/api/gmail/config', { preHandler: requireAction }, async (req, reply) => {
     if (!d.gmail) return reply.code(501).send({ error: 'not supported' });
     const b = req.body ?? {};
     try {
-      d.gmail.setConfig({ ...(b.rules !== undefined ? { rules: b.rules } : {}), ...(b.important !== undefined ? { important: b.important === true } : {}), ...(b.drafts !== undefined ? { drafts: b.drafts === true } : {}), ...(b.draftTo !== undefined ? { draftTo: b.draftTo } : {}) });
+      d.gmail.setConfig({ ...(b.rules !== undefined ? { rules: b.rules } : {}), ...(b.important !== undefined ? { important: b.important === true } : {}), ...(b.drafts !== undefined ? { drafts: b.drafts === true } : {}), ...(b.draftTo !== undefined ? { draftTo: b.draftTo } : {}), ...(b.send !== undefined ? { send: b.send === true } : {}) });
       return d.gmail.status();
     } catch (e) {
       return reply.code(400).send({ error: (e as Error).message });
     }
+  });
+  // ---------------------------------------------------------------- the IDE panel's VS Code and Cora, talking
+  // the session working in a folder (the one most lately active there)
+  const sessionIn = (folder: string) =>
+    store
+      .listSessions()
+      .filter((s) => s.state !== 'ended' && s.cwd && (folderKey(s.cwd) === folderKey(folder) || inFolder(s.cwd, folder) || inFolder(folder, s.cwd)))
+      .sort((a, b) => b.lastTs - a.lastTs)[0];
+  const ideAuthed = (req: FastifyRequest) => !!d.ideBridge && sameSecret(String(req.headers['x-cora-ide'] ?? ''), d.ideBridge.token);
+  // the dashboard: open a file (at a line) in the IDE open on its folder, or a turn's change to it as a diff
+  app.post<{ Body: { sessionId?: unknown; path?: unknown; line?: unknown; from?: unknown; to?: unknown } }>('/api/ide/show', { preHandler: requireAction }, async (req, reply) => {
+    const b = req.body ?? {};
+    const s = typeof b.sessionId === 'string' ? store.getSession(b.sessionId) : undefined;
+    const path = typeof b.path === 'string' ? b.path : '';
+    if (!d.ideBridge || !s || !path) return reply.code(400).send({ error: 'a session and a file' });
+    const folder = d.ideBridge.folderFor(path) ?? s.cwd;
+    const from = Number(b.from);
+    const cmd = Number.isFinite(from) && from > 0
+      ? { kind: 'diff' as const, path, sessionId: s.id, from, to: Number.isFinite(Number(b.to)) && b.to != null ? Number(b.to) : null, title: `${path.split(/[\\/]/).pop()} (Claude's change)` }
+      : { kind: 'open' as const, path, ...(Number.isInteger(b.line) && (b.line as number) > 0 ? { line: b.line as number } : {}) };
+    return { ok: d.ideBridge.send(folder, cmd) };
+  });
+  // the IDE's extension: what's next for its window (it waits), and the session working there (its status bar)
+  app.get<{ Querystring: { folder?: string } }>('/api/ide/bridge/next', async (req, reply) => {
+    if (!ideAuthed(req)) return reply.code(401).send({ error: 'unauthorized' });
+    const folder = String(req.query.folder ?? '');
+    if (!folder) return reply.code(400).send({ error: 'folder' });
+    const cmds = await d.ideBridge!.next(folder);
+    const s = sessionIn(folder);
+    return { cmds, session: s ? { id: s.id, name: nameOf(s), state: s.state } : null };
+  });
+  // a file as it was when a turn began (the left side of its diff): only files that session works on
+  app.get<{ Querystring: { sessionId?: string; path?: string; from?: string } }>('/api/ide/bridge/before', async (req, reply) => {
+    if (!ideAuthed(req)) return reply.code(401).send({ error: 'unauthorized' });
+    const s = store.getSession(String(req.query.sessionId ?? ''));
+    const p = String(req.query.path ?? '');
+    if (!s?.transcriptPath || !p || !fileAllowed(s.id, s.cwd, s.transcriptPath, p)) return reply.code(403).send({ error: 'not a file this session works on' });
+    const text = turnBefore({ transcript: s.transcriptPath, sessionId: s.id, path: p, from: Number(req.query.from) });
+    return text == null ? reply.code(404).send({ error: 'no snapshot' }) : { text };
+  });
+  // what Claude wrote into a file (its edits' new text), for the editor's marks: the sessions in its folder
+  app.get<{ Querystring: { path?: string } }>('/api/ide/bridge/marks', async (req, reply) => {
+    if (!ideAuthed(req)) return reply.code(401).send({ error: 'unauthorized' });
+    const p = String(req.query.path ?? '');
+    if (!p) return reply.code(400).send({ error: 'path' });
+    const key = folderKey(p);
+    const snippets: string[] = [];
+    for (const s of store.listSessions().filter((x) => x.cwd && inFolder(p, x.cwd)).slice(0, 8))
+      for (const e of store.eventsForSession(s.id, { limit: 3000 })) {
+        if (e.kind !== 'tool' || e.phase !== 'end' || e.tool?.failed || !e.tool?.change || folderKey(e.tool.change.path) !== key) continue;
+        const inp = (e.tool.input ?? {}) as { new_string?: unknown; content?: unknown; edits?: Array<{ new_string?: unknown }> };
+        for (const t of [inp.new_string, ...(Array.isArray(inp.edits) ? inp.edits.map((x) => x?.new_string) : [])]) if (typeof t === 'string' && t.trim()) snippets.push(t.slice(0, 4000));
+      }
+    return { snippets: snippets.slice(-200) };
+  });
+  // what you selected in the IDE: into the prompt box of the session working there, to ask about
+  app.post<{ Body: { folder?: unknown; path?: unknown; start?: unknown; end?: unknown; text?: unknown } }>('/api/ide/bridge/ask', async (req, reply) => {
+    if (!ideAuthed(req)) return reply.code(401).send({ error: 'unauthorized' });
+    const b = req.body ?? {};
+    const s = typeof b.folder === 'string' ? sessionIn(b.folder) : undefined;
+    if (!s) return reply.code(404).send({ error: 'no session works in this folder' });
+    const rel = typeof b.path === 'string' && s.cwd && inFolder(b.path, s.cwd) ? b.path.slice(s.cwd.length + 1).replace(/\\/g, '/') : String(b.path ?? '');
+    const lines = Number.isInteger(b.start) ? `:${b.start}${Number.isInteger(b.end) && b.end !== b.start ? `-${b.end}` : ''}` : '';
+    const code = typeof b.text === 'string' ? b.text.slice(0, 8000) : '';
+    hub.publishUi({ t: 'ui', cmd: { action: 'compose', sessionId: s.id, text: `In \`${rel}${lines}\`:\n\`\`\`\n${code}\n\`\`\`\n` } });
+    return { ok: true, session: nameOf(s) };
+  });
+  // the status bar's click: Cora, at the session working there
+  app.post<{ Body: { folder?: unknown } }>('/api/ide/bridge/focus', async (req, reply) => {
+    if (!ideAuthed(req)) return reply.code(401).send({ error: 'unauthorized' });
+    const s = typeof req.body?.folder === 'string' ? sessionIn(req.body.folder) : undefined;
+    if (s) hub.publishUi({ t: 'ui', cmd: { action: 'focus', sessionId: s.id } });
+    return { ok: !!s };
+  });
+  // the IDE panel's VS Code: how it is; start it (accept: you accept Microsoft's server licence, once); stop it
+  app.get('/api/ide', { preHandler: requireUi }, async (_req, reply) => (d.ide ? d.ide.status() : reply.code(501).send({ error: 'not supported' })));
+  app.post<{ Body: { accept?: unknown; accent?: unknown } }>('/api/ide/start', { preHandler: requireAction }, async (req, reply) => {
+    if (!d.ide) return reply.code(501).send({ error: 'not supported' });
+    // it can take minutes the first time (it downloads the server): answer now, the panel asks again
+    const accent = typeof req.body?.accent === 'string' && /^#[0-9a-f]{6}$/i.test(req.body.accent) ? req.body.accent : undefined;
+    void d.ide.start(req.body?.accept === true, accent);
+    await new Promise((r) => setTimeout(r, 300));
+    return d.ide.status();
+  });
+  app.post('/api/ide/stop', { preHandler: requireAction }, async (_req, reply) => {
+    if (!d.ide) return reply.code(501).send({ error: 'not supported' });
+    d.ide.stop();
+    return d.ide.status();
+  });
+  // an email a session asked to send: your Send (with your changes), finish it in Gmail, or Discard
+  app.post<{ Params: { id: string }; Body: { action?: unknown; edit?: { to?: unknown; cc?: unknown; subject?: unknown; body?: unknown } } }>('/api/gmail/outbox/:id', { preHandler: requireAction }, async (req, reply) => {
+    if (!d.mailOutbox) return reply.code(501).send({ error: 'not supported' });
+    const b = req.body ?? {};
+    if (b.action !== 'send' && b.action !== 'discard' && b.action !== 'gmail') return reply.code(400).send({ error: 'action must be send, discard or gmail' });
+    const e = b.edit ?? {};
+    const str = (v: unknown, max: number) => (typeof v === 'string' ? v.slice(0, max) : undefined);
+    const edit = { to: str(e.to, 1000), cc: str(e.cc, 1000), subject: str(e.subject, 300), body: str(e.body, 20_000) };
+    const r = await d.mailOutbox.decide(req.params.id, { action: b.action, ...(b.action === 'send' ? { edit: Object.fromEntries(Object.entries(edit).filter(([, v]) => v !== undefined)) } : {}) });
+    return 'error' in r ? reply.code(400).send(r) : r;
   });
   // stop waiting for an email (Settings → Gmail, or the session's "waiting for email" button)
   app.post<{ Params: { id: string } }>('/api/gmail/watches/:id/stop', { preHandler: requireAction }, async (req, reply) => {
@@ -1458,6 +1572,59 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
     const f = findClaude();
     return { how: f.how, path: f.how === 'shim' || f.how === 'missing' ? null : f.cmd[0] };
   });
+  // --- deep freeze ----------------------------------------------------------------
+  // what was open when Cora (or the PC) last went down: sessions to resume, shells to open again
+  const freeze = d.freeze ?? new Freeze(null);
+  const liveIn = (sid: string, claude: boolean) => (ptys?.list() ?? []).some((t) => t.alive && t.sessionId === sid && (!claude || t.mode !== 'shell'));
+  const thawable = () =>
+    freeze
+      .items((sid, claude) => liveIn(sid, claude) || liveIn(sid, false))
+      .filter((it) => !d.orchestrator?.isAgent(it.sessionId))
+      .map((it) => {
+        const s = store.getSession(it.sessionId);
+        return { ...it, name: s ? displayName(s) : names.get(it.sessionId) ?? it.cwd.split(/[\\/]/).pop() ?? it.sessionId.slice(0, 8) };
+      });
+  // sessions' journals: where they're kept (Documents\Cora\Journal)
+  app.get('/api/journal', { preHandler: requireUi }, async () => ({ dir: journalDir() }));
+  // one session's journal (the Board's Journal panel)
+  app.get<{ Params: { id: string } }>('/api/journal/:id', { preHandler: requireUi }, async (req) => {
+    const j = d.journal?.read?.(req.params.id) ?? null;
+    return j ? { file: j.file, text: j.text } : { file: null, text: '' };
+  });
+  app.get('/api/freeze', { preHandler: requireUi }, async () => ({ at: freeze.at, items: thawable() }));
+  // bring them back: each session resumed in its folder, its shells opened again (their new ids, for the Board's)
+  app.post<{ Body: { sessionIds?: unknown } }>('/api/freeze/thaw', { preHandler: requireAction }, async (req, reply) => {
+    if (!ptys) return reply.code(501).send({ error: 'terminals disabled' });
+    const want = Array.isArray(req.body?.sessionIds) ? req.body.sessionIds.filter((x): x is string => typeof x === 'string').slice(0, 40) : [];
+    const kinds = ptys.shells();
+    const shells: Record<string, string> = {};
+    const errors: string[] = [];
+    let started = 0;
+    for (const it of thawable().filter((x) => want.includes(x.sessionId))) {
+      try {
+        if (it.claude) {
+          launchClaude({ mode: 'resume', cwd: it.cwd, sessionId: it.sessionId });
+          started++;
+        }
+        for (const sh of it.shells) {
+          const kind = kinds.find((k) => k.name === sh.shell)?.id;
+          const t = ptys.launch({ mode: 'shell', cwd: it.cwd, sessionId: it.sessionId, ...(kind ? { shell: kind } : {}), ...(sh.place ? { place: sh.place } : {}) });
+          shells[sh.id] = t.terminalId;
+        }
+      } catch (e) {
+        errors.push(`${it.name}: ${(e as Error).message}`);
+      }
+    }
+    freeze.forget(want);
+    return { started, shells, errors };
+  });
+  // not wanted: let them go (they're not offered again)
+  app.post<{ Body: { sessionIds?: unknown } }>('/api/freeze/forget', { preHandler: requireAction }, async (req) => {
+    const ids = Array.isArray(req.body?.sessionIds) ? req.body.sessionIds.filter((x): x is string => typeof x === 'string') : undefined;
+    freeze.forget(ids);
+    return { ok: true };
+  });
+
   app.get<{ Querystring: { fresh?: string } }>('/api/shells', { preHandler: requireUi }, async (req, reply) => {
     if (!ptys) return reply.code(501).send({ error: 'not supported' });
     return { shells: ptys.shells(req.query.fresh === '1').map(({ id, name, wsl }) => ({ id, name, ...(wsl ? { wsl } : {}) })) };

@@ -1,0 +1,83 @@
+/* The session's card, under its tabs, as quiet as Cora's own: its orb (Cora's, in the session's colour) with its light
+   on the card; around it, small labelled cells: where it is (branch, ticket, pipeline) on the left, how it runs
+   (context, model, its turn) on the right; its name and its state in a word (with how long); and under a hairline, how
+   far it has come (what it changed, its agents, how long it's been going), or what it's waiting on you for. What it's
+   saying and doing is in the transcript below. */
+.scard { --orb-glow: .35; position: relative; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 14px 16px 12px; border-bottom: 1px solid var(--hair2); background: radial-gradient(240px 160px at 50% 56px, color-mix(in srgb, var(--orb-tint, var(--sc)) calc(var(--orb-glow) * 22%), transparent), transparent 72%), var(--nav); font-family: var(--ui); text-align: center; }
+.scard .sc-top { display: grid; grid-template-columns: minmax(0, 1fr) 100px minmax(0, 1fr); gap: 14px; align-items: center; width: 100%; max-width: 560px; }
+.scard .sc-orb { display: grid; place-items: center; width: 100px; height: 100px; cursor: pointer; }
+.scard .sc-cells { position: relative; z-index: 1; display: flex; flex-direction: column; gap: 9px; min-width: 0; }
+.scard .sc-cells.l { align-items: flex-end; text-align: right; }
+.scard .sc-cells.r { align-items: flex-start; text-align: left; }
+.scard .sc-cell { display: flex; flex-direction: column; gap: 1px; max-width: 100%; min-width: 0; }
+.scard .sc-cells.l .sc-cell { align-items: flex-end; }
+.scard .sc-cell small { color: var(--ink4); font: 600 8.5px var(--code); letter-spacing: .2em; text-transform: uppercase; }
+.scard .sc-cell .v { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; overflow: hidden; color: var(--ink2); font: 500 12px var(--ui); text-overflow: ellipsis; white-space: nowrap; }
+.scard .sc-dot { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--ink4); }
+.scard .sc-dot.ok { background: var(--work); }
+.scard .sc-dot.bad { background: var(--need); }
+.scard .sc-dot.run { background: var(--think); animation: sc-pulse 1.4s ease-in-out infinite; }
+@keyframes sc-pulse { 50% { opacity: .35; } }
+.scard .sc-bar { position: relative; width: 44px; height: 3px; overflow: hidden; border-radius: 2px; background: var(--hair2); }
+.scard .sc-bar i { position: absolute; inset: 0 auto 0 0; border-radius: 2px; background: var(--work); }
+.scard .sc-bar.mid i { background: var(--think); }
+.scard .sc-bar.hi i { background: var(--need); }
+.scard .sc-name { max-width: 100%; margin-top: 6px; overflow: hidden; color: var(--ink); font: 600 13.5px var(--ui); text-overflow: ellipsis; white-space: nowrap; }
+.scard .sc-st { font: 600 10px var(--code); letter-spacing: .14em; text-transform: uppercase; color: var(--ink4); }
+.scard .sc-st em { margin-left: 8px; color: var(--ink4); font-style: normal; font-weight: 500; letter-spacing: .04em; }
+.scard .sc-st.w { color: var(--work); }
+.scard .sc-st.t { color: var(--think); }
+.scard .sc-st.n { color: var(--need); }
+.scard .sc-st.s { color: color-mix(in srgb, var(--sc) 70%, #fff); }
+/* under the hairline: how far it has come, in a row */
+.scard .sc-cells.f { flex-direction: row; justify-content: center; gap: 22px; width: 100%; max-width: 520px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--hair); }
+.scard .sc-cells.f .sc-cell { align-items: center; }
+.scard .sc-cell .add { color: var(--work); }
+.scard .sc-cell .del { color: var(--need); }
+.scard .sc-web { max-width: 160px; overflow: hidden; padding: 0; border: 0; background: none; color: var(--ink2); font: inherit; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+.scard .sc-web:hover:not(:disabled) { color: var(--ink); text-decoration: underline dotted; text-underline-offset: 3px; }
+/* or what it's waiting on you for */
+.scard .sc-ask { display: flex; flex-direction: column; align-items: center; gap: 8px; width: 100%; max-width: 520px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--hair); }
+.scard .sc-ask .q { max-width: 100%; overflow: hidden; color: #ffc9c9; font: 400 12px var(--ui); text-overflow: ellipsis; white-space: nowrap; }
+.scard .sc-ask code { color: var(--ink); font: 400 11.5px var(--code); }
+.scard .sc-yn { display: flex; gap: 6px; }
+.scard .sc-yn button { height: 24px; padding: 0 12px; border: 0; border-radius: 7px; font: 600 11.5px var(--ui); cursor: pointer; }
+.scard .sc-ok { background: color-mix(in srgb, var(--work) 16%, var(--raise)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--work) 45%, transparent); color: #d9fbe9; }
+.scard .sc-ok:hover { background: color-mix(in srgb, var(--work) 26%, var(--raise)); }
+.scard .sc-no { background: none; color: var(--ink3); }
+.scard .sc-no:hover { background: var(--raise2); color: var(--ink); }
+.scard .sc-ib { display: grid; place-items: center; width: 24px; height: 24px; padding: 0; border: 0; border-radius: 6px; background: none; color: var(--ink4); cursor: pointer; }
+.scard .sc-ib:hover { background: var(--raise2); color: var(--ink); }
+/* its voice: a faint icon in the top-left corner, its menu under it */
+.scard .sc-vw { position: absolute; top: 8px; left: 8px; z-index: 2; }
+.scard .sc-voice { color: color-mix(in srgb, var(--sc) 45%, var(--ink4)); opacity: .7; }
+.scard .sc-voice.own { opacity: 1; color: color-mix(in srgb, var(--sc) 70%, var(--ink3)); }
+.scard .sc-voice:hover, .scard .sc-voice.on { opacity: 1; background: var(--raise2); color: color-mix(in srgb, var(--sc) 70%, #fff); }
+.scard .sc-vmenu { position: absolute; left: 0; top: calc(100% + 4px); z-index: 30; display: flex; flex-direction: column; min-width: 170px; padding: 4px; border-radius: 9px; background: var(--raise2); box-shadow: inset 0 0 0 1px var(--hair2), 0 12px 30px rgba(0, 0, 0, .5); text-align: left; }
+.scard .sc-vmenu button { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 9px; border: 0; border-radius: 6px; background: none; color: var(--ink); font: 500 12px var(--ui); cursor: pointer; }
+.scard .sc-vmenu button:hover { background: color-mix(in srgb, var(--sc) 12%, transparent); }
+.scard .sc-vmenu button.on { color: color-mix(in srgb, var(--sc) 70%, #fff); }
+.scard .sc-vmenu { max-height: 320px; overflow-y: auto; }
+.scard .sc-vmenu small { margin-left: 4px; color: var(--ink4); font-size: 10.5px; }
+.scard .sc-vmenu .head { padding: 8px 9px 3px; color: var(--ink4); font: 600 8.5px var(--code); letter-spacing: .2em; text-transform: uppercase; }
+.scard .sc-vmenu .note { padding: 6px 9px; color: var(--ink4); font: 400 11.5px var(--ui); }
+
+/* at the top of its column it's the window's top strip: it drags the window (its orb, buttons and fields don't), the
+   window's own buttons sit over its top right corner, so there's room above its cells and its corner keeps clear */
+.rightcol > .scard { -webkit-app-region: drag; padding-top: 34px; }
+.rightcol > .scard .sc-orb, .rightcol > .scard button, .rightcol > .scard .sc-vmenu, .rightcol > .scard .sc-ask, .rightcol > .scard .sc-cell { -webkit-app-region: no-drag; }
+
+/* the band: edge to edge across the column's top in its own glow (the window's buttons sit in it, on a clear ground), a
+   soft lip and shadow under it parting it from the tabs and the transcript */
+
+/* the band: edge to edge across the column's top in its own glow (the window's buttons sit in it, on a clear ground);
+   its bottom edge straight, its corners curving out and down into the column's sides, so what's under it reads as a
+   window set into it (the bottom band, the terminal and composer, mirrors it: right.css) */
+.rightcol > .scard { --band: var(--raise); z-index: 2; border-bottom: 0; background: radial-gradient(300px 190px at 50% 74px, color-mix(in srgb, var(--orb-tint, var(--sc)) calc(var(--orb-glow) * 26%), transparent), transparent 74%), var(--band); }
+.rightcol > .scard::before, .rightcol > .scard::after { content: ''; position: absolute; top: 100%; width: 16px; height: 16px; pointer-events: none; }
+.rightcol > .scard::before { left: 0; background: radial-gradient(circle at 100% 100%, transparent 15.5px, var(--band) 16px); }
+.rightcol > .scard::after { right: 0; background: radial-gradient(circle at 0% 100%, transparent 15.5px, var(--band) 16px); }
+
+/* the tabs aren't the window's top strip any more (the card is): no drag there, so a menu hanging over them (its voice
+   list) isn't cut off by Windows taking that strip as the title bar */
+.rightcol .rtabs { -webkit-app-region: no-drag; }

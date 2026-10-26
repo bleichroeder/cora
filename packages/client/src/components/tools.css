@@ -65,3 +65,10 @@ body.ui-dragging .td-body webview { pointer-events: none; }
 .rail-tools:hover .rt-grip::after { opacity: 1; }
 .rail-tools .rt-grip:hover::after { background: color-mix(in srgb, var(--cora) 60%, transparent); }
 .rail-tools .rt-list { overflow-y: auto; }
+
+/* an email waiting for your Send: who it's to, the subject, the words (the Slack card's look) */
+.mail-outbox .mo-fields { display: flex; flex-direction: column; gap: 4px; }
+.mail-outbox .mo-fields label { display: flex; align-items: center; gap: 8px; font: 12px var(--mono); }
+.mail-outbox .mo-fields .k { flex: none; width: 54px; color: #64748b; }
+.mail-outbox .mo-fields input { flex: 1; min-width: 0; height: 26px; padding: 0 8px; border: 0; border-radius: 6px; background: var(--raise); box-shadow: inset 0 0 0 1px var(--hair); color: var(--ink); font: 12.5px var(--ui); outline: none; }
+.mail-outbox .mo-fields input:focus { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cora) 55%, transparent); }

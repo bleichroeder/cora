@@ -5,6 +5,17 @@ const urls = (st: WebState, sid: string) => (st.sessions[sid]?.tabs ?? []).map((
 const active = (st: WebState, sid: string) => st.tabs[st.sessions[sid]?.active ?? '']?.url;
 
 describe('browser tabs per session', () => {
+  it('a tab can be signed in as a profile of its own (a Gmail draft): its own tab, kept over a reload', () => {
+    let st = openUrl(EMPTY_WEB, 'a', 'https://mail.google.com/mail/u/me/#drafts?compose=1');
+    st = openUrl(st, 'a', 'https://mail.google.com/mail/u/me/#drafts?compose=1', { profile: 'chrome:Profile 2' });
+    expect(urls(st, 'a')).toHaveLength(2);
+    const mine = Object.values(st.tabs).find((t) => t.profile);
+    expect(mine?.profile).toBe('chrome:Profile 2');
+    // opened again as that profile: the same tab
+    expect(urls(openUrl(st, 'a', 'https://mail.google.com/mail/u/me/#drafts?compose=1', { profile: 'chrome:Profile 2' }), 'a')).toHaveLength(2);
+    expect(Object.values(deserialize(serialize(st)).tabs).find((t) => t.profile)?.profile).toBe('chrome:Profile 2');
+  });
+
   it('each session keeps its own tabs; a link reuses its tab or opens a new one', () => {
     let st = openUrl(EMPTY_WEB, 'a', 'https://gitlab/x/-/pipelines');
     st = openUrl(st, 'a', 'https://jira/browse/T-1');

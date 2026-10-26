@@ -8,6 +8,8 @@ import { ContextPanel, GoalPanel, UsagePanel } from './SessionPanels';
 import { BrowserPanel, TerminalPanel } from './ToolPanels';
 import { RecapPanel } from '../Recap';
 import { MemePanel } from './MemePanel';
+import { JournalPanel } from './JournalPanel';
+import { IdePanel } from './IdePanel';
 import './panels.css';
 
 type Props = { sessionId: string; data: BoardData };
@@ -15,6 +17,7 @@ const BODIES: Partial<Record<PanelKind, React.ComponentType<Props>>> = {
   goal: GoalPanel,
   recap: RecapPanel,
   memes: MemePanel,
+  journal: JournalPanel,
   context: ContextPanel,
   changes: ChangesPanel,
   git: GitPanel,
@@ -30,6 +33,7 @@ const BODIES: Partial<Record<PanelKind, React.ComponentType<Props>>> = {
   usage: UsagePanel,
   terminal: TerminalPanel,
   browser: BrowserPanel,
+  ide: IdePanel,
 };
 
 /** The live board's other panels (the first four live in LiveBoard), each in its own boundary: one failing leaves the rest. */

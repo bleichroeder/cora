@@ -17,11 +17,17 @@ export type GmailStatus = {
   drafts: boolean;
   /** who its drafts may go to (addresses, or @domains); empty: anyone */
   draftTo: string[];
+  /** sessions may ask for an email to be sent: it waits in Cora for your Send (default off) */
+  send: boolean;
   /** the emails being waited for (email watches) */
   watches: MailWatch[];
   error?: string;
   lastCheck?: number;
 };
+
+/** An email a session asked to send (a draft in your Gmail meanwhile), waiting for you: send it, finish it in Gmail, or discard it. */
+export type MailSend = { id: string; sessionId: string | null; /** the session's name */ by: string; to: string; cc?: string; subject: string; body: string; /** the draft in Gmail */ link: string; at: number; /** the session is still waiting for your answer */ waiting: boolean };
+export type MailOutboxMsg = { t: 'mailOutbox'; drafts: MailSend[] };
 
 /** Something Cora watches for: a name, and a Gmail search (from:ana@x.com, subject:(outage OR incident) …). */
 export type MailRule = { id: string; label: string; query: string };

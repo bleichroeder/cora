@@ -17,7 +17,8 @@ export type DesktopBridge = {
   opPrefs?(p: import('@cora/shared').OnePasswordSettings): void;
   onLoginForm?(cb: (m: { from: number; url: string; form: boolean }) => void): () => void;
   /** the key in a page's login field: focused, left, or clicked (`r`: the field, in the page's pixels) */
-  onOpField?(cb: (m: { from: number; k: 'focus' | 'blur' | 'open'; r?: { x: number; y: number; w: number; h: number }; unlocked: boolean }) => void): () => void;
+  openJournal?(file?: string): void;
+  onOpField?(cb: (m: { from: number; k: 'focus' | 'blur' | 'open'; r?: { x: number; y: number; w: number; h: number }; unlocked: boolean; v?: boolean }) => void): () => void;
   /** save an explain as a file (Documents\\Cora\\Explains) and show it in Explorer */
   saveExplain?(title: string, ext: 'md' | 'html', content: string): Promise<{ path?: string; error?: string }>;
   onFocusSession(cb: (sessionId: string) => void): () => void;

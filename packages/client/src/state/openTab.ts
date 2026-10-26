@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import type { UiCommand } from '@cora/shared';
 import { useBrain } from './store';
 import { useWeb } from './web';
+import { mailProfile } from './browser';
 
 /**
  * A session's open_tab, once the server's checks passed (the tool is what opens a page, never the call showing up in a
@@ -39,7 +40,7 @@ const hostOf = (u: string) => {
 };
 
 /** Sites the user plainly uses: their Tools', what's open in a tab now, and ones they said Open to before. */
-function familiar(host: string): boolean {
+export function familiar(host: string): boolean {
   const tools = (useBrain.getState().prefs?.tools ?? []).map((t) => hostOf(t.url));
   const open = Object.values(useWeb.getState().tabs).map((t) => hostOf(t.url));
   return [...tools, ...open, ...said()].some((h) => h && (host === h || host.endsWith(`.${h}`)));
@@ -50,7 +51,9 @@ export function openTab(cmd: Extract<UiCommand, { action: 'open_tab' }>): void {
   const sid = cmd.sessionId && st.sessions[cmd.sessionId] ? cmd.sessionId : st.focus;
   const host = hostOf(cmd.url);
   if (!sid || !host || !/^https?:\/\//i.test(cmd.url)) return;
-  if (cmd.known || familiar(host)) return void useWeb.getState().open(sid, cmd.url, { reload: true });
+  // Gmail (a draft to check and send): signed in as the profile your Gmail is on, whatever the browser's profile
+  const profile = host === 'mail.google.com' ? mailProfile() : undefined;
+  if (cmd.known || familiar(host)) return void useWeb.getState().open(sid, cmd.url, { reload: true, ...(profile ? { profile } : {}) });
   const asks = useOpenAsks.getState().asks;
   if (asks.some((a) => a.sessionId === sid && a.url === cmd.url)) return;
   useOpenAsks.setState({ asks: [...asks, { id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, sessionId: sid, url: cmd.url, host }].slice(-5) });
