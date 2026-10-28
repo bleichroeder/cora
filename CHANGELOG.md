@@ -4,6 +4,10 @@ What changed in each release. Cora updates itself; each update's notes are on it
 
 ## Unreleased
 
+## 0.1.10
+
+- **Project board:** its header moves the window again, and its buttons no longer sit under the window's own (minimise, maximise, close).
+
 ## 0.1.9
 
 - **Projects.** Group sessions that belong to one piece of work: a Projects section in the nav, each project's own

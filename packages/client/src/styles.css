@@ -1171,6 +1171,9 @@ a.autolink:hover { text-decoration: underline; }
 .rightcol .rtabs { padding-right: 14px; }
 .main .overview .ov-head { padding-right: calc(16px + var(--wco-r)); }
 .main .cora-cmd .cm-h { padding-right: calc(18px + var(--wco-r)); }
+/* a project's header: the same (its empty middle moves the window; Windows' buttons keep their corner) */
+.main .pjv-h { padding-right: calc(14px + var(--wco-r)); -webkit-app-region: drag; }
+.main .pjv-h > :not(.sp):not(.pjv-meta) { -webkit-app-region: no-drag; }
 /* views that take the whole window (an explain, a diff, the browser): their header keeps Windows' buttons free, and moves the window */
 .viewer-wide .viewer-h, .viewer-wide .dv-h, .web-pane.wide .web-bar { padding-right: calc(10px + var(--wco-r)); -webkit-app-region: drag; }
 .viewer-wide .viewer-h > :not(.spacer), .viewer-wide .dv-h > :not(.spacer), .web-pane.wide .web-bar > * { -webkit-app-region: no-drag; }
