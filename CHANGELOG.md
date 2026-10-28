@@ -4,6 +4,28 @@ What changed in each release. Cora updates itself; each update's notes are on it
 
 ## Unreleased
 
+## 0.1.12
+
+- **Debrief videos.** 🎬 on a debrief opens **Make a video**: narrated slides of the walkthrough, in your Cora's look
+  (a ferrofluid orb on the title card, each step's code with its lines lit).
+  - Leave steps out, drag them into another order, change what each one says, with a live preview.
+  - Pick the voice (hear a sample), its pace, the title card's words, size, code, subtitles, and your colour or the
+    session's.
+  - Watch it in a popup or the Videos panel; save it, send it in Slack, or let it go after a day (or an hour, or a
+    week). The first video offers to download ffmpeg if you haven't got it.
+- **Voice mutes, one job each:** a session's speaker mutes that session; the speaker by Sessions in the nav mutes every
+  session; Cora's card has its own, for Cora.
+- **Board layouts:** every work page has the Spotlight; Coding and Reviewing are led by the IDE (a debrief plays
+  there); a new session's board is the Spotlight full height.
+- **Cora's alerts about sessions are accurate:** no more old failures replayed after a restart, no "ended mid-turn" for
+  sessions that were simply idle, one root failure isn't counted three times, and "stuck" is said once. Cora can mute a
+  session's alerts when you ask.
+- **Restarts are lighter:** transcripts aren't stored again each time Cora starts, and very large transcripts read
+  reliably.
+- **Faster and leaner:** a session's history loads far faster, the window re-renders much less, orbs pause when they
+  can't be seen, and several small memory leaks are fixed.
+- **Fixes:** a "queued" message that never went away; asking to use a secret now says what it's for, not its name.
+
 ## 0.1.11
 
 - **Cora's Slack banner.** A message Cora sends for you opens with an animated banner: your orb in your Cora colour,

@@ -40,6 +40,7 @@ export class Hub {
   deploysSnapshot?: () => DeploysMsg;
   /** your repos' worktrees */
   worktreesSnapshot?: () => WorktreesMsg;
+  videosSnapshot?: () => import('@cora/shared').VideosMsg;
   /** your projects */
   projectsSnapshot?: () => import('@cora/shared').ProjectsMsg;
   /** your secrets (names and notes, never values) */
@@ -168,6 +169,7 @@ export class Hub {
     if (this.ciSnapshot) this.send(sock, this.ciSnapshot());
     if (this.deploysSnapshot) this.send(sock, this.deploysSnapshot());
     if (this.worktreesSnapshot) this.send(sock, this.worktreesSnapshot());
+    if (this.videosSnapshot) this.send(sock, this.videosSnapshot());
     if (this.secretsSnapshot) this.send(sock, this.secretsSnapshot());
     if (this.projectsSnapshot) this.send(sock, this.projectsSnapshot());
     if (this.rbrowseSnapshot) this.send(sock, this.rbrowseSnapshot());
@@ -282,6 +284,11 @@ export class Hub {
   }
 
   publishProjects(m: import('@cora/shared').ProjectsMsg): void {
+    this.broadcast(m);
+  }
+
+  /** debrief videos: their progress, ffmpeg */
+  publishVideos(m: import('@cora/shared').VideosMsg): void {
     this.broadcast(m);
   }
 

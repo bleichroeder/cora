@@ -153,10 +153,14 @@ export type VoiceSettings = {
   /** reading full replies stops after about this many characters ("More in the transcript.") */
   cap: number;
   /**
-   * the transcript's speaker button: nothing is said on its own (replies, finished commands, pipelines, failures, "needs
-   * you", Cora's own news); what you click, and Cora answering you, still are
+   * every session muted (the speaker by the nav's Sessions heading): nothing a session says is said on its own (replies,
+   * finished commands, pipelines, failures, "needs you"); what you click still is. Cora has its own switch (coraMuted).
    */
   muted?: boolean;
+  /** sessions muted one by one (the speaker in a session's transcript): their ids */
+  mutedSessions?: string[];
+  /** Cora's own voice off (its card's speaker): nothing Cora says is spoken, its answers to you included */
+  coraMuted?: boolean;
   /** say it out loud when a session needs a permission decision */
   announce: boolean;
   /** say it when a background command finishes */
@@ -499,6 +503,7 @@ export type ServerMsg =
   | import('./security').SecurityMsg
   | import('./orchestrator').OrchMsg
   | import('./projects').ProjectsMsg
+  | import('./debriefVideo').VideosMsg
   | import('./orchestrator').UiCommandMsg
   | ExplainDataMsg
   /** Cora locked: every page goes to the lock screen */

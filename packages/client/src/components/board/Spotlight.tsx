@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef } from 'react';
+import { useVideos } from '../../state/videos';
 import { dockSpotlight } from '../../state/boardDock';
 import { ciActive } from '@cora/shared';
 import { useBrain, sessionEvents } from '../../state/store';
@@ -52,6 +53,8 @@ export function SpotlightPanel({ sessionId, data, item, onPage, onPin, render }:
     }
     return { asked, editAt, testsFailedAt, testsRunning: [...tests.values()].some(Boolean) };
   }, [sessionId, version, tick]); // eslint-disable-line react-hooks/exhaustive-deps
+  // its newest debrief video (being made, or just made)
+  const video = useVideos((v) => v.jobs.filter((j) => j.sessionId === sessionId).at(-1));
   const live = data.explains.filter((x) => x.live).sort((a, b) => b.ts - a.ts)[0];
   // an explain Claude wrote is Claude's pick too: the newer of it and the last spotlight ask
   const wrote = data.explains[0];
@@ -66,6 +69,7 @@ export function SpotlightPanel({ sessionId, data, item, onPage, onPin, render }:
     ...(live ? { live: { title: live.title, at: live.ts } } : {}),
     background: data.d.tasks.filter((t) => t.status === 'running').length,
     ...(recapAt ? { recapAt } : {}),
+    ...(video ? { video: { making: video.stage !== 'ready' && video.stage !== 'failed', ...(video.stage === 'ready' ? { readyAt: video.createdAt } : {}) } } : {}),
   };
   // what it shows, and since when (kept while the panel is up)
   const cur = useRef<{ spot: Spot; since: number } | null>(null);

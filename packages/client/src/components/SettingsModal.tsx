@@ -1,5 +1,6 @@
 import { GlRestart } from './GlGuard';
 import { MemeRows } from './MemeSettings';
+import { VideoRows } from './VideoSettings';
 import { EnvironmentsSection, GitlabSection, fetchGitlabStatus, type GitlabStatus } from './EnvironmentsSettings';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { SlackSection, ToolsSection } from './SlackSettings';
@@ -345,6 +346,7 @@ export function SettingsModal() {
                       <Choice value={server.worktrees?.move ?? 'collide'} onChange={(move) => void save({ worktrees: { move } })} options={[['collide', 'When they would collide'], ['always', 'Always'], ['ask', 'Only when asked']]} />
                     </Row>
                     <Toggle label="Read debriefs aloud" hint="As you step through one, each step is read in the session's voice (playing one through always reads it, with voice on)." checked={!!server.debrief?.speak} onChange={(speak) => void save({ debrief: { speak } })} />
+                    <VideoRows server={server} save={trySave} />
                   </>
                 ) : null}
                 {server ? <MemeRows server={server} save={trySave} /> : null}

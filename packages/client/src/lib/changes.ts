@@ -66,7 +66,7 @@ export function openChanges(sessionId: string, path: string, opts: Partial<DiffT
   if (opts.mode === 'git') return st.setDiff({ sessionId, path, mode: 'git' });
   if (opts.from == null) {
     const turns = changeTurns(sessionEvents(sessionId), st.sessions[sessionId]?.cwd);
-    const t = [...turns].reverse().find((x) => x.files.some((f) => samePath(f.path, path)));
+    const t = turns.findLast((x) => x.files.some((f) => samePath(f.path, path)));
     if (t) opts = { ...opts, from: t.from, to: t.to };
     else opts = { ...opts, from: 0, to: null };
   }

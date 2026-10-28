@@ -208,6 +208,15 @@ describe('parseLine', () => {
     expect(parseLine({ type: 'queue-operation', operation: 'dequeue', timestamp: iso(6000), sessionId: SID }, ctx)).toEqual({ events: [], meta: {} });
   });
 
+  it("a `!` command typed while Claude works: queued, and no longer once it runs (Claude Code writes no line saying it left)", () => {
+    const ctx = newParseCtx();
+    const cmd = 'node scripts/package.mjs --no-build --publish';
+    expect(parseLine({ type: 'queue-operation', operation: 'enqueue', timestamp: iso(1000), sessionId: SID, content: cmd }, ctx).events[0]).toMatchObject({ queue: 'waiting' });
+    const ran = parseLine({ type: 'user', uuid: 'b1', timestamp: iso(2000), sessionId: SID, message: { role: 'user', content: `<bash-input>${cmd}</bash-input>` } }, ctx).events;
+    expect(ran).toEqual(expect.arrayContaining([expect.objectContaining({ kind: 'tool', phase: 'start' }), expect.objectContaining({ kind: 'prompt', queue: 'delivered', text: cmd })]));
+    expect(ctx.queued).toEqual([]);
+  });
+
   it("a message you send while Claude works: queued until it's taken; taken mid-turn, a prompt where Claude got it", () => {
     const ctx = newParseCtx();
     const msg = 'also, add a home button';

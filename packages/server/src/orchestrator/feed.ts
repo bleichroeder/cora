@@ -23,6 +23,15 @@ const WAITED_MS = 3 * 60_000;
 export const FAIL_STREAK = 3;
 /** working with no activity this long: it may be stuck */
 export const STALLED_MS = 15 * 60_000;
+/**
+ * An event older than this isn't news: it's one read again (Cora re-reads the day's transcripts when it starts, and a
+ * hook's event and its transcript line are stored as one, so the same event can come by more than once).
+ */
+export const LIVE_MS = 5 * 60_000;
+/** a failure that only follows from the one before (the file it was to make isn't there): not a failure of its own */
+const FOLLOW_ON = /\b(does not exist|no such file|not found|ENOENT|cannot find the (file|path))\b/i;
+const FOLLOWERS = new Set(['Read', 'Glob', 'Grep', 'LS', 'NotebookRead']);
+const SEEN_MAX = 5000;
 const MAX_LINES = 20;
 
 const clip = (s: string | undefined, n: number) => {
@@ -52,8 +61,14 @@ export class EventFeed {
   private lastSay = new Map<string, string>();
   /** failure watching: failed calls in a row per session (told once per streak), the last thing each did, who was told stalled */
   private streaks = new Map<string, { n: number; told: boolean; last: string }>();
-  private lastKind = new Map<string, string>();
-  private toldStalled = new Map<string, number>();
+  /** each session's turn, as live events tell it: open (a prompt came, no end yet) and when it last did anything */
+  private turns = new Map<string, { open: boolean; at: number }>();
+  /** sessions told stuck in their current working stretch (said again only after it stops working) */
+  private toldStalled = new Set<string>();
+  /** sessions whose alerts are muted, until when (the user asked, through Cora) */
+  private muted = new Map<string, number>();
+  /** events already heard (by id): the same event coming again isn't heard twice */
+  private seen = new Set<string>();
 
   /** Things to know but not worth a turn of their own (Jira): they go with the next delivery, or before your next words. */
   private held: string[] = [];
@@ -94,11 +109,30 @@ export class EventFeed {
     if (o.others) this.qOthers = true;
   }
 
+  /** Mute a session's alerts (failures, stuck, ended) for a while; 0 hours unmutes. Returns until when. */
+  mute(sessionId: string, hours: number): number {
+    if (hours <= 0) return void this.muted.delete(sessionId), 0;
+    const until = this.now() + hours * 3_600_000;
+    this.muted.set(sessionId, until);
+    return until;
+  }
+  private quiet(sid: string): boolean {
+    const until = this.muted.get(sid);
+    if (until && until <= this.now()) this.muted.delete(sid);
+    return !!until && until > this.now();
+  }
+
   event(e: BrainEvent): void {
     if (!e.sessionId || this.d.isAgent(e.sessionId) || e.agentId !== 'main') return;
+    // news only: an event read again (old), or one heard already, is neither counted nor told
+    if (this.now() - e.ts > LIVE_MS) return;
+    const key = `${e.id}|${e.phase ?? ''}`;
+    if (this.seen.has(key)) return;
+    this.seen.add(key);
+    if (this.seen.size > SEEN_MAX) this.seen.delete(this.seen.values().next().value!);
     if (e.kind === 'say' && e.text) this.lastSay.set(e.sessionId, e.text);
     this.watchFailures(e);
-    this.lastKind.set(e.sessionId, e.kind);
+    this.watchTurn(e);
     if (this.d.mode() !== 'autopilot' || !this.d.isWorker(e.sessionId)) return;
     const name = this.d.name(e.sessionId);
     if (e.kind === 'turn_end') {
@@ -117,32 +151,54 @@ export class EventFeed {
     if (e.kind === 'tool' && e.phase === 'end' && e.tool) {
       const s = this.streaks.get(sid) ?? { n: 0, told: false, last: '' };
       if (!e.tool.failed) return void this.streaks.delete(sid);
+      // reading what a failed step was to make (its screenshot, its file) fails too: that's the same failure
+      if (s.n && FOLLOWERS.has(e.tool.name) && FOLLOW_ON.test(e.tool.resultSummary ?? '')) return;
       s.n += 1;
       s.last = `${e.tool.name}${e.tool.summary ? ` \`${clip(e.tool.summary, 120)}\`` : ''}${e.tool.resultSummary ? `: ${clip(e.tool.resultSummary, 200)}` : ''}`;
       this.streaks.set(sid, s);
       if (s.n >= FAIL_STREAK && !s.told) {
         s.told = true;
-        this.push(`${name()} has failed ${s.n} tool calls in a row (last: ${s.last})`);
+        if (!this.quiet(sid)) this.push(`${name()} has failed ${s.n} tool calls in a row (last: ${s.last})`);
       }
     } else if (e.kind === 'say' && /^\s*API Error\b/i.test(e.text ?? '')) {
-      this.push(`${name()} stopped on an API error: ${clip(e.text, 240)}`);
+      if (!this.quiet(sid)) this.push(`${name()} stopped on an API error: ${clip(e.text, 240)}`);
     } else if (e.kind === 'session_end') {
-      const prev = this.lastKind.get(sid);
-      if (prev && prev !== 'turn_end' && prev !== 'session_start' && prev !== 'interrupt') this.push(`${name()} ended in the middle of a turn`);
+      // mid-turn: a turn began (heard live) and hadn't ended, and it was doing something lately (a session left idle
+      // for hours and closed isn't cut off mid-turn, whatever its last line was)
+      const t = this.turns.get(sid);
+      if (t?.open && e.ts - t.at < STALLED_MS && !this.quiet(sid)) this.push(`${name()} ended in the middle of a turn`);
       this.streaks.delete(sid);
+      this.turns.delete(sid);
     }
   }
 
-  /** Sessions that look stuck: working, with nothing happening for a while (said once until they move again). */
+  /** A session's turn as live events tell it: a prompt opens it; its end, an interrupt or a fresh start closes it. */
+  private watchTurn(e: BrainEvent): void {
+    const sid = e.sessionId;
+    const t = this.turns.get(sid) ?? { open: false, at: e.ts };
+    if (e.kind === 'prompt' && !e.queue) t.open = true;
+    else if (e.kind === 'turn_end' || e.kind === 'interrupt' || e.kind === 'session_start') t.open = false;
+    t.at = Math.max(t.at, e.ts);
+    this.turns.set(sid, t);
+  }
+
+  /**
+   * Sessions that look stuck: working, with nothing happening for a while. Said once a working stretch: again only
+   * after it has stopped working (finished, waiting on you, ended), not every time it stirs. Muted sessions: never.
+   */
   sessions(list: SessionInfo[]): void {
     const now = this.now();
     for (const s of list) {
       if (this.d.isAgent(s.id)) continue;
-      const told = this.toldStalled.get(s.id);
-      if (told !== undefined && s.lastTs > told) this.toldStalled.delete(s.id);
-      if ((s.state === 'working' || s.state === 'thinking') && now - s.lastTs >= STALLED_MS && !this.toldStalled.has(s.id)) {
-        this.toldStalled.set(s.id, s.lastTs);
-        this.push(`"${this.d.name(s.id)}" (${s.id}) has been working with no activity for ${Math.round((now - s.lastTs) / 60_000)} minutes: it may be stuck`);
+      const working = s.state === 'working' || s.state === 'thinking';
+      // one Cora hasn't heard from since it started may only look busy (its transcript read again): not stuck
+      if (!working || !this.turns.has(s.id)) {
+        this.toldStalled.delete(s.id);
+        continue;
+      }
+      if (now - s.lastTs >= STALLED_MS && !this.toldStalled.has(s.id)) {
+        this.toldStalled.add(s.id);
+        if (!this.quiet(s.id)) this.push(`"${this.d.name(s.id)}" (${s.id}) has been working with no activity for ${Math.round((now - s.lastTs) / 60_000)} minutes: it may be stuck (mute_alerts quiets it)`);
       }
     }
   }

@@ -173,7 +173,7 @@ export class PtyManager {
         // the real size arrives with the UI's next resize; the mirror catches up from there
         t.screen = this.newScreen(100, 30);
         if (t.screen && t.buf) {
-          t.screen.write(t.buf);
+          t.screen.write(t.buf.slice(-this.max));
           t.dirty = true;
         }
       }
@@ -260,7 +260,9 @@ export class PtyManager {
   private onData(id: string, d: string): void {
     const t = this.terms.get(id);
     if (!t) return;
-    t.buf = (t.buf + d).slice(-this.max);
+    // appended (cheap), cut back only at twice the size: what's read is always its last `max`
+    t.buf += d;
+    if (t.buf.length > 2 * this.max) t.buf = t.buf.slice(-this.max);
     if (t.screen) {
       t.screen.write(d);
       t.dirty = true;
@@ -299,7 +301,7 @@ export class PtyManager {
   attach(terminalId: string, sink: Sink): () => void {
     const t = this.terms.get(terminalId);
     if (!t) throw new Error('unknown terminal');
-    if (t.buf) sink.data(t.buf);
+    if (t.buf) sink.data(t.buf.slice(-this.max));
     if (!t.alive) sink.exit(t.exitCode ?? 0);
     t.sinks.add(sink);
     return () => t.sinks.delete(sink);

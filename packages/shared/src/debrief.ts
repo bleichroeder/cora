@@ -1,3 +1,4 @@
+import { DEFAULT_VIDEO, type VideoSettings } from './debriefVideo';
 /**
  * Debrief: the session that did the work walks the user through
  * it in the IDE panel, step by step, the lines it's about lit and a bubble beside them saying what changed and why;
@@ -61,8 +62,8 @@ export type DebriefsMsg = { t: 'debriefs'; sessionId: string; list: DebriefSumma
 
 export const DEBRIEF_LIMITS = { steps: 12, beats: 4, beat: 400, quiz: 2, title: 120, task: 800, why: 600 } as const;
 /** Its setting (Settings › Sessions › Debrief): when sessions offer one, the depth they start at, speaking as you step. */
-export type DebriefSettings = { offer: 'bigger' | 'always' | 'never'; depth: 'quick' | 'teach'; speak: boolean };
-export const DEFAULT_DEBRIEF: DebriefSettings = { offer: 'bigger', depth: 'quick', speak: false };
+export type DebriefSettings = { offer: 'bigger' | 'always' | 'never'; depth: 'quick' | 'teach'; speak: boolean; /** its videos (debriefVideo.ts) */ video: VideoSettings };
+export const DEFAULT_DEBRIEF: DebriefSettings = { offer: 'bigger', depth: 'quick', speak: false, video: DEFAULT_VIDEO };
 
 const str = (v: unknown, max: number) => typeof v === 'string' && v.trim().length > 0 && v.length <= max;
 const range = (v: unknown): v is [number, number] => Array.isArray(v) && v.length === 2 && v.every((n) => Number.isInteger(n) && n >= 1) && v[0] <= v[1];

@@ -25,7 +25,7 @@ export function SlackBanner() {
   return (
     <div className="slack-banner">
       <div className="sb-orb">
-        <CoraOrb state="idle" size={64} ferro />
+        <CoraOrb state="idle" size={64} ferro always />
       </div>
       <div className="sb-words">
         <div className="sb-who">

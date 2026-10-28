@@ -36,7 +36,7 @@ describe('goals', () => {
   });
 });
 
-const ev = (sessionId: string, kind: BrainEvent['kind'], text?: string): BrainEvent => ({ id: Math.random().toString(36), seq: 1, sessionId, agentId: 'main', ts: 1, kind, text, icon: { name: 'x' } as any, source: 'transcript' }) as BrainEvent;
+const ev = (sessionId: string, kind: BrainEvent['kind'], text?: string): BrainEvent => ({ id: Math.random().toString(36), seq: 1, sessionId, agentId: 'main', ts: 1_000_000, kind, text, icon: { name: 'x' } as any, source: 'transcript' }) as BrainEvent;
 const pend = (id: string, sessionId: string, command: string, createdAt = 0): PendingRequest => ({ id, kind: 'permission', sessionId, agentId: 'main', toolName: 'Bash', toolInput: { command }, createdAt, expiresAt: createdAt + 120_000 }) as PendingRequest;
 const pipe = (status: CiPipeline['status'], failed = false): CiPipeline => ({ key: 'g/p#7', project: 'g/p', id: 7, ref: 'feat/x', sha: 'a', status, url: 'https://gitlab.com/g/p/-/pipelines/7', createdAt: 0, startedAt: 0, finishedAt: null, stages: failed ? [{ name: 'test', status: 'failed', jobs: [{ id: 1, name: 'unit', stage: 'test', status: 'failed', startedAt: null, finishedAt: null, url: '' }] }] : [] }) as CiPipeline;
 
@@ -341,6 +341,7 @@ describe('watching for failures', () => {
 
   it('a run of failed calls (once per run), an API error, an end mid-turn: in any session', () => {
     const { f, delivered, advance } = feed('important');
+    f.event(ev('u1', 'prompt', 'run the tests'));
     f.event(tool('u1', true));
     f.event(tool('u1', true));
     f.event(tool('u1', false));
@@ -361,20 +362,78 @@ describe('watching for failures', () => {
     ]);
   });
 
-  it('a session working with nothing happening for a while: once, until it moves again', () => {
+  it('a session working with nothing happening for a while: once a working stretch (not each time it stirs); muted: never', () => {
     const { f, delivered, advance } = feed('important');
-    const s = (lastTs: number) => [{ id: 'u1', state: 'working', lastTs }, { id: 'agent', state: 'working', lastTs: 0 }, { id: 'w1', state: 'idle', lastTs: 0 }] as any;
+    const s = (lastTs: number, state = 'working') => [{ id: 'u1', state, lastTs }, { id: 'agent', state: 'working', lastTs: 0 }, { id: 'w1', state: 'working', lastTs: 0 }] as any;
+    // w1 was never heard working since Cora started (its transcript read again makes it look busy): not stuck
+    f.event(ev('u1', 'prompt', 'migrate'));
     f.sessions(s(1_000_000 - 20 * 60_000));
     f.sessions(s(1_000_000 - 20 * 60_000));
     advance(1500);
     f.tick();
-    expect(lines(delivered)).toEqual(['- "docs" (u1) has been working with no activity for 20 minutes: it may be stuck']);
+    expect(lines(delivered)).toEqual(['- "docs" (u1) has been working with no activity for 20 minutes: it may be stuck (mute_alerts quiets it)']);
+    // it stirs, then stalls again in the same stretch: not said again
     f.sessions(s(1_000_000));
     advance(16 * 60_000);
     f.sessions(s(1_000_000));
     advance(1500);
     f.tick();
+    expect(lines(delivered)).toHaveLength(1);
+    // it finished; a new stretch stalls: said again; muted: not
+    f.sessions(s(1_000_000, 'idle'));
+    f.sessions(s(1_000_000 - 40 * 60_000));
+    advance(1500);
+    f.tick();
     expect(lines(delivered)).toHaveLength(2);
+    expect(f.mute('u1', 2)).toBeGreaterThan(0);
+    f.sessions(s(1_000_000, 'idle'));
+    f.sessions(s(1_000_000 - 40 * 60_000));
+    advance(1500);
+    f.tick();
+    expect(lines(delivered)).toHaveLength(2);
+  });
+
+  it("not news: an event read again (old: Cora re-read the day's transcripts as it started), or one heard already", () => {
+    const { f, delivered, advance } = feed('important');
+    const old = (e: BrainEvent) => ({ ...e, ts: 1_000_000 - 7 * 3_600_000 }) as BrainEvent;
+    for (let i = 0; i < 4; i++) f.event(old(tool('u1', true)));
+    f.event(old(ev('u1', 'say', 'API Error: safeguards')));
+    // the same failure twice (its hook event, then its transcript line): one failure
+    const once = tool('u1', true);
+    f.event(once);
+    f.event(once);
+    f.event({ ...once, seq: 2 } as BrainEvent);
+    advance(1500);
+    f.tick();
+    expect(lines(delivered)).toEqual([]);
+  });
+
+  it("a session left idle and closed isn't cut off mid-turn; a turn that ended long ago isn't either", () => {
+    const { f, delivered, advance } = feed('important');
+    f.event(ev('u1', 'prompt', 'go'));
+    f.event(ev('u1', 'say', 'done'));
+    f.event(ev('u1', 'turn_end'));
+    f.event(ev('u1', 'say', 'recap: where you left off'));
+    f.event(ev('u1', 'session_end'));
+    // open, but nothing for an hour before it closed
+    f.event(ev('w1', 'prompt', 'go'));
+    advance(60 * 60_000);
+    f.event({ ...ev('w1', 'session_end'), ts: 1_000_000 + 60 * 60_000 } as BrainEvent);
+    advance(1500);
+    f.tick();
+    expect(lines(delivered).filter((l) => /middle/.test(l))).toEqual([]);
+  });
+
+  it("follow-on failures (reading the screenshot a failed step didn't make) count with the failure, not on their own", () => {
+    const { f, delivered, advance } = feed('important');
+    const shot = { ...tool('u1', true, 'browser_take_screenshot', 'Timeout 30000ms exceeded'), tool: { name: 'mcp__playwright__browser_take_screenshot', input: {}, summary: 'screenshot', failed: true, resultSummary: 'Timeout 30000ms exceeded' } } as BrainEvent;
+    const read = (n: number) => ({ ...tool('u1', true), id: `r${n}`, tool: { name: 'Read', input: {}, summary: `shot${n}.png`, failed: true, resultSummary: 'File does not exist.' } }) as BrainEvent;
+    f.event(shot);
+    f.event(read(1));
+    f.event(read(2));
+    advance(1500);
+    f.tick();
+    expect(lines(delivered)).toEqual([]);
   });
 });
 

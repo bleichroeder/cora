@@ -30,7 +30,7 @@ useBrain.subscribe((st, prev) => {
 /** A session's preview: where it stands (its latest recap), else the last thing Claude said, as plain text. */
 function preview(s: SessionInfo): string {
   if (s.recap) return recapText(s.recap.text);
-  const say = [...sessionEvents(s.id)].reverse().find((e) => e.kind === 'say' && e.agentId === 'main' && e.text);
+  const say = sessionEvents(s.id).findLast((e) => e.kind === 'say' && e.agentId === 'main' && e.text);
   const t = say?.text ?? s.title ?? '';
   return t
     .replace(/<!--[\s\S]*?-->/g, ' ')

@@ -67,6 +67,7 @@ function remember(sid: string, text: string) {
 
 /** Image previews for chips (object URLs; not saved, so a reloaded draft shows the file name only). */
 export const previews = new Map<string, string>();
+const PREVIEWS_KEPT = 60;
 
 /** The live hosted terminal of a session. */
 export const liveTerminal = (sid: string) => useBrain.getState().terminals.find((t) => t.sessionId === sid && t.alive);
@@ -149,7 +150,15 @@ export async function attachFile(sid: string, file: File): Promise<Attachment> {
     if (!r.ok) throw new Error(j.error ?? `upload failed (${r.status})`);
     path = String(j.path);
   }
-  if (image) previews.set(path, URL.createObjectURL(file));
+  if (image) {
+    previews.set(path, URL.createObjectURL(file));
+    // the newest few kept: an older one's image is let go (a draft never shows that many)
+    for (const [k, url] of previews) {
+      if (previews.size <= PREVIEWS_KEPT) break;
+      URL.revokeObjectURL(url);
+      previews.delete(k);
+    }
+  }
   return { path, name, image };
 }
 

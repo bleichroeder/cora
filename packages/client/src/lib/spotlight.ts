@@ -7,7 +7,7 @@
  * board's Browser panel is yours alone). Pure: the panel (components/board/Spotlight.tsx) gathers the signals.
  */
 
-export type SpotKind = 'needs' | 'tests' | 'pipeline' | 'deploys' | 'explain' | 'changes' | 'background' | 'ticket' | 'git' | 'terminal' | 'context' | 'agents' | 'touching' | 'tasks' | 'recap';
+export type SpotKind = 'needs' | 'tests' | 'pipeline' | 'deploys' | 'explain' | 'changes' | 'background' | 'ticket' | 'git' | 'terminal' | 'context' | 'agents' | 'touching' | 'tasks' | 'recap' | 'videos';
 export type Spot = { k: SpotKind; title?: string; why: string; prio: number };
 
 /** What Claude can ask the Spotlight to show (the spotlight tool's `panel`). */
@@ -30,6 +30,8 @@ export type SpotSignals = {
   /** Claude Code's latest recap of it (written as you came back) */
   recapAt?: number;
   background: number;
+  /** its newest debrief video: being made, or when it was ready */
+  video?: { making: boolean; readyAt?: number };
 };
 
 /** How long the Spotlight keeps what it shows before something less pressing can take over. */
@@ -40,11 +42,12 @@ const URGENT = 90;
 export const spotKey = (s: Pick<Spot, 'k' | 'title'>) => (s.k === 'explain' ? `explain:${s.title ?? ''}` : s.k);
 export function parseKey(key: string): Pick<Spot, 'k' | 'title'> | null {
   if (key.startsWith('explain:')) return { k: 'explain', title: key.slice(8) };
-  return ASKABLE.includes(key as SpotKind) || ['needs', 'agents', 'touching', 'tasks'].includes(key) ? { k: key as SpotKind } : null;
+  return ASKABLE.includes(key as SpotKind) || ['needs', 'agents', 'touching', 'tasks', 'videos'].includes(key) ? { k: key as SpotKind } : null;
 }
 
 const NAMES: Record<SpotKind, string> = {
   needs: 'Needs you',
+  videos: 'Video',
   tests: 'Tests',
   pipeline: 'Pipeline',
   deploys: 'Deploys',
@@ -74,6 +77,8 @@ export function candidates(s: SpotSignals): Spot[] {
   if (within(s.pipeline?.failedAt, 10 * 60_000)) out.push({ k: 'pipeline', why: 'Pipeline failed', prio: 66 });
   if (s.pipeline?.active) out.push({ k: 'pipeline', why: 'Pipeline running', prio: 60 });
   if (s.live && within(s.live.at, 3 * 60_000)) out.push({ k: 'explain', title: s.live.title, why: 'Live explain', prio: 50 });
+  if (s.video?.making) out.push({ k: 'videos', why: 'Making a video', prio: 47 });
+  else if (within(s.video?.readyAt, 5 * 60_000)) out.push({ k: 'videos', why: 'Its video is ready', prio: 52 });
   if (within(s.recapAt, 3 * 60_000)) out.push({ k: 'recap', why: 'Where you left off', prio: 45 });
   if (within(s.editAt, 2 * 60_000)) out.push({ k: 'changes', why: 'Editing files', prio: 30 });
   if (s.background) out.push({ k: 'background', why: s.background === 1 ? 'Running in the background' : `${s.background} running in the background`, prio: 20 });

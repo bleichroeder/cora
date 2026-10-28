@@ -149,6 +149,25 @@ export class Voice {
     return r;
   }
 
+  /**
+   * A whole clip (not a stream), for a debrief video: its MP3. The model that sounds best rather than fastest, told
+   * what was said before it so the voice carries on from it.
+   */
+  async synthesize(text: string, o: { voiceId: string; speed: number; previousText?: string }): Promise<Uint8Array> {
+    if (!this.stored) throw new Error('Cora has no ElevenLabs key: add one in Settings › Voice');
+    const r = await this.fetchFn(`${API}/v1/text-to-speech/${encodeURIComponent(o.voiceId)}?output_format=mp3_44100_128`, {
+      method: 'POST',
+      headers: { 'xi-api-key': this.stored.key, 'content-type': 'application/json', accept: 'audio/mpeg' },
+      body: JSON.stringify({ text, model_id: 'eleven_multilingual_v2', voice_settings: { stability: 0.5, similarity_boost: 0.8, speed: o.speed }, ...(o.previousText ? { previous_text: o.previousText.slice(-1000) } : {}) }),
+    });
+    if (!r.ok) {
+      if (r.status === 401) this.noted(r.clone(), 'tts');
+      const why = await elevenReason(r);
+      throw new Error(`ElevenLabs refused the narration (${why.status}${why.message ? `: ${why.message}` : ''})`);
+    }
+    return new Uint8Array(await r.arrayBuffer());
+  }
+
   /** A single-use token the page uses to stream the microphone straight to Scribe (the key stays here). */
   async sttToken(): Promise<string> {
     if (!this.stored) throw new Error('no ElevenLabs key');

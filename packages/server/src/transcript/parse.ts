@@ -239,6 +239,12 @@ export function parseLine(obj: any, ctx: ParseCtx): ParseResult {
       ctx.tools.set(id, { name: 'Bash', input, ts, agentId });
       const s = summarizeTool('Bash', input, undefined, undefined, ctx.cwd);
       events.push({ ...base, id: `tool:${id}:start`, kind: 'tool', phase: 'start', toolUseId: id, icon: iconFor('Bash', input), tool: { name: 'Bash', input, summary: s.summary, resource: s.resource, byYou: true } });
+      // typed while Claude worked, it was queued; Claude Code runs it with no line saying it left the queue: it has now
+      const q = [input.command, input.command.trim()].map((c) => `queued:${hashText(c)}`).find((x) => ctx.queued.includes(x));
+      if (q) {
+        ctx.queued = ctx.queued.filter((x) => x !== q);
+        events.push({ ...base, id: q, kind: 'prompt', icon: EVENT_ICON.prompt, text: input.command.trim(), queue: 'delivered' });
+      }
       return { events, meta };
     }
     const bang = /^<bash-(stdout|stderr)>/.test(text) && obj.parentUuid ? `bang:${obj.parentUuid}` : undefined;
@@ -286,6 +292,9 @@ export function parseLine(obj: any, ctx: ParseCtx): ParseResult {
       durationMs: started ? Math.max(0, ts - started.ts) : undefined,
       tool: { name, input: started?.input, summary: s.summary, resultSummary: s.resultSummary, preview: s.preview, resource: s.resource, ...(s.failed ? { failed: true } : {}), ...(s.change ? { change: s.change } : {}), ...(s.background ? { background: s.background } : {}) },
     });
+    // answered: what's kept of the call is what comes later needs (its name, time and agent: a background command's
+    // end); its input (a whole file written, a long command) isn't held for the rest of the transcript
+    if (started) ctx.tools.set(id, { name: started.name, input: undefined, ts: started.ts, agentId: started.agentId });
     if ((name === 'Agent' || name === 'Task') && tur && typeof tur === 'object' && tur.agentId) {
       ctx.childByToolUse.set(id, tur.agentId);
       meta.link = { toolUseId: id, childAgentId: tur.agentId, prompt: tur.prompt, description: tur.description };

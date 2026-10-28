@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useShallow } from 'zustand/react/shallow';
+import { stillQueued } from '../lib/queued';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { FAM } from '@cora/shared';
 import { agentKey, sessionEvents, useBrain } from '../state/store';
@@ -119,9 +121,12 @@ function FoldView({ step, sessionId, hosted }: { step: Step; sessionId: string; 
 
 /** One step: who, when, what it said, then what it did. `bare`: only what it did (inside a folded row). */
 function StepView({ step, sessionId, hosted, bare }: { step: Step; sessionId: string; hosted: boolean; bare?: boolean }) {
-  const agents = useBrain((s) => s.agents);
+  // its own agent only (a change to any other agent, in any session, isn't this row's business)
+  const a = useBrain((s) => s.agents[agentKey(sessionId, step.agentId)]);
+  // the subagents it spawned (shallow-compared: the same agents, no re-render)
+  const spawned = step.items.flatMap((i) => (i.kind === 'spawn' && i.childAgentId ? [i.childAgentId] : []));
+  const children = useBrain(useShallow((s) => spawned.map((id) => s.agents[agentKey(sessionId, id)])));
   const setFilter = useBrain((s) => s.setAgentFilter);
-  const a = agents[agentKey(sessionId, step.agentId)];
   const color = agentColor(a);
   const name = step.agentId === 'main' ? 'main' : a?.label ?? step.agentId.slice(0, 7);
 
@@ -176,7 +181,7 @@ function StepView({ step, sessionId, hosted, bare }: { step: Step; sessionId: st
                 </div>
               );
             case 'spawn': {
-              const child = it.childAgentId ? agents[agentKey(sessionId, it.childAgentId)] : undefined;
+              const child = it.childAgentId ? children[spawned.indexOf(it.childAgentId)] : undefined;
               return (
                 <div key={it.key} className={`spawn${child?.state === 'done' ? ' done' : ''}`} onClick={() => child && setFilter(child.agentId)}>
                   {child ? <span className="go">open ›</span> : null}
@@ -234,7 +239,7 @@ function Queued({ sessionId, version }: { sessionId: string; version: number | u
     return st === 'working' || st === 'thinking' || st === 'needs-you';
   });
   const waiting = useMemo(
-    () => sessionEvents(sessionId).filter((e) => e.kind === 'prompt' && e.queue === 'waiting'),
+    () => stillQueued(sessionEvents(sessionId)),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [sessionId, version],
   );
@@ -308,7 +313,9 @@ export function Transcript({ sessionId }: { sessionId: string }) {
     () => Object.values(agents).filter((a) => a.sessionId === sessionId).sort((a, b) => (a.agentId === 'main' ? -1 : b.agentId === 'main' ? 1 : a.startedAt - b.startedAt)),
     [agents, sessionId],
   );
-  const childBySpawn = useMemo(() => new Map(sessionAgents.filter((a) => a.parentToolUseId).map((a) => [a.parentToolUseId!, a.agentId])), [sessionAgents]);
+  // which subagent each spawn started: rebuilt (and the steps with it) only when that changes, not on every agent update
+  const spawnSig = sessionAgents.filter((a) => a.parentToolUseId).map((a) => `${a.parentToolUseId}>${a.agentId}`).join('|');
+  const childBySpawn = useMemo(() => new Map(spawnSig ? spawnSig.split('|').map((x) => x.split('>') as [string, string]) : []), [spawnSig]);
   const steps = useMemo(() => {
     const all = buildSteps(events, filter, childBySpawn);
     if (!q.trim()) return all;

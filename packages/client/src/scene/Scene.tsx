@@ -482,7 +482,7 @@ export function Scene({ sessionId }: { sessionId: string }) {
         const ag = d.agents.find((x) => x.a.agentId === id);
         if (!ag || ag.diedAt != null) continue;
         // the reply that ended the wait: its output decides how dense the stream is
-        const reply = [...evs].reverse().find((e) => e.agentId === id && e.tokens && t - e.ts < 15_000);
+        const reply = evs.findLast((e) => e.agentId === id && e.tokens && t - e.ts < 15_000);
         const out = reply?.tokens?.out ?? 400;
         const n = Math.round(THREE.MathUtils.clamp(out / 150, 5, 26));
         if (reply?.tokens) {

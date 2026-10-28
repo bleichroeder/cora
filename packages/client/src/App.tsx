@@ -1,4 +1,6 @@
 import { startWake } from './lib/wake/controller';
+import { VideoPlayer } from './components/Videos';
+import { VideoMaker } from './components/VideoMaker';
 import { RemoteBrowserView } from './components/RemoteBrowser';
 import { useTablet, useTabletUi, useViewport, tabletScene } from './lib/tablet';
 import { TabletDrawer, TabletRail, TabletTabs } from './components/Tablet';
@@ -437,6 +439,45 @@ function BrowserButton({ sessionId }: { sessionId: string }) {
   );
 }
 
+/**
+ * What the app keeps an eye on in the sessions, without re-rendering for it:
+ * - the desktop app's badge: how many sessions need you;
+ * - focus on a session that's visible in the list. When the focused one is dismissed, or ends while you watch it (you
+ *   ended it), move on to a live one; with none live, show the empty state instead of a stale scene. An ended session
+ *   you click on stays (you went to read it).
+ * Each runs when what it looks at changes (the sessions; the focus, or whether its Claude still runs here).
+ */
+function watchSessions(): () => void {
+  // the focused session's Claude still running here (not a shell beside it: that outlives Claude)
+  const runningHere = (st: ReturnType<typeof useBrain.getState>) => !!st.focus && st.terminals.some((t) => t.sessionId === st.focus && t.alive && !isShell(t));
+  let watching: { id: string | null; live: boolean; ended: boolean } = { id: null, live: false, ended: false };
+  let last: { sessions: unknown; focus: string | null; running: boolean } | null = null;
+  const run = (st: ReturnType<typeof useBrain.getState>) => {
+    const { sessions, focus } = st;
+    const focusRunning = runningHere(st);
+    if (last && last.sessions === sessions && last.focus === focus && last.running === focusRunning) return;
+    const sessionsChanged = !last || last.sessions !== sessions;
+    last = { sessions, focus, running: focusRunning };
+    if (sessionsChanged) desktop?.setNeedsYou(Object.values(sessions).reduce((n, s) => n + (s.needsYou || 0), 0));
+    const cur = focus ? sessions[focus] : undefined;
+    const live = !!cur && cur.state !== 'ended';
+    const w = watching;
+    watching = w.id !== focus ? { id: focus, live, ended: false } : { id: focus, live, ended: live ? false : w.ended || w.live };
+    const visible = sortedSessions(sessions).filter((s) => !isDismissed(s));
+    if (focus && !watching.ended && visible.some((s) => s.id === focus)) return;
+    // never move off a session running in a terminal here (one just resumed may still look dismissed for a moment)
+    if (focus && sessions[focus] && focusRunning) return;
+    const next = visible.find((s) => s.id !== focus && s.state !== 'ended')?.id ?? null;
+    if (next === focus) return;
+    // a session going away doesn't take you out of the Overview
+    const ov = useBrain.getState().overview;
+    useBrain.getState().setFocus(next);
+    if (ov) useBrain.setState({ overview: true });
+  };
+  run(useBrain.getState());
+  return useBrain.subscribe(run);
+}
+
 export function App() {
   useVoiceAutomation();
   useCiAlerts();
@@ -459,7 +500,6 @@ export function App() {
     if (ready) void loadThaw(true);
   }, [ready]);
   const focus = useBrain((s) => s.focus);
-  const sessions = useBrain((s) => s.sessions);
   const overview = useBrain((s) => s.overview);
   const projectOpen = useBrain((s) => s.projectOpen);
   const modal = useBrain((s) => s.modal);
@@ -510,10 +550,8 @@ export function App() {
     };
   }, []);
 
-  // Desktop app: badge count, notifications → focus, tray commands, and "Claude finished" for hosted sessions.
-  useEffect(() => {
-    desktop?.setNeedsYou(Object.values(sessions).reduce((n, s) => n + (s.needsYou || 0), 0));
-  }, [sessions]);
+  // Desktop app: notifications → focus, tray commands, and "Claude finished" for hosted sessions (the badge count:
+  // watchSessions below).
   useEffect(() => {
     if (!desktop) return;
     const offFocus = desktop.onFocusSession((sid) => useBrain.getState().setFocus(sid));
@@ -558,7 +596,7 @@ export function App() {
         const was = prev[s.id]?.state;
         const hosted = st.terminals.some((t) => t.sessionId === s.id && t.alive);
         if (st.prefs.notifyFinished && hosted && (was === 'working' || was === 'thinking') && s.state === 'idle' && !attentive()) {
-          const said = [...sessionEvents(s.id)].reverse().find((e) => e.kind === 'say' && e.agentId === 'main' && e.text?.trim())?.text?.trim();
+          const said = sessionEvents(s.id).findLast((e) => e.kind === 'say' && e.agentId === 'main' && e.text?.trim())?.text?.trim();
           desktop!.notify(`${sessionName(s)} is done`, said ? `Last said: “${said.slice(0, 180)}${said.length > 180 ? '…' : ''}”` : 'Claude finished its turn and is waiting for you.', s.id);
         }
       }
@@ -613,28 +651,9 @@ export function App() {
     });
   }, []);
 
-  // Keep focus on a session that's visible in the list. When the focused one is dismissed, or ends while you watch it
-  // (you ended it), move on to a live one; with none live, show the empty state instead of a stale scene. An ended
-  // session you click on stays (you went to read it).
-  // the focused session's Claude still running here (not a shell beside it: that outlives Claude); looked at again when it ends
-  const focusRunning = useBrain((s) => !!s.focus && s.terminals.some((t) => t.sessionId === s.focus && t.alive && !isShell(t)));
-  const watching = useRef<{ id: string | null; live: boolean; ended: boolean }>({ id: null, live: false, ended: false });
-  useEffect(() => {
-    const cur = focus ? sessions[focus] : undefined;
-    const live = !!cur && cur.state !== 'ended';
-    const w = watching.current;
-    watching.current = w.id !== focus ? { id: focus, live, ended: false } : { id: focus, live, ended: live ? false : w.ended || w.live };
-    const visible = sortedSessions(sessions).filter((s) => !isDismissed(s));
-    if (focus && !watching.current.ended && visible.some((s) => s.id === focus)) return;
-    // never move off a session running in a terminal here (one just resumed may still look dismissed for a moment)
-    if (focus && sessions[focus] && focusRunning) return;
-    const next = visible.find((s) => s.id !== focus && s.state !== 'ended')?.id ?? null;
-    if (next === focus) return;
-    // a session going away doesn't take you out of the Overview
-    const ov = useBrain.getState().overview;
-    useBrain.getState().setFocus(next);
-    if (ov) useBrain.setState({ overview: true });
-  }, [sessions, focus, focusRunning]);
+  // the badge count, and focus kept on a session that's there (watchSessions): straight from the store, so the app
+  // itself doesn't re-render on every session's update (everything below it would too)
+  useEffect(() => watchSessions(), []);
 
   useEffect(() => {
     if (focus) void loadSession(focus);
@@ -692,6 +711,8 @@ export function App() {
           {guest ? null : <IdeHost />}
           {guest ? null : <SlackOutbox />}
           {guest ? null : <MailOutbox />}
+          {guest ? null : <VideoPlayer />}
+          {guest ? null : <VideoMaker />}
           {guest && privateConsole ? null : <CoraConsole />}
           {guest && privateInbox ? null : <InboxView />}
           {guest ? null : <CoraCommand />}

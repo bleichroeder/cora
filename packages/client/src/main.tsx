@@ -18,6 +18,7 @@ import { useSlack } from './state/slack';
 import { Boundary } from './components/Boundary';
 import { Capture } from './components/Capture';
 import { SlackBanner } from './components/SlackBanner';
+import { VideoSlides } from './components/VideoSlides';
 import { SeatCover, useSeat } from './components/SeatCover';
 import { loadLive, useLive } from './state/live';
 
@@ -45,6 +46,8 @@ if (!desktop && typeof window !== 'undefined') {
 const capture = new URLSearchParams(location.search).has('capture');
 // Cora's Slack banner, recorded out of sight by the desktop app (components/SlackBanner): just the picture, no socket
 const banner = new URLSearchParams(location.search).has('banner');
+// a debrief video's slides, drawn out of sight by the desktop app (components/VideoSlides): no socket either
+const slides = new URLSearchParams(location.search).has('slides');
 
 /** Cora in use on another device: only the cover, from the first paint (nothing of Cora drawn behind it, ever). */
 function Root() {
@@ -54,7 +57,7 @@ function Root() {
 
 // where Cora is in use, asked before anything is drawn (signed out, or the server away: Cora's own screens handle it)
 async function start(): Promise<void> {
-  if (!capture && !banner) {
+  if (!capture && !banner && !slides) {
     // a guest in a share (or you, live): who this screen is, before anything is drawn
     await loadLive();
     const r = await fetch('/api/seat').catch(() => null);
@@ -73,6 +76,6 @@ async function start(): Promise<void> {
       useBrain.getState().reloadPrefs();
     }
   }
-  createRoot(document.getElementById('root')!).render(<Boundary name="app">{banner ? <SlackBanner /> : capture ? <Capture /> : <Root />}</Boundary>);
+  createRoot(document.getElementById('root')!).render(<Boundary name="app">{banner ? <SlackBanner /> : slides ? <VideoSlides /> : capture ? <Capture /> : <Root />}</Boundary>);
 }
 void start();

@@ -151,6 +151,10 @@ export class WakeController {
 
 // ---------------------------------------------------------------- the app's wake word
 
+/** The worklet's code as a URL, made once (the mic opens and closes around every line Cora speaks). */
+let worklet: string | null = null;
+const workletUrl = () => (worklet ??= URL.createObjectURL(new Blob([WORKLET], { type: 'application/javascript' })));
+
 /** The mic at 16 kHz, as int16 in 80 ms blocks (the wake worker's food). Returns how to close it. */
 async function openMic(onPcm: (pcm: Int16Array) => void): Promise<() => void> {
   const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 } }).catch((e) => {
@@ -158,9 +162,18 @@ async function openMic(onPcm: (pcm: Int16Array) => void): Promise<() => void> {
     throw new Error(e?.name === 'NotAllowedError' ? 'the microphone is blocked (Windows Settings → Privacy → Microphone)' : `no microphone (${e?.message ?? e})`);
   });
   const ctx = new AudioContext({ sampleRate: 16000 });
-  await ctx.audioWorklet.addModule(URL.createObjectURL(new Blob([WORKLET], { type: 'application/javascript' })));
-  const src = ctx.createMediaStreamSource(stream);
-  const node = new AudioWorkletNode(ctx, 'ab-pcm');
+  let node: AudioWorkletNode;
+  let src: MediaStreamAudioSourceNode;
+  try {
+    await ctx.audioWorklet.addModule(workletUrl());
+    src = ctx.createMediaStreamSource(stream);
+    node = new AudioWorkletNode(ctx, 'ab-pcm');
+  } catch (e) {
+    // it didn't open: the mic and the audio let go (not left live behind a failed start)
+    stream.getTracks().forEach((t) => t.stop());
+    void ctx.close().catch(() => {});
+    throw e;
+  }
   const mute = ctx.createGain();
   mute.gain.value = 0;
   src.connect(node).connect(mute).connect(ctx.destination);

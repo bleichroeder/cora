@@ -36,7 +36,7 @@ export async function startHost(o: HostOptions): Promise<Host> {
   const broadcast = (msg: Parameters<typeof sendLine>[1]) => {
     for (const c of clients) sendLine(c, msg);
   };
-  const snapshot = (): HostTerm[] => [...terms.values()].map((t) => ({ id: t.id, meta: t.meta, alive: t.alive, exitCode: t.exitCode, buf: t.buf }));
+  const snapshot = (): HostTerm[] => [...terms.values()].map((t) => ({ id: t.id, meta: t.meta, alive: t.alive, exitCode: t.exitCode, buf: t.buf.slice(-maxBuf) }));
 
   const exited = (t: Term, code: number) => {
     if (!t.alive) return;
@@ -58,7 +58,9 @@ export async function startHost(o: HostOptions): Promise<Host> {
         const pty = spawn(m.file, m.args, { cwd: m.cwd, cols: m.cols, rows: m.rows, env: m.env as NodeJS.ProcessEnv });
         t.pty = pty;
         pty.onData((d) => {
-          t.buf = (t.buf + d).slice(-maxBuf);
+          // appended (cheap), cut back only at twice the size: what's read is always its last maxBuf
+          t.buf += d;
+          if (t.buf.length > 2 * maxBuf) t.buf = t.buf.slice(-maxBuf);
           broadcast({ t: 'data', id: t.id, d });
         });
         pty.onExit(({ exitCode }) => exited(t, exitCode));

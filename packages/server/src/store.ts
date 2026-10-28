@@ -42,16 +42,20 @@ export class Store {
     this.db.exec(`
       PRAGMA journal_mode = WAL;
       PRAGMA synchronous = NORMAL;
+      PRAGMA busy_timeout = 2000;
       CREATE TABLE IF NOT EXISTS events (
         id TEXT PRIMARY KEY, seq INTEGER NOT NULL, session_id TEXT NOT NULL, agent_id TEXT NOT NULL,
         ts INTEGER NOT NULL, kind TEXT NOT NULL, tool_use_id TEXT, json TEXT NOT NULL);
       CREATE INDEX IF NOT EXISTS ev_session ON events(session_id, agent_id, ts);
       CREATE INDEX IF NOT EXISTS ev_seq ON events(seq);
       CREATE INDEX IF NOT EXISTS ev_ts ON events(ts);
+      -- a session's events newest first (eventsForSession): walked in order, no sort of every row
+      CREATE INDEX IF NOT EXISTS ev_session_ts ON events(session_id, ts, seq);
       CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, last_ts INTEGER NOT NULL, json TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS agents (session_id TEXT NOT NULL, agent_id TEXT NOT NULL, json TEXT NOT NULL,
         PRIMARY KEY (session_id, agent_id));
       CREATE TABLE IF NOT EXISTS recaps (id TEXT PRIMARY KEY, session_id TEXT NOT NULL, ts INTEGER NOT NULL, text TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS transcript_reads (file TEXT PRIMARY KEY, offset INTEGER NOT NULL);
       CREATE INDEX IF NOT EXISTS recap_ts ON recaps(ts);
       CREATE INDEX IF NOT EXISTS recap_session ON recaps(session_id, ts);
     `);
@@ -124,6 +128,13 @@ export class Store {
   usageEvents(ts: number): BrainEvent[] {
     const rows = this.db.prepare(`SELECT json FROM events WHERE ts >= ? AND (kind = 'turn_end' OR json LIKE '%"tokens":%')`).all(ts) as Array<{ json: string }>;
     return rows.map((r) => JSON.parse(r.json) as BrainEvent);
+  }
+
+  /** These sessions' events with token counts since `ts` (a goal's spend: by session, on the index, not every event). */
+  tokenEvents(sessionIds: string[], ts: number): BrainEvent[] {
+    if (!sessionIds.length) return [];
+    const q = `SELECT json FROM events WHERE session_id IN (${sessionIds.map(() => '?').join(',')}) AND ts >= ? AND json LIKE '%"tokens":%'`;
+    return (this.db.prepare(q).all(...sessionIds, ts) as Array<{ json: string }>).map((r) => JSON.parse(r.json) as BrainEvent);
   }
 
   /** How many main-agent prompts a session has stored. */
@@ -240,6 +251,15 @@ export class Store {
 
   /** Delete events older than `cutoffTs` and sessions idle since before it. Returns deleted event count. */
   /** Keep a recap (each once: a transcript read again doesn't add it twice). True when it's new. */
+  /** How far a transcript has been read (its complete lines, in bytes): after a restart, what's before it is known. */
+  readOffset(file: string): number | undefined {
+    const r = this.db.prepare('SELECT offset FROM transcript_reads WHERE file = ?').get(file) as { offset: number } | undefined;
+    return r?.offset;
+  }
+  setReadOffset(file: string, offset: number): void {
+    this.db.prepare('INSERT INTO transcript_reads (file, offset) VALUES (?, ?) ON CONFLICT(file) DO UPDATE SET offset = excluded.offset').run(file, offset);
+  }
+
   addRecap(r: Recap): boolean {
     return Number(this.db.prepare('INSERT OR IGNORE INTO recaps (id, session_id, ts, text) VALUES (?, ?, ?, ?)').run(r.id, r.sessionId, r.at, r.text).changes) > 0;
   }
@@ -254,7 +274,8 @@ export class Store {
     return rows.reverse().map((r) => ({ id: r.id, sessionId: r.session_id, at: r.ts, text: recapText(r.text) }));
   }
 
-  prune(cutoffTs: number): number {
+  /** History older than `cutoffTs` goes, and sessions not heard from since (`onDead`: their ids, for what's in memory). */
+  prune(cutoffTs: number, onDead?: (ids: string[]) => void): number {
     this.db.prepare('DELETE FROM recaps WHERE ts < ?').run(cutoffTs);
     const n = Number(this.db.prepare('DELETE FROM events WHERE ts < ?').run(cutoffTs).changes);
     const dead = (this.db.prepare('SELECT id FROM sessions WHERE last_ts < ?').all(cutoffTs) as { id: string }[]).map((r) => r.id);
@@ -262,6 +283,7 @@ export class Store {
       this.db.prepare('DELETE FROM sessions WHERE id = ?').run(id);
       this.db.prepare('DELETE FROM agents WHERE session_id = ?').run(id);
     }
+    if (dead.length) onDead?.(dead);
     return n;
   }
 

@@ -12,6 +12,8 @@ export type Pipeline = {
   ingestTranscript(file: string, objs: any[], info: TailInfo): void;
   ingestHook(event: string, payload: any, now?: number): void;
   ingestEvents(events: NewEvent[]): void;
+  /** sessions pruned from history: their transcripts' parse state goes */
+  forget(ids: string[]): void;
 };
 
 export type PipelineOptions = {
@@ -30,6 +32,8 @@ export type PipelineOptions = {
 /** Wires parsers → store → registry → hub. */
 export function createPipeline(store: Store, registry: Registry, hub: Hub, pending?: PendingManager, opts: PipelineOptions = {}): Pipeline {
   const ctxs = new Map<string, ParseCtx>();
+  /** each transcript's session (its parse context goes when the session is pruned) */
+  const fileSession = new Map<string, string>();
   const lineStats = new Map<string, { total: number; unknown: number }>();
 
   const ingestEvents = (events: NewEvent[]) => {
@@ -51,6 +55,7 @@ export function createPipeline(store: Store, registry: Registry, hub: Hub, pendi
       if (dir && (isNamerSlug(info.projectSlug, dir) || objs.some((o) => isNamerCwd(o?.cwd, dir)))) return;
       let ctx = ctxs.get(file);
       if (!ctx) ctxs.set(file, (ctx = newParseCtx()));
+      fileSession.set(file, info.sessionId);
       const stats = lineStats.get(info.sessionId) ?? { total: 0, unknown: 0 };
       for (const obj of objs) {
         if (obj && typeof obj === 'object' && !obj.sessionId && !obj.session_id) obj.sessionId = info.sessionId;
@@ -58,6 +63,8 @@ export function createPipeline(store: Store, registry: Registry, hub: Hub, pendi
         const r = parseLine(obj, ctx);
         stats.total++;
         if (r.meta.unknown) stats.unknown++;
+        // read before Cora (re)started: it's in the store already; it only told the parser what came before
+        if (info.quiet) continue;
         const meta: Record<string, unknown> = {};
         if (r.meta.title) meta.title = r.meta.title;
         if (info.agentId === 'main') {
@@ -81,6 +88,16 @@ export function createPipeline(store: Store, registry: Registry, hub: Hub, pendi
       }
       lineStats.set(info.sessionId, stats);
       registry.updateSessionMeta(info.sessionId, { totalLines: stats.total, unknownLines: stats.unknown });
+    },
+
+    forget(ids) {
+      const gone = new Set(ids);
+      for (const [file, sid] of fileSession)
+        if (gone.has(sid)) {
+          ctxs.delete(file);
+          fileSession.delete(file);
+        }
+      for (const sid of ids) lineStats.delete(sid);
     },
 
     ingestHook(event, payload, now = Date.now()) {

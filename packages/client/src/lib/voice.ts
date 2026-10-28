@@ -275,6 +275,8 @@ function teardownMic() {
 }
 
 /** Start push-to-talk for a session: the mic streams to Scribe and words appear as they're recognised. */
+let pttWorklet: string | null = null;
+
 export async function startListening(sessionId: string, opts: { /** click-to-talk: it stops once you've finished speaking (holding a key: when you let go) */ hands?: boolean } = {}): Promise<void> {
   const st = useVoice.getState();
   if (!st.settings.enabled || st.ptt.phase === 'listening' || st.ptt.phase === 'finishing') return;
@@ -302,7 +304,9 @@ export async function startListening(sessionId: string, opts: { /** click-to-tal
     micAn = micCtx.createAnalyser();
     micAn.fftSize = 512;
     src.connect(micAn);
-    await micCtx.audioWorklet.addModule(URL.createObjectURL(new Blob([WORKLET], { type: 'application/javascript' })));
+    // the worklet's code as a URL, made once (not one more blob each time you talk)
+    pttWorklet ??= URL.createObjectURL(new Blob([WORKLET], { type: 'application/javascript' }));
+    await micCtx.audioWorklet.addModule(pttWorklet);
     const node = new AudioWorkletNode(micCtx, 'ab-pcm');
     const mute = micCtx.createGain();
     mute.gain.value = 0;
@@ -511,6 +515,8 @@ function sayFront(sid: string, line: string, at: number): void {
   const answered = sessionEvents(sid).some((e) => e.agentId === 'main' && e.ts >= at - 1000 && (e.kind === 'turn_end' || (e.kind === 'say' && !!e.said)));
   const now = useVoice.getState();
   if (answered || now.ptt.phase !== 'idle' || now.reading) return;
+  // Cora's voice muted (its card's speaker): its quick line too
+  if (now.settings.coraMuted && coraSession(sid)) return;
   void speak(`front:${frontSeq}`, line, 300, true, sid);
 }
 
@@ -523,11 +529,34 @@ const rms = (an: AnalyserNode) => {
   return Math.min(1, Math.sqrt(s / b.length) * 4);
 };
 setInterval(() => {
+  // nothing speaking or listening, and both levels have died away: nothing to do
+  if (!voiceLevels.listening && !voiceLevels.speaking && voiceLevels.listen < 0.001 && voiceLevels.speak < 0.001) return;
   voiceLevels.listen = micAn && voiceLevels.listening ? voiceLevels.listen * 0.4 + rms(micAn) * 0.6 : voiceLevels.listen * 0.6;
   voiceLevels.speak = outAn && voiceLevels.speaking ? voiceLevels.speak * 0.45 + rms(outAn) * 0.55 : voiceLevels.speak * 0.6;
 }, 33);
 
-/** Voice updates off (or on again): nothing said on its own while off (Settings › Voice says what's said when on). */
+/** Cora's own voice on or off (its card's speaker): what Cora says, its answers included. */
+export async function setCoraMuted(coraMuted: boolean): Promise<string | null> {
+  useVoice.setState({ settings: { ...useVoice.getState().settings, coraMuted } });
+  if (coraMuted && (useVoice.getState().reading?.id ?? '').startsWith('cora')) stopSpeaking();
+  const r = await fetch('/api/settings', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ voice: { coraMuted } }) }).catch(() => null);
+  return r?.ok ? null : "Couldn't save it";
+}
+
+/** Is this session's voice off: every session muted, or this one? */
+export const sessionMuted = (sid: string | null | undefined, v = useVoice.getState().settings) => !!v.muted || (!!sid && !!v.mutedSessions?.includes(sid));
+
+/** One session's voice on or off (the speaker in its transcript). */
+export async function setSessionMuted(sid: string, on: boolean): Promise<string | null> {
+  const cur = useVoice.getState().settings.mutedSessions ?? [];
+  const mutedSessions = on ? [...cur.filter((x) => x !== sid), sid] : cur.filter((x) => x !== sid);
+  useVoice.setState({ settings: { ...useVoice.getState().settings, mutedSessions } });
+  if (on && useVoice.getState().reading?.sessionId === sid) stopSpeaking();
+  const r = await fetch('/api/settings', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ voice: { mutedSessions } }) }).catch(() => null);
+  return r?.ok ? null : "Couldn't save it";
+}
+
+/** Every session's voice on or off (the speaker by the nav's Sessions heading); Cora's is its own. */
 export async function setMuted(muted: boolean): Promise<string | null> {
   useVoice.setState({ settings: { ...useVoice.getState().settings, muted } });
   if (muted) stopSpeaking();

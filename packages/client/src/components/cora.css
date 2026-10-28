@@ -291,6 +291,8 @@
 .cora-bridge .cb-wake.live { color: var(--cora); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cora) 40%, transparent); }
 .cora-bridge .cb-wake.muted { opacity: .7; }
 .cora-bridge .cb-wake:hover { background: var(--raise2); color: var(--ink2); }
+.cora-bridge .cb-voice { margin-left: 2px; }
+.cora-bridge .cb-voice:not(.muted) { color: var(--ink3); }
 
 /* Settings › Cora › Work tools: adding one of your own */
 .orch-wt { display: grid; grid-template-columns: 180px 1fr; gap: 6px; width: 100%; }

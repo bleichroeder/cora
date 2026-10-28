@@ -113,6 +113,17 @@ export class Registry {
     this.refreshSession(sid, { lastTs: e.ts, startedAt: e.ts });
   }
 
+  /** Sessions pruned from history: what's kept of them here goes too. */
+  forget(ids: string[]): void {
+    for (const sid of ids) {
+      this.spawns.delete(sid);
+      this.pending.delete(sid);
+      this.ended.delete(sid);
+      this.silent.delete(sid);
+      for (const k of [...this.inflight.keys()]) if (k.startsWith(sid + '/')) this.inflight.delete(k);
+    }
+  }
+
   linkChild(sessionId: string, link: LinkMeta): void {
     const spawn = this.spawns.get(sessionId)?.find((s) => s.toolUseId === link.toolUseId);
     if (spawn) spawn.linked = link.childAgentId;

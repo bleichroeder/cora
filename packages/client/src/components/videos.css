@@ -1,0 +1,44 @@
+/* Debrief videos (Videos.tsx): the player, the Videos panel */
+.vd-btn { position: relative; display: inline-flex; }
+.vd-btn > button.lit { color: var(--cora); }
+.vd-err { color: var(--need); font-size: 12px; display: inline-flex; gap: 6px; align-items: center; }
+.vd-note { color: var(--ink3); font-size: 11px; }
+
+.vd-scrim { position: fixed; inset: 0; z-index: 900; display: grid; place-items: center; background: rgba(3, 5, 9, .72); backdrop-filter: blur(3px); }
+.vd-modal { width: min(1100px, 92vw); max-height: 92vh; display: flex; flex-direction: column; gap: 12px; padding: 14px 16px 16px; border-radius: 14px; background: var(--raise); border: 1px solid var(--hair2); box-shadow: 0 24px 60px rgba(0, 0, 0, .6); color: var(--ink); }
+.vd-h { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+.vd-h > svg { color: var(--cora); }
+.vd-h .spacer, .vd-meta .spacer { flex: 1; }
+.vd-x { border: 0; background: none; color: var(--ink3); cursor: pointer; padding: 4px; border-radius: 6px; }
+.vd-x:hover { color: var(--ink); background: var(--raise2); }
+
+.vd-ready { display: flex; flex-direction: column; gap: 8px; min-height: 0; }
+.vd-ready video { width: 100%; aspect-ratio: 16 / 9; border-radius: 8px; background: #000; }
+.vd-ready.big video { max-height: 72vh; }
+.vd-meta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 11px; color: var(--ink3); }
+.vd-meta .btn { display: inline-flex; align-items: center; gap: 5px; text-decoration: none; }
+.vd-meta .btn.bad:hover { color: var(--need); }
+
+.vd-ff, .vd-prog { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 30px 20px; text-align: center; color: var(--ink2); font-size: 13px; }
+.vd-ff > svg { color: var(--cora); }
+.vd-ff b { color: var(--ink); font-size: 14px; }
+.vd-ff > span { max-width: 460px; line-height: 1.5; }
+.vd-acts { display: flex; gap: 8px; margin-top: 4px; }
+.vd-bar { position: relative; width: 320px; height: 22px; border-radius: 6px; background: var(--raise2); overflow: hidden; }
+.vd-bar i { position: absolute; inset: 0 auto 0 0; background: var(--cora-dim); transition: width .3s; }
+.vd-bar span { position: relative; line-height: 22px; font-size: 11px; color: var(--ink); }
+.vd-prog { align-items: stretch; max-width: 320px; margin: 0 auto; text-align: left; }
+.vd-step { display: flex; align-items: center; gap: 8px; color: var(--ink3); }
+.vd-step.done { color: var(--ink2); }
+.vd-step.done svg { color: var(--work); }
+.vd-step.now { color: var(--ink); }
+.vd-step.now svg { color: var(--cora); animation: spin .9s linear infinite; }
+.vd-step em { margin-left: auto; font-style: normal; font-size: 11px; color: var(--ink3); }
+
+.vd-panel { display: flex; flex-direction: column; gap: 8px; padding: 8px; }
+.vd-panel .vd-prog, .vd-panel .vd-ff { padding: 16px 8px; }
+.vd-row { display: flex; align-items: center; gap: 7px; padding: 6px 8px; border: 0; border-radius: 6px; background: none; color: var(--ink2); font: inherit; font-size: 12px; text-align: left; cursor: pointer; }
+.vd-row:hover { background: var(--raise2); color: var(--ink); }
+.vd-row .t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vd-row .m { color: var(--ink3); font-size: 11px; }
+.vd-empty { padding: 18px; color: var(--ink3); font-size: 12px; text-align: center; }

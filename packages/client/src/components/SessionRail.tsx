@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { SessionsMute } from './ReadAloudToggle';
 import { ProjectsSection } from './Projects';
 import { useProjects } from '../state/projects';
 import { GuestCard } from './Live';
@@ -220,6 +221,7 @@ export function SessionRail() {
         <div className="rt-h ses-head">
           <span>Sessions</span>
           <span className="rt-hb">
+            <SessionsMute />
             <button className="rt-add" onClick={() => setModal('history')} title="Resume or fork any session on disk">
               <Icon name="History" size={12} />
             </button>

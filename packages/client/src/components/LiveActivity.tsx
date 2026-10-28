@@ -84,7 +84,7 @@ export function LiveActivity({ sessionId }: { sessionId: string }) {
           <span className="act-t">{r.text}</span>
           <span className="act-time">{r.time ?? ''}</span>
           {/* automatic reading on or off: by the replies, next to where you write */}
-          <span className="act-side">{i === 0 ? <ReadAloudToggle /> : null}</span>
+          <span className="act-side">{i === 0 ? <ReadAloudToggle sessionId={sessionId} /> : null}</span>
         </div>
       ))}
       {rows.length > MAX_ROWS ? <div className="act-more">+{rows.length - MAX_ROWS} more</div> : null}

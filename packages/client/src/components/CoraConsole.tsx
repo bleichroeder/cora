@@ -88,7 +88,7 @@ export function CoraConsole() {
   useEffect(() => {
     if (!agent) return;
     const cues = voiceCues(sessionEvents(agent), since.current, seen.current);
-    if (!status?.speak || !voiceOn) return;
+    if (!status?.speak || !voiceOn || useVoice.getState().settings.coraMuted) return;
     for (const c of cues) if (c.kind === 'said') void speak(`cora:${c.id}`, c.text, 600, true);
   }, [agent, version]);
 

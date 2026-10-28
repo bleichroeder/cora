@@ -301,9 +301,18 @@ export class OrchestratorManager {
       ...(s.enabled ? { jiraStarted: this.jiraStarts.started() } : {}),
     };
   }
+  /**
+   * Something it shows may have changed: its status goes out, unless it's the same as the last one sent (a working
+   * terminal's status line changes every second; Cora's own status mostly doesn't). New screens get it on connect.
+   */
   changed(): void {
-    this.d.publish(this.status());
+    const s = this.status();
+    const j = JSON.stringify(s);
+    if (j === this.lastSent) return;
+    this.lastSent = j;
+    this.d.publish(s);
   }
+  private lastSent = '';
 
   /** Its terminal is hidden: watch it for a question (the first start asks whether to trust its folder). */
   private watchAsking(on: boolean): void {

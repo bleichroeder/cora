@@ -12,6 +12,7 @@ import { type BoardLayoutId } from '@cora/shared';
 
 export type PanelKind =
   | 'spotlight'
+  | 'videos'
   | 'agents'
   | 'touching'
   | 'explains'
@@ -86,7 +87,7 @@ const OLD_COLS = 12;
 
 /** Each panel's icon (Lucide) in the + Panel menu and its header. */
 export const PANEL_ICON: Record<Exclude<PanelKind, 'explain'>, string> = {
-  spotlight: 'Sparkles', agents: 'Bot', touching: 'Activity', tasks: 'ListChecks', explains: 'FileText', goal: 'Target', memes: 'PartyPopper', recap: 'ScrollText', journal: 'BookOpen', context: 'Gauge',
+  spotlight: 'Sparkles', videos: 'Clapperboard', agents: 'Bot', touching: 'Activity', tasks: 'ListChecks', explains: 'FileText', goal: 'Target', memes: 'PartyPopper', recap: 'ScrollText', journal: 'BookOpen', context: 'Gauge',
   changes: 'FileDiff', git: 'GitBranch', tests: 'FlaskConical', background: 'Loader',
   pipeline: 'GitPullRequest', deploys: 'Rocket', ticket: 'Ticket',
   needs: 'Hand', mentions: 'AtSign', notes: 'NotebookPen', usage: 'ChartPie', sessions: 'LayoutList',
@@ -102,6 +103,7 @@ export type PanelGroup = (typeof PANEL_GROUPS)[number];
 /** The panels you can add (an explain is added from the Explains panel, or the menu's explains), and their size when added. */
 export const PANELS: Record<Exclude<PanelKind, 'explain'>, { name: string; hint: string; group: PanelGroup; size?: [number, number] }> = {
   spotlight: { name: 'Spotlight', hint: 'Follows what matters now, or what Claude asks to show', group: 'This session', size: [12, 14] },
+  videos: { name: 'Videos', hint: "This session's debrief videos: watch, save, send", group: 'This session', size: [12, 12] },
   agents: { name: 'Agents', hint: "Each agent and what it's doing now", group: 'This session' },
   touching: { name: 'Touching', hint: 'Files, web, shell and tools of the last 10 minutes', group: 'This session' },
   tasks: { name: 'Tasks', hint: "Claude's task list", group: 'This session', size: [8, 8] },
@@ -142,7 +144,7 @@ export const CORA_BOARD = 'cora';
 /** Whose board a panel fits: one session's (it reads that session), Cora's (all your work), or both. */
 export type PanelScope = 'session' | 'cora' | 'both' | 'project';
 export const PANEL_SCOPE: Record<Exclude<PanelKind, 'explain'>, PanelScope> = {
-  spotlight: 'session', agents: 'session', touching: 'session', tasks: 'session', explains: 'session', goal: 'session', memes: 'session', journal: 'session', recap: 'session', context: 'session',
+  spotlight: 'session', videos: 'session', agents: 'session', touching: 'session', tasks: 'session', explains: 'session', goal: 'session', memes: 'session', journal: 'session', recap: 'session', context: 'session',
   changes: 'session', git: 'session', tests: 'session', background: 'session', pipeline: 'session', deploys: 'session', ticket: 'session', mentions: 'session', terminal: 'session', ide: 'session',
   needs: 'both', notes: 'both', usage: 'both', sessions: 'both', browser: 'both',
   wall: 'cora', worktrees: 'cora',
@@ -184,11 +186,11 @@ export function boardFor(raw: unknown, owner: string, first: unknown): BoardItem
   return items.length ? items : CORA_LAYOUT;
 }
 
+/** A new session's board until you choose your own: the Spotlight (it follows what matters now) full height. */
 export const DEFAULT_BOARD: BoardItem[] = [
-  { id: 'agents', k: 'agents', x: 0, y: 0, w: 14, h: 16 },
+  { id: 'spotlight', k: 'spotlight', x: 0, y: 0, w: 14, h: 24 },
   { id: 'touching', k: 'touching', x: 14, y: 0, w: 10, h: 12 },
-  { id: 'explains', k: 'explains', x: 14, y: 12, w: 10, h: 12 },
-  { id: 'tasks', k: 'tasks', x: 0, y: 16, w: 14, h: 8 },
+  { id: 'tasks', k: 'tasks', x: 14, y: 12, w: 10, h: 12 },
 ];
 
 const KINDS = new Set<PanelKind>([...(Object.keys(PANELS) as PanelKind[]), 'explain']);
@@ -688,12 +690,15 @@ export type SavedLayout = { id: string; name: string; items: BoardItem[] };
 
 type Placed = Pick<BoardItem, 'k' | 'x' | 'y' | 'w' | 'h'>;
 const P = (k: Exclude<PanelKind, 'explain'>, x: number, y: number, w: number, h: number): Placed => ({ k, x, y, w, h });
-/** The layouts for kinds of work (shared/boardLayouts names them), on the 24 by 24 grid. */
+/**
+ * The layouts for kinds of work (shared/boardLayouts names them), on the 24 by 24 grid. Each has the Spotlight (it
+ * follows what matters now); Coding and Reviewing are led by the IDE (a debrief plays there), its terminal under it.
+ */
 export const LAYOUTS: Record<BoardLayoutId, Placed[]> = {
-  investigating: [P('browser', 0, 0, 14, 24), P('touching', 14, 0, 10, 8), P('terminal', 14, 8, 10, 9), P('notes', 14, 17, 10, 7)],
-  coding: [P('changes', 0, 0, 14, 15), P('tests', 0, 15, 14, 9), P('agents', 14, 0, 10, 10), P('git', 14, 10, 10, 7), P('terminal', 14, 17, 10, 7)],
-  reviewing: [P('changes', 0, 0, 16, 24), P('ticket', 16, 0, 8, 11), P('explains', 16, 11, 8, 13)],
-  shipping: [P('pipeline', 0, 0, 12, 12), P('deploys', 12, 0, 12, 12), P('ticket', 0, 12, 12, 12), P('tests', 12, 12, 12, 12)],
+  investigating: [P('spotlight', 0, 0, 12, 24), P('browser', 12, 0, 12, 14), P('touching', 12, 14, 6, 10), P('terminal', 18, 14, 6, 10)],
+  coding: [P('ide', 0, 0, 15, 17), P('terminal', 0, 17, 15, 7), P('spotlight', 15, 0, 9, 15), P('tests', 15, 15, 9, 9)],
+  reviewing: [P('ide', 0, 0, 15, 24), P('spotlight', 15, 0, 9, 10), P('changes', 15, 10, 9, 8), P('ticket', 15, 18, 9, 6)],
+  shipping: [P('pipeline', 0, 0, 12, 12), P('deploys', 12, 0, 12, 12), P('spotlight', 0, 12, 12, 12), P('ticket', 12, 12, 12, 12)],
   writing: [P('explains', 0, 0, 14, 24), P('spotlight', 14, 0, 10, 14), P('notes', 14, 14, 10, 10)],
 };
 

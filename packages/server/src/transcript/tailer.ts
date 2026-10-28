@@ -3,8 +3,13 @@ import { basename, join } from 'node:path';
 import chokidar, { type FSWatcher } from 'chokidar';
 import { isSafeId } from '@cora/shared';
 
-export type TailInfo = { sessionId: string; agentId: string; projectSlug: string };
-type FileState = { offset: number; rest: Buffer; info: TailInfo; busy: Promise<void> };
+/** `quiet`: lines read before Cora (re)started: parsed for what they tell the parser, never stored or told again */
+export type TailInfo = { sessionId: string; agentId: string; projectSlug: string; quiet?: boolean };
+/** `quiet`: the bytes up to here were read before (the restart's catch-up re-reads them quietly) */
+type FileState = { offset: number; rest: Buffer; info: TailInfo; busy: Promise<void>; quiet: number };
+
+/** at most this much of a file is read (and turned into lines) at once */
+const CHUNK = 16 * 1024 * 1024;
 
 export type TailerOptions = {
   /** On startup, files modified within this window are read from the start; older ones only from their end. */
@@ -14,6 +19,11 @@ export type TailerOptions = {
   pollMs?: number;
   /** startup backfill progress: files read so far, of how many */
   onProgress?: (done: number, total: number) => void;
+  /**
+   * How far each transcript was read before (kept across restarts). With it, a restart re-reads a file's earlier lines
+   * quietly (the parser needs them: which call a result answers, the folder, the subagents) and only what's new as news.
+   */
+  reads?: { get(file: string): number | undefined; set(file: string, offset: number): void };
 };
 
 /** Identify session/agent from a transcript path under the projects root. */
@@ -78,7 +88,7 @@ export class Tailer {
   private track(file: string, offset: number): FileState | undefined {
     const info = tailInfo(this.root, file);
     if (!info) return undefined;
-    const st: FileState = { offset, rest: Buffer.alloc(0), info, busy: Promise.resolve() };
+    const st: FileState = { offset, rest: Buffer.alloc(0), info, busy: Promise.resolve(), quiet: 0 };
     this.files.set(file, st);
     return st;
   }
@@ -90,7 +100,10 @@ export class Tailer {
       if (!initial) return void this.track(file, 0);
       const s = await stat(file).catch(() => null);
       if (!s) return;
-      this.track(file, Date.now() - s.mtimeMs <= since ? 0 : s.size);
+      const st = this.track(file, Date.now() - s.mtimeMs <= since ? 0 : s.size);
+      // read before: those lines come again quietly
+      const known = this.opts.reads?.get(file);
+      if (st && st.offset === 0 && known && known <= s.size) st.quiet = known;
     };
     let projects: string[];
     try {
@@ -131,34 +144,53 @@ export class Tailer {
       st.offset = 0;
       st.rest = Buffer.alloc(0);
     }
+    // rewritten shorter than what was read: all of it is news
+    if (s.size < st.quiet) st.quiet = 0;
     if (s.size === st.offset) return;
     const fh = await open(file, 'r');
     try {
-      const len = s.size - st.offset;
-      const buf = Buffer.alloc(len);
-      const { bytesRead } = await fh.read(buf, 0, len, st.offset);
-      st.offset += bytesRead;
-      const data = Buffer.concat([st.rest, buf.subarray(0, bytesRead)]);
-      const lastNl = data.lastIndexOf(0x0a);
-      if (lastNl < 0) {
-        st.rest = data;
-        return;
-      }
-      st.rest = Buffer.from(data.subarray(lastNl + 1));
-      const objs: any[] = [];
-      for (const line of data.subarray(0, lastNl).toString('utf8').split('\n')) {
-        const t = line.trim();
-        if (!t) continue;
-        try {
-          objs.push(JSON.parse(t));
-        } catch {
-          this.badLines++;
+      // a piece at a time: a transcript can be hundreds of MB, more than one string can hold
+      while (st.offset < s.size) {
+        const len = Math.min(CHUNK, s.size - st.offset);
+        const buf = Buffer.alloc(len);
+        const { bytesRead } = await fh.read(buf, 0, len, st.offset);
+        if (!bytesRead) break;
+        // where `data` starts in the file
+        const at = st.offset - st.rest.length;
+        st.offset += bytesRead;
+        const data = Buffer.concat([st.rest, buf.subarray(0, bytesRead)]);
+        const lastNl = data.lastIndexOf(0x0a);
+        if (lastNl < 0) {
+          st.rest = data;
+          continue;
         }
+        st.rest = Buffer.from(data.subarray(lastNl + 1));
+        // the lines read before the restart (up to a line's end), then the new ones
+        const cut = Math.max(0, Math.min(lastNl + 1, st.quiet - at));
+        const quiet = this.parse(data.subarray(0, cut));
+        const news = this.parse(data.subarray(cut, lastNl));
+        if (quiet.length) this.onLines(file, quiet, { ...st.info, quiet: true });
+        if (news.length) this.onLines(file, news, st.info);
+        if (at + lastNl + 1 >= st.quiet) st.quiet = 0;
+        this.opts.reads?.set(file, at + lastNl + 1);
       }
-      if (objs.length) this.onLines(file, objs, st.info);
     } finally {
       await fh.close();
     }
+  }
+
+  private parse(b: Buffer): any[] {
+    const objs: any[] = [];
+    for (const line of b.toString('utf8').split('\n')) {
+      const t = line.trim();
+      if (!t) continue;
+      try {
+        objs.push(JSON.parse(t));
+      } catch {
+        this.badLines++;
+      }
+    }
+    return objs;
   }
 }
 

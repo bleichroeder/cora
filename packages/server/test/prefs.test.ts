@@ -2,7 +2,7 @@ import { mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_SETTINGS, DEFAULT_VOICE, WAKE_THRESHOLDS } from '@cora/shared';
+import { DEFAULT_SETTINGS, DEFAULT_VIDEO, DEFAULT_VOICE, WAKE_THRESHOLDS } from '@cora/shared';
 import { applyPatch, Prefs } from '../src/prefs';
 import { hostedArgs, nudgeFor, ruleFor, speakNudge } from '../src/hosted';
 import { loadConfig } from '../src/config';
@@ -18,14 +18,16 @@ describe('settings', () => {
   });
 
   it('debrief: offered after bigger changes, quick, silent by default; changed one part at a time; nonsense refused', () => {
-    expect(applyPatch(DEFAULT_SETTINGS, {}).debrief).toEqual({ offer: 'bigger', depth: 'quick', speak: false });
-    expect(applyPatch(DEFAULT_SETTINGS, { debrief: { depth: 'teach' } }).debrief).toEqual({ offer: 'bigger', depth: 'teach', speak: false });
+    expect(applyPatch(DEFAULT_SETTINGS, {}).debrief).toEqual({ offer: 'bigger', depth: 'quick', speak: false, video: DEFAULT_VIDEO });
+    expect(applyPatch(DEFAULT_SETTINGS, { debrief: { depth: 'teach' } }).debrief).toEqual({ offer: 'bigger', depth: 'teach', speak: false, video: DEFAULT_VIDEO });
+    expect(applyPatch(DEFAULT_SETTINGS, { debrief: { video: { size: '720', keepHours: 1 } } }).debrief?.video).toEqual({ ...DEFAULT_VIDEO, size: '720', keepHours: 1 });
+    expect(() => applyPatch(DEFAULT_SETTINGS, { debrief: { video: { keepHours: 5 as never } } })).toThrow(/video.keepHours/);
     expect(() => applyPatch(DEFAULT_SETTINGS, { debrief: { offer: 'sometimes' } })).toThrow(/debrief.offer/);
     expect(() => applyPatch(DEFAULT_SETTINGS, { debrief: { speak: 'yes' } })).toThrow(/debrief.speak/);
-    const on = nudgeFor(DEFAULT_SETTINGS.explains, undefined, 'off', 'off', false, { offer: 'bigger', depth: 'teach', speak: false });
+    const on = nudgeFor(DEFAULT_SETTINGS.explains, undefined, 'off', 'off', false, { offer: 'bigger', depth: 'teach', speak: false, video: DEFAULT_VIDEO });
     expect(on).toMatch(/crosses files.*`Debrief\? · Quick · Teach me`.*usual depth is Teach me/);
     expect(on).toMatch(/with the `debrief` tool/);
-    const never = nudgeFor(DEFAULT_SETTINGS.explains, undefined, 'off', 'off', false, { offer: 'never', depth: 'quick', speak: false });
+    const never = nudgeFor(DEFAULT_SETTINGS.explains, undefined, 'off', 'off', false, { offer: 'never', depth: 'quick', speak: false, video: DEFAULT_VIDEO });
     expect(never).not.toMatch(/Debrief\?/);
     expect(never).toMatch(/with the `debrief` tool/);
   });

@@ -5,7 +5,7 @@ import { useCoraLinksDriver, useReachHalo, useWidth } from './OrbReach';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { briefMe, setConsoleOpen, useCoraState, useOrch, type CoraState } from '../state/orchestrator';
 import { sessionEvents, useBrain } from '../state/store';
-import { coraReading, startListening, stopListening, useVoice, voiceLevels } from '../lib/voice';
+import { coraReading, setCoraMuted, startListening, stopListening, useVoice, voiceLevels } from '../lib/voice';
 import { isDismissed } from '../lib/format';
 import { sortedSessions } from '../lib/sessionOrder';
 import { openSettings } from './SettingsModal';
@@ -262,6 +262,7 @@ export function CoraEye() {
         <span className="cb-name">
           <b>CORA</b>
           <WakeGlyph />
+          <VoiceGlyph />
           <Wave listening={state === 'listening'} />
           {approvals ? <span className="cb-badge">{approvals}</span> : null}
         </span>
@@ -306,6 +307,26 @@ export function CoraEye() {
         </button>
       ) : null}
     </div>
+  );
+}
+
+/** Cora's own voice on its card: speaking (click to mute it: its answers, its news), or muted. With voice set up. */
+function VoiceGlyph() {
+  const ready = useVoice((s) => s.settings.enabled && !!s.key?.set);
+  const muted = useVoice((s) => !!s.settings.coraMuted);
+  if (!ready) return null;
+  const flip = (e: React.SyntheticEvent) => (e.stopPropagation(), void setCoraMuted(!muted));
+  return (
+    <span
+      role="button"
+      tabIndex={0}
+      className={`cb-wake cb-voice${muted ? ' muted' : ''}`}
+      title={muted ? "Cora's voice is off: click to hear it again" : "Cora speaks (its answers, its news): click to mute it. Sessions have their own switch"}
+      onClick={flip}
+      onKeyDown={(e) => e.key === 'Enter' && flip(e)}
+    >
+      <Icon name={muted ? 'VolumeX' : 'Volume2'} size={11} />
+    </span>
   );
 }
 

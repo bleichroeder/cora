@@ -3,7 +3,7 @@ import { SLACK_DM_MARK, SPEAK_TOOL, isPresentTool, shortToolName, type BrainEven
 import { sessionEvents, useBrain } from '../state/store';
 import { buildSteps, saidId } from './steps';
 import { sessionName } from './format';
-import { coraLine, loadVoice, speak, stopSpeaking, useVoice } from './voice';
+import { coraLine, loadVoice, sessionMuted, speak, stopSpeaking, useVoice } from './voice';
 import { backgroundTasks, outcome, type BgTask } from './background';
 
 /** Something to say from a session's newest events: a line Claude said with its speak tool, or a tool that failed. */
@@ -75,7 +75,14 @@ export const saidLine = (text: string, where: string | null) => (where ? `In ${w
 export function announcement(p: PendingRequest, where: string): string {
   if (p.kind === 'question') return `Claude has a question for you in ${where}.`;
   if (p.kind === 'elicitation') return `Claude needs your input in ${where}.`;
-  const inp = (p.toolInput ?? {}) as { command?: unknown; file_path?: unknown; url?: unknown };
+  const inp = (p.toolInput ?? {}) as { command?: unknown; file_path?: unknown; url?: unknown; secret?: unknown; note?: unknown };
+  // a secret: by what it's for (its note, without a date after it), else its name without the underscores; never spelled
+  if (p.toolName.startsWith('Use secret ')) {
+    const note = typeof inp.note === 'string' ? inp.note.split(/\s+[-–·|]\s+|\s*\(/)[0].trim().slice(0, 60) : '';
+    const name = String(typeof inp.secret === 'string' ? inp.secret : p.toolName.slice(11)).replace(/[_-]+/g, ' ').trim();
+    const said = note || name;
+    return `Claude wants to use your ${said}${/\b(secret|token|key|password|jwt|pat)$/i.test(said) ? '' : ' secret'} in ${where}.`;
+  }
   const file = typeof inp.file_path === 'string' ? inp.file_path.split(/[\\/]/).pop() : null;
   // the first few words of a command, with paths and URLs cut to their last part (said, not spelled out)
   const cmd =
@@ -165,10 +172,10 @@ export function useVoiceAutomation(): void {
         const f = st.focus;
         const was = f ? prevSessions[f]?.state : undefined;
         prevSessions = st.sessions;
-        if (ready && f && v.settings.read === 'full' && !v.settings.muted && (was === 'working' || was === 'thinking') && st.sessions[f]?.state === 'idle') {
+        if (ready && f && v.settings.read === 'full' && !sessionMuted(f, v.settings) && (was === 'working' || was === 'thinking') && st.sessions[f]?.state === 'idle') {
           // the turn's final reply from main: the last main step with text, if it's recent
           const steps = buildSteps(sessionEvents(f), 'all');
-          const last = [...steps].reverse().find((s) => s.agentId === 'main' && s.text);
+          const last = steps.findLast((s) => s.agentId === 'main' && s.text);
           if (last?.text && Date.now() - last.ts < 10 * 60_000) {
             autoReads.add(last.key);
             void speak(last.key, last.text, v.settings.cap, false, f);
@@ -188,8 +195,8 @@ export function useVoiceAutomation(): void {
           for (const c of voiceCues(evs, since, cued)) {
             if (!ready) continue;
             if (c.kind === 'said') {
-              if (v.settings.read === 'summaries' && !v.settings.muted) enqueue({ id: `said:${c.id}`, text: saidLine(c.text, sid === st.focus ? null : where), group: sid, at: Date.now(), sid });
-            } else if (v.settings.announceFailures && !v.settings.muted && sid === st.focus && Date.now() - c.e.ts < 20_000 && Date.now() - lastFail > 20_000) {
+              if (v.settings.read === 'summaries' && !sessionMuted(sid, v.settings)) enqueue({ id: `said:${c.id}`, text: saidLine(c.text, sid === st.focus ? null : where), group: sid, at: Date.now(), sid });
+            } else if (v.settings.announceFailures && !sessionMuted(sid, v.settings) && sid === st.focus && Date.now() - c.e.ts < 20_000 && Date.now() - lastFail > 20_000) {
               // one at a time: a burst of failures is said once
               lastFail = Date.now();
               enqueue({ id: c.id, text: failureAnnouncement(c.e, where), group: 'fail', at: Date.now() });
@@ -198,7 +205,7 @@ export function useVoiceAutomation(): void {
           const recent = evs.slice(-30).filter((e) => e.kind === 'task' && e.toolUseId && !told.has(e.id));
           for (const e of recent) {
             told.add(e.id);
-            if (!ready || !v.settings.announceTasks || v.settings.muted || v.ptt.phase !== 'idle' || Date.now() - e.ts > 20_000) continue;
+            if (!ready || !v.settings.announceTasks || sessionMuted(sid, v.settings) || v.ptt.phase !== 'idle' || Date.now() - e.ts > 20_000) continue;
             const t = backgroundTasks(evs).find((x) => x.key === e.toolUseId);
             if (t && t.endedAt != null) void speak(`task:${e.id}`, taskAnnouncement(t, where), 400, true, sid);
           }
@@ -207,9 +214,10 @@ export function useVoiceAutomation(): void {
       if (st.pending !== prevPending) {
         const before = new Set(prevPending.map((p) => p.id));
         prevPending = st.pending;
-        if (!ready || !v.settings.announce || v.settings.muted || v.ptt.phase !== 'idle') return;
+        if (!ready || !v.settings.announce || v.ptt.phase !== 'idle') return;
         const fresh = st.pending.find((p) => !before.has(p.id));
-        if (!fresh) return;
+        // a muted session asks quietly (Cora's own asks follow Cora's switch)
+        if (!fresh || (coraLine('', fresh.sessionId) ? v.settings.coraMuted : sessionMuted(fresh.sessionId, v.settings))) return;
         const s = st.sessions[fresh.sessionId];
         void speak('announce', announcement(fresh, s ? sessionName(s) : coraLine('', fresh.sessionId) ? 'Cora' : 'a session'), 5000, true);
       }

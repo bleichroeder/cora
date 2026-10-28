@@ -5,6 +5,7 @@ import { currentAction, sessionColor } from '../lib/format';
 import { useDebrief, debriefMarkdownOf } from '../state/debrief';
 import { ago } from '../lib/format';
 import { Icon } from './Icon';
+import { VideoButton } from './Videos';
 
 /** A session's debriefs (its walk-throughs of its work), newest first: play one in the IDE panel, or export it. */
 export function DebriefList({ sessionId }: { sessionId: string }) {
@@ -90,6 +91,7 @@ export function DebriefList({ sessionId }: { sessionId: string }) {
                 <button title="Save it as a markdown file" onClick={() => void save(x.id, x.title)}>
                   <Icon name="Download" size={12} />
                 </button>
+                <VideoButton sessionId={sessionId} debriefId={x.id} />
               </span>
             )}
           </div>

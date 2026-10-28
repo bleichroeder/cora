@@ -74,7 +74,7 @@ export function GridOverview() {
           .filter((a) => a.sessionId === s.id && a.agentId !== 'main' && a.state !== 'done')
           .slice(0, 6);
         const action = currentAction(events);
-        const lastSay = [...events].reverse().find((e) => e.kind === 'say');
+        const lastSay = events.findLast((e) => e.kind === 'say');
         const live = s.state === 'working' || s.state === 'thinking';
         const name = sessionName(s);
         const at = ys(subs.length);

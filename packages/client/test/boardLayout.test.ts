@@ -1,13 +1,21 @@
 import { describe, expect, it } from 'vitest';
 import { CORA_BOARD, CORA_LAYOUT, boardFor, fitsBoard, COLS, DEFAULT_BOARD, LAYOUTS, ROWS, shellsOf, addLayoutPage, duplicatePage, moveName, movePage, movedTo, addPanel, asLayout, fromLayout, namesWithout, crossings, moveMeet, dropEdge, dropOn, keepBoards, lineAt, lines, merge, moveEdge, moveLine, normalize, pageCount, popExplain, removePage, removePanel, scrollToShow, sendToPage, shareOut, template, tile, tiles, visible, type BoardItem, type PanelKind } from '../src/lib/boardLayout';
 
+/** a board of four panels to move things around on (the default before the Spotlight led it) */
+const FOUR: BoardItem[] = [
+  { id: 'agents', k: 'agents', x: 0, y: 0, w: 14, h: 16 },
+  { id: 'touching', k: 'touching', x: 14, y: 0, w: 10, h: 12 },
+  { id: 'explains', k: 'explains', x: 14, y: 12, w: 10, h: 12 },
+  { id: 'tasks', k: 'tasks', x: 0, y: 16, w: 14, h: 8 },
+];
+
 const at = (items: BoardItem[]) => Object.fromEntries(items.map((i) => [i.id, [i.x, i.y, i.w, i.h]]));
 const it_ = (id: string, x: number, y: number, w: number, h: number): BoardItem => ({ id, k: 'agents', x, y, w, h });
 
 describe("the live board's grid", () => {
   it('the default tiles the 24 by 24 area exactly', () => {
-    expect(tiles(DEFAULT_BOARD)).toBe(true);
-    expect(tile(DEFAULT_BOARD)).toBe(DEFAULT_BOARD);
+    expect(tiles(FOUR)).toBe(true);
+    expect(tile(FOUR)).toBe(FOUR);
   });
 
   it('any layout is laid out over the whole area: holes filled, overhangs brought in, shares kept', () => {
@@ -28,20 +36,20 @@ describe("the live board's grid", () => {
   });
 
   it('a line moves like a split bar: every panel along it, both sides, as far as each stays 3 wide', () => {
-    expect(at(moveEdge(DEFAULT_BOARD, 'agents', 'x', 18))).toEqual({
+    expect(at(moveEdge(FOUR, 'agents', 'x', 18))).toEqual({
       agents: [0, 0, 18, 16],
       touching: [18, 0, 6, 12],
       explains: [18, 12, 6, 12],
       tasks: [0, 16, 18, 8],
     });
-    expect(at(moveEdge(DEFAULT_BOARD, 'tasks', 'x', 24)).agents).toEqual([0, 0, 21, 16]);
+    expect(at(moveEdge(FOUR, 'tasks', 'x', 24)).agents).toEqual([0, 0, 21, 16]);
     // the line between Agents and Tasks runs only under Agents
-    expect(at(moveEdge(DEFAULT_BOARD, 'agents', 'y', 12))).toMatchObject({ agents: [0, 0, 14, 12], tasks: [0, 12, 14, 12], touching: [14, 0, 10, 12] });
-    expect(moveEdge(DEFAULT_BOARD, 'agents', 'x', 14)).toBe(DEFAULT_BOARD);
+    expect(at(moveEdge(FOUR, 'agents', 'y', 12))).toMatchObject({ agents: [0, 0, 14, 12], tasks: [0, 12, 14, 12], touching: [14, 0, 10, 12] });
+    expect(moveEdge(FOUR, 'agents', 'x', 14)).toBe(FOUR);
   });
 
   it('every line between panels can be dragged (never the edges of the area), and where two meet, both', () => {
-    const ls = lines(DEFAULT_BOARD);
+    const ls = lines(FOUR);
     expect(ls.map((l) => [l.axis, l.at, l.from, l.to])).toEqual(
       expect.arrayContaining([
         ['x', 14, 0, 24],
@@ -52,17 +60,17 @@ describe("the live board's grid", () => {
     expect(ls).toHaveLength(3);
     // the line between Touching and Explains is Explains' top too: dragging it from either side is the same line
     const tx = ls.find((l) => l.axis === 'y' && l.at === 12)!;
-    const moved = moveLine(DEFAULT_BOARD, tx, 8);
+    const moved = moveLine(FOUR, tx, 8);
     expect(at(moved)).toMatchObject({ touching: [14, 0, 10, 8], explains: [14, 8, 10, 16] });
     expect(lineAt(moved, tx)).toBe(8);
     // a T where a line ends on another: both move
     const ms = crossings(ls);
     expect(ms.map((m) => [m.x, m.y])).toEqual(expect.arrayContaining([[14, 16], [14, 12]]));
     const m = ms.find((c) => c.y === 16)!;
-    const both = moveMeet(DEFAULT_BOARD, m, 18, 20);
+    const both = moveMeet(FOUR, m, 18, 20);
     expect(at(both)).toMatchObject({ agents: [0, 0, 18, 20], tasks: [0, 20, 18, 4] });
     // as far as it goes, and no further
-    expect(lineAt(moveLine(DEFAULT_BOARD, m.vs[0], 24), m.vs[0])).toBe(21);
+    expect(lineAt(moveLine(FOUR, m.vs[0], 24), m.vs[0])).toBe(21);
   });
 
   it('lines that line up meet at one point, one handle for all of them (never two on top of each other)', () => {
@@ -79,12 +87,12 @@ describe("the live board's grid", () => {
   });
 
   it('dropped on another panel: its middle swaps them, an edge takes that half (its own place taken up)', () => {
-    expect(at(dropOn(DEFAULT_BOARD, 'tasks', 'touching', 'swap'))).toMatchObject({ tasks: [14, 0, 10, 12], touching: [0, 16, 14, 8] });
-    const split = dropOn(DEFAULT_BOARD, 'tasks', 'touching', 'bottom');
+    expect(at(dropOn(FOUR, 'tasks', 'touching', 'swap'))).toMatchObject({ tasks: [14, 0, 10, 12], touching: [0, 16, 14, 8] });
+    const split = dropOn(FOUR, 'tasks', 'touching', 'bottom');
     expect(tiles(split)).toBe(true);
     expect(at(split)).toMatchObject({ agents: [0, 0, 14, 24], touching: [14, 0, 10, 6], tasks: [14, 6, 10, 6], explains: [14, 12, 10, 12] });
-    expect(at(dropOn(DEFAULT_BOARD, 'explains', 'agents', 'left'))).toMatchObject({ explains: [0, 0, 7, 16], agents: [7, 0, 7, 16], touching: [14, 0, 10, 24] });
-    expect(dropOn(DEFAULT_BOARD, 'tasks', 'tasks', 'swap')).toBe(DEFAULT_BOARD);
+    expect(at(dropOn(FOUR, 'explains', 'agents', 'left'))).toMatchObject({ explains: [0, 0, 7, 16], agents: [7, 0, 7, 16], touching: [14, 0, 10, 24] });
+    expect(dropOn(FOUR, 'tasks', 'tasks', 'swap')).toBe(FOUR);
   });
 
   it("dropped on the board's own edge: the full width (or height) along it, as deep as it was", () => {
@@ -92,14 +100,14 @@ describe("the live board's grid", () => {
     const b = [it_('a', 0, 0, 12, 12), it_('b', 0, 12, 12, 12), it_('c', 12, 0, 12, 24)];
     expect(at(dropEdge(b, 'b', 'bottom'))).toEqual({ a: [0, 0, 12, 12], b: [0, 12, 24, 12], c: [12, 0, 12, 12] });
     // never more than half the board; the rest keep their shares
-    const r = dropEdge(DEFAULT_BOARD, 'agents', 'right');
+    const r = dropEdge(FOUR, 'agents', 'right');
     expect(tiles(r)).toBe(true);
     expect(at(r).agents).toEqual([12, 0, 12, 24]);
-    expect(at(dropEdge(DEFAULT_BOARD, 'tasks', 'top')).tasks).toEqual([0, 0, 24, 8]);
+    expect(at(dropEdge(FOUR, 'tasks', 'top')).tasks).toEqual([0, 0, 24, 8]);
   });
 
   it('adds a panel once, in half of the biggest; removing gives its place to its neighbours', () => {
-    let b = removePanel(DEFAULT_BOARD, 'tasks');
+    let b = removePanel(FOUR, 'tasks');
     expect(at(b).agents).toEqual([0, 0, 14, 24]);
     b = addPanel(b, 'tasks');
     expect(tiles(b)).toBe(true);
@@ -114,7 +122,7 @@ describe("the live board's grid", () => {
     let seed = 7;
     const rnd = (n: number) => ((seed = (seed * 16807) % 2147483647), seed % n);
     const kinds: PanelKind[] = ['agents', 'touching', 'explains', 'tasks', 'goal', 'context', 'changes', 'git', 'tests', 'notes'];
-    let b: BoardItem[] = DEFAULT_BOARD;
+    let b: BoardItem[] = FOUR;
     for (let i = 0; i < 1000; i++) {
       const op = rnd(5);
       const pick = () => b[rnd(b.length)];
@@ -133,11 +141,11 @@ describe("the live board's grid", () => {
   });
 
   it("a popped-out explain shows in its session only; the others' boards close the gap", () => {
-    const b = popExplain(DEFAULT_BOARD, 's1', 'Release 2.4');
+    const b = popExplain(FOUR, 's1', 'Release 2.4');
     expect(popExplain(b, 's1', 'Release 2.4')).toBe(b);
     expect(tiles(b)).toBe(true);
     expect(visible(b, 's1').map((i) => i.k)).toContain('explain');
-    expect(visible(b, 's2')).toEqual(DEFAULT_BOARD);
+    expect(visible(b, 's2')).toEqual(FOUR);
     // a change in s2 keeps s1's explain
     const s2 = dropOn(visible(b, 's2'), 'tasks', 'agents', 'swap');
     expect(merge(b, 's2', s2).filter((i) => i.k === 'explain')).toHaveLength(1);
@@ -155,13 +163,13 @@ describe("the live board's grid", () => {
     expect(at(cols)).toEqual({ agents: [0, 0, 16, 18], tasks: [0, 18, 16, 6], touching: [16, 0, 8, 24] });
     // a layout from before the finer grid (12 by 12): read at twice the size
     const old = [it_('agents', 0, 0, 7, 8), it_('touching', 7, 0, 5, 6), it_('explains', 7, 6, 5, 6), it_('tasks', 0, 8, 7, 4)];
-    expect(at(normalize(old))).toEqual(at(DEFAULT_BOARD));
+    expect(at(normalize(old))).toEqual(at(FOUR));
   });
 
   it('pages: each laid out on its own; a panel sent to another lands there, its place here filled', () => {
-    expect(pageCount(DEFAULT_BOARD)).toBe(1);
-    expect(pageCount(DEFAULT_BOARD, 3)).toBe(3);
-    const b = sendToPage(DEFAULT_BOARD, 's1', 'tasks', 0, 1);
+    expect(pageCount(FOUR)).toBe(1);
+    expect(pageCount(FOUR, 3)).toBe(3);
+    const b = sendToPage(FOUR, 's1', 'tasks', 0, 1);
     expect(pageCount(b)).toBe(2);
     expect(at(visible(b, 's1', 0)).agents).toEqual([0, 0, 14, 24]);
     expect(visible(b, 's1', 1)).toEqual([expect.objectContaining({ id: 'tasks', x: 0, y: 0, w: COLS, h: ROWS, pg: 1 })]);
@@ -176,16 +184,19 @@ describe("the live board's grid", () => {
 
   it('layouts for kinds of work each tile a page; one is added as a new page after the last, with new panels', () => {
     for (const l of Object.values(LAYOUTS)) expect(tiles(fromLayout(l))).toBe(true);
-    const r = addLayoutPage(DEFAULT_BOARD, 1, LAYOUTS.coding)!;
+    const r = addLayoutPage(FOUR, 1, LAYOUTS.coding)!;
     expect(r.page).toBe(1);
-    expect(visible(r.items, 's1', 0)).toEqual(DEFAULT_BOARD);
+    expect(visible(r.items, 's1', 0)).toEqual(FOUR);
     const page = visible(r.items, 's1', 1);
-    expect(page.map((p) => p.k)).toEqual(['changes', 'tests', 'agents', 'git', 'terminal']);
-    expect(page.some((p) => DEFAULT_BOARD.some((d) => d.id === p.id))).toBe(false);
+    expect(page.map((p) => p.k)).toEqual(['ide', 'terminal', 'spotlight', 'tests']);
+    // every layout has the Spotlight; so does a new session's board
+    for (const l of Object.values(LAYOUTS)) expect(l.some((p) => p.k === 'spotlight')).toBe(true);
+    expect(tiles(DEFAULT_BOARD) && DEFAULT_BOARD.some((p) => p.k === 'spotlight' && p.h === ROWS)).toBe(true);
+    expect(page.some((p) => FOUR.some((d) => d.id === p.id))).toBe(false);
     // made pages count: after them
-    expect(addLayoutPage(DEFAULT_BOARD, 3, LAYOUTS.shipping)!.page).toBe(3);
+    expect(addLayoutPage(FOUR, 3, LAYOUTS.shipping)!.page).toBe(3);
     // at the most pages: none
-    expect(addLayoutPage(DEFAULT_BOARD, 9, LAYOUTS.shipping)).toBeNull();
+    expect(addLayoutPage(FOUR, 9, LAYOUTS.shipping)).toBeNull();
   });
 
   it('pages move (the ones between shift over, names with them) and copy (new panels, a terminal without its shell)', () => {
@@ -204,7 +215,7 @@ describe("the live board's grid", () => {
   });
 
   it('a page kept as a layout leaves its explains out; page names follow a removed page', () => {
-    const b = popExplain(DEFAULT_BOARD, 's1', 'Release');
+    const b = popExplain(FOUR, 's1', 'Release');
     const kept = asLayout(visible(b, 's1'));
     expect(kept.some((p) => p.k === 'explain')).toBe(false);
     expect(tiles(fromLayout(kept))).toBe(true);
@@ -214,21 +225,21 @@ describe("the live board's grid", () => {
 
   it("each session's own board; new ones start from the chosen layout, without another session's explains", () => {
     expect(template(undefined)).toBe(DEFAULT_BOARD);
-    const chosen = popExplain(moveEdge(DEFAULT_BOARD, 'agents', 'x', 18), 's1', 'Release');
+    const chosen = popExplain(moveEdge(FOUR, 'agents', 'x', 18), 's1', 'Release');
     const t = template(chosen);
     expect(t.some((p) => p.k === 'explain')).toBe(false);
     expect(tiles(t)).toBe(true);
     expect(at(t).agents).toEqual([0, 0, 18, 16]);
     // a Terminal panel's shell stays with its session: a new one starts its own
-    const withShell = DEFAULT_BOARD.map((p) => (p.id === 'tasks' ? { ...p, k: 'terminal' as const, term: 'term-1' } : p));
+    const withShell = FOUR.map((p) => (p.id === 'tasks' ? { ...p, k: 'terminal' as const, term: 'term-1' } : p));
     expect(normalize(withShell).find((p) => p.k === 'terminal')?.term).toBe('term-1');
     expect(template(withShell).find((p) => p.k === 'terminal')?.term).toBeUndefined();
     // tabs of shells: kept with the board, never carried to another session's
-    const tabs = DEFAULT_BOARD.map((p) => (p.id === 'tasks' ? { ...p, k: 'terminal' as const, terms: ['a', 'b', 7], term: 'b' } : p));
+    const tabs = FOUR.map((p) => (p.id === 'tasks' ? { ...p, k: 'terminal' as const, terms: ['a', 'b', 7], term: 'b' } : p));
     expect(shellsOf(normalize(tabs).find((p) => p.k === 'terminal')!)).toEqual(['a', 'b']);
     expect(shellsOf(template(tabs).find((p) => p.k === 'terminal')!)).toEqual([]);
     expect(shellsOf({ ...withShell[3] })).toEqual(['term-1']);
-    const boards = keepBoards({ gone: { items: [] }, s1: { items: DEFAULT_BOARD } }, 's2', { items: t, page: 1 }, (id) => id !== 'gone');
+    const boards = keepBoards({ gone: { items: [] }, s1: { items: FOUR } }, 's2', { items: t, page: 1 }, (id) => id !== 'gone');
     expect(Object.keys(boards)).toEqual(['s1', 's2']);
     expect(boards.s2.page).toBe(1);
   });
@@ -269,7 +280,7 @@ describe("Cora's board", () => {
   });
 
   it("is kept when sessions' boards come and go", () => {
-    const boards = keepBoards({ [CORA_BOARD]: { items: CORA_LAYOUT }, s1: { items: DEFAULT_BOARD } }, 's2', { items: DEFAULT_BOARD }, (id) => id === 's1');
+    const boards = keepBoards({ [CORA_BOARD]: { items: CORA_LAYOUT }, s1: { items: FOUR } }, 's2', { items: FOUR }, (id) => id === 's1');
     expect(Object.keys(boards)).toEqual([CORA_BOARD, 's1', 's2']);
     expect(Object.keys(keepBoards(boards, CORA_BOARD, { items: CORA_LAYOUT, page: 0 }, () => false))).toEqual([CORA_BOARD]);
   });

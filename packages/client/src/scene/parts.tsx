@@ -402,12 +402,20 @@ export function ThoughtMotes({ r, thinking, color, ring = [2.6, 2.6], tall = 3 }
   return <primitive object={pts} />;
 }
 
+/** A line made here (not by React): its geometry and material freed. */
+function disposeLine(l: THREE.Line): void {
+  l.geometry.dispose();
+  (Array.isArray(l.material) ? l.material : [l.material]).forEach((m) => m.dispose());
+}
+
 // ---------------------------------------------------------------------------- delegation link
 export function Link({ from, to, color, alive }: { from: PosFn; to: PosFn; color: string; alive: boolean }) {
   const line = useMemo(
     () => new THREE.Line(new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(new Float32Array(40 * 3), 3)), new THREE.LineBasicMaterial({ color: new THREE.Color(color).multiplyScalar(1.2), transparent: true, opacity: 0.4, blending: THREE.AdditiveBlending, depthWrite: false })),
     [color],
   );
+  // a primitive isn't disposed for us: its line's buffers and material go with it
+  useEffect(() => () => disposeLine(line), [line]);
   const packets = useRef<Array<THREE.Sprite | null>>([]);
   const v = useMemo(() => ({ A: new THREE.Vector3(), B: new THREE.Vector3(), C: new THREE.Vector3(), P: new THREE.Vector3() }), []);
   useFrame(({ clock }) => {
@@ -464,6 +472,8 @@ export function Comet({ from, to, startedAt, endedAt, failed, agentColor, lowFx 
     const trail = new THREE.Line(tg, new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));
     return { line, trail };
   }, []);
+  // primitives aren't disposed for us: the comet's lines go with it
+  useEffect(() => () => (disposeLine(line), disposeLine(trail)), [line, trail]);
   const head = useRef<THREE.Sprite>(null);
   const v = useMemo(() => ({ A: new THREE.Vector3(), B: new THREE.Vector3(), C: new THREE.Vector3(), P: new THREE.Vector3() }), []);
   const fade = useMemo(() => (failed ? hot('#f87171', 2) : new THREE.Color(agentColor).multiplyScalar(0.9)), [failed, agentColor]);

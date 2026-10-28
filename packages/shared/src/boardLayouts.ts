@@ -6,10 +6,10 @@ export const BOARD_LAYOUTS = ['investigating', 'coding', 'reviewing', 'shipping'
 export type BoardLayoutId = (typeof BOARD_LAYOUTS)[number];
 
 export const BOARD_LAYOUT_INFO: Record<BoardLayoutId, { name: string; icon: string; hint: string }> = {
-  investigating: { name: 'Investigating', icon: 'Search', hint: 'Browser, terminal, what it touches, notes' },
-  coding: { name: 'Coding', icon: 'Code', hint: 'Changes, tests, agents, git, terminal' },
-  reviewing: { name: 'Reviewing', icon: 'FileDiff', hint: 'Changes large, the ticket, explains' },
-  shipping: { name: 'Shipping', icon: 'Rocket', hint: 'Pipeline & MR, deploys, ticket, tests' },
+  investigating: { name: 'Investigating', icon: 'Search', hint: 'The Spotlight, browser, what it touches, terminal' },
+  coding: { name: 'Coding', icon: 'Code', hint: 'IDE, terminal, the Spotlight, tests' },
+  reviewing: { name: 'Reviewing', icon: 'FileDiff', hint: 'IDE large, the Spotlight, changes, the ticket' },
+  shipping: { name: 'Shipping', icon: 'Rocket', hint: 'Pipeline & MR, deploys, the Spotlight, ticket' },
   writing: { name: 'Writing', icon: 'FileText', hint: 'Explains, the Spotlight, notes' },
 };
 

@@ -1,6 +1,7 @@
 import { applyJira } from './jiraWatch';
 import { applyRBrowse } from '../components/RemoteBrowser';
 import { addToProject, useProjects } from './projects';
+import { useVideos } from './videos';
 import { useDebrief } from './debrief';
 import { useWorktrees } from './worktrees';
 import { useSecrets } from './secrets';
@@ -144,6 +145,9 @@ function open() {
         break;
       case 'projects':
         useProjects.getState().apply(msg);
+        break;
+      case 'videos':
+        useVideos.getState().apply(msg);
         break;
       case 'synced':
         if (syncedFromServer(msg.key, msg.value) && msg.key === 'ab:ui') useBrain.getState().reloadPrefs();

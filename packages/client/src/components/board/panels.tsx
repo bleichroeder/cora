@@ -1,4 +1,5 @@
 import type { PanelKind } from '../../lib/boardLayout';
+import { VideosPanel } from '../Videos';
 import { RemoteBrowserView } from '../RemoteBrowser';
 import { desktop } from '../../lib/desktop';
 import { ActivityPanel, BriefPanel, ConstellationPanel, MembersPanel, ProjectPanel, ReposPanel, ThreadPanel } from './ProjectPanels';
@@ -40,6 +41,7 @@ const BODIES: Partial<Record<PanelKind, React.ComponentType<Props>>> = {
   sessions: SessionsPanel,
   usage: UsagePanel,
   terminal: TerminalPanel,
+  videos: (p: Props) => <VideosPanel sessionId={p.sessionId} />,
   // away from the desktop app: the session's browser rendered on your PC
   browser: (p: Props) => (desktop?.browser ? <BrowserPanel {...p} /> : <RemoteBrowserView sessionId={p.sessionId} />),
   // VS Code runs on your PC, at an address only it can open: from another device (the iPad), a word instead

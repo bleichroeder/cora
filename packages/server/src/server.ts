@@ -8,7 +8,7 @@ import { SessionNames } from './sessionNames';
 import { Lock } from './lock';
 import { Freeze } from './freeze';
 import { Journal, journalDir } from './journal';
-import { displayName, recapText } from '@cora/shared';
+import { displayName, recapText, DEFAULT_VIDEO, DEFAULT_VOICE, type VideosMsg } from '@cora/shared';
 import { LiveExplains } from './liveExplains';
 import { Debriefs } from './debriefs';
 import { Worktrees } from './worktrees';
@@ -42,6 +42,7 @@ import { Namer, wantsAutoName, type RunFn } from './namer';
 import { Registry } from './registry';
 import { Store } from './store';
 import { Banners, bannerWords } from './banner';
+import { Videos } from './videos';
 import { PtyManager, type SpawnFn } from './pty';
 import type { PtyBackend } from './ptyhost/backend';
 import { hostedArgs } from './hosted';
@@ -354,7 +355,7 @@ export async function startServer(config: Config, opts: { tail?: boolean; listen
     usage: (sids, since) => {
       const set = new Set(sids);
       let n = 0;
-      for (const e of store.usageEvents(since)) if (set.has(e.sessionId) && e.tokens) n += e.tokens.out + Math.max(0, e.tokens.in - (e.tokens.cached ?? 0));
+      for (const e of store.tokenEvents([...set], since)) if (set.has(e.sessionId) && e.tokens) n += e.tokens.out + Math.max(0, e.tokens.in - (e.tokens.cached ?? 0));
       return n;
     },
     sessions: () => store.listSessions(),
@@ -590,7 +591,25 @@ export async function startServer(config: Config, opts: { tail?: boolean; listen
   if (opts.listen !== false) worktrees.start();
   // sessions' debriefs (~/.cora/debriefs): made by their tool, played from the dashboard
   const debriefs = new Debriefs({ dir: join(config.dataDir, 'debriefs'), onChange: (sessionId) => hub.publishDebriefs({ t: 'debriefs', sessionId, list: debriefs.list(sessionId) }) });
-  const app = await buildApp({ config, store, hub, pipeline, pending, ptys, live: liveExplains, registry, prefs, voice, voiceFront, gmail, mailWatches, mailOutbox, ide, ideBridge, namer, tickets, jira, environments, deploys, notes, drafts, bot, inbox, ...(opts.claudeSettingsFile ? { claudeSettingsFile: opts.claudeSettingsFile } : {}), ...(opts.setupChecks ? { setupChecks: opts.setupChecks } : {}), onShutdown: opts.onShutdown, ci: () => ci, slack: { slack, outbox, live, cwdOf: (sid) => store.getSession(sid)?.cwd }, security: security ?? undefined, orchestrator: o, gitlabIssues, memes, sessionNames, lock, freeze, journal: { add: (sid, kind, text) => journalAdd(sid, kind, text), read: (sid) => journal.read(sid) }, debriefs, worktrees, vault, devices, remote, shares, door, synced, projects, banners });
+  // debrief videos: drawn by the desktop app, voiced with Cora's ElevenLabs key, put together by ffmpeg
+  const videos: Videos | undefined =
+    config.dbPath === ':memory:'
+      ? undefined
+      : new Videos({
+          dir: join(config.dataDir, 'videos'),
+          toolsDir: join(config.dataDir, 'tools'),
+          debrief: (sid, id) => debriefs.get(sid, id),
+          settings: () => {
+            const p = prefs.get();
+            return { ...DEFAULT_VIDEO, ...p.debrief?.video, coraVoice: p.voice?.coraVoiceId || p.voice?.voiceId || DEFAULT_VOICE.voiceId };
+          },
+          voice: (text, o) => voice.synthesize(text, o),
+          draw: (slides, color) => banners.slides(slides, color),
+          onChange: () => hub.publishVideos(videosMsg()),
+        });
+  const videosMsg = (): VideosMsg => ({ t: 'videos', jobs: videos?.list() ?? [], ffmpeg: videos?.ffmpeg() ?? { state: 'missing', canDownload: false } });
+  hub.videosSnapshot = videosMsg;
+  const app = await buildApp({ config, store, hub, pipeline, pending, ptys, live: liveExplains, registry, prefs, voice, voiceFront, gmail, mailWatches, mailOutbox, ide, ideBridge, namer, tickets, jira, environments, deploys, notes, drafts, bot, inbox, ...(opts.claudeSettingsFile ? { claudeSettingsFile: opts.claudeSettingsFile } : {}), ...(opts.setupChecks ? { setupChecks: opts.setupChecks } : {}), onShutdown: opts.onShutdown, ci: () => ci, slack: { slack, outbox, live, cwdOf: (sid) => store.getSession(sid)?.cwd }, security: security ?? undefined, orchestrator: o, gitlabIssues, memes, sessionNames, lock, freeze, journal: { add: (sid, kind, text) => journalAdd(sid, kind, text), read: (sid) => journal.read(sid) }, debriefs, worktrees, vault, devices, remote, shares, door, synced, projects, banners, videos });
 
   let tailer: Tailer | undefined;
   if (opts.tail !== false) {
@@ -600,7 +619,7 @@ export async function startServer(config: Config, opts: { tail?: boolean; listen
       } catch (e) {
         console.error('[cora] transcript ingest failed', file, (e as Error).message);
       }
-    }, { sinceMs: config.backfillMs, onProgress: (done, total) => stage('tx', 'progress', { done, total }) });
+    }, { sinceMs: config.backfillMs, onProgress: (done, total) => stage('tx', 'progress', { done, total }), reads: { get: (f) => store.readOffset(f), set: (f, n) => store.setReadOffset(f, n) } });
     stage('tx', 'start');
     await tailer.start();
   } else stage('tx', 'skip');
@@ -611,7 +630,7 @@ export async function startServer(config: Config, opts: { tail?: boolean; listen
   const prune = () => {
     // their names first: a session leaving the list keeps its name in Resume
     sessionNames.remember(store.listSessions());
-    store.prune(Date.now() - prefs.get().retentionDays * 86400_000);
+    store.prune(Date.now() - prefs.get().retentionDays * 86400_000, (dead) => (registry.forget(dead), pipeline.forget(dead)));
     pruneAttachments(config.dataDir);
     liveExplains.prune(Date.now() - prefs.get().retentionDays * 86400_000);
     memes.prune(Date.now() - prefs.get().retentionDays * 86400_000);
@@ -704,6 +723,7 @@ export async function startServer(config: Config, opts: { tail?: boolean; listen
       security?.stop();
       clearInterval(pruner);
       await tailer?.stop();
+      videos?.close();
       await app.close();
       store.close();
     },

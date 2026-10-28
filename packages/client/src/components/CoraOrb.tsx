@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import type { CoraState } from '../state/orchestrator';
@@ -52,7 +52,7 @@ const cssColor = () => {
  * Away mode or late at night when you've gone quiet, waking with a flash. Sized to the card: the canvas is bigger than
  * the orb so its glow and motes spill out, and nothing leaves it.
  */
-export function CoraOrb({ state, size, progress, agent, away, onHold, glow, color, speaking, reach, wide, master, ferro }: { state: CoraState; size: number; progress?: number; agent?: string | null; away?: boolean; onHold?(on: boolean): void; /** an element its light falls on (--orb-glow, --orb-tint) */ glow?: React.RefObject<HTMLElement | null>; /** another's colour (a session's orb): none, Cora's */ color?: string; /** another's voice speaking (a session's orb): none, Cora's */ speaking?: boolean; /** which orb it is, for reaching between Cora's card and the open session's (lib/coraLinks) */ reach?: 'cora' | 'session'; /** its canvas this wide (its card's width), so an arm has room to reach the card's edge */ wide?: number; /** Cora's own (it wears the crown: rings, your sessions riding them, a shell) */ master?: boolean; /** all ferrofluid: its spikes up and pulsing, as if it spoke (Cora's Slack banner) */ ferro?: boolean }) {
+export function CoraOrb({ state, size, progress, agent, away, onHold, glow, color, speaking, reach, wide, master, ferro, always }: { state: CoraState; size: number; progress?: number; agent?: string | null; away?: boolean; onHold?(on: boolean): void; /** an element its light falls on (--orb-glow, --orb-tint) */ glow?: React.RefObject<HTMLElement | null>; /** another's colour (a session's orb): none, Cora's */ color?: string; /** another's voice speaking (a session's orb): none, Cora's */ speaking?: boolean; /** which orb it is, for reaching between Cora's card and the open session's (lib/coraLinks) */ reach?: 'cora' | 'session'; /** its canvas this wide (its card's width), so an arm has room to reach the card's edge */ wide?: number; /** Cora's own (it wears the crown: rings, your sessions riding them, a shell) */ master?: boolean; /** all ferrofluid: its spikes up and pulsing, as if it spoke (Cora's Slack banner) */ ferro?: boolean; /** drawn even when it can't be seen (a page recorded out of sight: the banner, a video's slides) */ always?: boolean }) {
   const touch = useRef<Touch>({ hover: false, at: null, pokes: 0 });
   const hold = useRef<{ timer: number; on: boolean }>({ timer: 0, on: false });
   const where = (e: React.PointerEvent) => {
@@ -64,10 +64,14 @@ export function CoraOrb({ state, size, progress, agent, away, onHold, glow, colo
     if (hold.current.on) (hold.current.on = false), onHold?.(false);
   };
   const box = Math.round(size * 1.7);
+  // drawn only while it can be seen: on screen (not scrolled away, not in a closed panel) and the window showing
+  const root = useRef<HTMLSpanElement>(null);
+  const shown = useShown(root, !!always);
   // a goal's progress (autopilot): a ring around it, as the lens has
   const ring = state === 'autopilot' && progress != null ? progress : null;
   return (
     <span
+      ref={root}
       className={`cora-orb st-${state}${size < 40 ? ' small' : ''}`}
       style={{ width: size, height: size }}
       aria-hidden
@@ -89,12 +93,35 @@ export function CoraOrb({ state, size, progress, agent, away, onHold, glow, colo
         </svg>
       ) : null}
       <span className="co-canvas" style={{ width: Math.max(box, wide ?? 0), height: box, margin: `${-(box - size) / 2}px 0 0 ${-(Math.max(box, wide ?? 0) - size) / 2}px` }}>
-        <Canvas dpr={[1, 2]} gl={{ alpha: true, antialias: true, powerPreference: 'low-power' }} camera={{ position: [0, 0, 4.1], fov: 40 }}>
+        <Canvas frameloop={shown ? 'always' : 'never'} dpr={[1, 2]} gl={{ alpha: true, antialias: true, powerPreference: 'low-power' }} camera={{ position: [0, 0, 4.1], fov: 40 }}>
           <OrbBody state={state} agent={agent ?? null} small={size < 40} away={!!away} touch={touch} glow={glow} color={color} speaking={speaking} reach={size < 40 ? undefined : reach} master={size >= 40 && !!master} ferro={!!ferro} />
         </Canvas>
       </span>
     </span>
   );
+}
+
+/**
+ * Whether an orb can be seen: in the viewport (an observer: scrolled away, or inside something hidden, it isn't) and
+ * the window not hidden or minimised. While it can't be, its canvas draws nothing (each orb is a WebGL canvas drawing
+ * every frame); it carries on where it was when it can (its motion runs on its own clock).
+ */
+function useShown(el: React.RefObject<HTMLElement | null>, always: boolean): boolean {
+  const [inView, setInView] = useState(true);
+  const [page, setPage] = useState(() => typeof document === 'undefined' || document.visibilityState !== 'hidden');
+  useEffect(() => {
+    if (always || !el.current || typeof IntersectionObserver === 'undefined') return;
+    const o = new IntersectionObserver(([e]) => setInView(e.isIntersecting), { rootMargin: '60px' });
+    o.observe(el.current);
+    return () => o.disconnect();
+  }, [always, el]);
+  useEffect(() => {
+    if (always) return;
+    const f = () => setPage(document.visibilityState !== 'hidden');
+    document.addEventListener('visibilitychange', f);
+    return () => document.removeEventListener('visibilitychange', f);
+  }, [always]);
+  return always || (inView && page);
 }
 
 /** What Cora's agent is doing, from its events: tool calls in flight, its last step, its last compaction and failure. */
@@ -202,10 +229,12 @@ function OrbBody({ state, agent, small, away, touch, glow, color: own, speaking:
     s.asleep = asleep;
     s.sleep = ease(s.sleep, asleep ? 1 : 0, 0.6);
     // its gaze: toward your pointer while it's near and moving (it loses interest after a while)
-    const box = gl.domElement.getBoundingClientRect();
-    const dx = pointer.x - (box.left + box.width / 2);
-    const dy = pointer.y - (box.top + box.height / 2);
-    const keen = now - pointer.at < 8000 ? Math.max(0, Math.min(1, 1 - (Math.hypot(dx, dy) - 120) / 900)) * (1 - s.sleep) : 0;
+    // (measured only while the pointer is fresh: after 8 s it's ignored anyway, and reading layout every frame costs)
+    const fresh = now - pointer.at < 8000;
+    const box = fresh ? gl.domElement.getBoundingClientRect() : null;
+    const dx = box ? pointer.x - (box.left + box.width / 2) : 0;
+    const dy = box ? pointer.y - (box.top + box.height / 2) : 0;
+    const keen = fresh ? Math.max(0, Math.min(1, 1 - (Math.hypot(dx, dy) - 120) / 900)) * (1 - s.sleep) : 0;
     s.gx = ease(s.gx, Math.max(-1, Math.min(1, dx / 380)) * keen, 3);
     s.gy = ease(s.gy, Math.max(-1, Math.min(1, dy / 380)) * keen, 3);
     // under your hand: it swells, ripples where you touch, and a poke jiggles it

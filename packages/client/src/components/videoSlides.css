@@ -1,0 +1,238 @@
+/* A debrief video's slides (VideoSlides.tsx): 1920×1080, your Cora's look */
+html.slides-page,
+html.slides-page body,
+html.slides-page #root {
+  margin: 0;
+  overflow: hidden;
+  background: var(--nav);
+}
+.vslides {
+  position: relative;
+  box-sizing: border-box;
+  width: 1920px;
+  height: 1080px;
+  overflow: hidden;
+  background: var(--nav);
+  border-left: 12px solid var(--cora);
+  font-family: var(--ui);
+  color: var(--ink);
+}
+.vslides .vs-glow {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(900px 700px at 100% 0%, color-mix(in srgb, var(--cora) 16%, transparent), transparent 70%);
+  pointer-events: none;
+}
+.vslides .vs-eyebrow {
+  font-size: 26px;
+  letter-spacing: 0.2em;
+  color: var(--ink2);
+  text-transform: uppercase;
+}
+.vslides .vs-eyebrow b,
+.vslides .vs-mark b {
+  color: var(--cora);
+  font-weight: 800;
+}
+.vslides .vs-eyebrow i {
+  font-style: normal;
+  color: var(--ink3);
+}
+
+/* the title card: the orb, the title, the task */
+.vs-title {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 90px;
+  height: 100%;
+  padding: 0 160px 0 140px;
+}
+.vs-title .vs-orb {
+  flex: none;
+  width: 420px;
+  height: 420px;
+  display: grid;
+  place-items: center;
+}
+.vs-title .vs-tw {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 34px;
+}
+.vs-title h1 {
+  margin: 0;
+  font-size: 84px;
+  line-height: 1.08;
+  font-weight: 750;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.vs-title p {
+  margin: 0;
+  font-size: 38px;
+  line-height: 1.4;
+  color: var(--ink2);
+  display: -webkit-box;
+  -webkit-line-clamp: 5;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* a step: what it is, its title, its code (or its words), where it is in the whole */
+.vs-step {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  box-sizing: border-box;
+  padding: 90px 130px 70px 120px;
+}
+.vs-head {
+  display: flex;
+  align-items: center;
+  gap: 26px;
+}
+.vs-kind {
+  font-size: 24px;
+  font-weight: 700;
+  padding: 6px 18px;
+  border-radius: 999px;
+  color: var(--k);
+  background: color-mix(in srgb, var(--k) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--k) 40%, transparent);
+}
+.vs-file {
+  margin-left: auto;
+  font-family: var(--code);
+  font-size: 24px;
+  color: var(--ink3);
+}
+.vs-step h2 {
+  margin: 30px 0 40px;
+  font-size: 62px;
+  line-height: 1.12;
+  font-weight: 720;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.vs-code {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  padding: 26px 0;
+  border-radius: 22px;
+  background: var(--raise);
+  border: 1px solid var(--hair2);
+  font-family: var(--code);
+  font-size: 30px;
+  line-height: 1.5;
+}
+.vs-line {
+  display: flex;
+  gap: 32px;
+  padding: 0 36px 0 32px;
+  border-left: 5px solid transparent;
+  white-space: pre;
+}
+.vs-line .n {
+  flex: none;
+  width: 2.6em;
+  text-align: right;
+  color: var(--ink4);
+}
+.vs-line .t {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--ink2);
+}
+.vs-line.lit {
+  background: color-mix(in srgb, var(--cora) 14%, transparent);
+  border-left-color: var(--cora);
+}
+.vs-line.lit .t {
+  color: var(--ink);
+}
+.vs-line.more {
+  color: var(--ink3);
+  padding-left: 120px;
+}
+.vs-words {
+  flex: 1;
+  margin: 0;
+  font-size: 44px;
+  line-height: 1.5;
+  color: var(--ink2);
+  display: -webkit-box;
+  -webkit-line-clamp: 9;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.vs-foot {
+  display: flex;
+  align-items: center;
+  margin-top: 40px;
+}
+.vs-dots {
+  display: flex;
+  gap: 12px;
+}
+.vs-dots i {
+  width: 42px;
+  height: 8px;
+  border-radius: 4px;
+  background: var(--hair2);
+}
+.vs-dots i.past {
+  background: color-mix(in srgb, var(--cora) 45%, transparent);
+}
+.vs-dots i.on {
+  background: var(--cora);
+}
+.vs-mark {
+  margin-left: auto;
+  font-size: 22px;
+  letter-spacing: 0.2em;
+  color: var(--ink3);
+  text-transform: uppercase;
+}
+
+/* no orb: the words on their own, centred */
+.vs-title.bare {
+  justify-content: center;
+  padding: 0 220px;
+  text-align: center;
+}
+.vs-title.bare .vs-tw {
+  align-items: center;
+}
+
+/* subtitles: what's said, a line at a time, in a band at the foot (the slide's own content keeps clear of it) */
+.vslides.captioned .vs-step {
+  padding-bottom: 210px;
+}
+.vslides.captioned .vs-foot {
+  display: none;
+}
+.vs-caption {
+  position: absolute;
+  left: 50%;
+  bottom: 56px;
+  transform: translateX(-50%);
+  max-width: 1500px;
+  padding: 18px 34px;
+  border-radius: 16px;
+  background: rgba(5, 7, 11, 0.86);
+  border: 1px solid var(--hair2);
+  color: var(--ink);
+  font-size: 40px;
+  line-height: 1.35;
+  font-weight: 560;
+  text-align: center;
+}

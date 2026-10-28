@@ -84,6 +84,14 @@ describe('announcement', () => {
     expect(announcement(req('mcp__github__create_pr', {}), 'aurora')).toBe('Claude wants to use github create_pr in aurora.');
     expect(announcement(req('AskUserQuestion', {}, 'question'), 'aurora')).toBe('Claude has a question for you in aurora.');
   });
+
+  it("says a secret by what it's for, never its name spelled out", () => {
+    const secret = (name: string, note: string) => req(`Use secret ${name}`, { command: 'curl -H "Bearer $X" …', secret: name, note });
+    expect(announcement(secret('GITHUB_PAT_PROD', 'Production GitHub API Access'), 'cora')).toBe('Claude wants to use your Production GitHub API Access secret in cora.');
+    expect(announcement(secret('APP_JWT_DEV', 'Dev JWT - 10/27/2026'), 'cora')).toBe('Claude wants to use your Dev JWT in cora.');
+    expect(announcement(secret('GITHUB_PAT', ''), 'cora')).toBe('Claude wants to use your GITHUB PAT in cora.');
+    expect(announcement(secret('DEPLOY_KEY_2', ''), 'cora')).toBe('Claude wants to use your DEPLOY KEY 2 secret in cora.');
+  });
 });
 
 describe('taskAnnouncement', () => {

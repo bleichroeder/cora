@@ -83,3 +83,53 @@ describe('Tailer', () => {
     expect(tailer.badLines).toBe(1);
   });
 });
+
+describe('Tailer, across a restart', () => {
+  it("what was read before comes again quietly (the parser's context), only what's new is news; a file rewritten shorter: all news", async () => {
+    const reads = new Map<string, number>();
+    const store = { get: (f: string) => reads.get(f), set: (f: string, n: number) => void reads.set(f, n) };
+    const f = join(root, 'C--proj', 'sess-1.jsonl');
+    writeFileSync(f, line({ n: 1 }) + line({ n: 2 }) + '{"n":3');
+    await mk({ reads: store }).start();
+    expect(got.map((g) => [g.objs, !!g.info.quiet])).toEqual([[[{ n: 1 }, { n: 2 }], false]]);
+    expect(reads.get(f)).toBe(line({ n: 1 }).length + line({ n: 2 }).length);
+    await tailer.stop();
+    // Cora restarts; meanwhile the half-written line was finished and another came
+    appendFileSync(f, '}\n' + line({ n: 4 }));
+    got = [];
+    await mk({ reads: store }).start();
+    expect(got.map((g) => [g.objs, !!g.info.quiet])).toEqual([
+      [[{ n: 1 }, { n: 2 }], true],
+      [[{ n: 3 }, { n: 4 }], false],
+    ]);
+    // and as it grows: news
+    appendFileSync(f, line({ n: 5 }));
+    got = [];
+    await tailer.pollOnce();
+    expect(got.map((g) => [g.objs, !!g.info.quiet])).toEqual([[[{ n: 5 }], false]]);
+    await tailer.stop();
+    // rewritten, shorter than what was read: nothing in it is known
+    writeFileSync(f, line({ n: 9 }));
+    got = [];
+    await mk({ reads: store }).start();
+    expect(got.map((g) => [g.objs, !!g.info.quiet])).toEqual([[[{ n: 9 }], false]]);
+  });
+});
+
+describe('Tailer, a big transcript', () => {
+  it('is read a piece at a time: every line once, in order, split anywhere', async () => {
+    const f = join(root, 'C--proj', 'sess-1.jsonl');
+    // ~40 MB of lines (more than two pieces), some long
+    const pad = 'x'.repeat(4000);
+    let text = '';
+    const n = 10_000;
+    for (let i = 0; i < n; i++) text += line({ i, pad: i % 7 ? '' : pad });
+    while (text.length < 40 * 1024 * 1024) text += line({ filler: pad });
+    writeFileSync(f, text);
+    await mk().start();
+    const all = got.flatMap((g) => g.objs);
+    expect(got.length).toBeGreaterThan(1);
+    expect(all.slice(0, n).map((o) => o.i)).toEqual([...Array(n).keys()]);
+    expect(all.length).toBe(text.split('\n').length - 1);
+  });
+});

@@ -33,3 +33,4 @@ export * from './debrief';
 export * from './worktrees';
 export * from './secrets';
 export * from './gif';
+export * from './debriefVideo';

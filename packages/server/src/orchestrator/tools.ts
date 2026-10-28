@@ -26,6 +26,8 @@ export type OrchToolDeps = {
   /** start work on a ticket assigned to the user: a card for them, or (allowed) a session, by Cora's rules */
   jiraStart?(p: { key: string; cwd: string; why?: string }): Promise<{ ok: boolean; text: string }>;
   isAgent(sessionId: string): boolean;
+  /** quiet a session's alerts (failures, stuck, ended mid-turn) for some hours (0: hear them again); until when */
+  muteAlerts?(sessionId: string, hours: number): number;
   ui(cmd: UiCommand): void;
   remember(note: string): number | void;
   sessions(): SessionInfo[];
@@ -468,6 +470,22 @@ export function registerOrchestratorTools(server: McpServer, d: OrchToolDeps): v
       if (!s) return fail(`No session ${id}.`);
       d.rename(id, name?.trim() || null);
       return text(name?.trim() ? `Renamed it "${name.trim()}".` : 'Cleared its name.');
+    },
+  );
+
+  server.registerTool(
+    'mute_alerts',
+    {
+      title: "Quiet a session's alerts",
+      description: "Stop hearing a session's alerts (its failed tool calls, \"working with no activity\", ended mid-turn) for a while: when the user says they know about it, or it's working on something long on purpose. hours 0 hears them again.",
+      inputSchema: { id: z.string().min(4).max(80), hours: z.number().min(0).max(72).default(4) },
+    },
+    async ({ id, hours }) => {
+      const s = known(id);
+      if (!s) return fail(`No session ${id}.`);
+      if (!d.muteAlerts) return fail("Alerts can't be muted here.");
+      const until = d.muteAlerts(id, hours);
+      return text(until ? `Muted ${nameOf(s)}'s alerts until ${new Date(until).toLocaleTimeString()}.` : `You'll hear ${nameOf(s)}'s alerts again.`);
     },
   );
 

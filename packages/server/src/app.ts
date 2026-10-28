@@ -6,7 +6,7 @@ import type { MailOutbox } from './mailOutbox';
 import { GitlabIssues } from './gitlabIssues';
 import type { Memes } from './memes';
 import { SessionNames } from './sessionNames';
-import { existsSync, readFileSync } from 'node:fs';
+import { createReadStream, existsSync, readFileSync, statSync } from 'node:fs';
 import { envLine, signature, type EnvLabel, type Environments } from './environments';
 import type { Deploys } from './deploys';
 import { NoteError, type Notes } from './notes';
@@ -41,6 +41,8 @@ import { LIVE_AREAS, type LiveArea, type LiveGuest, type LiveMode, type Shares }
 import type { Door } from './door';
 import { RemoteBrowser } from './remoteBrowser';
 import type { Banners } from './banner';
+import { fileName, type Videos } from './videos';
+import type { VideoPlan } from '@cora/shared';
 import type { Worktrees } from './worktrees';
 import { runWithSecrets, type Vault } from './vault';
 import { SlackError, slackManifest } from './slack';
@@ -86,6 +88,8 @@ const LAUNCH_ANSWER_MS = 40_000;
 export type AppDeps = {
   /** Cora's Slack banner: the desktop app's link that makes them */
   banners?: Banners;
+  /** debrief videos */
+  videos?: Videos;
   /** GitLab issues (tests give their own) */
   gitlabIssues?: GitlabIssues;
   /** the Vibes panel */
@@ -603,6 +607,7 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
         const next = store.upsertSession({ id, alias: name });
         hub.publishSession(next);
       },
+      muteAlerts: (id, hours) => o.feed.mute(id, hours),
       goal: () => o.goals.active(),
       goalUpdate: (p) => o.goalUpdate(p),
       addWorker: (sid) => o.goals.addWorker(sid),
@@ -675,7 +680,7 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
       // the first use of each, in this session: your OK, with the command shown
       for (const n of names) {
         if (vault.granted(sid, n)) continue;
-        const ok = await pending.ask({ sessionId: sid, toolName: `Use secret ${n}`, toolInput: { command, secret: n } });
+        const ok = await pending.ask({ sessionId: sid, toolName: `Use secret ${n}`, toolInput: { command, secret: n, note: all.find((y) => y.name === n)?.note ?? '' } });
         if (!ok) return { ok: false, why: `The user didn't allow ${n} for this session (or wasn't there to say).` };
         vault.grant(sid, n);
       }
@@ -1863,6 +1868,8 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
   // --- projects ------------------------------------------------------------------
   let projectWakes: (pid: string, post: import('@cora/shared').Post) => void = () => {};
   projectRoutes();
+  // --- debrief videos ------------------------------------------------------------
+  videoRoutes();
 
   // --- api ----------------------------------------------------------------------
   app.get('/api/me', { preHandler: requireUi }, async () => ({ ok: true }));
@@ -2319,6 +2326,67 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
   }
 
   return app;
+
+  /**
+   * Debrief videos: make one, ffmpeg (download it when you
+   * say so, or not), watch it (seeking works), save it, send it in Slack (a draft for your OK), delete it. Yours alone:
+   * never a guest's.
+   */
+  function videoRoutes(): void {
+    const v = d.videos;
+    app.get('/api/videos', { preHandler: requireUi }, async () => ({ jobs: v?.list() ?? [], ffmpeg: v?.ffmpeg() ?? { state: 'missing', canDownload: false } }));
+    // as you set it up in the Make a video modal (none: as your settings have it)
+    app.post<{ Params: { sid: string; id: string }; Body: { plan?: unknown } }>('/api/debriefs/:sid/:id/video', { preHandler: requireAction }, async (req, reply) => {
+      if (!v) return reply.code(501).send({ error: 'not supported' });
+      const plan = req.body?.plan;
+      const r = v.make(req.params.sid, req.params.id, plan && typeof plan === 'object' ? (plan as VideoPlan) : undefined);
+      return 'error' in r ? reply.code(r.error === 'no such debrief' ? 404 : 400).send(r) : { job: r };
+    });
+    // what voicing these lines would cost now (the ones voiced before are free)
+    app.post<{ Body: { voiceId?: unknown; speed?: unknown; lines?: unknown } }>('/api/videos/estimate', { preHandler: requireAction }, async (req, reply) => {
+      const b = req.body ?? {};
+      if (!v || !Array.isArray(b.lines) || b.lines.length > 80 || b.lines.some((l) => typeof l !== 'string' || l.length > 2000)) return reply.code(400).send({ error: 'lines, please' });
+      return { chars: v.estimate(typeof b.voiceId === 'string' && /^[\w-]{0,64}$/.test(b.voiceId) ? b.voiceId : '', typeof b.speed === 'number' ? b.speed : 1, b.lines as string[]) };
+    });
+    app.post<{ Body: { download?: unknown; decline?: unknown } }>('/api/videos/ffmpeg', { preHandler: requireAction }, async (req, reply) => {
+      if (!v) return reply.code(501).send({ error: 'not supported' });
+      if (req.body?.decline === true) v.decline();
+      else void v.download();
+      return { ok: true };
+    });
+    app.delete<{ Params: { id: string } }>('/api/videos/:id', { preHandler: requireAction }, async (req, reply) => (v?.remove(req.params.id) ? { ok: true } : reply.code(404).send({ error: 'no such video' })));
+    app.get<{ Params: { id: string }; Querystring: { download?: string } }>('/api/videos/:id/file', { preHandler: requireUi }, async (req, reply) => {
+      const j = v?.get(req.params.id);
+      if (!v || !j || j.stage !== 'ready') return reply.code(404).send({ error: 'no such video' });
+      const f = v.file(j);
+      const size = statSync(f).size;
+      reply.header('accept-ranges', 'bytes').header('cache-control', 'no-store').type('video/mp4');
+      if (req.query.download) reply.header('content-disposition', `attachment; filename*=UTF-8''${encodeURIComponent(fileName(j.title))}.mp4`);
+      const m = /^bytes=(\d*)-(\d*)$/.exec(String(req.headers.range ?? ''));
+      if (m && (m[1] || m[2])) {
+        const start = m[1] ? Number(m[1]) : Math.max(0, size - Number(m[2]));
+        const end = m[1] && m[2] ? Math.min(Number(m[2]), size - 1) : size - 1;
+        if (start >= size || start > end) return reply.code(416).header('content-range', `bytes */${size}`).send();
+        reply.code(206).header('content-range', `bytes ${start}-${end}/${size}`).header('content-length', end - start + 1);
+        return reply.send(createReadStream(f, { start, end }));
+      }
+      reply.header('content-length', size);
+      return reply.send(createReadStream(f));
+    });
+    // in Slack: a draft (to you; change who it's for on its card) carrying the video
+    app.post<{ Params: { id: string } }>('/api/videos/:id/slack', { preHandler: requireAction }, async (req, reply) => {
+      const j = v?.get(req.params.id);
+      const sl = d.slack;
+      if (!v || !j || j.stage !== 'ready') return reply.code(404).send({ error: 'no such video' });
+      const me = sl?.slack.status();
+      if (!sl || !me?.connected) return reply.code(409).send({ error: 'Slack is not connected (Settings › Slack)' });
+      const f = v.file(j);
+      const to = await sl.slack.resolve(me.userId).catch(() => null);
+      if (!to) return reply.code(409).send({ error: "couldn't find your own Slack DM" });
+      void sl.outbox.request({ sessionId: j.sessionId, to, text: `A video walkthrough: *${j.title}*`, files: [{ name: `${fileName(j.title)}.mp4`, path: f, size: statSync(f).size, image: false }], banner: false });
+      return { ok: true };
+    });
+  }
 
   /**
    * A session's browser on your other devices: its tabs
