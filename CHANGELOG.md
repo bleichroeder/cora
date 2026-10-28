@@ -4,6 +4,11 @@ What changed in each release. Cora updates itself; each update's notes are on it
 
 ## Unreleased
 
+## 0.1.16
+
+- **A video's Send in Slack works.** It said "Bad Request"; so did deleting a video, and deleting, leaving or wrapping
+  up a project.
+
 ## 0.1.15
 
 - **Debrief videos: pick the voice model.** The video maker (and Settings) choose which ElevenLabs model voices it.

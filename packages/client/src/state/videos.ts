@@ -17,7 +17,8 @@ export const useVideos = create<{ jobs: VideoJob[]; ffmpeg: FfmpegState; open: s
 
 const call = async (method: string, url: string, body?: unknown): Promise<{ ok: boolean; error?: string; [k: string]: unknown }> => {
   try {
-    const r = await fetch(url, { method, headers: { 'content-type': 'application/json' }, ...(body !== undefined ? { body: JSON.stringify(body) } : {}) });
+    // a JSON content type only with a body: the server refuses an empty one (400)
+    const r = await fetch(url, { method, ...(body !== undefined ? { headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) } : {}) });
     const j = await r.json().catch(() => ({}));
     return r.ok ? { ok: true, ...j } : { ok: false, error: j.error ?? `failed (${r.status})` };
   } catch (e) {
