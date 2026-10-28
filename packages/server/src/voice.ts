@@ -153,12 +153,14 @@ export class Voice {
    * A whole clip (not a stream), for a debrief video: its MP3. The model that sounds best rather than fastest, told
    * what was said before it so the voice carries on from it.
    */
-  async synthesize(text: string, o: { voiceId: string; speed: number; previousText?: string }): Promise<Uint8Array> {
+  async synthesize(text: string, o: { voiceId: string; speed: number; model?: string; previousText?: string }): Promise<Uint8Array> {
     if (!this.stored) throw new Error('Cora has no ElevenLabs key: add one in Settings › Voice');
+    const model = o.model || 'eleven_multilingual_v2';
     const r = await this.fetchFn(`${API}/v1/text-to-speech/${encodeURIComponent(o.voiceId)}?output_format=mp3_44100_128`, {
       method: 'POST',
       headers: { 'xi-api-key': this.stored.key, 'content-type': 'application/json', accept: 'audio/mpeg' },
-      body: JSON.stringify({ text, model_id: 'eleven_multilingual_v2', voice_settings: { stability: 0.5, similarity_boost: 0.8, speed: o.speed }, ...(o.previousText ? { previous_text: o.previousText.slice(-1000) } : {}) }),
+      // what came before (so it carries on) only where the model takes it: the v2 family; v3 and v4 refuse it
+      body: JSON.stringify({ text, model_id: model, voice_settings: { stability: 0.5, similarity_boost: 0.8, speed: o.speed }, ...(o.previousText && /_v2/.test(model) ? { previous_text: o.previousText.slice(-1000) } : {}) }),
     });
     if (!r.ok) {
       if (r.status === 401) this.noted(r.clone(), 'tts');

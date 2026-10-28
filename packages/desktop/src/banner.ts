@@ -20,6 +20,8 @@ const EVERY_MS = 70;
 const GIVE_UP_MS = 15_000;
 /** a 1920×1080 slide's PNG smaller than this is a frame with nothing on it yet */
 const BLANK_PNG = 16_000;
+/** a moving slide is recorded at this many frames a second */
+const REC_FPS = 24;
 
 export function startBanner(o: { base: string; tokenFile: string; /** Cora's colour, as you chose it */ color: () => string }): () => void {
   let ws: WebSocket | null = null;
@@ -122,7 +124,19 @@ export function startBanner(o: { base: string; tokenFile: string; /** Cora's col
           await new Promise((r) => setTimeout(r, 250));
           png = (await nextPaint()).toPNG();
         }
-        send({ t: 'slide', id: c.id, i, data: png.toString('base64') });
+        const rec = Number((c.slides[i] as { record?: unknown }).record) || 0;
+        if (!rec) {
+          send({ t: 'slide', id: c.id, i, data: png.toString('base64') });
+          continue;
+        }
+        // one that moves (the title's orb): a couple of seconds of it, frame by frame, at an even pace
+        const of = Math.min(120, rec);
+        for (let k = 0; k < of; k++) {
+          const at = Date.now();
+          const img = k ? await nextPaint() : null;
+          send({ t: 'slide', id: c.id, i, k, of, data: (img ? img.toJPEG(92) : png).toString('base64') });
+          await new Promise((r) => setTimeout(r, Math.max(0, 1000 / REC_FPS - (Date.now() - at))));
+        }
       }
       send({ t: 'slides-done', id: c.id });
     } catch (e) {

@@ -4,6 +4,12 @@ What changed in each release. Cora updates itself; each update's notes are on it
 
 ## Unreleased
 
+## 0.1.15
+
+- **Debrief videos: pick the voice model.** The video maker (and Settings) choose which ElevenLabs model voices it.
+  The best one, v4, is the default: videos aren't live, so quality comes first.
+- **The title card's orb moves.** It's recorded moving and looped under the push-in, instead of one still picture.
+
 ## 0.1.14
 
 - **Cora recovers when its terminal host goes away.** The host (it keeps your sessions running across Cora restarts)

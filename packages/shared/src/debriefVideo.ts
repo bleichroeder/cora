@@ -10,6 +10,8 @@ export type VideoSize = '1080' | '720';
 export type VideoSettings = {
   /** an ElevenLabs voice id; empty: Cora's own voice (Settings › Voice) */
   voiceId: string;
+  /** the ElevenLabs model that voices it (VOICE_MODELS): quality first, it isn't live */
+  model: string;
   voiceName: string;
   speed: number;
   size: VideoSize;
@@ -24,12 +26,13 @@ export type VideoSettings = {
   /** its accent: your Cora colour, or the session's own */
   accent: 'cora' | 'session';
 };
-export const DEFAULT_VIDEO: VideoSettings = { voiceId: '', voiceName: '', speed: 1, size: '1080', code: true, keepHours: 24, orb: true, subtitles: false, accent: 'cora' };
+export const DEFAULT_VIDEO: VideoSettings = { voiceId: '', voiceName: '', model: 'eleven_v4', speed: 1, size: '1080', code: true, keepHours: 24, orb: true, subtitles: false, accent: 'cora' };
 
 /** Why a video settings patch is wrong (none: fine). */
 export function videoSettingsProblem(v: Partial<VideoSettings>): string | null {
   if (v.voiceId !== undefined && (typeof v.voiceId !== 'string' || v.voiceId.length > 64 || !/^[\w-]*$/.test(v.voiceId))) return 'video.voiceId must be a voice id';
   if (v.voiceName !== undefined && (typeof v.voiceName !== 'string' || v.voiceName.length > 80)) return 'video.voiceName must be a name';
+  if (v.model !== undefined && (typeof v.model !== 'string' || !/^eleven_[\w]{1,40}$/.test(v.model))) return 'video.model must be an ElevenLabs model (eleven_…)';
   if (v.speed !== undefined && !(typeof v.speed === 'number' && v.speed >= 0.7 && v.speed <= 1.2)) return 'video.speed must be between 0.7 and 1.2';
   if (v.size !== undefined && v.size !== '1080' && v.size !== '720') return 'video.size must be 1080 or 720';
   if (v.code !== undefined && typeof v.code !== 'boolean') return 'video.code must be true or false';
@@ -142,6 +145,8 @@ export type VideoSlide = {
   orb?: boolean;
   /** a subtitle drawn under it */
   caption?: string;
+  /** recorded moving (this many frames), not as one picture: the title's orb */
+  record?: number;
 };
 
 /** Code shown on a slide: at most this many lines, around what the step is about. */

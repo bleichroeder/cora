@@ -2343,10 +2343,10 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
       return 'error' in r ? reply.code(r.error === 'no such debrief' ? 404 : 400).send(r) : { job: r };
     });
     // what voicing these lines would cost now (the ones voiced before are free)
-    app.post<{ Body: { voiceId?: unknown; speed?: unknown; lines?: unknown } }>('/api/videos/estimate', { preHandler: requireAction }, async (req, reply) => {
+    app.post<{ Body: { voiceId?: unknown; speed?: unknown; model?: unknown; lines?: unknown } }>('/api/videos/estimate', { preHandler: requireAction }, async (req, reply) => {
       const b = req.body ?? {};
       if (!v || !Array.isArray(b.lines) || b.lines.length > 80 || b.lines.some((l) => typeof l !== 'string' || l.length > 2000)) return reply.code(400).send({ error: 'lines, please' });
-      return { chars: v.estimate(typeof b.voiceId === 'string' && /^[\w-]{0,64}$/.test(b.voiceId) ? b.voiceId : '', typeof b.speed === 'number' ? b.speed : 1, b.lines as string[]) };
+      return { chars: v.estimate(typeof b.voiceId === 'string' && /^[\w-]{0,64}$/.test(b.voiceId) ? b.voiceId : '', typeof b.speed === 'number' ? b.speed : 1, b.lines as string[], typeof b.model === 'string' && /^eleven_\w{1,40}$/.test(b.model) ? b.model : undefined) };
     });
     app.post<{ Body: { download?: unknown; decline?: unknown } }>('/api/videos/ffmpeg', { preHandler: requireAction }, async (req, reply) => {
       if (!v) return reply.code(501).send({ error: 'not supported' });

@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
 import { createWriteStream, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { captions, planSlides, videoPlanProblem, videoSlides, type Debrief, type FfmpegState, type VideoJob, type VideoPlan, type VideoSettings, type VideoSlide } from '@cora/shared';
+import { DEFAULT_VIDEO, captions, planSlides, videoPlanProblem, videoSlides, type Debrief, type FfmpegState, type VideoJob, type VideoPlan, type VideoSettings, type VideoSlide } from '@cora/shared';
 
 /**
  * Debrief videos: a debrief as a short narrated video. Its
@@ -19,9 +19,9 @@ type Opts = {
   /** the settings now, and the voice to use when they name none (Cora's own) */
   settings(): VideoSettings & { coraVoice: string };
   /** a clip of narration */
-  voice(text: string, o: { voiceId: string; speed: number; previousText?: string }): Promise<Uint8Array>;
+  voice(text: string, o: { voiceId: string; speed: number; model?: string; previousText?: string }): Promise<Uint8Array>;
   /** the slides as pictures (the desktop app), 1920×1080 PNGs; in this accent (none: your Cora colour) */
-  draw(slides: VideoSlide[], color?: string): Promise<Uint8Array[]>;
+  draw(slides: VideoSlide[], color?: string): Promise<Array<Uint8Array | Uint8Array[]>>;
   onChange(): void;
   run?: Run;
   now?: () => number;
@@ -31,6 +31,9 @@ type Opts = {
 };
 
 const FPS = 30;
+/** the title's orb moves: this many frames of it are recorded (at REC_FPS), played forward and back, looped */
+const REC_FRAMES = 48;
+const REC_FPS = 24;
 const LEAD = 0.4;
 const TAIL = 0.9;
 const FADE = 0.35;
@@ -114,18 +117,19 @@ export class Videos {
     const at = this.now();
     const job: VideoJob = { id: `${at.toString(36)}-${randomBytes(3).toString('hex')}`, sessionId, debriefId, title: p.title.trim() || d.title, stage: 'drawing', done: 0, total: p.slides.length, chars: 0, createdAt: at, expiresAt: at + p.keepHours * 3_600_000, size: p.size };
     this.jobs.set(job.id, job);
-    void this.build(job, d, { ...p, voiceId: p.voiceId || s.coraVoice });
+    void this.build(job, d, { ...p, voiceId: p.voiceId || s.coraVoice, model: p.model || s.model || DEFAULT_VIDEO.model });
     this.o.onChange();
     return job;
   }
 
-  /** What voicing these lines would cost: the characters not voiced before (with this voice and pace). */
-  estimate(voiceId: string, speed: number, lines: string[]): number {
+  /** What voicing these lines would cost: the characters not voiced before (with this voice, model and pace). */
+  estimate(voiceId: string, speed: number, lines: string[], model?: string): number {
     const v = voiceId || this.o.settings().coraVoice;
-    return lines.reduce((n, t) => (t.trim() && !existsSync(this.voiced(v, speed, t.trim())) ? n + t.trim().length : n), 0);
+    const m = model || this.o.settings().model;
+    return lines.reduce((n, t) => (t.trim() && !existsSync(this.voiced(v, speed, t.trim(), m)) ? n + t.trim().length : n), 0);
   }
-  private voiced(voiceId: string, speed: number, text: string): string {
-    return join(this.o.dir, 'voice', `${createHash('sha1').update(`${voiceId}|${speed}|${text}`).digest('hex')}.mp3`);
+  private voiced(voiceId: string, speed: number, text: string, model: string): string {
+    return join(this.o.dir, 'voice', `${createHash('sha1').update(`${voiceId}|${model}|${speed}|${text}`).digest('hex')}.mp3`);
   }
 
   /** Take a video away (and its files). */
@@ -243,18 +247,29 @@ export class Videos {
       mkdirSync(dir, { recursive: true });
       // the slides, drawn and fitted, before anything is voiced; with subtitles, once a line of them
       const lines = slides.map((s) => (p.subtitles && s.narration ? captions(s.narration) : []));
-      const draws = slides.flatMap((s, i) => (lines[i].length ? lines[i].map((c) => ({ ...s, caption: c })) : [s]));
+      // the title with its orb: recorded moving, not one picture
+      const moving = (s: VideoSlide) => s.kind === 'title' && s.orb !== false;
+      const draws = slides.flatMap((s, i) => (lines[i].length ? lines[i].map((c) => ({ ...s, caption: c })) : [s]).map((x) => (moving(s) ? { ...x, record: REC_FRAMES } : x)));
       this.set(j, { stage: 'drawing', done: 0, total: slides.length });
       const pics = await this.o.draw(draws, p.color);
       if (pics.length !== draws.length) throw new Error("the slides weren't all drawn");
+      // a picture per slide (per subtitle line); a moving one's frames as a numbered run, forward then back (it loops
+      // without a jump)
       const files: string[][] = [];
       let k = 0;
       slides.forEach((s, i) => {
         files[i] = [];
         for (let c = 0; c < Math.max(1, lines[i].length); c++) {
-          const f = join(dir, `${s.id}-${c}.png`);
-          writeFileSync(f, pics[k++]);
-          files[i].push(f);
+          const pic = pics[k++];
+          if (Array.isArray(pic) && pic.length > 1) {
+            const run = [...pic, ...pic.slice(1, -1).reverse()];
+            run.forEach((f, n) => writeFileSync(join(dir, `${s.id}-${c}-f${String(n).padStart(4, '0')}.jpg`), f));
+            files[i].push(join(dir, `${s.id}-${c}-f%04d.jpg`));
+          } else {
+            const f = join(dir, `${s.id}-${c}.png`);
+            writeFileSync(f, Array.isArray(pic) ? pic[0] : pic);
+            files[i].push(f);
+          }
         }
       });
       // their narration, each carrying on from the last (a line said before comes from the cache)
@@ -266,9 +281,9 @@ export class Videos {
         if (!text) {
           audio.push(null);
         } else {
-          const f = this.voiced(p.voiceId, p.speed, text);
+          const f = this.voiced(p.voiceId, p.speed, text, p.model);
           if (!existsSync(f)) {
-            writeFileSync(f, await this.o.voice(text, { voiceId: p.voiceId, speed: p.speed, ...(i ? { previousText: slides[i - 1].narration } : {}) }));
+            writeFileSync(f, await this.o.voice(text, { voiceId: p.voiceId, speed: p.speed, model: p.model, ...(i ? { previousText: slides[i - 1].narration } : {}) }));
             j.chars += text.length;
           }
           audio.push(f);
@@ -289,11 +304,31 @@ export class Videos {
         const out = join(dir, `${slides[i].id}.mp4`);
         let picture: string[];
         let vf: string;
-        if (files[i].length > 1) {
-          // each line of subtitles for its share of what's said (by its length); the first from the start, the last to the end
-          const lens = lines[i].map((c) => c.length);
-          const sum = lens.reduce((x, y) => x + y, 0);
-          const times = lens.map((n, c) => (said * n) / sum + (c === 0 ? LEAD : 0) + (c === lens.length - 1 ? TAIL : 0));
+        // its share of what's said, a subtitle line at a time (the first from the start, the last to the end)
+        const lens = lines[i].map((c) => c.length);
+        const sum = lens.reduce((x, y) => x + y, 0);
+        const times = files[i].length > 1 ? lens.map((n, c) => (said * n) / sum + (c === 0 ? LEAD : 0) + (c === lens.length - 1 ? TAIL : 0)) : [total];
+        if (files[i].some((f) => f.includes('%04d'))) {
+          // moving: its frames looped for each line's time, one after the other, then pushed in like a still title
+          const clips: string[] = [];
+          for (let c = 0; c < files[i].length; c++) {
+            const clip = join(dir, `${slides[i].id}-m${c}.mp4`);
+            const src = files[i][c].includes('%04d') ? ['-loop', '1', '-framerate', String(REC_FPS), '-i', files[i][c]] : ['-loop', '1', '-framerate', String(FPS), '-i', files[i][c]];
+            const r = await this.run(tools.ffmpeg, ['-y', '-v', 'error', ...src, '-t', times[c].toFixed(3), '-vf', `fps=${FPS},format=yuv420p`, '-an', '-c:v', 'libx264', '-preset', 'medium', '-crf', '16', clip]);
+            if (r.code !== 0) throw new Error(`ffmpeg failed on slide ${i + 1}'s motion: ${r.err.trim().split('\n').pop()?.slice(0, 200)}`);
+            clips.push(clip);
+          }
+          let video = clips[0];
+          if (clips.length > 1) {
+            const list = join(dir, `${slides[i].id}-m.txt`);
+            writeFileSync(list, clips.map((x) => `file '${concatPath(x)}'\n`).join(''));
+            video = join(dir, `${slides[i].id}-m.mp4`);
+            const r = await this.run(tools.ffmpeg, ['-y', '-v', 'error', '-f', 'concat', '-safe', '0', '-i', list, '-c', 'copy', video]);
+            if (r.code !== 0) throw new Error(`ffmpeg failed joining slide ${i + 1}'s motion: ${r.err.trim().split('\n').pop()?.slice(0, 200)}`);
+          }
+          picture = ['-i', video];
+          vf = `scale=${W * 2}:-1,zoompan=z='1+0.05*in/${frames}':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=1:s=${W}x${H}:fps=${FPS}`;
+        } else if (files[i].length > 1) {
           const seq = join(dir, `${slides[i].id}-seq.txt`);
           writeFileSync(seq, files[i].map((f, c) => `file '${concatPath(f)}'\nduration ${times[c].toFixed(3)}\n`).join('') + `file '${concatPath(files[i][files[i].length - 1])}'\n`);
           picture = ['-f', 'concat', '-safe', '0', '-i', seq];

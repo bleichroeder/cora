@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { DEFAULT_VIDEO, type Settings, type VideoSettings } from '@cora/shared';
+import { DEFAULT_VIDEO, VOICE_MODELS, type Settings, type VideoSettings } from '@cora/shared';
 import { Choice, Row, Toggle } from './settingsUi';
 
 /**
@@ -27,6 +27,15 @@ export function VideoRows({ server, save }: { server: Settings; save(p: object):
             </option>
           ))}
           {v.voiceId && !voices.some((x) => x.id === v.voiceId) ? <option value={v.voiceId}>{v.voiceName || v.voiceId}</option> : null}
+        </select>
+      </Row>
+      <Row label="Debrief videos: voice model" hint="The ElevenLabs model that voices them. They aren't live, so the best one is the default.">
+        <select value={v.model} onChange={(e) => put({ model: e.target.value })}>
+          {VOICE_MODELS.map((m) => (
+            <option key={m.id} value={m.id}>
+              {m.name}: {m.note}
+            </option>
+          ))}
         </select>
       </Row>
       <Row label="Debrief videos: pace and size" hint="720p makes a smaller file, easier to send.">

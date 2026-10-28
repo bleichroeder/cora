@@ -19,7 +19,7 @@ const debrief: Debrief = {
   snaps: { 0: { start: 1, lines: ['a', 'b', 'c', 'd', 'e', 'f'] } },
 };
 
-function setup(o: { ffmpeg?: boolean; now?: () => number; dir?: string } = {}) {
+function setup(o: { ffmpeg?: boolean; now?: () => number; dir?: string; moving?: boolean } = {}) {
   const dir = o.dir ?? mkdtempSync(join(tmpdir(), 'cora-videos-'));
   const calls: string[][] = [];
   const voiced: Array<{ text: string; previousText?: string }> = [];
@@ -39,7 +39,7 @@ function setup(o: { ffmpeg?: boolean; now?: () => number; dir?: string } = {}) {
     debrief: (sid, id) => (sid === 's1' && id === 'd1' ? debrief : null),
     settings: () => ({ ...DEFAULT_VIDEO, coraVoice: 'cora-voice' }),
     voice: async (text, x) => (voiced.push({ text, ...(x.previousText ? { previousText: x.previousText } : {}) }), new Uint8Array([1, 2, 3])),
-    draw: async (slides, color) => (drawn.push({ slides, ...(color ? { color } : {}) }), slides.map(() => new Uint8Array([0x89, 0x50]))),
+    draw: async (slides, color) => (drawn.push({ slides, ...(color ? { color } : {}) }), slides.map((x) => (o.moving && x.record ? [1, 2, 3, 4].map((n) => new Uint8Array([n])) : new Uint8Array([0x89, 0x50])))),
     onChange: () => void changes++,
     run,
     ...(o.now ? { now: o.now } : {}),
@@ -113,6 +113,21 @@ describe('debrief videos', () => {
     expect(clips[0].join(' ')).toMatch(/-f concat -safe 0 -i \S+01-step-seq\.txt/);
     expect(clips[1]).toContain('-loop');
     expect(captions('One. Two. ' + 'word '.repeat(40))).toEqual(['One. Two.', expect.stringMatching(/^word/), expect.stringMatching(/^word/)]);
+  });
+
+  it('the title moves: its orb recorded (frames asked for), looped forward and back, then pushed in; the steps stay still', async () => {
+    const { v, calls, drawn, dir, until } = setup({ moving: true });
+    const j = v.make('s1', 'd1') as VideoJob;
+    await until(() => j.stage === 'ready' || j.stage === 'failed');
+    expect(j.error).toBeUndefined();
+    expect(drawn[0].slides.map((s) => s.record ?? 0)).toEqual([48, 0, 0]);
+    // the frames written as a run: 4 recorded, played forward and back (6), then a clip of them, then the push-in on it
+    const motion = calls.find((c) => c.includes('%04d') || c.some((x) => x.endsWith('-f%04d.jpg')));
+    expect(motion?.join(' ')).toMatch(/-loop 1 -framerate 24 -i \S+00-title-0-f%04d\.jpg/);
+    const titleClip = calls.find((c) => c.some((x) => x.endsWith('00-title.mp4')));
+    expect(titleClip?.join(' ')).toMatch(/-i \S+00-title-m0\.mp4 .*zoompan/);
+    expect(existsSync(join(dir, 'videos', j.id, '00-title-0-f0005.jpg'))).toBe(true);
+    expect(existsSync(join(dir, 'videos', j.id, '00-title-0-f0006.jpg'))).toBe(false);
   });
 
   it("no ffmpeg: it waits for your OK (nothing drawn or voiced); you'd rather not: it stops", async () => {

@@ -15,7 +15,7 @@ export class Banners {
   private desktop: Sock | null = null;
   private waiting = new Map<string, (gif: Uint8Array | null) => void>();
   /** slides being drawn (a debrief video's): each picture as it comes, then done or why not */
-  private drawing = new Map<string, { pics: Uint8Array[]; done(e?: string): void }>();
+  private drawing = new Map<string, { pics: Array<Uint8Array | Uint8Array[]>; done(e?: string): void }>();
   constructor(private waitMs = WAIT_MS) {}
 
   get available(): boolean {
@@ -28,10 +28,15 @@ export class Banners {
     this.desktop = sock;
     sock.on('message', (raw: unknown) => {
       try {
-        const m = JSON.parse(String(raw)) as { t?: string; id?: string; data?: string; i?: number; error?: string };
+        const m = JSON.parse(String(raw)) as { t?: string; id?: string; data?: string; i?: number; k?: number; error?: string };
         if (typeof m.id !== 'string') return;
         const d = this.drawing.get(m.id);
-        if (d && m.t === 'slide' && typeof m.data === 'string' && typeof m.i === 'number') d.pics[m.i] = new Uint8Array(Buffer.from(m.data, 'base64'));
+        if (d && m.t === 'slide' && typeof m.data === 'string' && typeof m.i === 'number') {
+          const pic = new Uint8Array(Buffer.from(m.data, 'base64'));
+          // a moving slide's frames, in order
+          if (typeof m.k === 'number') ((d.pics[m.i] ??= []) as Uint8Array[])[m.k] = pic;
+          else d.pics[m.i] = pic;
+        }
         if (d && m.t === 'slides-done') d.done(m.error);
         if (m.t !== 'gif') return;
         const done = this.waiting.get(m.id);
@@ -54,13 +59,13 @@ export class Banners {
    * A debrief video's slides as pictures (1920×1080 PNGs), drawn by the desktop app out of sight and fitted to the
    * slide. Throws when it can't (no desktop app, too slow, a slide it couldn't draw).
    */
-  slides(slides: unknown[], color?: string): Promise<Uint8Array[]> {
+  slides(slides: unknown[], color?: string): Promise<Array<Uint8Array | Uint8Array[]>> {
     if (!this.available) return Promise.reject(new Error("the slides are drawn by Cora's desktop app, which isn't running"));
     const id = randomBytes(6).toString('hex');
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => d.done('drawing the slides took too long'), 20_000 + slides.length * 5_000);
       const d = {
-        pics: [] as Uint8Array[],
+        pics: [] as Array<Uint8Array | Uint8Array[]>,
         done: (e?: string) => {
           clearTimeout(timer);
           this.drawing.delete(id);

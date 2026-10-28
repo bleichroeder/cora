@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { DEFAULT_VIDEO, captions, planSlides, videoSlides, type Debrief, type Settings, type VideoPlan, type VideoSettings } from '@cora/shared';
+import { DEFAULT_VIDEO, VOICE_MODELS, captions, planSlides, videoSlides, type Debrief, type Settings, type VideoPlan, type VideoSettings } from '@cora/shared';
 import { makeVideo, useVideos } from '../state/videos';
 import { useBrain } from '../state/store';
 import { sessionColor } from '../lib/format';
@@ -70,7 +70,7 @@ function Maker({ sessionId, debriefId }: { sessionId: string; debriefId: string 
 
   const color = opts.accent === 'session' ? sessionColor(session) : undefined;
   const plan: VideoPlan | null = d
-    ? { voiceId: opts.voiceId, speed: opts.speed, size: opts.size, code: opts.code, keepHours: opts.keepHours, orb: opts.orb, subtitles: opts.subtitles, title, sub, slides: rows.filter((r) => r.include).map((r) => ({ id: r.id, narration: r.narration })), ...(color && /^#[0-9a-f]{6}$/i.test(color) ? { color } : {}) }
+    ? { voiceId: opts.voiceId, model: opts.model, speed: opts.speed, size: opts.size, code: opts.code, keepHours: opts.keepHours, orb: opts.orb, subtitles: opts.subtitles, title, sub, slides: rows.filter((r) => r.include).map((r) => ({ id: r.id, narration: r.narration })), ...(color && /^#[0-9a-f]{6}$/i.test(color) ? { color } : {}) }
     : null;
   // the slide you're on, as the video will have it
   const shown = useMemo(() => {
@@ -86,11 +86,11 @@ function Maker({ sessionId, debriefId }: { sessionId: string; debriefId: string 
 
   // what voicing it costs (lines voiced before with this voice and pace are free), counted as you edit
   const lines = (plan?.slides ?? []).map((x) => x.narration);
-  const linesKey = JSON.stringify([opts.voiceId, opts.speed, lines]);
+  const linesKey = JSON.stringify([opts.voiceId, opts.model, opts.speed, lines]);
   useEffect(() => {
     if (!plan) return;
     const t = setTimeout(() => {
-      void fetch('/api/videos/estimate', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ voiceId: opts.voiceId, speed: opts.speed, lines }) })
+      void fetch('/api/videos/estimate', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ voiceId: opts.voiceId, model: opts.model, speed: opts.speed, lines }) })
         .then((r) => (r.ok ? r.json() : null))
         .then((j: { chars?: number } | null) => setChars(j?.chars ?? null))
         .catch(() => {});
@@ -122,8 +122,8 @@ function Maker({ sessionId, debriefId }: { sessionId: string; debriefId: string 
     setAt(to);
   };
   const saveDefaults = async () => {
-    const { voiceId, speed, size, code, keepHours, orb, subtitles, accent } = opts;
-    const r = await fetch('/api/settings', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ debrief: { video: { voiceId, voiceName: voices.find((v) => v.id === voiceId)?.name ?? '', speed, size, code, keepHours, orb, subtitles, accent } } }) }).catch(() => null);
+    const { voiceId, model, speed, size, code, keepHours, orb, subtitles, accent } = opts;
+    const r = await fetch('/api/settings', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ debrief: { video: { voiceId, voiceName: voices.find((v) => v.id === voiceId)?.name ?? '', model, speed, size, code, keepHours, orb, subtitles, accent } } }) }).catch(() => null);
     setSaved(!!r?.ok);
   };
   const make = async () => {
@@ -220,6 +220,16 @@ function Maker({ sessionId, debriefId }: { sessionId: string; debriefId: string 
                         </button>
                       ) : null}
                     </div>
+                  ))}
+                </div>
+              </Field>
+              <Field label="Voice model">
+                <div className="vm-models">
+                  {VOICE_MODELS.map((m) => (
+                    <button key={m.id} className={`vm-model${opts.model === m.id ? ' on' : ''}`} onClick={() => set({ model: m.id })}>
+                      <span className="nm">{m.name}</span>
+                      <span className="nt">{m.note}</span>
+                    </button>
                   ))}
                 </div>
               </Field>

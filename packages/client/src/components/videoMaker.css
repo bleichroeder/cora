@@ -51,3 +51,8 @@
 .vm-foot { display: flex; align-items: center; gap: 10px; padding: 11px 16px; border-top: 1px solid var(--hair2); }
 .vm-foot .btn { display: inline-flex; align-items: center; gap: 6px; }
 .vm-err { color: var(--need); font-size: 12px; }
+.vm-models { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+.vm-model { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; padding: 6px 9px; border-radius: 8px; border: 1px solid var(--hair2); background: var(--nav); color: var(--ink2); font: inherit; text-align: left; cursor: pointer; }
+.vm-model .nm { font-size: 12px; }
+.vm-model .nt { font-size: 10.5px; color: var(--ink3); }
+.vm-model.on { border-color: var(--cora); color: var(--ink); background: var(--cora-deep); }
