@@ -333,7 +333,7 @@ export function CoraConsole() {
           <NeedsYou sessionId={agent} />
         </div>
       ) : null}
-      {status.asking?.length ? <Asking lines={status.asking} /> : null}
+      {status.asking?.length ? <Asking lines={status.asking} trust={!!status.askingTrust} /> : null}
       {status.approvals.length ? (
         <div className="cc-approvals">
           {status.approvals.map((a) => (a.ticket ? <JiraStartCard key={a.id} a={a} inline /> : <ApprovalCard key={a.id} a={a} />))}
@@ -442,7 +442,7 @@ export function ApprovalCard({ a }: { a: Approval }) {
 }
 
 /** Cora's own terminal is asking something (the first start: whether to trust its folder): answer it here. */
-function Asking({ lines }: { lines: string[] }) {
+function Asking({ lines, trust }: { lines: string[]; trust: boolean }) {
   const options = lines.flatMap((l) => {
     const m = /^[❯›]?\s*(\d)\.\s+(.+)$/u.exec(l.trim());
     return m ? [{ key: m[1], label: m[2] }] : [];
@@ -455,15 +455,30 @@ function Asking({ lines }: { lines: string[] }) {
       </div>
       <pre>{question.join('\n')}</pre>
       <div className="cc-ask-a">
+        {/* "trust this folder?": its options have no numbers and "No, exit" is highlighted: say yes outright */}
+        {trust ? (
+          <button className="btn allow" onClick={() => void coraKey('trust')}>
+            Yes, trust this folder
+          </button>
+        ) : null}
         {options.map((o) => (
           <button key={o.key} className={`btn${o.key === '1' ? ' allow' : ' ghost'}`} onClick={() => void coraKey(o.key)}>
             {o.label}
           </button>
         ))}
         {!options.length ? (
-          <button className="btn" onClick={() => void coraKey('enter')}>
-            Enter
-          </button>
+          <>
+            {/* options without numbers: move the highlight, then Enter picks it */}
+            <button className="btn ghost" title="Move the highlight up" onClick={() => void coraKey('up')}>
+              ↑
+            </button>
+            <button className="btn ghost" title="Move the highlight down" onClick={() => void coraKey('down')}>
+              ↓
+            </button>
+            <button className="btn ghost" title="Pick the highlighted option (❯)" onClick={() => void coraKey('enter')}>
+              Enter
+            </button>
+          </>
         ) : null}
         <button className="btn ghost" onClick={() => void coraKey('esc')}>
           Esc

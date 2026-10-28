@@ -4,7 +4,7 @@ import type { CoraTold } from '../inboxFeeds';
 import { appendFileSync, existsSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { AWAY_MS, bareWords, choiceOpen, isShell, type BriefKind, type BrainEvent, type SessionInfo, type CiMsg, type GoalState, type OrchestratorStatus, type PendingDecision, type PendingRequest, type Settings, type TerminalInfo, type UiCommand, takesTags, jiraLine, type JiraEvent, type MailHit, type GitlabTodo, type GitlabIssue, todoWhy } from '@cora/shared';
+import { AWAY_MS, bareWords, choiceOpen, highlightedOption, isShell, trustQuestion, type BriefKind, type BrainEvent, type SessionInfo, type CiMsg, type GoalState, type OrchestratorStatus, type PendingDecision, type PendingRequest, type Settings, type TerminalInfo, type UiCommand, takesTags, jiraLine, type JiraEvent, type MailHit, type GitlabTodo, type GitlabIssue, todoWhy } from '@cora/shared';
 import { terminalInput } from '../input';
 import type { PtyManager } from '../pty';
 import { Approvals, type ApprovalOutcome } from './approvals';
@@ -98,6 +98,7 @@ export class OrchestratorManager {
   private timer: NodeJS.Timeout | null = null;
   /** what its terminal is asking (checked every couple of seconds while it runs) */
   private asking: string[] | null = null;
+  private askingTrust = false;
   private watch: NodeJS.Timeout | null = null;
   /** autopilot: what you've handed it */
   readonly goals: Goals;
@@ -294,7 +295,7 @@ export class OrchestratorManager {
       running: !!t,
       ...(this.error ? { error: this.error } : {}),
       approvals: this.approvals.list(),
-      ...(t && this.asking ? { asking: this.asking } : {}),
+      ...(t && this.asking ? { asking: this.asking, ...(this.askingTrust ? { askingTrust: true } : {}) } : {}),
       control: s.enabled && this.control,
       goal: s.enabled ? this.goals.current() : null,
       talks: s.enabled ? this.talk.list() : [],
@@ -321,8 +322,10 @@ export class OrchestratorManager {
         const t = this.terminal();
         const lines = t ? this.d.ptys.screenLines(t.terminalId) : null;
         const next = lines && choiceOpen(lines) ? questionOf(lines) : null;
-        if (JSON.stringify(next) !== JSON.stringify(this.asking)) {
+        const trust = !!next && !!lines && trustQuestion(lines);
+        if (JSON.stringify(next) !== JSON.stringify(this.asking) || trust !== this.askingTrust) {
           this.asking = next;
+          this.askingTrust = trust;
           this.changed();
         }
       }, 1500);
@@ -334,14 +337,31 @@ export class OrchestratorManager {
     }
   }
 
-  /** Answer its terminal's question: an option's number, Enter or Esc. */
+  /**
+   * Answer its terminal's question: an option's number, up or down (options without numbers), Enter or Esc; or `trust`:
+   * yes to "trust this folder?" (down to its "Yes" option, then Enter, as a session Cora starts does).
+   */
   key(k: string): { ok: boolean; error?: string } {
     const t = this.terminal();
     if (!t) return { ok: false, error: 'Cora is not running' };
-    const data = /^[1-9]$/.test(k) ? k : k === 'enter' ? '\r' : k === 'esc' ? '\x1b' : null;
-    if (!data) return { ok: false, error: 'a number from 1 to 9, enter or esc' };
+    if (k === 'trust') {
+      void this.trustFolder(t.terminalId);
+      return { ok: true };
+    }
+    const data = /^[1-9]$/.test(k) ? k : k === 'enter' ? '\r' : k === 'esc' ? '\x1b' : k === 'up' ? '\x1b[A' : k === 'down' ? '\x1b[B' : null;
+    if (!data) return { ok: false, error: 'a number from 1 to 9, up, down, enter, esc or trust' };
     this.d.ptys.write(t.terminalId, data);
     return { ok: true };
+  }
+
+  /** Yes to "trust this folder?": down until "Yes" is highlighted, then Enter (a few tries at most). */
+  private async trustFolder(terminalId: string): Promise<void> {
+    for (let i = 0; i < 6; i++) {
+      const lines = this.d.ptys.screenLines(terminalId);
+      if (!lines || !trustQuestion(lines)) return;
+      this.d.ptys.write(terminalId, /^Yes/i.test(highlightedOption(lines) ?? '') ? '\r' : '\x1b[B');
+      await new Promise((r) => setTimeout(r, 300));
+    }
   }
 
   /** Settings changed (or the server started): run it when it's on, stop it when it's off. */

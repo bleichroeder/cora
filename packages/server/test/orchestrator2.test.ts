@@ -168,6 +168,41 @@ function managerSetup() {
 }
 const flush = () => new Promise((r) => setTimeout(r, 5));
 
+describe("Cora's own terminal asking", () => {
+  it('"trust this folder?" (no numbers, "No, exit" highlighted): yes moves down to Yes, then Enter; arrows move the highlight', async () => {
+    const { m, writes, setScreen, terms } = managerSetup();
+    await flush();
+    expect(terms.length).toBeGreaterThan(0);
+    const dialog = (yes: boolean) => [
+      '─'.repeat(40),
+      ' Do you trust the files in this folder?',
+      ' C:/Users/x/.cora/orchestrator',
+      ' ',
+      yes ? '   No, exit' : ' ❯ No, exit',
+      yes ? ' ❯ Yes, I trust this folder' : '   Yes, I trust this folder',
+      ' ',
+      ' Enter to confirm · Esc to cancel',
+    ];
+    setScreen(dialog(false));
+    writes.length = 0;
+    expect(m.key('trust')).toEqual({ ok: true });
+    await flush();
+    expect(writes).toEqual(['\x1b[B']);
+    setScreen(dialog(true));
+    await new Promise((r) => setTimeout(r, 350));
+    expect(writes).toEqual(['\x1b[B', '\r']);
+    // answered: the next look finds no question, and nothing more is sent
+    setScreen(['', '─'.repeat(40), '❯ ', '─'.repeat(40)]);
+    await new Promise((r) => setTimeout(r, 350));
+    expect(writes).toHaveLength(2);
+    writes.length = 0;
+    expect(m.key('up')).toEqual({ ok: true });
+    expect(m.key('down')).toEqual({ ok: true });
+    expect(writes).toEqual(['\x1b[A', '\x1b[B']);
+    expect(m.key('sideways').ok).toBe(false);
+  });
+});
+
 describe("someone else's words", () => {
   it('mark the turn they start (nothing may act) until it ends or the user speaks', () => {
     const { m, setClock } = managerSetup();

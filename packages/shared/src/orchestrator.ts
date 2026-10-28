@@ -120,6 +120,8 @@ export type OrchestratorStatus = {
   approvals: Approval[];
   /** its terminal is asking something (trust this folder? a permission prompt): the question's lines, for you to answer */
   asking?: string[];
+  /** what it's asking is Claude Code's "trust this folder?" (its options have no numbers; "No, exit" is highlighted) */
+  askingTrust?: boolean;
   /** Cora answers your sessions' permission prompts (under the mandate) while you're away */
   control: boolean;
   /** what it's doing on autopilot (or last did) */

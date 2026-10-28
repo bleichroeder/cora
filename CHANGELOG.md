@@ -4,6 +4,12 @@ What changed in each release. Cora updates itself; each update's notes are on it
 
 ## Unreleased
 
+## 0.1.13
+
+- **Cora's first start in a new folder can say yes.** Claude Code's "trust this folder?" has options without numbers
+  and "No, exit" highlighted, so Cora's conversation only offered Enter and Esc. It now has **Yes, trust this folder**,
+  and ↑/↓ for any other choice without numbers.
+
 ## 0.1.12
 
 - **Debrief videos.** 🎬 on a debrief opens **Make a video**: narrated slides of the walkthrough, in your Cora's look
