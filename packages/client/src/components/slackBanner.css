@@ -15,7 +15,7 @@ html.banner-page #root {
   align-items: center;
   gap: 8px;
   padding: 0 22px 0 8px;
-  /* square, a bar in Cora's colour at its left edge: over the message's quote bar, one column (as Klepto's) */
+  /* square, a bar in Cora's colour at its left edge: over the message's quote bar, one column */
   border-left: 4px solid var(--cora);
   overflow: hidden;
   /* flat but for the orb's glow: a GIF's 255 colours band a long faint gradient */
