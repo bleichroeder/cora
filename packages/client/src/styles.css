@@ -297,6 +297,8 @@ kbd { font: 10px var(--mono); border: 1px solid #334155; border-radius: 3px; pad
 .think .hid { color: #334155; }
 .spin { display: inline-block; width: 8px; height: 8px; border: 1.5px solid var(--amber); border-right-color: transparent; border-radius: 50%; margin-left: 6px; animation: spin .8s linear infinite; vertical-align: -1px; }
 @keyframes spin { to { transform: rotate(360deg); } }
+/* a button that's working (Send, Name it…): its loader turns */
+button .lucide-loader-circle { animation: spin 0.9s linear infinite; }
 .spawn { font: 11px var(--mono); color: #94a3b8; background: #0f1622; border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; margin: 4px 0; cursor: pointer; line-height: 1.6; }
 .spawn:hover { border-color: var(--blue); }
 .spawn b { color: #e2e8f0; }

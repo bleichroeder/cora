@@ -882,7 +882,9 @@ function registerSlack(server: McpServer, sessionId: string | null, { slack, out
           ? "Send a Slack message as the user, to a channel, a person (their DM) or a thread. When the user asked you for this message in their own words (what you're working on now), it's sent at once and they can undo it for a few seconds; anything else (on autopilot, from an event) is a draft they confirm, edit or discard."
           : "Send a Slack message as the user, to a channel, a person (their DM) or a thread. Nothing is sent until the user confirms it: Cora shows them the draft, which they can edit, send, take to Slack to finish themselves, or discard.",
         'The call tells you what happened (sent, with a link; discarded; or still waiting for them).',
-        'Write it the way the user would: short, plain, no headings; **bold**, `code`, links and @handle mentions work.',
+        'Write it the way the user would: short and plain; **bold**, `code`, links and @handle mentions work.',
+        "For a genuinely structured message (a status report, a rundown of several items, release notes: never a quick reply or a question) you can lay it out, and Slack shows it in its own blocks: a line `# Title` is a header, `---` a divider, two or more `**Label:** value` lines in a row a two-column grid of short facts, and `-# note` small grey text (e.g. when it was checked). Keep everything else plain.",
+        "It opens with Cora's banner (an animated picture: the user's orb, the ticket or the message's first line) unless banner is false: leave it out when the user asks for a plain message (their sign-off line stays either way).",
         "Only send when the user asked for a message (or agreed to one). If a name is ambiguous you'll get the candidates: ask, or use slack_find.",
         "A message to the user themselves (their own DM, e.g. to follow up with them while they're away) goes at once, with no draft.",
       ].join(' '),
@@ -895,9 +897,10 @@ function registerSlack(server: McpServer, sessionId: string | null, { slack, out
           .max(ATTACH_MAX)
           .optional()
           .describe("Files to send with it: full local paths (a screenshot you took, a log). From this session's folder, the temp folder (Playwright's screenshots), Pictures, Downloads or Desktop; 20 MB each at most."),
+        banner: z.boolean().optional().describe("Cora's banner on top (default true); false for a plain message (the user asked for one)"),
       },
     },
-    async ({ to, text, thread, files: paths }) => {
+    async ({ to, text, thread, files: paths, banner }) => {
       try {
         if (!slack.status().connected) return fail(NOT_CONNECTED);
         let files: SlackAttachment[] | undefined;
@@ -917,20 +920,20 @@ function registerSlack(server: McpServer, sessionId: string | null, { slack, out
         // to the user themselves (their own DM): nobody else reads it, so there's nothing to confirm; it goes at once
         const me = slack.status();
         if (me.connected && target.kind === 'person' && target.id === me.userId) {
-          const r = await outbox.sendNow({ to: target, text, ...(threadTs ? { threadTs } : {}), ...(files ? { files } : {}) });
+          const r = await outbox.sendNow({ to: target, text, sessionId: sessionId ?? null, ...(banner === false ? { banner: false } : {}), ...(threadTs ? { threadTs } : {}), ...(files ? { files } : {}) });
           return { content: [{ type: 'text', text: `Sent to the user's own DM${withFiles}, straight away: a message only they read needs no OK. ${r.link}` }] };
         }
         // asked for in the user's own words (Cora only): out at once, with a short undo
         if (direct?.()) {
-          const r = await outbox.sendNow({ to: target, text, ...(threadTs ? { threadTs } : {}), ...(files ? { files } : {}) });
+          const r = await outbox.sendNow({ to: target, text, sessionId: sessionId ?? null, ...(banner === false ? { banner: false } : {}), ...(threadTs ? { threadTs } : {}), ...(files ? { files } : {}) });
           return { content: [{ type: 'text', text: `Sent to ${target.label}${where}${withFiles}, straight away since the user asked for it; they can undo it for a few seconds. ${r.link}` }] };
         }
         // a conversation the user let Cora carry on by itself: out at once too (they can undo it, and stop it)
         if (direct && outbox.allowed(await slack.conversation(target))) {
-          const r = await outbox.sendNow({ to: target, text, own: true, ...(threadTs ? { threadTs } : {}), ...(files ? { files } : {}) });
+          const r = await outbox.sendNow({ to: target, text, sessionId: sessionId ?? null, ...(banner === false ? { banner: false } : {}), own: true, ...(threadTs ? { threadTs } : {}), ...(files ? { files } : {}) });
           return { content: [{ type: 'text', text: `Sent to ${target.label}${where}${withFiles}, on your own: the user let you carry on this conversation. ${r.link}` }] };
         }
-        const out = await outbox.request({ sessionId, to: target, text, ...(threadTs ? { threadTs } : {}), ...(link ? { threadLink: thread } : {}), ...(files ? { files } : {}) });
+        const out = await outbox.request({ sessionId, to: target, text, ...(banner === false ? { banner: false } : {}), ...(threadTs ? { threadTs } : {}), ...(link ? { threadLink: thread } : {}), ...(files ? { files } : {}) });
         if (out.sent) {
           const changed = out.edited ? ` The user changed it before sending; what went to ${out.to.label}:\n${out.text}` : '';
           return { content: [{ type: 'text', text: `Sent to ${out.to.label}${where}${withFiles}. ${out.link}${changed}` }] };

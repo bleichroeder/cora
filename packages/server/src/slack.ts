@@ -54,6 +54,89 @@ export function slackManifest(): object {
   };
 }
 
+/** Text as a Slack quote: every line, the blank ones too (so its bar runs unbroken). */
+export const quoted = (text: string) =>
+  text
+    .split('\n')
+    .map((l) => (l ? `> ${l}` : '>'))
+    .join('\n');
+
+type Block = Record<string, unknown>;
+const MAX_BLOCKS = 45;
+const FIELD_RE = /^\s*(?:[-*•]\s+)?\*\*([^*\n]{1,60}?):?\*\*:?\s+(\S.*)$/;
+
+/**
+ * A message laid out in Slack's own blocks, from its markdown, for a structured message (a report, a rundown, release
+ * notes): `# Title` (or `##`) a header, `---` a divider, two or more `**Label:** value` lines in a row a grid of facts
+ * (two columns), `-# note` small grey text; the rest as it is. Code blocks are left alone. Null when there's no such
+ * structure (an ordinary message: sections, as ever) or when it would take more blocks than Slack allows.
+ */
+export function richBlocks(md: string): Block[] | null {
+  const lines = md.split('\n');
+  const out: Block[] = [];
+  let text: string[] = [];
+  let rich = false;
+  let fence = false;
+  const flush = () => {
+    const t = text.join('\n').replace(/^\n+|\n+$/g, '');
+    if (t.trim()) out.push(...sections(toMrkdwn(t)));
+    text = [];
+  };
+  for (let i = 0; i < lines.length; i++) {
+    const l = lines[i];
+    if (/^\s*```/.test(l)) fence = !fence;
+    if (fence || /^\s*```/.test(l)) {
+      text.push(l);
+      continue;
+    }
+    const h = /^#{1,2}\s+(.+?)\s*#*\s*$/.exec(l);
+    if (h) {
+      flush();
+      out.push({ type: 'header', text: { type: 'plain_text', text: plainText(h[1]).slice(0, 150) || ' ', emoji: true } });
+      rich = true;
+      continue;
+    }
+    if (/^\s*(-{3,}|\*{3,}|_{3,})\s*$/.test(l)) {
+      flush();
+      out.push({ type: 'divider' });
+      rich = true;
+      continue;
+    }
+    const note = /^-#\s+(.+)$/.exec(l);
+    if (note) {
+      flush();
+      out.push({ type: 'context', elements: [{ type: 'mrkdwn', text: toMrkdwn(note[1]).slice(0, 3000) }] });
+      rich = true;
+      continue;
+    }
+    // facts: two or more label lines in a row
+    let j = i;
+    while (j < lines.length && FIELD_RE.test(lines[j])) j++;
+    if (j - i >= 2) {
+      flush();
+      const fields = lines.slice(i, j).map((x) => {
+        const m = FIELD_RE.exec(x)!;
+        return { type: 'mrkdwn', text: `*${m[1].trim()}*\n${toMrkdwn(m[2])}`.slice(0, 2000) };
+      });
+      for (let k = 0; k < fields.length; k += 10) out.push({ type: 'section', fields: fields.slice(k, k + 10) });
+      rich = true;
+      i = j - 1;
+      continue;
+    }
+    text.push(l);
+  }
+  flush();
+  return rich && out.length <= MAX_BLOCKS ? out : null;
+}
+
+/** Markdown as plain words (a header takes no formatting). */
+const plainText = (s: string) =>
+  s
+    .replace(/\[([^\]\n]+)\]\([^)\s]+\)/g, '$1')
+    .replace(/<[^|>]+\|([^>]+)>/g, '$1')
+    .replace(/[*_~`]/g, '')
+    .trim();
+
 /** A message's text as section blocks: Slack takes at most 3000 characters a section. */
 export function sections(text: string): Array<{ type: 'section'; text: { type: 'mrkdwn'; text: string } }> {
   const out: string[] = [];
@@ -129,6 +212,8 @@ export type SlackHit = { where: string; channel: string; who: string; user: stri
 const TALK_MS = 10 * 60_000;
 /** how many times to look for the message files were posted in */
 const SHARE_TRIES = 8;
+/** tries at posting with Cora's banner before going without it */
+const BANNER_TRIES = 4;
 /** A hit as one line: `[when] where · who: text (link)`. */
 export function hitLine(h: SlackHit): string {
   const d = new Date(Number(h.ts) * 1000);
@@ -503,15 +588,48 @@ export class Slack {
    * Post as you. Returns the message's link. `footer`: a small grey line under it (Slack's context block), so whoever
    * reads it knows Cora sent it for you; the message's own text stays as it is (notifications, search).
    */
-  async post(to: SlackTarget, text: string, threadTs?: string, footer?: string): Promise<{ channel: string; ts: string; link: string }> {
+  async post(to: SlackTarget, text: string, threadTs?: string, o: { footer?: string; banner?: Uint8Array | null; /** lay a structured message out in blocks (richBlocks; default on): off for what you typed */ rich?: boolean } = {}): Promise<{ channel: string; ts: string; link: string; /** the banner's file (Undo deletes it too) */ fileIds?: string[] }> {
     try {
+      const { footer, banner } = o;
       const channel = await this.conversation(to);
-      const body = await this.mentions(toMrkdwn(text));
-      const blocks = footer ? [...sections(body), { type: 'context', elements: [{ type: 'mrkdwn', text: footer }] }] : undefined;
-      const j = await this.call()('chat.postMessage', { channel, text: body, ...(blocks ? { blocks } : {}), ...(threadTs ? { thread_ts: threadTs } : {}) });
+      const raw = await this.mentions(text);
+      const body = toMrkdwn(raw);
+      // a structured message in Slack's blocks (headers, dividers, a grid of facts); else sections, as ever
+      let rich = o.rich !== false ? richBlocks(raw) : null;
+      // Cora's banner on top: uploaded privately, then shown
+      // by its file (Slack plays it as a GIF; whoever reads the message sees it)
+      const file = banner?.length ? await this.uploadImage(banner, 'cora.gif').catch(() => null) : null;
+      const images: object[] = file ? [{ type: 'image', slack_file: { id: file }, alt_text: 'Cora' }] : [];
+      let k = 0;
+      const postIt = () => {
+        const img = images[k];
+        // under the banner a plain message is quoted: the banner's bar and the quote's run down as one column (a laid
+        // out one isn't: its headers and grids can't be)
+        const content = rich ?? sections(img ? quoted(body) : body);
+        const blocks = footer || img || rich ? [...(img ? [img] : []), ...content, ...(footer ? [{ type: 'context', elements: [{ type: 'mrkdwn', text: footer }] }] : [])] : undefined;
+        return this.call()('chat.postMessage', { channel, text: body, ...(blocks ? { blocks } : {}), ...(threadTs ? { thread_ts: threadTs } : {}) });
+      };
+      let j: any;
+      for (let i = 0; ; i++) {
+        try {
+          j = await postIt();
+          break;
+        } catch (e) {
+          if (!(e instanceof SlackError) || !/^(invalid_blocks|invalid_slack_file|file_not_found)/.test(e.code)) throw e;
+          // Slack may not have the image ready a moment after it's uploaded: a moment more, then without it
+          if (k < images.length) {
+            if (i >= BANNER_TRIES - 1) (k++, (i = -1));
+            else await new Promise((r) => setTimeout(r, this.o.shareWaitMs ?? 1000));
+            continue;
+          }
+          // blocks Slack won't take: the message as plain sections
+          if (!rich) throw e;
+          rich = null;
+        }
+      }
       const ts = String(j.ts);
       const p = await this.call()('chat.getPermalink', { channel, message_ts: ts }).catch(() => null);
-      return { channel, ts, link: p?.permalink ? String(p.permalink) : '' };
+      return { channel, ts, link: p?.permalink ? String(p.permalink) : '', ...(file ? { fileIds: [file] } : {}) };
     } catch (e) {
       return this.check(e);
     }
@@ -548,6 +666,16 @@ export class Slack {
     } catch (e) {
       return this.check(e);
     }
+  }
+
+  /** An image uploaded to Slack without sharing it anywhere (yours alone until a message shows it): its file id. */
+  private async uploadImage(bytes: Uint8Array, filename: string): Promise<string> {
+    const u = await this.call()('files.getUploadURLExternal', { filename, length: bytes.length });
+    const r = await (this.o.fetch ?? fetch)(String(u.upload_url), { method: 'POST', headers: { 'content-type': 'application/octet-stream' }, body: bytes });
+    if (!r.ok) throw new SlackError(`uploading ${filename} failed (${r.status})`);
+    const id = String(u.file_id);
+    await this.call()('files.completeUploadExternal', { files: JSON.stringify([{ id, title: 'Cora' }]) });
+    return id;
   }
 
   /** Delete files you just sent (Undo). */
@@ -834,7 +962,10 @@ export class Outbox {
   /** conversations you let Cora carry on by itself, until when */
   private grantList: SlackGrant[] = [];
 
-  constructor(private o: { slack: Slack; onChange: () => void; waitMs?: number; onUndo?: (s: SlackSent) => void; /** where grants are kept */ file?: string; /** where drafts waiting for you are kept (across a restart) */ draftsFile?: string; /** the sign-off on messages Cora sends for you ('' : none) */ sign?: () => string }) {
+  /** each waiting draft's banner, made as it arrives (so Send doesn't wait for it) */
+  private banners = new Map<string, Promise<Uint8Array | null>>();
+
+  constructor(private o: { slack: Slack; onChange: () => void; waitMs?: number; onUndo?: (s: SlackSent) => void; /** where grants are kept */ file?: string; /** where drafts waiting for you are kept (across a restart) */ draftsFile?: string; /** the sign-off on messages Cora sends for you ('' : none) */ sign?: () => string; /** Cora's banner for a message it sends for you (a GIF; which session wrote it), or none */ banner?: (d: { sessionId: string | null; text: string }) => Promise<Uint8Array | null> }) {
     try {
       if (o.file && existsSync(o.file)) this.grantList = (JSON.parse(readFileSync(o.file, 'utf8')) as SlackGrant[]).filter((g) => g.until > Date.now());
     } catch {
@@ -924,12 +1055,14 @@ export class Outbox {
    * Send now (you asked Cora for it in your own words): posted at once, and it can be undone for a few seconds.
    * `typed`: you wrote it yourself (the Inbox's reply), so it isn't signed as Cora's.
    */
-  async sendNow(d: { to: SlackTarget; text: string; threadTs?: string; own?: boolean; typed?: boolean; files?: SlackAttachment[] }): Promise<{ id: string; link: string }> {
+  async sendNow(d: { to: SlackTarget; text: string; threadTs?: string; own?: boolean; typed?: boolean; files?: SlackAttachment[]; /** the session that wrote it (its banner says so) */ sessionId?: string | null; /** false: without Cora's banner */ banner?: boolean }): Promise<{ id: string; link: string }> {
     const footer = d.typed ? undefined : await this.footer();
-    const r = d.files?.length ? await this.o.slack.postFiles(d.to, d.typed ? d.text : this.signed(d.text), d.files, d.threadTs) : { ...(await this.o.slack.post(d.to, d.text, d.threadTs, footer)), fileIds: undefined };
+    // Cora's banner on top of what Cora writes (not what you typed; not with files)
+    const banner = !d.typed && !d.files?.length && d.banner !== false && this.o.banner ? await this.o.banner({ sessionId: d.sessionId ?? null, text: d.text }).catch(() => null) : null;
+    const r = d.files?.length ? await this.o.slack.postFiles(d.to, d.typed ? d.text : this.signed(d.text), d.files, d.threadTs) : await this.o.slack.post(d.to, d.text, d.threadTs, { footer, banner, rich: !d.typed });
     const at = Date.now();
     const id = randomUUID();
-    this.sentNow.set(id, { id, to: d.to, text: d.text, link: r.link, at, until: at + UNDO_MS, channel: r.channel, ...(r.ts ? { ts: r.ts } : {}), ...(r.fileIds ? { fileIds: r.fileIds, files: d.files } : {}), ...(d.own ? { own: r.channel } : {}) });
+    this.sentNow.set(id, { id, to: d.to, text: d.text, link: r.link, at, until: at + UNDO_MS, channel: r.channel, ...(r.ts ? { ts: r.ts } : {}), ...(r.fileIds ? { fileIds: r.fileIds, ...(d.files ? { files: d.files } : {}) } : {}), ...(d.own ? { own: r.channel } : {}) });
     setTimeout(() => this.sentNow.delete(id) && this.changed(), UNDO_MS + 500).unref?.();
     this.changed();
     return { id, link: r.link };
@@ -972,12 +1105,13 @@ export class Outbox {
   }
 
   /** Hold a draft for you; resolves with what you did (or, after a while, that it's waiting). */
-  request(d: { sessionId: string | null; to: SlackTarget; text: string; threadTs?: string; threadLink?: string; files?: SlackAttachment[] }): Promise<DraftOutcome> {
+  request(d: { sessionId: string | null; to: SlackTarget; text: string; threadTs?: string; threadLink?: string; files?: SlackAttachment[]; /** false: without Cora's banner */ banner?: boolean }): Promise<DraftOutcome> {
     const sessionId = d.sessionId ?? this.seen.filter((s) => s.text === d.text).pop()?.sessionId ?? null;
-    const draft: SlackDraft = { id: randomUUID(), sessionId, to: d.to, text: d.text, ...(d.threadTs ? { threadTs: d.threadTs } : {}), ...(d.threadLink ? { threadLink: d.threadLink } : {}), ...(d.files?.length ? { files: d.files } : {}), createdAt: Date.now(), waiting: true };
+    const draft: SlackDraft = { id: randomUUID(), sessionId, to: d.to, text: d.text, ...(d.threadTs ? { threadTs: d.threadTs } : {}), ...(d.threadLink ? { threadLink: d.threadLink } : {}), ...(d.files?.length ? { files: d.files } : {}), ...(d.banner === false ? { banner: false } : {}), createdAt: Date.now(), waiting: true };
     return new Promise((resolve) => {
       const h: Held = { draft, answered: false, answer: (o) => !h.answered && ((h.answered = true), resolve(o)) };
       this.held.set(draft.id, h);
+      if (!draft.files?.length && draft.banner !== false && this.o.banner) this.banners.set(draft.id, this.o.banner(draft).catch(() => null));
       setTimeout(() => {
         if (h.answered || !this.held.has(draft.id)) return;
         h.draft = { ...h.draft, waiting: false };
@@ -998,14 +1132,19 @@ export class Outbox {
       // taken to Slack: where to open it (the person's DM may need opening first)
       const url = a.action === 'opened' ? await this.o.slack.webUrl(to, h.draft.threadTs).catch(() => undefined) : undefined;
       this.held.delete(id);
+      this.banners.delete(id);
       h.answer({ sent: false, why: a.action === 'discard' ? 'discarded' : 'opened', text, to });
       this.changed();
       return { ok: true, ...(url ? { url } : {}) };
     }
     if (!text) return { ok: false, error: 'the message is empty' };
     try {
-      const r = h.draft.files?.length ? await this.o.slack.postFiles(to, this.signed(text), h.draft.files, h.draft.threadTs) : await this.o.slack.post(to, text, h.draft.threadTs, await this.footer());
+      // Cora's banner on top, unless you unticked it (a message with files has none: Slack shows them its own way); made
+      // as the draft came, again if you changed its words (it may show its first line)
+      const banner = !h.draft.files?.length && (a.banner ?? h.draft.banner) !== false && this.o.banner ? await ((text === h.draft.text.trim() && this.banners.get(id)) || this.o.banner({ ...h.draft, text })).catch(() => null) : null;
+      const r = h.draft.files?.length ? await this.o.slack.postFiles(to, this.signed(text), h.draft.files, h.draft.threadTs) : await this.o.slack.post(to, text, h.draft.threadTs, { footer: await this.footer(), banner });
       this.held.delete(id);
+      this.banners.delete(id);
       h.answer({ sent: true, link: r.link, text, to, edited: text !== h.draft.text.trim() || to.id !== h.draft.to.id });
       this.changed();
       return { ok: true, link: r.link };

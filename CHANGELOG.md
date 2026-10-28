@@ -4,6 +4,20 @@ What changed in each release. Cora updates itself; each update's notes are on it
 
 ## Unreleased
 
+## 0.1.11
+
+- **Cora's Slack banner.** A message Cora sends for you opens with an animated banner: your orb in your Cora colour,
+  "CORA · your assistant", and the message's ticket (else its first line), with the message quoted beneath so the two
+  read as one column, and your sign-off line at the end. The desktop app makes it out of sight as you get the draft.
+  - It says only what its readers should see: never a session's automatic name or Cora's own folders.
+  - "Cora banner" on the confirm card (on by default); ask in chat for a plain message and it goes without.
+- **Laid-out Slack messages.** A structured message (a report, a rundown, release notes) goes out in Slack's own
+  blocks: a header, dividers, a grid of facts, small grey notes. Ordinary messages stay plain.
+- **Send shows it's working:** the Slack and mail cards' Send button spins and says "Sending…".
+- **Projects:** "Shade its sessions" is a switch: while it's on, sessions that join get their shade, and a new colour
+  reshades them all.
+- **Phones:** the nav makes room for your sessions (Cora's card a slim row, Tools one row of icons).
+
 ## 0.1.10
 
 - **Project board:** its header moves the window again, and its buttons no longer sit under the window's own (minimise, maximise, close).

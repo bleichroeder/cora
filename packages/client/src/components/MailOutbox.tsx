@@ -120,7 +120,7 @@ function MailCard({ d }: { d: MailSend }) {
           <Icon name="ExternalLink" size={12} /> Open in Gmail
         </button>
         <button className="btn allow" disabled={!!busy || !to.trim() || !subject.trim() || !body.trim()} onClick={() => void act('send')} title="Send it from your Gmail (Ctrl+Enter)">
-          <Icon name={busy === 'send' ? 'LoaderCircle' : 'Send'} size={12} /> Send
+          <Icon name={busy === 'send' ? 'LoaderCircle' : 'Send'} size={12} /> {busy === 'send' ? 'Sending…' : 'Send'}
         </button>
       </div>
     </div>

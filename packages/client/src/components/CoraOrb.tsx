@@ -52,7 +52,7 @@ const cssColor = () => {
  * Away mode or late at night when you've gone quiet, waking with a flash. Sized to the card: the canvas is bigger than
  * the orb so its glow and motes spill out, and nothing leaves it.
  */
-export function CoraOrb({ state, size, progress, agent, away, onHold, glow, color, speaking, reach, wide, master }: { state: CoraState; size: number; progress?: number; agent?: string | null; away?: boolean; onHold?(on: boolean): void; /** an element its light falls on (--orb-glow, --orb-tint) */ glow?: React.RefObject<HTMLElement | null>; /** another's colour (a session's orb): none, Cora's */ color?: string; /** another's voice speaking (a session's orb): none, Cora's */ speaking?: boolean; /** which orb it is, for reaching between Cora's card and the open session's (lib/coraLinks) */ reach?: 'cora' | 'session'; /** its canvas this wide (its card's width), so an arm has room to reach the card's edge */ wide?: number; /** Cora's own (it wears the crown: rings, your sessions riding them, a shell) */ master?: boolean }) {
+export function CoraOrb({ state, size, progress, agent, away, onHold, glow, color, speaking, reach, wide, master, ferro }: { state: CoraState; size: number; progress?: number; agent?: string | null; away?: boolean; onHold?(on: boolean): void; /** an element its light falls on (--orb-glow, --orb-tint) */ glow?: React.RefObject<HTMLElement | null>; /** another's colour (a session's orb): none, Cora's */ color?: string; /** another's voice speaking (a session's orb): none, Cora's */ speaking?: boolean; /** which orb it is, for reaching between Cora's card and the open session's (lib/coraLinks) */ reach?: 'cora' | 'session'; /** its canvas this wide (its card's width), so an arm has room to reach the card's edge */ wide?: number; /** Cora's own (it wears the crown: rings, your sessions riding them, a shell) */ master?: boolean; /** all ferrofluid: its spikes up and pulsing, as if it spoke (Cora's Slack banner) */ ferro?: boolean }) {
   const touch = useRef<Touch>({ hover: false, at: null, pokes: 0 });
   const hold = useRef<{ timer: number; on: boolean }>({ timer: 0, on: false });
   const where = (e: React.PointerEvent) => {
@@ -90,7 +90,7 @@ export function CoraOrb({ state, size, progress, agent, away, onHold, glow, colo
       ) : null}
       <span className="co-canvas" style={{ width: Math.max(box, wide ?? 0), height: box, margin: `${-(box - size) / 2}px 0 0 ${-(Math.max(box, wide ?? 0) - size) / 2}px` }}>
         <Canvas dpr={[1, 2]} gl={{ alpha: true, antialias: true, powerPreference: 'low-power' }} camera={{ position: [0, 0, 4.1], fov: 40 }}>
-          <OrbBody state={state} agent={agent ?? null} small={size < 40} away={!!away} touch={touch} glow={glow} color={color} speaking={speaking} reach={size < 40 ? undefined : reach} master={size >= 40 && !!master} />
+          <OrbBody state={state} agent={agent ?? null} small={size < 40} away={!!away} touch={touch} glow={glow} color={color} speaking={speaking} reach={size < 40 ? undefined : reach} master={size >= 40 && !!master} ferro={!!ferro} />
         </Canvas>
       </span>
     </span>
@@ -126,7 +126,7 @@ function useAgentSignals(agent: string | null) {
   }, [agent, version]);
 }
 
-function OrbBody({ state, agent, small, away, touch, glow, color: own, speaking: theirs, reach, master }: { state: CoraState; agent: string | null; small: boolean; away: boolean; touch: React.MutableRefObject<Touch>; glow?: React.RefObject<HTMLElement | null>; color?: string; speaking?: boolean; reach?: 'cora' | 'session'; master?: boolean }) {
+function OrbBody({ state, agent, small, away, touch, glow, color: own, speaking: theirs, reach, master, ferro }: { state: CoraState; agent: string | null; small: boolean; away: boolean; touch: React.MutableRefObject<Touch>; glow?: React.RefObject<HTMLElement | null>; color?: string; speaking?: boolean; reach?: 'cora' | 'session'; master?: boolean; ferro?: boolean }) {
   const coraSpeaking = useVoice((v) => coraReading(v.reading));
   const speaking = theirs ?? coraSpeaking;
   const ownRef = useRef(own);
@@ -263,6 +263,13 @@ function OrbBody({ state, agent, small, away, touch, glow, color: own, speaking:
     uniforms.uWork.value = Math.max(s.work, s.speak * (0.15 + voiceLevels.speak * 1.6));
     uniforms.uBusy.value = Math.max(s.busy, s.speak * voiceLevels.speak * 2.5);
     uniforms.uFerro.value = s.speak;
+    // all ferrofluid: tall sharp cones, swelling and settling as a voice would drive them
+    if (ferro) {
+      const lv = 0.5 + 0.5 * Math.sin(t * 4.1) * Math.sin(t * 1.7 + 0.8);
+      uniforms.uWork.value = 0.7 + 0.45 * lv;
+      uniforms.uBusy.value = 0.35 + 0.9 * lv;
+      uniforms.uFerro.value = 1;
+    }
     uniforms.uColor.value.copy(color).lerp(INDIGO, s.speak * 0.5).lerp(GREY, s.off * 0.8);
     uniforms.uShiver.value = s.shiver;
     uniforms.uAlert.value = Math.max(s.alert, s.shiver * 0.7);

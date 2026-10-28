@@ -83,6 +83,8 @@ function DraftCard({ d }: { d: SlackDraft }) {
   const [picking, setPicking] = useState(false);
   const [busy, setBusy] = useState<null | 'send' | 'open' | 'discard'>(null);
   const [err, setErr] = useState<string | null>(null);
+  // Cora's banner on top (a message with files has none)
+  const [banner, setBanner] = useState(d.banner !== false);
   const session = useBrain((s) => (d.sessionId ? s.sessions[d.sessionId] : undefined));
   const tools = useBrain((s) => s.prefs.tools);
   const ta = useRef<HTMLTextAreaElement>(null);
@@ -104,7 +106,7 @@ function DraftCard({ d }: { d: SlackDraft }) {
       if (desktop?.writeClipboard) desktop.writeClipboard(text);
       else void navigator.clipboard?.writeText(text).catch(() => {});
     }
-    const r = await decideDraft(d.id, { action, text, to });
+    const r = await decideDraft(d.id, { action, text, to, ...(action === 'send' ? { banner } : {}) });
     setBusy(null);
     if (!r.ok) return setErr(r.error ?? 'failed');
     if (action === 'opened' && r.url) {
@@ -186,11 +188,16 @@ function DraftCard({ d }: { d: SlackDraft }) {
           Discard
         </button>
         <span className="spacer" />
+        {!d.files?.length ? (
+          <label className="sd-banner" title="Cora's banner on top of the message: your orb, and what it's about">
+            <input type="checkbox" checked={banner} disabled={!!busy} onChange={(e) => setBanner(e.target.checked)} /> Cora banner
+          </label>
+        ) : null}
         <button className="btn ghost" disabled={!!busy} onClick={() => void act('opened')} title={d.files?.length ? "Copy it and open the conversation in Slack, to finish and send it there (attach the files there yourself)" : 'Copy it and open the conversation in Slack, to finish and send it there'}>
           <Icon name="ExternalLink" size={12} /> Open in Slack
         </button>
         <button className="btn allow" disabled={!!busy || !text.trim()} onClick={() => void act('send')} title="Send it as you (Ctrl+Enter)">
-          <Icon name={busy === 'send' ? 'LoaderCircle' : 'Send'} size={12} /> Send
+          <Icon name={busy === 'send' ? 'LoaderCircle' : 'Send'} size={12} /> {busy === 'send' ? 'Sending…' : 'Send'}
         </button>
       </div>
     </div>

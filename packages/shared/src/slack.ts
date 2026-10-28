@@ -50,6 +50,8 @@ export const ATTACH_BYTES = 20 * 1024 * 1024;
 
 export type SlackDraft = {
   id: string;
+  /** false: asked for without Cora's banner (the card's box starts unticked) */
+  banner?: boolean;
   /** files that go with it */
   files?: SlackAttachment[];
   /** the session that asked (null when it can't be told: a session started before Cora knew to say) */
@@ -98,7 +100,7 @@ export type SlackTalk = { where: string; channel: string; count: number; link: s
 export type SlackMsg = { t: 'slack'; status: SlackStatus; drafts: SlackDraft[]; sent?: SlackSent[]; notice?: SlackNotice; grants?: SlackGrant[]; /** Cora's own bot */ bot?: import('./slackBot').SlackBotStatus };
 
 /** Your answer to a draft. 'opened': you took it to Slack to finish yourself. */
-export type SlackAction = { action: 'send' | 'discard' | 'opened'; text?: string; to?: SlackTarget };
+export type SlackAction = { action: 'send' | 'discard' | 'opened'; text?: string; to?: SlackTarget; /** Cora's banner on top (default on) */ banner?: boolean };
 
 /** A Slack message link (`https://x.slack.com/archives/C123/p1700000000123456?thread_ts=1700000000.000100`). */
 export function parseSlackLink(url: string): { channel: string; ts: string; threadTs?: string } | null {

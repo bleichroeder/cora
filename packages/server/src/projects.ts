@@ -43,7 +43,7 @@ export class Projects {
     return p;
   }
 
-  update(pid: string, patch: { name?: unknown; color?: unknown; brief?: unknown; coordination?: unknown }): Project | null {
+  update(pid: string, patch: { name?: unknown; color?: unknown; brief?: unknown; coordination?: unknown; shade?: unknown }): Project | null {
     const p = this.get(pid);
     if (!p) return null;
     if (typeof patch.name === 'string' && patch.name.trim()) p.name = patch.name.trim().slice(0, 60);
@@ -54,6 +54,8 @@ export class Projects {
       p.briefAt = this.now();
     }
     if (typeof patch.coordination === 'boolean') p.coordination = patch.coordination;
+    if (patch.shade === true) p.shade = true;
+    else if (patch.shade === false) delete p.shade;
     this.changed();
     return p;
   }

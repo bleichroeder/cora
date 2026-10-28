@@ -3,7 +3,6 @@ import type { Project, SessionInfo } from '@cora/shared';
 import { useBrain } from '../state/store';
 import { PROJECT_COLORS } from '@cora/shared';
 import { addToProject, archiveProject, createProject, deleteProject, leaveProject, reorderProjects, shadesOf, updateProject, useProjects } from '../state/projects';
-import { setSessionMeta } from './SessionMenu';
 import { MAIN_COLORS, sessionName } from '../lib/format';
 import { Icon } from './Icon';
 import './projects.css';
@@ -213,14 +212,13 @@ function ProjectMenu({ p, x, y, index, all, onClose }: { p: Project; x: number; 
       </div>
       {members.length ? (
         <button
-          className="sm-row pj-shade"
-          title="Give each of its sessions its own shade of the project's colour"
-          onClick={() => {
-            members.forEach((id, i) => void setSessionMeta(id, { color: shades[i] }));
-            onClose();
-          }}
+          className={`sm-row pj-shade${p.shade ? ' on' : ''}`}
+          role="switch"
+          aria-checked={!!p.shade}
+          title={p.shade ? "On: each of its sessions wears its own shade of the project's colour, new ones too. Click to stop (they keep their colours)" : "Give each of its sessions its own shade of the project's colour, and keep doing it as sessions join"}
+          onClick={() => void updateProject(p.id, { shade: !p.shade })}
         >
-          <Icon name="Palette" size={14} /> Shade its sessions
+          <Icon name={p.shade ? 'SquareCheck' : 'Square'} size={14} /> Shade its sessions
           <span className="pj-shades">
             {shades.map((c, i) => (
               <i key={i} style={{ background: c }} title={sessions[members[i]] ? sessionName(sessions[members[i]]) : ''} />

@@ -85,3 +85,27 @@
 .app.phone .pjv-meta { display: none; }
 .app.phone .pjv-h .bt-l { display: none; }
 .app.phone .rb-tab { max-width: 150px; }
+
+/* ---- a phone's nav (the drawer): the sessions first. Cora's card a slim row (its orb small, its state beside it),
+   Tools one row of icons, the rest tighter, so the session list keeps most of the height ---- */
+.app.phone .tb-sheet .cora-bridge { display: grid !important; grid-template-columns: 40px minmax(0, 1fr); grid-template-rows: auto; align-items: center; column-gap: 10px; height: auto !important; min-height: 0 !important; margin: 8px 8px 4px; padding: 8px 12px !important; }
+.app.phone .tb-sheet .cora-bridge .cb-corner,
+.app.phone .tb-sheet .cora-bridge .cb-acts,
+.app.phone .tb-sheet .cora-bridge .cb-words,
+.app.phone .tb-sheet .cora-bridge .cb-dots,
+.app.phone .tb-sheet .cora-bridge .cb-reach { display: none !important; }
+.app.phone .tb-sheet .cora-bridge .cb-orbit { grid-column: 1; grid-row: 1; width: 40px !important; height: 40px !important; margin: 0 !important; padding: 0 !important; }
+.app.phone .tb-sheet .cora-bridge .cb-orbit { position: relative; overflow: visible; }
+.app.phone .tb-sheet .cora-bridge .cb-lens { width: 40px; height: 40px; margin: 0 !important; display: grid; place-items: center; }
+.app.phone .tb-sheet .cora-bridge .cb-t { grid-column: 2; grid-row: 1; align-items: flex-start; text-align: left; padding: 0 !important; margin: 0 !important; }
+.app.phone .tb-sheet .inbox-row { min-height: 38px; height: 38px; }
+.app.phone .tb-sheet .rail-sessions .ses-new { height: 38px; }
+.app.phone .tb-sheet .ses { height: 50px; }
+.app.phone .tb-sheet .rail-tools { display: flex; flex-direction: row; align-items: center; gap: 8px; padding: 6px 12px; overflow-x: auto; }
+.app.phone .tb-sheet .rail-tools .rt-h, .app.phone .tb-sheet .rail-tools .rt-sub, .app.phone .tb-sheet .rail-tools .rt-grip, .app.phone .tb-sheet .rail-tools .rt-list { display: none; }
+.app.phone .tb-sheet .rail-tools .rt-row { flex: none; margin: 0; padding: 0; gap: 6px; }
+.app.phone .tb-sheet .rail-tools .rt-b { width: 36px; height: 36px; }
+.app.phone .tb-sheet .rf-line { min-height: 36px; }
+.app.phone .tb-sheet .tb-layout { padding: 6px 12px calc(6px + env(safe-area-inset-bottom)); gap: 6px; }
+.app.phone .tb-sheet .tb-layout .lab { display: none; }
+.app.phone .tb-sheet .tb-layout .pp-seg button, .app.phone .tb-sheet .tb-layout .pp-tg { height: 28px; font-size: 12px; }

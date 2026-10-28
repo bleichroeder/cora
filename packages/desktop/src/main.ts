@@ -11,6 +11,7 @@ import { hideToolWindows, isWeb, openToolWindow, setToolHosts, setupBrowser } fr
 import { hideCapture, setupCapture } from './capture';
 import { startPresence } from './presence';
 import { startRemoteBrowse } from './remoteBrowse';
+import { startBanner } from './banner';
 import { setupJira, startJiraWatch } from './jira';
 import { setupDiagnostics } from './diag';
 import { attachContextMenu, enableSpellcheck } from './contextMenu';
@@ -237,6 +238,8 @@ function loadDashboard() {
     startPresence({ base: BASE, tokenFile: join(DATA, 'token') });
     // a session's browser on your other devices: pages rendered out of sight, only when one of them asks
     startRemoteBrowse({ base: BASE, tokenFile: join(DATA, 'token') });
+    // Cora's Slack banner: recorded out of sight when a message you send has one
+    startBanner({ base: BASE, tokenFile: join(DATA, 'token'), color: () => coraColor });
   }
   if (screenshotPath) {
     win.webContents.once('did-finish-load', () =>

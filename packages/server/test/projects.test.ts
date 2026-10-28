@@ -2,6 +2,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { shadesOf } from '@cora/shared';
 import { Projects } from '../src/projects';
 import { loadConfig } from '../src/config';
 import { startServer, type Running } from '../src/server';
@@ -108,6 +109,34 @@ describe('projects through the server', () => {
       await srv.app.inject({ method: 'POST', url: `/api/projects/${p.id}/archive`, headers: UI, payload: { on: true } });
       expect(await prompt('sess-ui-00002', 8)).toBeNull();
       expect((await srv.app.inject({ method: 'DELETE', url: `/api/projects/${p.id}`, headers: UI })).statusCode).toBe(200);
+    } finally {
+      await srv.close();
+    }
+  });
+
+  it("shading on: its sessions wear shades of its colour, kept as sessions join and leave and as it's recoloured; off: they keep theirs", async () => {
+    srv = await startServer(loadConfig({ dataDir: dir, dbPath: ':memory:', hookToken: 'hooktok', uiToken: 'u' }), { tail: false, listen: false, ci: false, security: false });
+    try {
+      const now = Date.now();
+      for (const id of ['sess-a', 'sess-b', 'sess-c', 'sess-d']) srv.store.upsertSession({ id, cwd: 'C:/work/x', state: 'idle', startedAt: now, lastTs: now } as never);
+      const color = (sid: string) => srv.store.getSession(sid)?.color;
+      const p = (await srv.app.inject({ method: 'POST', url: '/api/projects', headers: UI, payload: { name: 'Tags', color: '#3ddc97', sessionId: 'sess-a' } })).json().project;
+      await srv.app.inject({ method: 'POST', url: `/api/projects/${p.id}/sessions`, headers: UI, payload: { sessionId: 'sess-b' } });
+      expect(color('sess-a')).toBeFalsy();
+      await srv.app.inject({ method: 'PATCH', url: `/api/projects/${p.id}`, headers: UI, payload: { shade: true } });
+      expect([color('sess-a'), color('sess-b')]).toEqual(shadesOf('#3ddc97', 2));
+      // a new one: everyone's shade, the newcomer's too
+      await srv.app.inject({ method: 'POST', url: `/api/projects/${p.id}/sessions`, headers: UI, payload: { sessionId: 'sess-c' } });
+      expect(['sess-a', 'sess-b', 'sess-c'].map(color)).toEqual(shadesOf('#3ddc97', 3));
+      await srv.app.inject({ method: 'PATCH', url: `/api/projects/${p.id}`, headers: UI, payload: { color: '#60a5fa' } });
+      expect(['sess-a', 'sess-b', 'sess-c'].map(color)).toEqual(shadesOf('#60a5fa', 3));
+      await srv.app.inject({ method: 'DELETE', url: `/api/projects/${p.id}/sessions/sess-b`, headers: UI });
+      expect(['sess-a', 'sess-c'].map(color)).toEqual(shadesOf('#60a5fa', 2));
+      // off: nothing changes now or later
+      await srv.app.inject({ method: 'PATCH', url: `/api/projects/${p.id}`, headers: UI, payload: { shade: false } });
+      await srv.app.inject({ method: 'POST', url: `/api/projects/${p.id}/sessions`, headers: UI, payload: { sessionId: 'sess-d' } });
+      expect(color('sess-d')).toBeFalsy();
+      expect(['sess-a', 'sess-c'].map(color)).toEqual(shadesOf('#60a5fa', 2));
     } finally {
       await srv.close();
     }

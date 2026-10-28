@@ -1,4 +1,5 @@
 import { setWakeMuted, useWake } from '../lib/wake/controller';
+import { useTablet, useViewport } from '../lib/tablet';
 import { useWorktrees } from '../state/worktrees';
 import { useCoraLinksDriver, useReachHalo, useWidth } from './OrbReach';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -168,6 +169,10 @@ export function CoraEye() {
   const running = useOrch((s) => !!s.status?.running);
   const state = useCoraState();
   const latest = useLatest(agent);
+  // a phone's slim card (tablet mode on a narrow screen)
+  const tablet = useTablet();
+  const vw = useViewport().w;
+  const phone = tablet && vw < 640;
   const ptt = useVoice((v) => v.ptt);
   const voiceOn = useVoice((v) => v.settings.enabled && !!v.key?.set);
   const wakeOn = useVoice((v) => !!v.settings.wake);
@@ -237,7 +242,12 @@ export function CoraEye() {
       <div className="cb-orbit" style={halo ? ({ ['--reach' as string]: halo } as React.CSSProperties) : undefined}>
         {orb && halo ? <span className="cb-reach" /> : null}
         <button className="cb-lens" onClick={() => (held.current ? (held.current = false) : toggle())} title={orb ? 'Cora: open its console (hold it, or Ctrl+Space, to talk)' : 'Cora: open its console (hold Ctrl+Space to talk)'}>
-          {orb ? <CoraOrb state={state} size={104} agent={agent} away={control} onHold={holdTalk} glow={card} reach="cora" wide={cardW} master /> : <CoraLens state={state} size={64} progress={goal?.progress} />}
+          {orb ? (
+            // on a phone, a small orb in a slim card (the sessions below need the room): no crown, no reach across
+            phone ? <CoraOrb state={state} size={36} agent={agent} away={control} onHold={holdTalk} /> : <CoraOrb state={state} size={104} agent={agent} away={control} onHold={holdTalk} glow={card} reach="cora" wide={cardW} master />
+          ) : (
+            <CoraLens state={state} size={phone ? 36 : 64} progress={goal?.progress} />
+          )}
         </button>
         <Orbit />
         {/* with the orb: a goal's progress along the sessions' ring, out of the orb's way */}

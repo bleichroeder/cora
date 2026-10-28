@@ -1,0 +1,64 @@
+/* Cora's Slack banner (SlackBanner.tsx): 480×120, recorded pixel for pixel into a GIF */
+html.banner-page,
+html.banner-page body,
+html.banner-page #root {
+  background: transparent !important;
+  margin: 0;
+  overflow: hidden;
+}
+.slack-banner {
+  position: relative;
+  box-sizing: border-box;
+  width: 480px;
+  height: 120px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 22px 0 8px;
+  /* square, a bar in Cora's colour at its left edge: over the message's quote bar, one column (as Klepto's) */
+  border-left: 4px solid var(--cora);
+  overflow: hidden;
+  /* flat but for the orb's glow: a GIF's 255 colours band a long faint gradient */
+  background: radial-gradient(130px 120px at 58px 50%, color-mix(in srgb, var(--cora) 26%, transparent), transparent 70%), #0e0f15;
+  font-family: 'Figtree Variable', system-ui, sans-serif;
+  color: #eef0f6;
+}
+.slack-banner .sb-orb {
+  flex: none;
+  width: 100px;
+  height: 118px;
+  display: grid;
+  place-items: center;
+}
+.slack-banner .sb-words {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.slack-banner .sb-who {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 13px;
+  color: #9aa0b4;
+}
+.slack-banner .sb-who b {
+  color: var(--cora);
+  letter-spacing: 0.22em;
+  font-weight: 800;
+}
+.slack-banner .sb-line {
+  font-size: 18px;
+  font-weight: 650;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.slack-banner .sb-from {
+  font-size: 13px;
+  color: #8a90a4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

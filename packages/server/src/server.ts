@@ -41,6 +41,7 @@ import { createPipeline, type Pipeline } from './pipeline';
 import { Namer, wantsAutoName, type RunFn } from './namer';
 import { Registry } from './registry';
 import { Store } from './store';
+import { Banners, bannerWords } from './banner';
 import { PtyManager, type SpawnFn } from './pty';
 import type { PtyBackend } from './ptyhost/backend';
 import { hostedArgs } from './hosted';
@@ -81,6 +82,8 @@ export type Running = {
   live: LiveExplains;
   /** for the simulator (--sim): name a session as you would; show a stand-in Cora (no real agent starts) */
   sim: { name(sessionId: string, name: string): void; cora(status: OrchestratorStatus): void };
+  /** Cora's Slack banners (the desktop app makes them) */
+  banners: Banners;
   /** stop; terminals in the terminal host keep running unless `endTerminals` */
   close(o?: { endTerminals?: boolean }): Promise<void>;
 };
@@ -175,7 +178,9 @@ export async function startServer(config: Config, opts: { tail?: boolean; listen
   };
   const slackMsg = () => ({ t: 'slack' as const, status: slackStatus(), drafts: outbox.list(), sent: outbox.sent(), grants: outbox.grants(), ...(bot ? { bot: bot.status() } : {}) });
   const slack: Slack = new Slack({ dataDir: config.dataDir, ...(opts.slackApi ? { api: opts.slackApi } : {}), onChange: () => hub?.publishSlack(slackMsg()) });
-  const outbox: Outbox = new Outbox({ slack, sign: () => prefs.get().slack.sign, file: config.dbPath === ':memory:' ? undefined : join(config.dataDir, 'slack-grants.json'), draftsFile: config.dbPath === ':memory:' ? undefined : join(config.dataDir, 'slack-drafts.json'), onChange: () => (hub?.publishSlack(slackMsg()), void bot?.draftsChanged()), onUndo: (s) => orch?.feed.note(`The user took back the Slack message you just sent to ${s.to.label}; it's deleted.`) });
+  // Cora's banner on top of a message you send (the desktop app makes it)
+  const banners = new Banners();
+  const outbox: Outbox = new Outbox({ slack, sign: () => prefs.get().slack.sign, banner: async (d) => banners.render(bannerWords({ name: await slack.firstName().catch(() => ''), session: d.sessionId ? store.getSession(d.sessionId) : null, text: d.text, privateDir: config.dataDir })), file: config.dbPath === ':memory:' ? undefined : join(config.dataDir, 'slack-grants.json'), draftsFile: config.dbPath === ':memory:' ? undefined : join(config.dataDir, 'slack-drafts.json'), onChange: () => (hub?.publishSlack(slackMsg()), void bot?.draftsChanged()), onUndo: (s) => orch?.feed.note(`The user took back the Slack message you just sent to ${s.to.label}; it's deleted.`) });
   hub.slackSnapshot = slackMsg;
   // live events: threads sessions watch. A reply goes to the session (typed in when it's hosted here and free;
   // to Cora through what it hears), and to you (its row, a notification)
@@ -585,7 +590,7 @@ export async function startServer(config: Config, opts: { tail?: boolean; listen
   if (opts.listen !== false) worktrees.start();
   // sessions' debriefs (~/.cora/debriefs): made by their tool, played from the dashboard
   const debriefs = new Debriefs({ dir: join(config.dataDir, 'debriefs'), onChange: (sessionId) => hub.publishDebriefs({ t: 'debriefs', sessionId, list: debriefs.list(sessionId) }) });
-  const app = await buildApp({ config, store, hub, pipeline, pending, ptys, live: liveExplains, registry, prefs, voice, voiceFront, gmail, mailWatches, mailOutbox, ide, ideBridge, namer, tickets, jira, environments, deploys, notes, drafts, bot, inbox, ...(opts.claudeSettingsFile ? { claudeSettingsFile: opts.claudeSettingsFile } : {}), ...(opts.setupChecks ? { setupChecks: opts.setupChecks } : {}), onShutdown: opts.onShutdown, ci: () => ci, slack: { slack, outbox, live, cwdOf: (sid) => store.getSession(sid)?.cwd }, security: security ?? undefined, orchestrator: o, gitlabIssues, memes, sessionNames, lock, freeze, journal: { add: (sid, kind, text) => journalAdd(sid, kind, text), read: (sid) => journal.read(sid) }, debriefs, worktrees, vault, devices, remote, shares, door, synced, projects });
+  const app = await buildApp({ config, store, hub, pipeline, pending, ptys, live: liveExplains, registry, prefs, voice, voiceFront, gmail, mailWatches, mailOutbox, ide, ideBridge, namer, tickets, jira, environments, deploys, notes, drafts, bot, inbox, ...(opts.claudeSettingsFile ? { claudeSettingsFile: opts.claudeSettingsFile } : {}), ...(opts.setupChecks ? { setupChecks: opts.setupChecks } : {}), onShutdown: opts.onShutdown, ci: () => ci, slack: { slack, outbox, live, cwdOf: (sid) => store.getSession(sid)?.cwd }, security: security ?? undefined, orchestrator: o, gitlabIssues, memes, sessionNames, lock, freeze, journal: { add: (sid, kind, text) => journalAdd(sid, kind, text), read: (sid) => journal.read(sid) }, debriefs, worktrees, vault, devices, remote, shares, door, synced, projects, banners });
 
   let tailer: Tailer | undefined;
   if (opts.tail !== false) {
@@ -663,6 +668,7 @@ export async function startServer(config: Config, opts: { tail?: boolean; listen
   live.start();
 
   return {
+    banners,
     app,
     store,
     pipeline,

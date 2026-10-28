@@ -17,7 +17,7 @@ import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest }
 import cookie from '@fastify/cookie';
 import fastifyStatic from '@fastify/static';
 import websocket from '@fastify/websocket';
-import { INBOX_SOURCES, MAX_DRAFT_ASKS, ticketInPrompt, type TicketFacts, type PendingDecision, type LiveState, type LiveAsk, type ProjectWake, type ServerMsg, type SessionInfo, type SessionTicket, JIRA_EVENT_KINDS, type JiraEvent, type JiraEventKind, type JiraWatchStatus, HELLO_PREFIX, artifactUrl, debriefMarkdown, debriefSpan, gateDecision, recapText, inScope, mask, BROWSER_PROFILE_ID, CORA_RELEASES, displayName } from '@cora/shared';
+import { INBOX_SOURCES, MAX_DRAFT_ASKS, ticketInPrompt, type TicketFacts, type PendingDecision, type LiveState, type LiveAsk, type ProjectWake, type ServerMsg, type SessionInfo, type SessionTicket, JIRA_EVENT_KINDS, type JiraEvent, type JiraEventKind, type JiraWatchStatus, HELLO_PREFIX, artifactUrl, debriefMarkdown, debriefSpan, gateDecision, recapText, inScope, mask, BROWSER_PROFILE_ID, CORA_RELEASES, displayName, shadesOf } from '@cora/shared';
 import { checkOptions, checkPrompt, launchArgs } from './launch';
 import { checkSummary, checkTicket, type Tickets } from './tickets';
 import { summarizeUsage } from './usage';
@@ -40,6 +40,7 @@ import type { PublicStatus, Remote } from './remote';
 import { LIVE_AREAS, type LiveArea, type LiveGuest, type LiveMode, type Shares } from './shares';
 import type { Door } from './door';
 import { RemoteBrowser } from './remoteBrowser';
+import type { Banners } from './banner';
 import type { Worktrees } from './worktrees';
 import { runWithSecrets, type Vault } from './vault';
 import { SlackError, slackManifest } from './slack';
@@ -83,6 +84,8 @@ import { join as joinPath } from 'node:path';
 const LAUNCH_ANSWER_MS = 40_000;
 
 export type AppDeps = {
+  /** Cora's Slack banner: the desktop app's link that makes them */
+  banners?: Banners;
   /** GitLab issues (tests give their own) */
   gitlabIssues?: GitlabIssues;
   /** the Vibes panel */
@@ -1049,12 +1052,12 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
       return reply.code(400).send({ error: slackErr(e) });
     }
   });
-  app.post<{ Params: { id: string }; Body: { action?: string; text?: string; to?: unknown } }>('/api/slack/drafts/:id', { preHandler: requireAction }, async (req, reply) => {
+  app.post<{ Params: { id: string }; Body: { action?: string; text?: string; to?: unknown; banner?: unknown } }>('/api/slack/drafts/:id', { preHandler: requireAction }, async (req, reply) => {
     if (!sl) return reply.code(501).send({ error: 'not supported' });
     const b = req.body ?? {};
     if (!['send', 'discard', 'opened'].includes(String(b.action))) return reply.code(400).send({ error: 'action must be send|discard|opened' });
     const to = b.to && typeof b.to === 'object' && typeof (b.to as any).id === 'string' && typeof (b.to as any).label === 'string' ? (b.to as any) : undefined;
-    const r = await sl.outbox.decide(req.params.id, { action: b.action as 'send' | 'discard' | 'opened', ...(typeof b.text === 'string' ? { text: b.text } : {}), ...(to ? { to } : {}) });
+    const r = await sl.outbox.decide(req.params.id, { action: b.action as 'send' | 'discard' | 'opened', ...(typeof b.text === 'string' ? { text: b.text } : {}), ...(to ? { to } : {}), ...(typeof b.banner === 'boolean' ? { banner: b.banner } : {}) });
     return r.ok ? r : reply.code(r.error?.startsWith('not found') ? 404 : 400).send(r);
   });
 
@@ -2352,6 +2355,13 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
         if (!sameSecret(req.query.key ?? hookToken(req), config.hookToken)) return reply.code(401).send({ error: 'bad token' });
       },
     }, (socket) => rb.attachDesktop(socket as never));
+    // the desktop app's link that makes Cora's Slack banners (this PC only: Cora's local key)
+    app.get<{ Querystring: { key?: string } }>('/api/local/banner', {
+      websocket: true,
+      preValidation: async (req, reply) => {
+        if (!sameSecret(req.query.key ?? hookToken(req), config.hookToken)) return reply.code(401).send({ error: 'bad token' });
+      },
+    }, (socket) => (d.banners ? d.banners.attachDesktop(socket as never) : socket.close(1008, 'no banners here')));
   }
 
   /**
@@ -2444,7 +2454,18 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
     if (!projects) return;
     const wakes = new Map<string, ProjectWake>();
     const publish = () => hub.publishProjects({ t: 'projects', projects: projects.list(), wakes: [...wakes.values()] });
-    projects.onChange = publish;
+    /** a project's shading on: each of its sessions in its shade of the project's colour (as they join, leave, recolour) */
+    const reshade = () => {
+      for (const p of projects.list()) {
+        if (!p.shade) continue;
+        const ids = p.sessions.filter((sid) => store.getSession(sid));
+        const shades = shadesOf(p.color, ids.length);
+        ids.forEach((sid, i) => {
+          if (store.getSession(sid)?.color?.toLowerCase() !== shades[i].toLowerCase()) hub.publishSession(store.upsertSession({ id: sid, color: shades[i] }));
+        });
+      }
+    };
+    projects.onChange = () => (reshade(), publish());
     hub.projectsSnapshot = () => ({ t: 'projects', projects: projects.list(), wakes: [...wakes.values()] });
     /** A post that may wake idle members (handoffs and questions to ones that wake): a card each, for you. */
     projectWakes = (pid, post) => {
