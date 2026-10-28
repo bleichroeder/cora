@@ -84,6 +84,8 @@ export class HostBackend extends Emitter implements PtyBackend {
   private live = new Set<string>();
   private closing = false;
   lost = false;
+  /** told when the host goes away (not when this server closes it) */
+  onLost?: () => void;
   private constructor(private sock: Socket, readonly restored: HostTerm[], readonly hostPid: number) {
     super();
     for (const t of restored) if (t.alive) this.live.add(t.id);
@@ -93,6 +95,7 @@ export class HostBackend extends Emitter implements PtyBackend {
       this.lost = true;
       for (const id of this.live) this.exit(id, -1);
       this.live.clear();
+      this.onLost?.();
     });
   }
 
@@ -147,6 +150,99 @@ export class HostBackend extends Emitter implements PtyBackend {
     this.closing = true;
     if (endTerminals) sendLine(this.sock, { t: 'shutdown' });
     await new Promise<void>((res) => this.sock.end(res));
+  }
+}
+
+/**
+ * The terminal host, kept: when it goes away (it crashed, or was ended), its terminals end as before, and Cora
+ * connects to a new one (starting it), so what's started next runs. Anything started while it's away waits for it;
+ * if no host can be started, it ends at once, saying why (in its terminal and the server's log) instead of nothing.
+ */
+export class HealingHostBackend extends Emitter implements PtyBackend {
+  readonly persistent = true;
+  readonly restored: HostTerm[];
+  private cur: HostBackend | null;
+  private queue: Array<() => void> = [];
+  private healing: Promise<void> | null = null;
+  private closing = false;
+  /** the host it started with is gone (sticky: the frozen terminals stay frozen) */
+  lost = false;
+  constructor(
+    first: HostBackend,
+    private reconnect: () => Promise<HostBackend>,
+    private log: (m: string) => void = () => {},
+  ) {
+    super();
+    this.restored = first.restored;
+    this.cur = this.adopt(first);
+  }
+  get hostPid(): number | undefined {
+    return this.cur?.hostPid;
+  }
+
+  private adopt(b: HostBackend): HostBackend {
+    b.onData((id, d) => this.data(id, d));
+    b.onExit((id, code) => this.exit(id, code));
+    b.onLost = () => {
+      if (this.cur !== b) return;
+      this.lost = true;
+      this.cur = null;
+      this.log('terminal host went away: starting a new one');
+      void this.heal();
+    };
+    return b;
+  }
+
+  /** A new host (a few tries); what waited for it then goes. */
+  private heal(): Promise<void> {
+    this.healing ??= (async () => {
+      let err: unknown;
+      for (let i = 0; i < 4 && !this.closing; i++) {
+        try {
+          this.cur = this.adopt(await this.reconnect());
+          this.log('terminal host back');
+          const q = this.queue;
+          this.queue = [];
+          for (const f of q) f();
+          return;
+        } catch (e) {
+          err = e;
+          await new Promise((r) => setTimeout(r, 1000 * (i + 1)));
+        }
+      }
+      // none: what waited ends, saying why
+      const why = (err as Error)?.message ?? 'it did not start';
+      this.log(`terminal host could not be started again: ${why}`);
+      const q = this.queue;
+      this.queue = [];
+      for (const f of q) f();
+    })().finally(() => (this.healing = null));
+    return this.healing;
+  }
+
+  spawn(id: string, file: string, args: string[], o: SpawnOpts, meta: TermMeta): void {
+    const go = () => {
+      if (this.cur) return this.cur.spawn(id, file, args, o, meta);
+      // no host: it ends at once, and says why
+      this.data(id, `\r\n[cora: the terminal host isn't running, so ${file} couldn't start. Restarting Cora starts it again.]\r\n`);
+      this.exit(id, -1);
+    };
+    if (this.cur) return go();
+    this.queue.push(go);
+    void this.heal();
+  }
+  write(id: string, d: string) {
+    this.cur?.write(id, d);
+  }
+  resize(id: string, cols: number, rows: number) {
+    this.cur?.resize(id, cols, rows);
+  }
+  kill(id: string) {
+    this.cur?.kill(id);
+  }
+  async close(endTerminals: boolean): Promise<void> {
+    this.closing = true;
+    await this.cur?.close(endTerminals);
   }
 }
 

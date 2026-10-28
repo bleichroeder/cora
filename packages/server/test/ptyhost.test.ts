@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { startHost, type Host } from '../src/ptyhost/host';
-import { HostBackend, connectOrStartHost } from '../src/ptyhost/backend';
+import { HealingHostBackend, HostBackend, connectOrStartHost } from '../src/ptyhost/backend';
 import { socketPath } from '../src/ptyhost/protocol';
 import type { PtyLike, SpawnFn } from '../src/ptyhost/spawn';
 import { PtyManager } from '../src/pty';
@@ -211,4 +211,43 @@ describe('PtyManager over the terminal host', () => {
     expect(ptys[0].killed).toBe(true);
     await pm2.disposeAll(false);
   });
+});
+
+describe('the terminal host, kept', () => {
+  it('goes away: its terminals end, a new host is started, and what was launched meanwhile runs there', async () => {
+    const a = await fixture();
+    const b = await fixture();
+    const first = await HostBackend.connect(a.path, TOKEN);
+    let tries = 0;
+    const logs: string[] = [];
+    const be = new HealingHostBackend(first, () => (tries++, HostBackend.connect(b.path, TOKEN)), (m) => logs.push(m));
+    const exits: Array<[string, number]> = [];
+    be.onExit((id, code) => exits.push([id, code]));
+    be.spawn('t1', 'claude', [], opts, meta);
+    await until(() => a.ptys.length === 1);
+    await a.host.close();
+    // it ends (the host ends it, or its going does)
+    await until(() => exits.length === 1 && be.lost);
+    expect(exits.map(([id]) => id)).toEqual(['t1']);
+    // launched while it's coming back: it runs on the new host
+    be.spawn('t2', 'claude', [], opts, meta);
+    await until(() => b.ptys.length === 1);
+    expect(tries).toBe(1);
+    expect(logs.join(' ')).toMatch(/went away.*back/);
+    await be.close(true);
+  });
+
+  it("no host can be started: what's launched ends at once, saying why", async () => {
+    const a = await fixture();
+    const be = new HealingHostBackend(await HostBackend.connect(a.path, TOKEN), () => Promise.reject(new Error('no node')), () => {});
+    const said: string[] = [];
+    const exits: Array<[string, number]> = [];
+    be.onData((_id, d) => said.push(d));
+    be.onExit((id, code) => exits.push([id, code]));
+    await a.host.close();
+    await until(() => be.lost);
+    be.spawn('t3', 'claude', [], opts, meta);
+    await until(() => exits.some(([id]) => id === 't3'), 15_000);
+    expect(said.join('')).toMatch(/terminal host isn't running, so claude couldn't start/);
+  }, 20_000);
 });

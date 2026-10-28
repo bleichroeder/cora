@@ -4,6 +4,14 @@ What changed in each release. Cora updates itself; each update's notes are on it
 
 ## Unreleased
 
+## 0.1.14
+
+- **Cora recovers when its terminal host goes away.** The host (it keeps your sessions running across Cora restarts)
+  could die while Cora kept running; after that, every session and Cora's own agent started into nothing: Cora stuck
+  on "Waking up", new sessions vanishing. Cora now starts a new host by itself, and anything launched meanwhile runs
+  there. If none can start, the launch says why instead of nothing.
+- Cora's agent stopping is logged with its last words on screen.
+
 ## 0.1.13
 
 - **Cora's first start in a new folder can say yes.** Claude Code's "trust this folder?" has options without numbers

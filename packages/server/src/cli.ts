@@ -8,7 +8,7 @@ import { createInterface } from 'node:readline/promises';
 import { legacyDataDirs, loadConfig, retireLoggedKey, type Config } from './config';
 import { startServer } from './server';
 import { isScreenError, rebuildScreens } from './screen';
-import { connectOrStartHost, type PtyBackend } from './ptyhost/backend';
+import { connectOrStartHost, HealingHostBackend, type PtyBackend } from './ptyhost/backend';
 import { computeHooksBlock, diffText, hooksAimed, isOurs, legacyHooks, mergeHooks, readSettings, removeHooks, settingsPath, shortHooks, writeSettings } from './settings';
 import { stage } from './stages';
 
@@ -73,7 +73,9 @@ async function start() {
       const dist = dirname(fileURLToPath(import.meta.url));
       // installed Cora: the host runs on the bundled Node, from a copy in ~/.cora/runtime (never the install folder)
       const installed = process.env.CORA_HOST_NODE ? hostRuntime({ dataDir: config.dataDir, node: process.env.CORA_HOST_NODE, distDir: dist, modulesDir: join(dist, '..', '..', '..', 'node_modules') }) : null;
-      ptyBackend = await connectOrStartHost({ dataDir: config.dataDir, legacyDataDirs: legacyDataDirs(config.dataDir), token: config.hostToken, olderTokens: [config.hookToken], hostScript: installed?.script ?? join(dist, 'ptyhost.js'), ...(installed ? { hostNode: installed.node } : {}), log: (m) => console.log(`  ${m}`) });
+      const hostOpts = { dataDir: config.dataDir, legacyDataDirs: legacyDataDirs(config.dataDir), token: config.hostToken, olderTokens: [config.hookToken], hostScript: installed?.script ?? join(dist, 'ptyhost.js'), ...(installed ? { hostNode: installed.node } : {}), log: (m: string) => console.log(`  ${m}`) };
+      // kept: if the host goes away while Cora runs, a new one is started (what's launched then still runs)
+      ptyBackend = new HealingHostBackend(await connectOrStartHost(hostOpts), () => connectOrStartHost(hostOpts), (m) => console.log(`  ${m}`));
       const kept = ptyBackend.restored.filter((t) => t.alive).length;
       if (kept) console.log(`  reattached ${kept} running terminal(s)`);
       stage('host', 'done', { kept });

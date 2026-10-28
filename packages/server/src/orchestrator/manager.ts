@@ -445,6 +445,9 @@ export class OrchestratorManager {
     // a worker's terminal closing is news (it may not have said anything Cora would hear)
     if (!isShell(t) && this.goals.isWorker(t.sessionId) && this.goals.active()) this.feed.note(`"${this.d.nameOf?.(t.sessionId) ?? t.sessionId.slice(0, 8)}" (${t.sessionId}) exited: its terminal closed.`);
     if (!this.isAgent(t.sessionId) || isShell(t)) return;
+    // why it stopped, in the log (its last words on screen): an agent that can't start shouldn't only say "started"
+    const last = (this.d.ptys.screenLines(t.terminalId) ?? []).map((l) => l.trim()).filter(Boolean).slice(-3).join(' | ');
+    this.d.log?.(`orchestrator: exited (${t.exitCode ?? '?'})${last ? `: ${last.slice(0, 300)}` : ''}`);
     if (!this.enabled()) return this.changed();
     const now = this.now();
     this.exits = [...this.exits.filter((x) => now - x < EXIT_WINDOW_MS), now];
