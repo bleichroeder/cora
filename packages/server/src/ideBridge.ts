@@ -1,4 +1,5 @@
 import { randomBytes } from 'node:crypto';
+import type { Debrief } from '@cora/shared';
 
 /**
  * Cora and the IDE panel's VS Code talking (the Cora extension in it): Cora asks a window open on a folder to open a
@@ -8,7 +9,84 @@ import { randomBytes } from 'node:crypto';
 export type IdeCmd =
   | { kind: 'open'; path: string; line?: number }
   /** a turn's change to a file: the file as it was at `from` (Claude Code's snapshot) against the file now */
-  | { kind: 'diff'; path: string; sessionId: string; from: number; to?: number | null; title: string };
+  | { kind: 'diff'; path: string; sessionId: string; from: number; to?: number | null; title: string }
+  /** a debrief's step: its file (or, a step about no file, a page of the debrief's outline), its lines lit, the bubble */
+  | DebriefStepCmd
+  | { kind: 'debrief.end' }
+  /** the session's answer to a question asked in the bubble */
+  | { kind: 'debrief.reply'; text: string };
+
+export type DebriefStepCmd = {
+  kind: 'debrief.step';
+  sessionId: string;
+  id: string;
+  /** the session's name (the bubble's author) */
+  name: string;
+  index: number;
+  total: number;
+  /** `3 / 7 · The fix` */
+  header: string;
+  /** the step's kind (change, test, risk…), beside the author */
+  label: string;
+  path?: string;
+  /** a step about no file: the page it's shown on (the debrief's outline) */
+  doc?: string;
+  /** the step's lines, and the beat's (1-based, inclusive) */
+  range?: [number, number];
+  beatRange?: [number, number];
+  /** show the file against how it was before the work (Cora kept it) */
+  before?: boolean;
+  beats: string[];
+  beat: number;
+  why?: string;
+  links?: Array<{ title: string; url: string }>;
+  playing: boolean;
+  speak: boolean;
+};
+
+/** How many steps a debrief plays: its steps, and Teach me's quiz after them. */
+export const debriefLength = (d: Pick<Debrief, 'steps' | 'quiz'>) => d.steps.length + (d.quiz?.length ? 1 : 0);
+
+/** A kept debrief's step, as the IDE draws it. */
+export function debriefStepCmd(d: Debrief, index: number, beat: number, o: { name: string; playing: boolean; speak: boolean }): DebriefStepCmd {
+  const total = debriefLength(d);
+  if (index >= d.steps.length && d.quiz?.length) {
+    // Teach me's quiz, after the steps: its questions in the bubble; answers typed in its reply box go to the session
+    const qs = d.quiz.map((q, i) => `${i + 1}. ${q.q}${['', ...q.options.map((x, j) => `   ${'abcde'[j]}) ${x}`)].join('  \n')}`);
+    const doc = [`# ${d.title}`, '', 'Check your understanding: answer below, and the session tells you how you did.', ''].join('\n');
+    return { kind: 'debrief.step', sessionId: d.sessionId, id: d.id, name: o.name, index, total, header: `${total} / ${total} · Check your understanding`, label: 'quiz', doc, range: [3, 3], beats: qs, beat: Math.min(beat, qs.length - 1), playing: o.playing, speak: o.speak };
+  }
+  const st = d.steps[index];
+  const b = st.beats[beat] ? beat : 0;
+  let doc: string | undefined;
+  let range = st.range;
+  if (!st.path) {
+    // a step about no file: a page with the task and the steps, this one's line lit and the bubble under it
+    const lines = [`# ${d.title}`, '', d.task, '', ...d.steps.map((x, i) => `${i + 1}. ${x.title}`), ''];
+    doc = lines.join('\n');
+    range = [5 + index, 5 + index];
+  }
+  return {
+    kind: 'debrief.step',
+    sessionId: d.sessionId,
+    id: d.id,
+    name: o.name,
+    index,
+    total,
+    header: `${index + 1} / ${total} · ${st.title}`,
+    label: st.kind,
+    ...(st.path ? { path: st.path } : { doc }),
+    ...(range ? { range } : {}),
+    ...(st.path && st.beats[b].range ? { beatRange: st.beats[b].range } : {}),
+    ...(st.diff && d.snaps[index]?.before != null ? { before: true } : {}),
+    beats: st.beats.map((x) => x.text),
+    beat: b,
+    ...(st.why ? { why: st.why } : {}),
+    ...(st.links?.length ? { links: st.links } : {}),
+    playing: o.playing,
+    speak: o.speak,
+  };
+}
 
 /** A folder as both sides write it: forward slashes, no trailing slash, any case. */
 export const folderKey = (p: string) => p.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();

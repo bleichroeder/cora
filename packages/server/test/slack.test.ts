@@ -5,7 +5,7 @@ import Fastify from 'fastify';
 import { afterEach, describe, expect, it } from 'vitest';
 import { DEFAULT_SETTINGS, parseSlackLink, rankByName, slackWebUrl, toMrkdwn } from '@cora/shared';
 import { registerMcp } from '../src/mcp';
-import { Outbox, Slack, SlackError, slackApi } from '../src/slack';
+import { Outbox, Slack, SlackError, sections, slackApi } from '../src/slack';
 import { applyPatch } from '../src/prefs';
 import { readSecret } from '../src/secrets';
 
@@ -200,23 +200,29 @@ describe('the outbox', () => {
     expect((await outbox.decide(d.id, { action: 'send' })).ok).toBe(false);
   });
 
-  it("signs what Cora sends for you (once, at the end); never what you typed yourself", async () => {
+  it("marks what Cora sends for you with a line under it (your sign-off, on your behalf); never what you typed yourself", async () => {
     const { slack, posted } = await connected();
     let sign = ':cora:';
     const outbox = new Outbox({ slack, onChange: () => {}, sign: () => sign });
     const to = { kind: 'channel' as const, id: 'C1', label: '#deploys' };
     const out = outbox.request({ sessionId: 's1', to, text: 'Deployed 2.10' });
     await outbox.decide(outbox.list()[0].id, { action: 'send' });
-    expect(posted[0].text).toBe('Deployed 2.10 :cora:');
+    // the message as written; under it, Slack's small grey line
+    expect(posted[0].text).toBe('Deployed 2.10');
+    expect(posted[0].blocks).toEqual([
+      { type: 'section', text: { type: 'mrkdwn', text: 'Deployed 2.10' } },
+      { type: 'context', elements: [{ type: 'mrkdwn', text: ":cora:  Sent from Cora on David's behalf" }] },
+    ]);
     // what the session hears is what it wrote
     expect(await out).toMatchObject({ sent: true, text: 'Deployed 2.10', edited: false });
-    await outbox.sendNow({ to, text: 'On it :cora:', own: true });
-    expect(posted[1].text).toBe('On it :cora:');
+    await outbox.sendNow({ to, text: 'On it', own: true });
+    expect(posted[1].blocks.at(-1).type).toBe('context');
     await outbox.sendNow({ to, text: 'Thanks, will look', typed: true });
-    expect(posted[2].text).toBe('Thanks, will look');
+    expect(posted[2]).toMatchObject({ text: 'Thanks, will look' });
+    expect(posted[2].blocks).toBeUndefined();
     sign = '';
     await outbox.sendNow({ to, text: 'No sign-off' });
-    expect(posted[3].text).toBe('No sign-off');
+    expect(posted[3].blocks).toBeUndefined();
     expect(() => applyPatch(DEFAULT_SETTINGS, { slack: { sign: 'x'.repeat(41) } })).toThrow(/slack.sign/);
     expect(applyPatch(DEFAULT_SETTINGS, { slack: { sign: ' :robot_face: ' } }).slack).toEqual({ follow: [], sign: ':robot_face:' });
     expect(DEFAULT_SETTINGS.slack.sign).toBe(':cora:');
@@ -580,5 +586,15 @@ describe('images on Slack messages', () => {
     // the huge one isn't even fetched; what is fetched carries the token
     expect(fetched.map((f) => f.url.split('/').pop()).sort()).toEqual(['private.png', 'shot.png']);
     expect(fetched.every((f) => f.auth === 'Bearer xoxp-good')).toBe(true);
+  });
+});
+
+describe('a long message in blocks', () => {
+  it('is split between paragraphs into sections of at most 3000 characters', () => {
+    const para = 'x'.repeat(1400);
+    const parts = sections([para, para, para].join('\n\n'));
+    expect(parts.length).toBe(2);
+    expect(parts.every((p) => p.text.text.length <= 3000)).toBe(true);
+    expect(parts.map((p) => p.text.text).join('\n\n')).toBe([para, para, para].join('\n\n'));
   });
 });

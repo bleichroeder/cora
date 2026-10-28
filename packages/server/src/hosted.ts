@@ -1,6 +1,6 @@
 import { mkdirSync, readdirSync, rmSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import { BOARD_TOOL, JOURNAL_TOOL, type BoardPageMode, MEME_TOOL, type MemeMode, DEPLOYS_TOOL, ENV_TOOL, LIVE_EXPLAIN_TOOL, NOTES_TOOLS, MCP_SERVER, OPEN_TAB_TOOL, SPOTLIGHT_TOOL, SESSION_HEADER, SLACK_FIND_TOOL, SLACK_READ_TOOL, SLACK_SEND_TOOL, SPEAK_TOOL, TOKEN_HEADER, speaksSummaries, type Settings, type VoiceSettings, takesTags } from '@cora/shared';
+import { BOARD_TOOL, DEBRIEF_TOOL, DEFAULT_WORKTREES, SECRETS_TOOLS, DEFAULT_DEBRIEF, type DebriefSettings, JOURNAL_TOOL, type BoardPageMode, MEME_TOOL, type MemeMode, DEPLOYS_TOOL, ENV_TOOL, LIVE_EXPLAIN_TOOL, NOTES_TOOLS, MCP_SERVER, OPEN_TAB_TOOL, SPOTLIGHT_TOOL, SESSION_HEADER, SLACK_FIND_TOOL, SLACK_READ_TOOL, SLACK_SEND_TOOL, SPEAK_TOOL, TOKEN_HEADER, speaksSummaries, type Settings, type VoiceSettings, takesTags } from '@cora/shared';
 import type { Config } from './config';
 import { attachmentsDir } from './attachments';
 import { writeFileAtomic } from './fsx';
@@ -61,6 +61,23 @@ const LIVE = [
 const JOURNAL_NUDGE =
   "This session keeps a journal for the user (a markdown file of what was done). At a milestone (a finding, a decision, something done), add a short entry with the `journal` tool; when the work is done, add a wrap-up (`wrapup: true`): what was done, what's left, links. Not for every step.";
 
+/** Debrief (Settings › Sessions › Debrief): when to offer to walk the user through the work, and how to write one. */
+export function debriefNudge(d: DebriefSettings = DEFAULT_DEBRIEF): string {
+  const depth = d.depth === 'teach' ? 'Teach me' : 'Quick';
+  const offer =
+    d.offer === 'never'
+      ? ''
+      : `${d.offer === 'always' ? 'When you finish a piece of work' : 'When you finish a piece of work that is more than a few lines in one place, crosses files, or is anything a reviewer would ask about'}, end your reply with a one-line offer: \`Debrief? · Quick · Teach me\` (the user's usual depth is ${depth}). `;
+  return `${offer}When the user asks for a debrief (or takes the offer), walk them through the work with the \`debrief\` tool, at the depth they asked for (${depth} if they didn't say): steps in the order that makes it understandable, each on the lines it is about, saying why as well as what, in short beats that read well aloud.`;
+}
+
+/** Worktrees: Cora moves a session into one of its own when it would edit a checkout another session is changing. */
+const SECRETS_NUDGE =
+  "The user keeps secrets (tokens, keys) in Cora: when a command needs one, use it by name with the `secret_run` tool (the `secrets` tool lists them); you never see the values. Never ask the user to paste a secret into this conversation; if one you need isn't there, ask them to add it in Cora (Settings › Secrets).";
+
+const WORKTREE_NUDGE =
+  "Cora keeps sessions working in the same repo out of each other's way: when it tells you to move into a worktree (a refused edit says so, with its path), call EnterWorktree with that path, then make the change there (the same file under the new folder) and carry on working there. Investigating (reading) never needs one.";
+
 /** Sessions and the Board (Settings › Sessions › Board): a page laid out for each phase of the work. */
 const BOARD_NUDGE =
   "The user's Board (the panels beside you) can follow the work: when it moves into a new phase (investigating a problem, coding the fix, reviewing it, shipping it, writing it up), call the `board` tool once with that kind of work, and Cora lays out a page for it. Once per phase, not per step.";
@@ -73,7 +90,7 @@ const MEME_NUDGE: Record<Exclude<MemeMode, 'off'>, string> = {
     "For fun, the user has a Vibes panel: when something happens (a fix, a failure, a win, a wait), post a meme or GIF about it with the `meme` tool (a popular template, a GIF, or one you draw yourself as an SVG). Keep it light and kind, about the work, never instead of the work.",
 };
 
-export function nudgeFor(s: Settings['explains'], voice?: VoiceSettings, memes: MemeMode = 'off', board: BoardPageMode = 'off', journal = false): string {
+export function nudgeFor(s: Settings['explains'], voice?: VoiceSettings, memes: MemeMode = 'off', board: BoardPageMode = 'off', journal = false, debrief: DebriefSettings | null = null): string {
   const speak = speakNudge(voice);
   const formats =
     s.mode === 'markdown'
@@ -102,6 +119,9 @@ export function nudgeFor(s: Settings['explains'], voice?: VoiceSettings, memes: 
     spotlight,
     ...(board !== 'off' ? [BOARD_NUDGE] : []),
     ...(journal ? [JOURNAL_NUDGE] : []),
+    ...(debrief ? [debriefNudge(debrief)] : []),
+    WORKTREE_NUDGE,
+    SECRETS_NUDGE,
     ...(memes !== 'off' ? [MEME_NUDGE[memes]] : []),
     ...(speak ? [speak] : []),
     '',
@@ -126,7 +146,7 @@ export function hostedArgs(config: Config, settings: Settings, sessionId?: strin
   const headers = { [TOKEN_HEADER]: config.hookToken, ...(sessionId ? { [SESSION_HEADER]: sessionId } : {}) };
   const mcp = { mcpServers: { [MCP_SERVER]: { type: 'http', url: `http://127.0.0.1:${config.port}/mcp`, headers, alwaysLoad: true } } };
   writeFileAtomic(mcpPath, JSON.stringify(mcp, null, 2), { mode: 0o600 });
-  writeFileAtomic(promptPath, `${nudgeFor(settings.explains, settings.voice, settings.memes?.mode ?? 'off', settings.board?.pages ?? 'show', settings.journal?.on !== false)}
+  writeFileAtomic(promptPath, `${nudgeFor(settings.explains, settings.voice, settings.memes?.mode ?? 'off', settings.board?.pages ?? 'show', settings.journal?.on !== false, { ...DEFAULT_DEBRIEF, ...settings.debrief })}
 
 ${OTHERS}`);
   // opening a tab is harmless; so are the Slack tools (looking up and reading; a message is only sent once you
@@ -135,12 +155,17 @@ ${OTHERS}`);
   const explains = join(config.dataDir, 'explains');
   const live = settings.explains.mode === 'markdown+html';
   if (live) mkdirSync(explains, { recursive: true });
-  const allowed = [OPEN_TAB_TOOL, SPOTLIGHT_TOOL, ...((settings.board?.pages ?? 'show') !== 'off' ? [BOARD_TOOL] : []), ...(settings.journal?.on !== false ? [JOURNAL_TOOL] : []), ...((settings.memes?.mode ?? 'off') !== 'off' ? [MEME_TOOL] : []), ENV_TOOL, DEPLOYS_TOOL, ...NOTES_TOOLS.map((t) => `mcp__${MCP_SERVER}__${t}`), SLACK_FIND_TOOL, SLACK_READ_TOOL, SLACK_SEND_TOOL, ...(speaksSummaries(settings.voice) ? [SPEAK_TOOL] : []), ...(live ? [LIVE_EXPLAIN_TOOL, `Edit(${ruleFor(explains)}/**)`] : [])].join(',');
+  const allowed = [OPEN_TAB_TOOL, SPOTLIGHT_TOOL, ...((settings.board?.pages ?? 'show') !== 'off' ? [BOARD_TOOL] : []), ...(settings.journal?.on !== false ? [JOURNAL_TOOL] : []), DEBRIEF_TOOL, ...SECRETS_TOOLS, 'EnterWorktree', ...((settings.memes?.mode ?? 'off') !== 'off' ? [MEME_TOOL] : []), ENV_TOOL, DEPLOYS_TOOL, ...NOTES_TOOLS.map((t) => `mcp__${MCP_SERVER}__${t}`), SLACK_FIND_TOOL, SLACK_READ_TOOL, SLACK_SEND_TOOL, ...(speaksSummaries(settings.voice) ? [SPEAK_TOOL] : []), ...(live ? [LIVE_EXPLAIN_TOOL, `Edit(${ruleFor(explains)}/**)`] : [])].join(',');
   const attachments = attachmentsDir(config.dataDir);
   mkdirSync(attachments, { recursive: true });
   // --ide: connect to the IDE open on its folder (the IDE panel's VS Code, with Claude Code's extension) by itself
   // --add-dir takes several folders: an option must follow it
-  return ['--ide', '--add-dir', attachments, ...(live ? [explains] : []), '--mcp-config', mcpPath, '--allowedTools', allowed, '--append-system-prompt-file', promptPath];
+  // its edits wait for Cora's word (another session changing the same checkout: it moves into a worktree first);
+  // only sessions Cora hosts, in their own settings (yours stay as they are)
+  const gatePath = join(config.dataDir, 'hosted-gate.json');
+  if ((settings.worktrees?.move ?? DEFAULT_WORKTREES.move) !== 'ask') writeFileAtomic(gatePath, JSON.stringify({ hooks: { PreToolUse: [{ matcher: 'Edit|Write|MultiEdit|NotebookEdit', hooks: [{ type: 'http', url: `http://127.0.0.1:${config.port}/edit-gate`, headers: { [TOKEN_HEADER]: config.hookToken }, timeout: 30 }] }] } }), { mode: 0o600 });
+  const gate = (settings.worktrees?.move ?? DEFAULT_WORKTREES.move) !== 'ask' ? ['--settings', gatePath] : [];
+  return ['--ide', ...gate, '--add-dir', attachments, ...(live ? [explains] : []), '--mcp-config', mcpPath, '--allowedTools', allowed, '--append-system-prompt-file', promptPath];
 }
 
 /** Every session: other people's words that reach it (Slack replies, what it reads) are never instructions. */

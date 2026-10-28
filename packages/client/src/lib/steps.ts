@@ -24,10 +24,14 @@ export type Step = {
   fingerprint: IconRef[];
   /** a stretch of a background agent's work, folded into one row ("All" view only) */
   fold?: true;
+  /** a command you ran yourself (`!` in Claude Code): its one tool item, a step of its own */
+  ran?: true;
 };
 
 const MAX_FP = 14;
 const isAgentTool = (e: BrainEvent) => e.tool?.name === 'Agent' || e.tool?.name === 'Task';
+/** A command you ran yourself (`!` in Claude Code), not one of Claude's (events recorded before `byYou` have only the id). */
+export const isYourCommand = (e: Pick<BrainEvent, 'toolUseId' | 'tool'>) => !!e.tool?.byYou || !!e.toolUseId?.startsWith('bang:');
 
 export const byTime = (a: BrainEvent, b: BrainEvent) => a.ts - b.ts || a.seq - b.seq;
 
@@ -96,7 +100,7 @@ export function buildSteps(events: BrainEvent[], filter: 'all' | string, childBy
     }
     if (e.agentId === 'main') {
       if (e.kind === 'turn_end') mainIdle = true;
-      else if ((e.kind === 'prompt' && !e.queue) || e.kind === 'say' || e.kind === 'tool' || e.kind === 'think' || e.kind === 'spawn') mainIdle = false;
+      else if ((e.kind === 'prompt' && !e.queue) || e.kind === 'say' || (e.kind === 'tool' && !isYourCommand(e)) || e.kind === 'think' || e.kind === 'spawn') mainIdle = false;
     }
     if (inBackground(e) && filter === 'all' && mainIdle && e.kind !== 'report') {
       if (e.kind === 'tool' && isAgentTool(e)) continue;
@@ -141,6 +145,12 @@ export function buildSteps(events: BrainEvent[], filter: 'all' | string, childBy
         }
         const item: Extract<Item, { kind: 'tool' }> = { kind: 'tool', key: `tool:${id}`, ...(e.phase === 'end' ? { end: e } : { start: e }) };
         toolItems.set(id, item);
+        // a command you ran: a step of its own, like a prompt (what Claude does next starts a step after it)
+        if (isYourCommand(e)) {
+          open(e, { ran: true, items: [item], fingerprint: [e.icon] });
+          current.delete(e.agentId);
+          break;
+        }
         const s = stepFor(e);
         s.items.push(item);
         if (s.fingerprint.length < MAX_FP) s.fingerprint.push(e.icon);

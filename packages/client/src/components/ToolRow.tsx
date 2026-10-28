@@ -105,6 +105,65 @@ export function SaidLine({ id, text, failed = false }: { id: string; text: strin
   );
 }
 
+/** How many lines of a command's output show before "all of it". */
+const RAN_LINES = 6;
+
+/**
+ * A command you ran yourself (`!` in Claude Code): the command, how it went, and its output, the first lines of it
+ * (open it for all of it, read again from the transcript when the preview was cut).
+ */
+export function RanRow({ item, sessionId }: { item: Extract<Item, { kind: 'tool' }>; sessionId: string }) {
+  const e = item.start ?? item.end!;
+  const tool = { ...item.start?.tool, ...item.end?.tool } as NonNullable<typeof e.tool>;
+  const command = String((tool.input as { command?: unknown } | undefined)?.command ?? tool.summary ?? '');
+  const failed = Boolean(item.end?.tool?.failed);
+  const [open, setOpen] = useState(false);
+  const [full, setFull] = useState<string | null>(null);
+  const out = (full ?? tool.preview ?? '').replace(/\s+$/, '');
+  const lines = out ? out.split('\n') : [];
+  const cut = !!tool.preview && tool.preview.endsWith('…') && full == null;
+  const more = lines.length > RAN_LINES || cut;
+  const toggle = async () => {
+    const next = !open;
+    setOpen(next);
+    if (next && cut && e.toolUseId) {
+      const d = await fetchToolDetail(sessionId, e.toolUseId);
+      if (d?.result) setFull(d.result);
+    }
+  };
+  return (
+    <div className={`ran${failed ? ' fail' : ''}${item.end ? '' : ' live'}`}>
+      <div className="ran-h">
+        <span className="pl">you ran</span>
+        <span className="out">
+          {tool.background && e.toolUseId ? (
+            <BgOut sessionId={sessionId} toolUseId={e.toolUseId} />
+          ) : (
+            <>
+              {tool.resultSummary ?? ''}
+              {item.end?.durationMs != null ? ` · ${dur(item.end.durationMs)}` : ''}
+            </>
+          )}
+        </span>
+        <RowActions tool={tool} />
+      </div>
+      <pre className="ran-cmd">
+        <span className="ps">!</span> <Masked text={command} />
+      </pre>
+      {lines.length ? (
+        <pre className="ran-o">
+          <Masked text={open ? out : lines.slice(0, RAN_LINES).join('\n')} />
+        </pre>
+      ) : null}
+      {more ? (
+        <button className="ran-more" onClick={() => void toggle()}>
+          {open ? 'less' : lines.length > RAN_LINES ? `all ${lines.length}${cut ? '+' : ''} lines` : 'all of it'}
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
 export function ToolRow({ item, sessionId }: { item: Extract<Item, { kind: 'tool' }>; sessionId: string }) {
   const e = item.start ?? item.end!;
   if (isPresentTool(e.tool?.name)) return <ExplainCard item={item} />;

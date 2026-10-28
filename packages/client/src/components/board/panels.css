@@ -149,10 +149,14 @@
 /* notes */
 .live-board .lb-notes { display: flex; flex-direction: column; height: 100%; }
 .live-board .lb-jots { flex: 1; min-height: 0; overflow: auto; padding: 6px 10px; }
-.live-board .lb-jot { padding: 8px 10px; border-left: 2px solid var(--hair2); margin: 6px 0; }
+.live-board .lb-jot { position: relative; padding: 8px 30px 8px 10px; border-left: 2px solid var(--hair2); margin: 6px 0; }
+.live-board .lb-jotx { position: absolute; top: 4px; right: 2px; width: 22px; height: 22px; opacity: 0; }
+.live-board .lb-jot:hover .lb-jotx, .live-board .lb-jotx:focus-visible { opacity: 1; }
 .live-board .lb-jot.mine { border-left-color: color-mix(in srgb, var(--cora) 60%, transparent); }
 .live-board .lb-jot .t { color: var(--ink); font: 12.5px/1.45 var(--ui); white-space: pre-wrap; overflow-wrap: anywhere; }
 .live-board .lb-jot .m { margin-top: 3px; color: var(--ink4); font: 10.5px var(--code); }
+.live-board .lb-undo { flex: none; display: flex; align-items: center; gap: 8px; margin: 0 10px 6px; padding: 4px 6px 4px 10px; border-radius: 8px; background: var(--raise2); box-shadow: inset 0 0 0 1px var(--hair2); color: var(--ink3); font: 500 12px var(--ui); }
+.live-board .lb-undo .btn { height: 24px; margin-left: auto; }
 .live-board .lb-jotin { flex: none; display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-top: 1px solid var(--hair); }
 .live-board .lb-jotin input { flex: 1; min-width: 0; height: 28px; padding: 0 10px; border: 0; border-radius: 8px; outline: 0; background: var(--raise2); box-shadow: inset 0 0 0 1px var(--hair); color: var(--ink); font: 12.5px var(--ui); }
 .live-board .lb-jotin input:focus { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cora) 55%, transparent); }
@@ -284,3 +288,59 @@
 .ide-view { position: fixed; display: flex; overflow: hidden; border-radius: 0 0 12px 12px; pointer-events: none; }
 .ide-view.on { pointer-events: auto; }
 .ide-view webview, .ide-view iframe { flex: 1; width: 100%; height: 100%; border: 0; }
+
+/* ------------------------------------------------------------------ Cora's board: Sessions, Worktrees, Needs you (everyone's) */
+.lb-wall { height: 100%; min-height: 0; }
+.lb-wall .grid-overview { grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 10px; padding: 10px; }
+.lb-needs-s + .lb-needs-s { margin-top: 10px; }
+.lb-needs-h { display: flex; align-items: center; gap: 7px; height: 24px; padding: 0 4px; color: var(--ink3); font: 600 9.5px var(--code); letter-spacing: .14em; text-transform: uppercase; }
+.lb-needs-h i { width: 6px; height: 6px; border-radius: 50%; background: var(--k); }
+
+.wt-panel { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.wt-scroll { flex: 1; min-height: 0; overflow-y: auto; padding: 4px 8px 8px; }
+.wt-repo + .wt-repo { margin-top: 4px; }
+.wt-rh { display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 6px; color: var(--ink4); font: 600 9.5px var(--code); letter-spacing: .16em; text-transform: uppercase; }
+.wt-rh b { color: var(--ink2); font-weight: 600; letter-spacing: .08em; }
+.wt-rh .mine { color: var(--cora-hi); letter-spacing: .1em; }
+.wt-rh .rule { flex: 1; height: 1px; background: var(--hair); }
+.wt-row { position: relative; display: grid; grid-template-columns: 30px minmax(0, 1fr) auto; align-items: center; column-gap: 10px; min-height: 48px; padding: 6px 8px; border-radius: 10px; }
+.wt-row:hover { background: rgba(148, 163, 184, .05); }
+.wt-ic { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 9px; background: var(--nav); box-shadow: inset 0 0 0 1px var(--hair2); color: var(--ink3); }
+.wt-row.main .wt-ic { color: var(--ink2); }
+.wt-mid { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.wt-mid b { overflow: hidden; color: var(--ink); font: 500 12px var(--code); text-overflow: ellipsis; white-space: nowrap; }
+.wt-l2 { display: flex; align-items: center; gap: 9px; min-width: 0; overflow: hidden; color: var(--ink4); font: 400 10.5px var(--code); white-space: nowrap; }
+.wt-l2 .path { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.wt-l2 .up { color: var(--work); }
+.wt-l2 .dn { color: var(--think); }
+.wt-l2 .dirty { color: var(--ink2); }
+.wt-right { display: flex; align-items: center; gap: 8px; }
+.wt-who { display: inline-flex; align-items: center; }
+.wt-who i { width: 16px; height: 16px; margin-left: -4px; border-radius: 50%; background: radial-gradient(circle at 38% 35%, color-mix(in srgb, var(--k) 35%, #fff), var(--k) 55%, color-mix(in srgb, var(--k) 35%, #000)); box-shadow: 0 0 0 2px var(--panel, #0c1018); cursor: pointer; }
+.wt-who i:first-child { margin-left: 0; }
+.wt-chip { display: inline-flex; align-items: center; height: 20px; padding: 0 8px; border-radius: 6px; font: 600 9px var(--code); letter-spacing: .14em; text-transform: uppercase; white-space: nowrap; }
+.wt-chip.active { color: var(--work); background: color-mix(in srgb, var(--work) 10%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--work) 30%, transparent); }
+.wt-chip.idle { color: var(--ink3); box-shadow: inset 0 0 0 1px var(--hair2); }
+.wt-chip.stale { color: var(--think); background: color-mix(in srgb, var(--think) 8%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--think) 28%, transparent); }
+.wt-chip.done { color: var(--cora-hi); background: color-mix(in srgb, var(--cora) 10%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cora) 34%, transparent); }
+.wt-acts { display: none; gap: 2px; }
+.wt-row:hover .wt-acts { display: inline-flex; }
+.wt-row:hover .wt-chip { display: none; }
+.wt-acts button { display: grid; place-items: center; width: 26px; height: 26px; padding: 0; border: 0; border-radius: 7px; background: none; color: var(--ink3); }
+.wt-acts button:hover { background: var(--raise2); color: var(--ink); }
+.wt-acts button.rm:hover { color: var(--need); }
+.wt-sure { display: inline-flex; align-items: center; gap: 6px; color: var(--ink2); font: 500 11.5px var(--ui); white-space: nowrap; }
+.wt-sure button { height: 22px; padding: 0 8px; border: 0; border-radius: 6px; font: 600 11px var(--ui); }
+.wt-sure .no { background: none; color: var(--ink3); box-shadow: inset 0 0 0 1px var(--hair2); }
+.wt-sure .yes { background: color-mix(in srgb, var(--need) 22%, transparent); color: #ffc9c9; }
+/* a session on its way into a worktree Cora made it: its colour, until it's there */
+.wt-row.moving { background: linear-gradient(90deg, color-mix(in srgb, var(--k) 9%, transparent), transparent 70%); box-shadow: inset 2px 0 0 var(--k); }
+.wt-mv { color: color-mix(in srgb, var(--k) 70%, #fff); font: 500 10.5px var(--code); }
+.wt-mv::after { content: '…'; animation: wt-dots 1.2s ease-in-out infinite; }
+@keyframes wt-dots { 50% { opacity: .25; } }
+.wt-said { margin: 0 10px 6px; color: var(--ink3); font: 400 11px var(--code); }
+.wt-done { display: flex; align-items: center; gap: 10px; margin: 0 10px 10px; padding: 9px 12px; border-radius: 10px; background: color-mix(in srgb, var(--cora) 7%, var(--raise)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cora) 26%, transparent); color: var(--ink2); font: 500 12px var(--ui); }
+.wt-done span { display: flex; flex-direction: column; }
+.wt-done small { color: var(--ink4); font: 400 10.5px var(--code); }
+.wt-done button { margin-left: auto; height: 26px; padding: 0 11px; border: 0; border-radius: 8px; background: color-mix(in srgb, var(--cora) 22%, transparent); color: var(--ink); font: 600 12px var(--ui); }
+.wt-done button:hover:not(:disabled) { background: color-mix(in srgb, var(--cora) 34%, transparent); }

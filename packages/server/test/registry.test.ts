@@ -75,6 +75,17 @@ describe('Registry states', () => {
     expect(store.getSession('s1')?.state).toBe('idle');
   });
 
+  it('a command you ran yourself (!) is activity, not Claude working: the session stays idle', () => {
+    const { store, reg } = setup();
+    reg.ingest(E({ id: 'p', kind: 'prompt', ts: 1000 }));
+    reg.ingest(E({ id: 'te', kind: 'turn_end', ts: 1001 }));
+    const tool = { name: 'Bash', input: { command: 'ls' }, summary: 'ls', byYou: true as const };
+    reg.ingest(E({ id: 'tool:bang:u1:start', kind: 'tool', phase: 'start', toolUseId: 'bang:u1', ts: 1002, tool }));
+    expect(store.getSession('s1')?.state).toBe('idle');
+    reg.ingest(E({ id: 'tool:bang:u1:end', kind: 'tool', phase: 'end', toolUseId: 'bang:u1', ts: 1003, tool }));
+    expect(store.getSession('s1')).toMatchObject({ state: 'idle', lastTs: 1003 });
+  });
+
   it('a running subagent keeps the session working after main turn ends', () => {
     const { store, reg } = setup();
     reg.ingest(E({ id: 'tool:k:start', kind: 'tool', phase: 'start', agentId: 'a1', toolUseId: 'k' }));
@@ -104,7 +115,7 @@ describe('Registry states', () => {
   it("a session with a live terminal in Cora isn't ended by silence; one this rule ended comes back", () => {
     const store = new Store(':memory:');
     let live = true;
-    const reg = new Registry(store, () => {}, { hosted: () => live });
+    const reg = new Registry(store, () => {}, { hosted: () => (live ? 500 : null) });
     reg.ingest(E({ id: 'p', kind: 'prompt', ts: 1000 }));
     reg.tick(1000 + 31 * 60_000);
     expect(store.getSession('s1')?.state).not.toBe('ended');
@@ -120,6 +131,32 @@ describe('Registry states', () => {
     reg.ingest(E({ id: 'se', kind: 'session_end', ts: 1000 + 34 * 60_000 }));
     reg.tick(1000 + 35 * 60_000);
     expect(store.getSession('s1')?.state).toBe('ended');
+  });
+
+  it('resumed in Cora after it ended, then Cora restarted before it said anything: its live terminal brings it back', () => {
+    const store = new Store(':memory:');
+    const first = new Registry(store, () => {});
+    // Claude Code ended it (you quit), then you resumed it here: a new terminal, nothing in its transcript yet
+    for (const e of [E({ id: 'p', kind: 'prompt', ts: 1000 }), E({ id: 'se', kind: 'session_end', ts: 2000 })]) store.upsertEvent(e), first.ingest(e);
+    first.sessionLaunched('s1', 9000);
+    expect(store.getSession('s1')?.state).toBe('idle');
+    // Cora restarts: from the transcripts it's over (the old end is the last word); its terminal kept running
+    let since: number | null = 9000;
+    const again = new Registry(store, () => {}, { hosted: () => since });
+    expect(store.getSession('s1')?.state).toBe('ended');
+    again.tick(10_000);
+    expect(store.getSession('s1')?.state).toBe('idle');
+    // quitting it now ends it, as it should
+    since = null;
+    again.sessionExited('s1', 11_000);
+    expect(store.getSession('s1')).toMatchObject({ state: 'ended', exitReason: 'exited', lastTs: 11_000 });
+    // saved as ended with the resume as its last activity (an older Cora): the same once it restarts
+    const store2 = new Store(':memory:');
+    for (const e of [E({ id: 'p', kind: 'prompt', ts: 1000 }), E({ id: 'se', kind: 'session_end', ts: 2000 })]) store2.upsertEvent(e);
+    store2.upsertSession({ id: 's1', state: 'ended', lastTs: 9000 });
+    const third = new Registry(store2, () => {}, { hosted: () => 9000 });
+    third.tick(10_000);
+    expect(store2.getSession('s1')?.state).toBe('idle');
   });
 
   it('session_end → ended; silence > 30 min → ended', () => {

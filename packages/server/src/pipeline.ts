@@ -91,7 +91,13 @@ export function createPipeline(store: Store, registry: Registry, hub: Hub, pendi
       const meta: Record<string, unknown> = {};
       if (r.session?.cwd) meta.cwd = r.session.cwd;
       if (r.session?.transcriptPath) meta.transcriptPath = r.session.transcriptPath;
-      if (Object.keys(meta).length && !store.getSession(sid)?.cwd) registry.updateSessionMeta(sid, meta);
+      const known = store.getSession(sid);
+      if (Object.keys(meta).length && !known?.cwd) registry.updateSessionMeta(sid, meta);
+      // it moved (into a worktree, and back): where it works now
+      else if (known?.cwd && r.session?.cwd) {
+        const wd = r.session.cwd === known.cwd ? null : r.session.cwd;
+        if ((known.wd ?? null) !== wd) registry.updateSessionMeta(sid, { wd });
+      }
       // Claude Code's hidden helpers (e.g. the next-prompt suggestion) fire SubagentStop without ever starting:
       // they aren't subagents, so don't conjure an agent (or a "report") out of them.
       if (r.agentStop && !r.agentStart && !store.getAgent(sid, r.agentStop.agentId)) return;

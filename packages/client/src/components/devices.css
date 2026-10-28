@@ -1,0 +1,23 @@
+/* Settings › Devices: Cora on your tailnet, pairing a device (its QR code and code), the paired ones */
+.dv-off { color: var(--ink4); font: 500 12px var(--ui); }
+.dv-url { color: var(--ink2); font: 500 11.5px var(--code); }
+.dv-copy { height: 22px; padding: 0 8px; margin-left: 4px; }
+.dv-err { margin: 4px 0; color: var(--need); font: 500 12px var(--ui); }
+.dv-start { display: flex; align-items: center; gap: 12px; }
+.dv-ok { display: inline-flex; align-items: center; gap: 6px; color: var(--work); font: 500 12px var(--ui); }
+.dv-pair { display: flex; align-items: center; gap: 20px; padding: 14px; border-radius: 12px; background: var(--raise); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cora) 35%, var(--hair2)); }
+.dv-pair img { border-radius: 10px; }
+.dv-pair-r { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
+.dv-code { color: var(--ink); font: 600 30px var(--code); letter-spacing: .14em; }
+.dv-left { display: inline-flex; align-items: center; gap: 7px; color: var(--ink3); font: 400 11.5px var(--code); }
+.dv-left i { width: 6px; height: 6px; border-radius: 50%; background: var(--cora); animation: dv-wait 1.4s ease-in-out infinite; }
+@keyframes dv-wait { 50% { opacity: .3; } }
+.dv-list { display: flex; flex-direction: column; border-radius: 12px; background: var(--raise); box-shadow: inset 0 0 0 1px var(--hair); padding: 4px; }
+.dv-row { display: flex; align-items: center; gap: 12px; min-height: 46px; padding: 6px 10px; color: var(--ink3); }
+.dv-row + .dv-row { box-shadow: 0 -1px 0 var(--hair); }
+.dv-n { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.dv-n b { color: var(--ink); font: 500 13px var(--ui); }
+.dv-n small { color: var(--ink4); font: 400 10.5px var(--code); }
+
+/* the small code that opens Cora's address on a device */
+.dv-open-qr { display: block; border-radius: 8px; box-shadow: 0 0 0 1px var(--hair2); }

@@ -352,3 +352,9 @@
 
 /* Cora's orb wears its crown (CoraCrown): your sessions ride its rings, so the flat dots and the dashed ring go */
 .cora-bridge.orb-mode .cb-dots, .cora-bridge.orb-mode .cb-orbit::before { display: none; }
+
+/* worktrees done (merged, clean, nobody in them): a quiet line on Cora's card, to its board to clean them up */
+.cb-nudge { display: flex; align-items: center; gap: 7px; width: 100%; margin-top: 8px; padding: 7px 10px; border: 0; border-radius: 9px; background: color-mix(in srgb, var(--cora) 9%, var(--raise)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cora) 32%, transparent); color: var(--ink2); font: 500 11.5px var(--ui); text-align: left; cursor: pointer; }
+.cb-nudge:hover { background: color-mix(in srgb, var(--cora) 14%, var(--raise)); }
+.cb-nudge i { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--cora); }
+.cb-nudge u { margin-left: auto; color: var(--ink); font-weight: 600; text-decoration: none; }

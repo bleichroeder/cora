@@ -1,4 +1,7 @@
 import { useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { isTablet, useTabletChoice } from '../lib/tablet';
+import { createProject } from '../state/projects';
+import { endLive, goLive, liveNote, useLive } from '../state/live';
 import { jumpToHyperspace } from '../scene/system/warp';
 import { create } from 'zustand';
 import type { BrainEvent, HistoryItem, LaunchPreset, Settings } from '@cora/shared';
@@ -20,8 +23,11 @@ import { GROUP_LABEL, lineOf, pushRecent, rank, recentFolders, runs, searchLines
 import { explainFrom } from './Viewer';
 import { openNewSession } from './Launchers';
 import { SETTINGS_SECTIONS, openSettings } from './SettingsModal';
+import { wantAdd } from './SecretsSettings';
+import { SECRETS_ID } from '../state/secrets';
 import { EndSessionConfirm } from './EndSession';
-import { clearEnded, dismissSession, showSession, suggestName } from './SessionMenu';
+import { clearEnded, removeSession, showSession, suggestName } from './SessionMenu';
+import { oops } from '../state/oops';
 import { Icon } from './Icon';
 import { lockNow } from '../state/lock';
 import { useThaw } from './Thaw';
@@ -291,6 +297,10 @@ function useEntries(): PEntry[] {
     cmd('overview', overview ? 'Back to the session' : 'Overview', 'LayoutGrid', () => st().toggleOverview(), { keywords: 'grid galaxy all sessions G', featured: true, boost: 3 });
     cmd('settings', 'Settings', 'Settings', () => openSettings(), { keywords: 'preferences options', featured: true, boost: 2 });
     cmd('lock', 'Lock Cora', 'Lock', () => void lockNow(), { keywords: 'lockdown away pin secure screen' });
+    if (!desktop) cmd('layout', isTablet() ? 'Use the desktop layout on this device' : 'Use the tablet layout on this device', 'Tablet', () => useTabletChoice.getState().set(isTablet() ? 'off' : 'on'), { keywords: 'ipad tablet touch layout mobile desktop' });
+    cmd('newproject', 'New project…', 'FolderPlus', () => { const n = window.prompt('Project name'); if (n?.trim()) void createProject(n.trim()).then((p) => p && st().openProject(p.id)); }, { keywords: 'project group sessions together workspace' });
+    if (!useLive.getState().live) cmd('golive', 'Go live (share your Cora with a teammate)', 'Radio', () => void goLive().then((r) => !r.ok && liveNote(r.error ?? 'Could not go live')), { keywords: 'share live teammate pair stream watch tailscale' });
+    else cmd('endlive', 'End the live share', 'Radio', () => void endLive(), { keywords: 'share live stop' });
     if (thawing) cmd('thaw', 'Bring back sessions from before the restart…', 'Snowflake', () => useThaw.setState({ open: true }), { keywords: 'deep freeze restore resume reopen last time shutdown', boost: 3 });
     for (const sec of SETTINGS_SECTIONS) if (!sec.desktop || desktop) cmd(`settings:${sec.id}`, `Settings: ${sec.label}`, sec.icon, () => openSettings(sec.id), { keywords: 'preferences options' });
     cmd('grid', 'Overview as a grid', 'LayoutGrid', () => (st().setPrefs({ overviewStyle: 'grid' }), st().toggleOverview(true)), { keywords: 'cards' });
@@ -301,10 +311,11 @@ function useEntries(): PEntry[] {
     cmd('deploys', 'Deploys: what each environment runs', 'Rocket', () => (st().setPrefs({ overviewStyle: 'deploys' }), st().toggleOverview(true)), { keywords: 'dev staging prod kubectl tags images bump rollout environments' });
     if (cur && !overview) {
       if (cur.state !== 'ended') cmd('end', `End “${sessionName(cur)}”…`, 'Power', () => usePalette.setState({ ending: cur.id }), { keywords: 'end this session quit stop kill exit close' });
-      else if (!isDismissed(cur)) cmd('remove', `Remove “${sessionName(cur)}” from the list`, 'EyeOff', () => void dismissSession(cur.id), { keywords: 'dismiss hide ended' });
+      else if (!isDismissed(cur)) cmd('remove', `Remove “${sessionName(cur)}” from the list`, 'EyeOff', () => void removeSession(cur.id).then((err) => err && oops("Couldn't take it off the list", err)), { keywords: 'dismiss hide ended' });
       cmd('tab:transcript', 'Show the transcript', 'ScrollText', () => st().setRightTab('transcript'));
       cmd('tab:explains', 'Show this session’s explains', 'Presentation', () => st().setRightTab('explains'), { keywords: 'documents tab' });
       cmd('tab:changes', 'Show the changes', 'FileDiff', () => st().setRightTab('changes'), { keywords: 'diff files edits tab' });
+      cmd('secret:add', 'Stash a secret', 'KeyRound', () => (wantAdd(), useTools.getState().show(SECRETS_ID)), { keywords: 'token key jwt pat password credential vault secrets' });
       cmd('name', 'Suggest a name for this session', 'Sparkles', async () => (await suggestName(cur.id)) ?? undefined, { keywords: 'rename auto name' });
       cmd('copy-folder', 'Copy this session’s folder', 'Copy', () => (desktop?.writeClipboard ? desktop.writeClipboard(cur.cwd) : void navigator.clipboard?.writeText(cur.cwd).catch(() => {})), { keywords: 'path cwd clipboard' });
       cmd('expand', st().expanded ? 'Narrow the right column' : 'Widen the right column', 'Columns2', () => st().toggleExpanded(), { keywords: 'expand layout' });

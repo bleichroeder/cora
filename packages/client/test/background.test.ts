@@ -35,6 +35,21 @@ describe('backgroundTasks', () => {
   });
 });
 
+describe('a command you ran yourself (!) that Claude Code moved to the background', () => {
+  it('is a background task from when it started, ended by its task-notification', () => {
+    const tool = { name: 'Bash', input: { command: 'node scripts/package.mjs --publish' }, summary: 'node scripts/package.mjs --publish', byYou: true as const };
+    const start: BrainEvent = { ...base, seq: seq++, id: 'tool:bang:u1:start', ts: 1000, kind: 'tool', phase: 'start', toolUseId: 'bang:u1', tool };
+    const end: BrainEvent = { ...base, seq: seq++, id: 'tool:bang:u1:end', ts: 121_000, durationMs: 120_000, kind: 'tool', phase: 'end', toolUseId: 'bang:u1', tool: { ...tool, resultSummary: 'running in background', background: { taskId: 'b1g', outputFile: 'C:/t/b1g.output' } } };
+    const [r] = backgroundTasks([start, end], 130_000);
+    expect(r).toMatchObject({ key: 'bang:u1', taskId: 'b1g', label: 'node scripts/package.mjs --publish', program: 'node', startedAt: 1000, status: 'running' });
+    const [f] = backgroundTasks([start, end, done('b1g', 'x:inner', 200_000, 'completed', 0)], 210_000);
+    expect(f).toMatchObject({ status: 'completed', endedAt: 200_000 });
+    // one that finished in time is no background task
+    const quick: BrainEvent = { ...end, id: 'tool:bang:u2:end', toolUseId: 'bang:u2', tool: { ...tool, resultSummary: '1 line' } };
+    expect(backgroundTasks([{ ...start, id: 'tool:bang:u2:start', toolUseId: 'bang:u2' }, quick])).toEqual([]);
+  });
+});
+
 describe('only commands that asked for the background', () => {
   it('ignores an ordinary command whose output merely mentions a background task', () => {
     const start: BrainEvent = { ...base, seq: seq++, id: 'tool:g:start', ts: 0, kind: 'tool', phase: 'start', toolUseId: 'g', tool: { name: 'Bash', input: { command: 'grep -r "running in background" .' }, summary: 'grep' } };

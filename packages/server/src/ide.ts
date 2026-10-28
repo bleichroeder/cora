@@ -120,7 +120,7 @@ export class Ide {
     return {
       state,
       license: IDE_LICENSE_URL,
-      ...(state === 'ready' ? { url: `http://127.0.0.1:${this.port}/?tkn=${this.token}` } : {}),
+      ...(state === 'ready' ? { url: `http://127.0.0.1:${this.port}/ide/?tkn=${this.token}` } : {}),
       ...(this.message ? { message: this.message } : {}),
       ...(this.claude ? { claude: this.claude } : {}),
     };
@@ -154,7 +154,7 @@ export class Ide {
     const tokenFile = join(home, 'token');
     writeFileAtomic(tokenFile, this.token, { mode: 0o600 });
     this.set('starting', 'Starting VS Code…');
-    const args = ['serve-web', '--host', '127.0.0.1', '--port', String(this.port), '--connection-token-file', tokenFile, '--accept-server-license-terms', '--disable-telemetry', '--cli-data-dir', join(home, 'cli'), '--server-data-dir', serverData];
+    const args = ['serve-web', '--host', '127.0.0.1', '--port', String(this.port), '--server-base-path', '/ide', '--connection-token-file', tokenFile, '--accept-server-license-terms', '--disable-telemetry', '--cli-data-dir', join(home, 'cli'), '--server-data-dir', serverData];
     const p = spawn(cli, args, { cwd: dirname(cli), windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
     this.proc = p;
     if (p.pid) writeFileAtomic(join(home, 'pid'), String(p.pid));
@@ -178,7 +178,7 @@ export class Ide {
     while (Date.now() < until && this.proc === p) {
       // its page, with the token: it answers with a redirect that sets its cookie (not followed here: without the
       // cookie the next hop is a 403); without the token, its front says 403 before the server behind it is up
-      const ok = await f(`http://127.0.0.1:${this.port}/?tkn=${this.token}`, { redirect: 'manual', signal: AbortSignal.timeout(4000) })
+      const ok = await f(`http://127.0.0.1:${this.port}/ide/?tkn=${this.token}`, { redirect: 'manual', signal: AbortSignal.timeout(4000) })
         .then((r) => r.status === 200 || (r.status >= 300 && r.status < 400))
         .catch(() => false);
       if (ok) {

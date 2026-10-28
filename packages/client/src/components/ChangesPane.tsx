@@ -4,6 +4,9 @@ import { changeTurns, openChanges, relPath, samePath } from '../lib/changes';
 import { clock } from '../lib/format';
 import { Counts } from './DiffView';
 import { Icon } from './Icon';
+import { DebriefAsk } from './DebriefAsk';
+import { DebriefList } from './DebriefList';
+import { useDebrief } from '../state/debrief';
 import { webChangeText } from '@cora/shared';
 import { webChangeLink } from '../state/webChanges';
 import { useWeb } from '../state/web';
@@ -55,6 +58,9 @@ export function ChangesPane({ sessionId }: { sessionId: string }) {
       {ideMiss === path ? 'open an IDE panel' : <Icon name="Code" size={12} />}
     </span>
   );
+  // the debriefs whose work a turn is part of (made after it, covering from it or earlier)
+  const debriefs = useDebrief((s) => s.lists[sessionId]);
+  const coveredBy = (from: number) => (debriefs ?? []).filter((x) => x.from != null && from >= x.from - 1000 && from <= x.createdAt);
   // what it changed on the web (newest first): each opens in its browser, at the change
   const web = useMemo(() => sessionEvents(sessionId).filter((e) => e.kind === 'tool' && e.phase === 'end' && e.tool?.web).reverse(), [sessionId, version]);
 
@@ -71,6 +77,7 @@ export function ChangesPane({ sessionId }: { sessionId: string }) {
           )}
         </span>
         <span className="sp" />
+        {total.n ? <DebriefAsk sessionId={sessionId} className="in-changes" /> : null}
         {turns.length ? (
           <button
             className="dl-btn"
@@ -84,6 +91,10 @@ export function ChangesPane({ sessionId }: { sessionId: string }) {
             <Icon name="Maximize2" size={13} /> Review
           </button>
         ) : null}
+      </div>
+      {/* its walk-throughs of these changes (made with Debrief, above): played in the IDE panel, exported */}
+      <div className="ch-debriefs">
+        <DebriefList sessionId={sessionId} />
       </div>
       {web.length ? (
         <div className="ch-turn ch-web">
@@ -112,6 +123,11 @@ export function ChangesPane({ sessionId }: { sessionId: string }) {
           <div className="ch-th" title={`${t.files.length} file${t.files.length === 1 ? '' : 's'} · +${t.add} −${t.del}`}>
             <span className="p" title={t.prompt}>{t.prompt ? `“${t.prompt}”` : 'Earlier in the session'}</span>
             <span className="ch-rule" />
+            {coveredBy(t.from).map((x) => (
+              <button key={x.id} className="ch-db" title={`Covered by the debrief “${x.title}”: play it`} onClick={() => void useDebrief.getState().start(sessionId, x.id)}>
+                <Icon name="Presentation" size={11} /> Debrief
+              </button>
+            ))}
             <span className="t">{i === 0 && live ? <span className="live">now</span> : clock(t.from)}</span>
           </div>
           {t.files.map((f) => {

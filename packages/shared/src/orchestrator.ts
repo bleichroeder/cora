@@ -88,7 +88,7 @@ export type JiraStarted = { sessionId: string; key: string; summary: string; cwd
 export type Approval = {
   id: string;
   /** 'ask': Cora asks you something (an escalation); `options` are its suggested answers */
-  kind: 'start' | 'send' | 'end' | 'ask';
+  kind: 'start' | 'send' | 'end' | 'ask' | 'worktree' | 'cleanup';
   options?: string[];
   /** one line: what it wants to do */
   title: string;
@@ -143,7 +143,9 @@ export type UiCommand =
   /** a session's open_tab, after its checks: a site Cora knows opens; another waits for the user's OK (audit S15) */
   | { action: 'open_tab'; url: string; sessionId?: string; known: boolean }
   /** what you selected in the IDE panel, into that session's prompt box for you to ask about */
-  | { action: 'compose'; sessionId: string; text: string };
+  | { action: 'compose'; sessionId: string; text: string }
+  /** a debrief: a session made one (start it), or its bubble in the IDE was used (its buttons, a question) */
+  | { action: 'debrief'; sessionId: string; act: 'start' | 'back' | 'next' | 'play' | 'pause' | 'speak' | 'close' | 'ask'; id?: string; text?: string };
 
 export type UiCommandMsg = { t: 'ui'; cmd: UiCommand };
 
@@ -176,4 +178,7 @@ export const ORCH_TOOLS = [
   'escalate',
   'decide',
   'answer_question',
+  'worktrees',
+  'worktree_new',
+  'worktree_cleanup',
 ] as const;

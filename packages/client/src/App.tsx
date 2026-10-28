@@ -1,4 +1,11 @@
 import { startWake } from './lib/wake/controller';
+import { RemoteBrowserView } from './components/RemoteBrowser';
+import { useTablet, useTabletUi, useViewport, tabletScene } from './lib/tablet';
+import { TabletDrawer, TabletRail, TabletTabs } from './components/Tablet';
+import { ProjectSuggest } from './components/Projects';
+import { ProjectView, ProjectWakes } from './components/ProjectView';
+import { GuestBar, LiveAsks, LiveChip, LiveCursors, LivePings } from './components/Live';
+import { useLive, usePrivate } from './state/live';
 import { IdeHost } from './components/board/IdeHost';
 import { MailOutbox } from './components/MailOutbox';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -12,7 +19,7 @@ import { SessionRail, sortedSessions } from './components/SessionRail';
 import { Transcript } from './components/Transcript';
 import { Strip } from './components/Strip';
 import { NeedsYou, Toasts, JumpButton } from './components/NeedsYou';
-import { GridOverview } from './components/GridOverview';
+import { CORA_BOARD } from './lib/boardLayout';
 import { InboxView } from './components/Inbox';
 import { SetupView } from './components/Setup';
 import { EmptyMain } from './components/EmptyMain';
@@ -30,6 +37,7 @@ import { Galaxy } from './galaxy/Galaxy';
 import { UsageStrip } from './components/UsageStrip';
 import { Scene } from './scene/Scene';
 import { LiveBoard } from './components/LiveBoard';
+import { hasNewDebrief, useDebrief } from './state/debrief';
 import { ago, isDismissed, plainName, prettyModel, sessionColor, sessionName, tokens } from './lib/format';
 import { contextMax } from './scene/derive';
 import { Icon } from './components/Icon';
@@ -115,6 +123,9 @@ function RightColumn({ sessionId }: { sessionId: string }) {
     const files = new Set(changeTurns(evs, cwd).flatMap((t) => t.files.map((f) => f.path))).size;
     return { explains, files };
   }, [sessionId, version, cwd]);
+  // a debrief made that you haven't seen: a dot on Changes (its list loaded with the session)
+  useEffect(() => void useDebrief.getState().load(sessionId), [sessionId]);
+  const newDebrief = useDebrief((s) => hasNewDebrief(s, sessionId));
   const col = useRef<HTMLDivElement>(null);
   const base = useRef(ratio);
   // the transcript (or explains) lifts in when the session changes; the card, the tabs and the terminal stay put
@@ -132,9 +143,12 @@ function RightColumn({ sessionId }: { sessionId: string }) {
         <SessionCard sessionId={sessionId} />
       </Boundary>
       <div className="rtabs">
-        <button className={`rtab${tab === 'transcript' ? ' on' : ''}`} onClick={() => setTab('transcript')}>Transcript</button>
-        <button className={`rtab${tab === 'explains' ? ' on' : ''}`} onClick={() => setTab('explains')}>Explains{counts.explains ? <span className="rt-n">{counts.explains}</span> : null}</button>
-        <button className={`rtab${tab === 'changes' ? ' on' : ''}`} onClick={() => setTab('changes')}>Changes{counts.files ? <span className="rt-n">{counts.files}</span> : null}</button>
+        <button data-ping="tab:transcript" className={`rtab${tab === 'transcript' ? ' on' : ''}`} onClick={() => setTab('transcript')}>Transcript</button>
+        <button data-ping="tab:explains" className={`rtab${tab === 'explains' ? ' on' : ''}`} onClick={() => setTab('explains')}>Explains{counts.explains ? <span className="rt-n">{counts.explains}</span> : null}</button>
+        <button data-ping="tab:changes" className={`rtab${tab === 'changes' ? ' on' : ''}`} onClick={() => setTab('changes')}>
+          Changes{counts.files ? <span className="rt-n">{counts.files}</span> : null}
+          {newDebrief && tab !== 'changes' ? <i className="rt-new" title="A new debrief, at the top of Changes" /> : null}
+        </button>
       </div>
       {/* the transcript (or explains, changes), with Claude Code's latest recap resting on its lower edge, just above
           the terminal and composer */}
@@ -181,6 +195,63 @@ const LIFT: Keyframe[] = [
 ];
 
 function Focus({ sessionId }: { sessionId: string }) {
+  // Cora on the iPad: its own layout; the desktop's is below
+  if (useTablet()) return <TabletFocus sessionId={sessionId} />;
+  return <DesktopFocus sessionId={sessionId} />;
+}
+
+/**
+ * The session on a tablet: its header, its views as tabs (Board · Transcript · Explains · Changes), the one on show
+ * full width; the composer under the board too.
+ */
+function TabletFocus({ sessionId }: { sessionId: string }) {
+  const view = useRef<HTMLDivElement>(null);
+  const pane = useTabletUi((t) => t.pane);
+  const { w, h } = useViewport();
+  const viewer = useBrain((s) => s.viewer);
+  const diffOpen = useBrain((s) => s.diff?.sessionId === sessionId);
+  // the 3D scene is the device's choice on a tablet (the flat board unless you turned it on here)
+  const scene3d = useBrain((s) => s.prefs.scene3d !== false) && tabletScene();
+  const needsDocked = useBoardDock((d) => d.needs.includes(sessionId));
+  return (
+    <div className={`focus tablet-focus pane-${pane}`}>
+      <FocusHeader sessionId={sessionId} />
+      <TabletTabs sessionId={sessionId} portrait={h > w} />
+      {pane === 'board' ? (
+        <div className="tf-board">
+          <div className="view" ref={view}>
+            {diffOpen ? (
+              <Boundary name="diff">
+                <DiffView sessionId={sessionId} />
+              </Boundary>
+            ) : viewer && (viewer.sessionId === sessionId || viewer.pinned) ? (
+              <Viewer p={viewer} />
+            ) : (
+              <div className="scene-box">
+                {scene3d ? <Scene sessionId={sessionId} /> : <LiveBoard sessionId={sessionId} />}
+                <div key={sessionId} className="scene-veil" aria-hidden />
+              </div>
+            )}
+            {needsDocked ? null : <NeedsYou sessionId={sessionId} />}
+          </div>
+          <Boundary quiet name="composer">
+            <Composer sessionId={sessionId} />
+          </Boundary>
+        </div>
+      ) : pane === 'browser' ? (
+        <div className="tf-browser">
+          <RemoteBrowserView sessionId={sessionId} />
+        </div>
+      ) : (
+        <div className="tf-session">
+          <RightColumn sessionId={sessionId} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DesktopFocus({ sessionId }: { sessionId: string }) {
   const view = useRef<HTMLDivElement>(null);
   useEntrance(view, RACK_FOCUS, 560, sessionId);
   const rightWidth = useBrain((s) => s.rightWidth);
@@ -295,6 +366,8 @@ const TILE_STATE: Record<string, string> = { 'needs-you': 'need', working: 'work
  */
 function FocusHeader({ sessionId }: { sessionId: string }) {
   const s = useBrain((st) => st.sessions[sessionId]);
+  const guest = useLive((l) => l.role === 'guest');
+  const tablet = useTablet();
   const hosted = useBrain((st) => st.terminals.some((t) => t.sessionId === sessionId && t.alive));
   const [copied, setCopied] = useState(false);
   // commands still running in the background (the agent may be idle meanwhile)
@@ -338,10 +411,13 @@ function FocusHeader({ sessionId }: { sessionId: string }) {
       <CiHeader sessionId={sessionId} />
       <DeployHeader sessionId={sessionId} />
       <MailWatchChip sessionId={sessionId} />
+      <ProjectSuggest s={s} />
       <span className="spacer" />
+      <LiveChip />
       <SessionMeter s={s} />
       {desktop?.browser ? <BrowserButton sessionId={s.id} /> : null}
-      {s.state !== 'ended' && !hosted ? <JumpButton sessionId={s.id} short /> : null}
+      {/* Jump acts on your PC's terminal: not for a guest, nor on a tablet */}
+      {s.state !== 'ended' && !hosted && !guest && !tablet ? <JumpButton sessionId={s.id} short /> : null}
     </div>
   );
 }
@@ -368,6 +444,14 @@ export function App() {
   useToolKeys();
   // Cora is in charge (a goal, or your sessions' prompts): a glow round the window says so
   const inControl = useInControl();
+  // Go live: a guest sees the sessions, not your private things (the server keeps those; this keeps the screen tidy)
+  const guest = useLive((s) => s.role === 'guest');
+  // Cora on the iPad (never in the desktop app)
+  const tablet = useTablet();
+  const vp = useViewport();
+  const portrait = vp.h > vp.w;
+  const privateConsole = usePrivate('console');
+  const privateInbox = usePrivate('inbox');
   const conn = useBrain((s) => s.conn);
   const ready = useBrain((s) => s.ready);
   // deep freeze: what was open before the PC restarted, offered once Cora is up
@@ -377,6 +461,7 @@ export function App() {
   const focus = useBrain((s) => s.focus);
   const sessions = useBrain((s) => s.sessions);
   const overview = useBrain((s) => s.overview);
+  const projectOpen = useBrain((s) => s.projectOpen);
   const modal = useBrain((s) => s.modal);
   // setting Cora up: the first run shows instead of the app while something required is missing (or on a fresh install)
   const setupState = useSetup((s) => s.state);
@@ -556,10 +641,23 @@ export function App() {
   }, [focus]);
 
   if (conn === 'unauthorized') {
-    return (
+    // on your PC: its own link; anywhere else: this browser isn't paired yet (each browser is its own device)
+    const here = ['127.0.0.1', 'localhost'].includes(location.hostname);
+    return here ? (
       <div className="splash">
         <h2>Cora</h2>
         <p>Open the link printed by <code>cora start</code> (it contains your access key).</p>
+      </div>
+    ) : (
+      <div className="splash unpaired">
+        <span className="up-orb" />
+        <h2>This device isn't paired yet</h2>
+        <p>
+          Each browser is its own device (Safari and Chrome on the same iPad pair separately). On your PC, open Cora's Settings › Devices › <b>Pair a device</b>, then scan its code here or type the 6 digits.
+        </p>
+        <a className="btn allow up-go" href="/pair">
+          Pair this device
+        </a>
       </div>
     );
   }
@@ -575,35 +673,43 @@ export function App() {
     );
 
   return (
-    <div className={`app${inControl ? ' cora-in-control' : ''}`}>
+    <div className={`app${inControl ? ' cora-in-control' : ''}${guest ? ' guest' : ''}${tablet ? ` tablet${portrait ? ' portrait' : ''}${vp.w < 640 ? ' phone' : ''}` : ''}`}>
+      {guest ? <GuestBar /> : null}
       <div className="shell-body">
-        <SessionRail />
+        {tablet ? (portrait ? null : <TabletRail />) : <SessionRail />}
+        {tablet ? <TabletDrawer /> : null}
         <main className="main">
           {overview ? (
             <Overview />
+          ) : projectOpen && !guest ? (
+            <ProjectView id={projectOpen} />
           ) : focus ? (
             <Focus sessionId={focus} />
           ) : !ready ? null : (
             <EmptyMain />
           )}
-          <ToolDrawer />
-          <IdeHost />
-          <SlackOutbox />
-          <MailOutbox />
-          <CoraConsole />
-          <InboxView />
-          <CoraCommand />
+          {guest ? null : <ToolDrawer />}
+          {guest ? null : <IdeHost />}
+          {guest ? null : <SlackOutbox />}
+          {guest ? null : <MailOutbox />}
+          {guest && privateConsole ? null : <CoraConsole />}
+          {guest && privateInbox ? null : <InboxView />}
+          {guest ? null : <CoraCommand />}
         </main>
       </div>
       <Toasts />
       <OpMenu />
-      <CoraFloat />
+      {guest ? null : <CoraFloat />}
       <PaletteHost />
       <SessionSwitcher />
-      <LockSetup />
-      <ThawCard />
-      <UsageView />
-      {modal === 'new-session' ? <NewSessionModal /> : modal === 'history' ? <HistoryModal /> : modal === 'settings' ? <SettingsModal /> : null}
+      {guest ? null : <LockSetup />}
+      {guest ? null : <ThawCard />}
+      {guest ? null : <UsageView />}
+      <LiveCursors />
+      <LivePings />
+      <LiveAsks />
+      {guest ? null : <ProjectWakes />}
+      {guest ? null : modal === 'new-session' ? <NewSessionModal /> : modal === 'history' ? <HistoryModal /> : modal === 'settings' ? <SettingsModal /> : null}
     </div>
   );
 }
@@ -618,7 +724,7 @@ function Overview() {
       <div className="ov-head">
         <div className="ov-switch seg">
           <button className={`seg-b${style === 'grid' || (style === 'galaxy' && !scene3d) ? ' on' : ''}`} onClick={() => setPrefs({ overviewStyle: 'grid' })}>
-            <Icon name="LayoutGrid" size={13} /> Grid
+            <Icon name="LayoutDashboard" size={13} /> Board
           </button>
           {scene3d ? (
             <button className={`seg-b${style === 'galaxy' ? ' on' : ''}`} onClick={() => setPrefs({ overviewStyle: 'galaxy' })}>
@@ -631,7 +737,7 @@ function Overview() {
         </div>
         <UsageStrip />
       </div>
-      <div className="ov-body">{style === 'galaxy' && scene3d ? <Galaxy /> : style === 'deploys' ? <DeploysView /> : <GridOverview />}</div>
+      <div className="ov-body">{style === 'galaxy' && scene3d ? <Galaxy /> : style === 'deploys' ? <DeploysView /> : <LiveBoard sessionId={CORA_BOARD} />}</div>
     </div>
   );
 }

@@ -59,7 +59,9 @@ export function IdePanel({ sessionId }: { sessionId: string }) {
 
   // Claude Code's extension just added (we saw it go in): the page again, so VS Code loads it
   const loadKey = sawInstall.current && st?.claude === 'ready' ? 'with-claude' : 'plain';
-  const src = st?.state === 'ready' && st.url && cwd ? `${st.url}&folder=${encodeURIComponent(ideFolder(cwd))}` : null;
+  // on your PC, VS Code itself; on your other devices, VS Code relayed through Cora (its /ide)
+  const here = ['127.0.0.1', 'localhost'].includes(location.hostname);
+  const src = st?.state === 'ready' && st.url && cwd ? `${here ? st.url : '/ide/?'}&folder=${encodeURIComponent(ideFolder(cwd))}` : null;
   // VS Code itself lives in the IDE layer (kept as you switch sessions), laid over this box
   const box = useRef<HTMLDivElement>(null);
   useIdeView(sessionId, src, loadKey, box);

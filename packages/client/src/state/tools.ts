@@ -13,6 +13,9 @@ type ToolsUi = {
   go: Record<string, { url: string; n: number }>;
   /** each open tool's page: where it is, and whether it's loading */
   page: Record<string, { url?: string; loading?: boolean }>;
+  /** tools whose page is playing sound (music, a video): their button says so */
+  playing: Record<string, true>;
+  setPlaying(id: string, on: boolean): void;
   toggle(id: string): void;
   show(id: string, url?: string): void;
   close(): void;
@@ -38,6 +41,12 @@ export const useTools = create<ToolsUi>((set, get) => ({
   icons: loadIcons(),
   go: {},
   page: {},
+  playing: {},
+  setPlaying: (id, on) => {
+    if (!!get().playing[id] === on) return;
+    const { [id]: _was, ...rest } = get().playing;
+    set({ playing: on ? { ...rest, [id]: true } : rest });
+  },
   setPage: (id, p) => set({ page: { ...get().page, [id]: { ...get().page[id], ...p } } }),
   toggle: (id) => (get().open === id ? get().close() : get().show(id)),
   show: (id, url) => {
@@ -49,7 +58,8 @@ export const useTools = create<ToolsUi>((set, get) => ({
     const { [id]: _m, ...mounted } = get().mounted;
     // and the page it was last asked to go to: opened again later, it starts at home
     const { [id]: _g, ...go } = get().go;
-    set({ mounted, go, open: get().open === id ? null : get().open });
+    const { [id]: _p, ...playing } = get().playing;
+    set({ mounted, go, playing, open: get().open === id ? null : get().open });
   },
   setUnread: (id, v) => {
     if ((get().unread[id] ?? null) === v) return;

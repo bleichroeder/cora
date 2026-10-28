@@ -1,7 +1,10 @@
 import { create } from 'zustand';
+import { openRemote } from '../components/RemoteBrowser';
+import { isTablet, useTabletUi } from '../lib/tablet';
 import { composerInbox } from './composer';
 import type { OrchMsg, OrchestratorStatus, PendingRequest, SessionInfo, UiCommand } from '@cora/shared';
 import { openTab } from './openTab';
+import { useDebrief } from './debrief';
 import { sessionEvents, setHiddenSession, useBrain } from './store';
 import { useWeb } from './web';
 import { sessionName } from '../lib/format';
@@ -147,6 +150,10 @@ export function runUi(cmd: UiCommand): void {
       if (desktop?.browser && sid) {
         useWeb.getState().open(sid, cmd.url, { reload: true });
         useWeb.getState().setShown(sid, true);
+      } else if (sid && isTablet()) {
+        // on the iPad: the session's browser, rendered on your PC (and on show, when you're looking at that session)
+        void openRemote(sid, cmd.url);
+        if (st.focus === sid) useTabletUi.setState({ pane: 'browser' });
       } else window.open(cmd.url, '_blank', 'noopener');
       return;
     }
@@ -178,7 +185,18 @@ export function runUi(cmd: UiCommand): void {
     case 'notify':
       if (!attentive()) desktop?.notify('Cora', cmd.text, '');
       if (st.prefs && useVoice.getState().settings.enabled && !useVoice.getState().settings.muted) void speak(`cora-notify-${Date.now()}`, cmd.text, 600, true);
-      return;    case 'compose': {
+      return;
+    case 'debrief': {
+      // a session made one (it starts), or its bubble in the IDE was used
+      const db = useDebrief.getState();
+      if (cmd.act === 'start') return void (cmd.id && db.start(cmd.sessionId, cmd.id));
+      if (db.on?.sessionId !== cmd.sessionId) return;
+      if (cmd.act === 'ask') return void (cmd.text && db.ask(cmd.text));
+      if (cmd.act === 'close') return db.end();
+      if (cmd.act === 'speak') return db.toggleSpeak();
+      return db[cmd.act]();
+    }
+    case 'compose': {
       // what you selected in the IDE: the session in front, the code in its prompt box (you ask the question)
       if (!st.sessions[cmd.sessionId]) return;
       st.setFocus(cmd.sessionId);

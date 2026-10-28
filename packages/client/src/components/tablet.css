@@ -1,0 +1,87 @@
+/* Cora on the iPad: everything here is under .tablet, which the
+   desktop app never has. */
+
+/* ---- the shell: the slim rail (landscape) or nothing (portrait: the drawer) ---- */
+.app.tablet .shell-body { grid-template-columns: 64px minmax(0, 1fr); }
+.app.tablet.portrait .shell-body { grid-template-columns: minmax(0, 1fr); }
+.app.tablet { font-size: 14px; -webkit-tap-highlight-color: transparent; }
+
+.tb-rail { display: flex; flex-direction: column; align-items: center; gap: 6px; min-height: 0; padding: 10px 0 12px; background: var(--nav); border-right: 1px solid var(--hair); }
+.tb-ib { position: relative; display: grid; place-items: center; flex: none; width: 46px; height: 46px; padding: 0; border: 0; border-radius: 12px; background: none; color: var(--ink3); cursor: pointer; }
+.tb-ib:active { background: var(--raise2); }
+.tb-ib.on { background: var(--raise); box-shadow: inset 0 0 0 1px var(--hair2); color: var(--ink); }
+.tb-orb { width: 26px; height: 26px; border-radius: 50%; background: radial-gradient(circle at 38% 32%, #fbcfe8, var(--cora) 48%, color-mix(in srgb, var(--cora) 40%, #000)); box-shadow: 0 0 14px color-mix(in srgb, var(--cora) 50%, transparent); }
+.tb-proj .pj-sq { width: 14px; height: 14px; border-radius: 4px; }
+.tb-sep { flex: none; width: 28px; height: 1px; margin: 2px 0; background: var(--hair); }
+.tb-sessions { flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 2px 0; overflow-y: auto; scrollbar-width: none; }
+.tb-sessions::-webkit-scrollbar { display: none; }
+.tb-tile { position: relative; flex: none; display: grid; place-items: center; width: 44px; height: 44px; padding: 0; border: 0; border-radius: 12px; background: color-mix(in srgb, var(--sc) 16%, #0b0f16); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--sc) 38%, transparent); color: color-mix(in srgb, var(--sc) 82%, white); font: 700 16px var(--ui); cursor: pointer; touch-action: manipulation; -webkit-user-select: none; user-select: none; }
+.tb-tile.on { box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--sc) 80%, white), 0 0 14px color-mix(in srgb, var(--sc) 35%, transparent); }
+.tb-tile.done { opacity: .5; }
+.tb-tile > i { position: absolute; right: -3px; bottom: -3px; display: none; width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--nav); }
+.tb-tile.work > i { display: block; background: var(--work); }
+.tb-tile.need > i { display: block; background: var(--need); box-shadow: 0 0 8px var(--need); }
+.tb-pdot { position: absolute; left: -7px; top: 50%; width: 3px; height: 18px; margin-top: -9px; border-radius: 2px; background: var(--pc); }
+.tb-new { color: var(--ink2); box-shadow: inset 0 0 0 1px var(--hair2); }
+
+/* ---- the full nav as a drawer ---- */
+.tb-drawer { position: fixed; inset: 0; z-index: 400; pointer-events: none; }
+.tb-dim { position: absolute; inset: 0; background: rgba(0, 0, 0, .5); opacity: 0; transition: opacity .2s; }
+.tb-sheet { position: absolute; left: 0; top: 0; bottom: 0; width: min(340px, 86vw); display: flex; background: var(--panel2); box-shadow: 16px 0 40px rgba(0, 0, 0, .55); transform: translateX(-105%); transition: transform .24s cubic-bezier(.2, .7, .2, 1); }
+.tb-sheet > .rail { flex: 1; border-right: 0; }
+.tb-drawer.open { pointer-events: auto; }
+.tb-drawer.open .tb-dim { opacity: 1; }
+.tb-drawer.open .tb-sheet { transform: none; }
+
+.tb-sheet { flex-direction: column; }
+.tb-layout { flex: none; display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 10px 12px calc(10px + env(safe-area-inset-bottom)); border-top: 1px solid var(--hair); background: var(--panel2); }
+.tb-layout .lab { color: var(--ink4); font: 600 9.5px var(--code); letter-spacing: .14em; text-transform: uppercase; }
+.tb-layout .pp-seg button { height: 30px; padding: 0 10px; font-size: 12.5px; }
+.tb-layout .pp-tg { height: 32px; font-size: 12.5px; }
+
+/* ---- a session: its views as tabs, the one on show full width ---- */
+.app.tablet .focus.tablet-focus { display: flex; flex-direction: column; grid-template-columns: none; }
+.tb-tabs { flex: none; display: flex; align-items: center; gap: 4px; height: 52px; padding: 0 10px; border-bottom: 1px solid var(--hair2); background: var(--nav); overflow-x: auto; scrollbar-width: none; }
+.tb-tabs::-webkit-scrollbar { display: none; }
+.tb-tab { flex: none; }
+.tb-tab { height: 38px; padding: 0 18px; border: 0; border-radius: 10px; background: none; color: var(--ink3); font: 600 14px var(--ui); cursor: pointer; touch-action: manipulation; }
+.tb-tab.on { background: var(--raise); box-shadow: inset 0 0 0 1px var(--hair2); color: var(--ink); }
+.tb-menu { width: 40px; height: 40px; margin-right: 4px; }
+.tb-n { margin-left: 6px; padding: 0 6px; border-radius: 8px; background: var(--raise2); color: var(--ink3); font: 500 11px/18px var(--code); }
+.tf-browser { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.tf-board { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.tf-board > .view { flex: 1; min-height: 0; }
+.tf-session { flex: 1; min-height: 0; display: flex; }
+.tf-session > .rightcol { flex: 1; width: 100%; }
+/* the right column's own card and tabs: the header and the tabs above say it (kept in their rows, just not shown) */
+.tf-session .rightcol > :first-child,
+.tf-session .rightcol .rtabs { height: 0 !important; min-height: 0 !important; padding: 0 !important; margin: 0 !important; border: 0 !important; overflow: hidden !important; visibility: hidden; }
+
+/* ---- touch-sized ---- */
+.app.tablet .focus-h { height: 52px; }
+.app.tablet .focus-h .dl-btn { height: 36px; padding: 0 12px; }
+.app.tablet .dl-btn { min-height: 36px; }
+.app.tablet .ses { height: 54px; }
+.app.tablet .inbox-row { min-height: 44px; }
+.app.tablet .bd-ph { height: 36px; }
+.app.tablet .bd-ph .ib { width: 30px; height: 30px; }
+.app.tablet .sm-row { height: 42px; font-size: 14px; }
+.app.tablet .rail .ses-new { height: 44px; }
+.app.tablet .pj-row { height: 42px; }
+.app.tablet .composer textarea, .app.tablet .cmp textarea { font-size: 16px; }
+.app.tablet input, .app.tablet textarea, .app.tablet select { font-size: max(16px, 1em); }
+
+/* ---- a phone: the same, tighter ---- */
+.app.tablet.phone { font-size: 13.5px; }
+.app.phone .tb-tabs { height: 46px; gap: 2px; padding: 0 6px; }
+.app.phone .tb-tab { height: 34px; padding: 0 11px; font-size: 13px; }
+.app.phone .tb-menu { width: 36px; height: 36px; margin-right: 0; }
+.app.phone .focus-h { height: 48px; gap: 6px; padding: 0 8px; }
+.app.phone .focus-h .fh-state, .app.phone .focus-h .fh-dv { display: none; }
+.app.phone .focus-h .dl-btn { height: 34px; padding: 0 9px; }
+.app.phone .live-go .bt-l { display: none; }
+.app.phone .live-pop { width: min(300px, calc(100vw - 16px)); }
+.app.phone .pjv-h { flex-wrap: wrap; height: auto; min-height: 46px; padding: 6px 10px; gap: 6px; }
+.app.phone .pjv-meta { display: none; }
+.app.phone .pjv-h .bt-l { display: none; }
+.app.phone .rb-tab { max-width: 150px; }

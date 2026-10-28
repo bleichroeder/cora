@@ -48,3 +48,6 @@
 .live-board .mm-blanks i:nth-child(1) { left: 0; top: 18px; transform: rotate(-9deg); }
 .live-board .mm-blanks i:nth-child(2) { left: 44px; top: 0; transform: rotate(5deg); box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--cora) 35%, transparent), 0 6px 14px rgba(0, 0, 0, .25); }
 .live-board .mm-blanks i:nth-child(3) { left: 78px; top: 30px; transform: rotate(-3deg); }
+/* dragged about the wall: lifted while it moves, and it stays where it's dropped */
+.live-board .mm-sticker { touch-action: none; }
+.live-board .mm-sticker.dragging { cursor: grabbing; transform: rotate(var(--tilt)) scale(1.05); box-shadow: 0 16px 36px rgba(0, 0, 0, .55), 0 1px 0 rgba(255, 255, 255, .6) inset; transition: none; }

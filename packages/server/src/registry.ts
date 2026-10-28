@@ -22,13 +22,17 @@ export class Registry {
   /** of those, the ones ended by 30 minutes' silence (not by Claude Code saying so, or their process exiting) */
   private silent = new Set<string>();
 
-  /** `hosted`: the session has a live terminal in Cora (its process exiting ends it, so silence doesn't) */
-  constructor(private store: Store, private onChange: (c: RegistryChange) => void, private o: { hosted?: (sessionId: string) => boolean } = {}) {
+  /**
+   * `hosted`: when the session's live Claude terminal in Cora started, null when it has none (its process exiting ends
+   * the session, so silence doesn't)
+   */
+  constructor(private store: Store, private onChange: (c: RegistryChange) => void, private o: { hosted?: (sessionId: string) => number | null } = {}) {
     // what had ended before Cora (re)started stays ended while it catches up on the transcripts: from the sessions'
-    // saved state, or a session_end with nothing after it (which a restart could have hidden)
+    // saved state, or a session_end with nothing after it (which a restart could have hidden). It ended when Claude
+    // Code said so, if that's the last word (a resume from Cora since, with nothing said yet, moved its last activity)
     for (const s of store.listSessions()) {
       if (s.state === 'ended') {
-        this.ended.set(s.id, s.lastTs);
+        this.ended.set(s.id, store.endedAt(s.id) ?? s.lastTs);
         if (store.endedAt(s.id) == null) this.silent.add(s.id);
       } else {
         const end = store.endedAt(s.id);
@@ -67,6 +71,8 @@ export class Registry {
     const fl = this.flight(sid, e.agentId);
     switch (e.kind) {
       case 'tool':
+        // a command you ran yourself (`!`): Claude isn't doing anything (it shows once it's over, both lines at once)
+        if (e.tool?.byYou || e.toolUseId?.startsWith('bang:')) break;
         if (e.toolUseId) {
           if (e.phase === 'start') fl.set(e.toolUseId, e.ts);
           else fl.delete(e.toolUseId);
@@ -176,8 +182,10 @@ export class Registry {
   tick(now: number): void {
     for (const s of this.store.listSessions()) {
       if (s.state === 'ended') {
-        // ended by silence, but its terminal in Cora is live: it never ended
-        if (this.silent.has(s.id) && this.o.hosted?.(s.id)) {
+        // ended by silence, but its terminal in Cora is live: it never ended. Or its terminal started after it ended:
+        // resumed here and nothing said yet, and Cora restarting then saw only the old end. It runs here: not ended.
+        const since = this.o.hosted?.(s.id) ?? null;
+        if (since != null && (this.silent.has(s.id) || since > (this.ended.get(s.id) ?? Infinity))) {
           this.ended.delete(s.id);
           this.silent.delete(s.id);
           this.refreshSession(s.id, {});
@@ -194,7 +202,7 @@ export class Registry {
         }
         this.refreshSession(s.id, {});
       }
-      if (now - s.lastTs > ENDED_AFTER_MS && !(this.pending.get(s.id) ?? 0) && !this.o.hosted?.(s.id)) {
+      if (now - s.lastTs > ENDED_AFTER_MS && !(this.pending.get(s.id) ?? 0) && (this.o.hosted?.(s.id) ?? null) == null) {
         this.ended.set(s.id, s.lastTs);
         this.silent.add(s.id);
         this.refreshSession(s.id, {});

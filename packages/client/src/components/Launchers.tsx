@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { ArchivedProjects } from './Projects';
 import { EFFORTS, PERMISSION_MODES, coraIssuePrompt, coraTicketPrompt, issueUrl, jiraPrompt, type HistoryItem, type LaunchOptions, type LaunchPreset, type PermissionMode, type Settings } from '@cora/shared';
 import { useBrain } from '../state/store';
 import { fetchDirs, fetchHistory, launchTerminal } from '../state/ws';
@@ -433,7 +434,7 @@ export function HistoryModal() {
     stopAsk.current?.abort();
     setAskedAt(null);
   };
-  const named = (items ?? []).filter((h) => !q || `${h.name ?? ''} ${h.title} ${h.firstPrompt} ${h.cwd}`.toLowerCase().includes(q.toLowerCase())).slice(0, 200);
+  const named = (items ?? []).filter((h) => !q || `${h.name ?? ''} ${h.title} ${h.firstPrompt} ${h.cwd} ${h.recap ?? ''}`.toLowerCase().includes(q.toLowerCase())).slice(0, 200);
   const pickIds = new Set((picks ?? []).map((h) => h.sessionId));
   const namedIds = new Set(named.map((h) => h.sessionId));
   const deep = (said ?? []).filter((h) => !namedIds.has(h.sessionId) && !pickIds.has(h.sessionId));
@@ -522,6 +523,7 @@ export function HistoryModal() {
         </div>
       ) : null}
       <div className="hs-list" ref={list}>
+        <ArchivedProjects q={q} onDone={close} />
         {!items ? <div className="ns-none">Loading…</div> : null}
         {groups.map((g) => (
           <div key={g.d}>
@@ -541,7 +543,7 @@ export function HistoryModal() {
                       {shortCwd(h.cwd)} · {ago(h.mtime)} ago
                       {known[h.sessionId] && isDismissed(known[h.sessionId]) ? <em className="hs-tag">removed from the list</em> : null}
                     </span>
-                    {h.snippet ? <span className="hs-snip">…{h.snippet}…</span> : null}
+                    {h.snippet ? <span className="hs-snip">…{h.snippet}…</span> : h.recap ? <span className="hs-recap" title={h.recap}>{h.recap}</span> : null}
                   </span>
                   <span className="hs-a">
                     {known[h.sessionId] ? (

@@ -109,6 +109,23 @@ export function promptHistory(transcript: Sent[], sent: Sent[]): string[] {
   return out;
 }
 
+/** Longest a command you sent with `!` shows as running while the transcript doesn't have it yet. */
+export const RUNNING_FOR_MS = 10 * 60_000;
+
+/**
+ * A command you sent from here with `!` (bash mode) that the transcript doesn't show yet. Claude Code writes such a
+ * command, and its output, only once it has finished (or gone to the background, after 2 minutes), so until then it's
+ * running. `sent`: what you sent from here, oldest first; `ran`: when the transcript's commands of yours started.
+ */
+export function runningCommand(sent: Sent[], ran: number[], now: number): { command: string; at: number } | null {
+  const last = sent.at(-1);
+  if (!last || !/^\s*!/.test(last.text) || last.text.trim().includes('\n') || now - last.ts > RUNNING_FOR_MS) return null;
+  // the transcript has it: a command of yours that started when it was sent, or after (a few seconds' slack)
+  if (ran.some((t) => t >= last.ts - 5000)) return null;
+  const command = last.text.replace(/^\s*!\s*/, '').trim();
+  return command ? { command, at: last.ts } : null;
+}
+
 /**
  * Step through the history with ↑ (-1) and ↓ (+1). `at` is where you are (null: not browsing, your own text).
  * Returns the new position (null: back to your own text), or undefined when there's nowhere to go.

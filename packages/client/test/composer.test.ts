@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { BUILTIN_COMMANDS, buildPrompt, stopKey, caretOnEdge, filterCommands, keyAction, mergeCommands, promptHistory, quotePath, slashQuery, stepHistory, type SlashCommand } from '../src/lib/composer';
+import { BUILTIN_COMMANDS, buildPrompt, stopKey, caretOnEdge, filterCommands, keyAction, mergeCommands, promptHistory, quotePath, runningCommand, RUNNING_FOR_MS, slashQuery, stepHistory, type SlashCommand } from '../src/lib/composer';
 
 const key = (k: string, mods: Partial<{ shiftKey: boolean; ctrlKey: boolean; metaKey: boolean; altKey: boolean; isComposing: boolean }> = {}) => ({ key: k, shiftKey: false, ctrlKey: false, metaKey: false, altKey: false, ...mods });
 
@@ -100,5 +100,23 @@ describe("the composer's terminal keys", () => {
     expect(stopKey(k('c', { ctrlKey: true }), { selection: true })).toBe(null);
     expect(stopKey(k('c', { ctrlKey: true, shiftKey: true }), { selection: false })).toBe(null);
     expect(stopKey(k('c'), { selection: false })).toBe(null);
+  });
+});
+
+describe('a command sent with !', () => {
+  const sent = (text: string, ts: number) => ({ text, ts });
+  it('runs until the transcript has a command of yours from then on', () => {
+    expect(runningCommand([sent('fix it', 0), sent('! npm test', 1000)], [], 5000)).toEqual({ command: 'npm test', at: 1000 });
+    // the transcript writes it when it's done, with the time it started (a little before it was "sent" counts too)
+    expect(runningCommand([sent('!npm test', 1000)], [990], 5000)).toBeNull();
+    // an earlier command of yours isn't this one
+    expect(runningCommand([sent('!npm test', 100_000)], [1000], 105_000)).toEqual({ command: 'npm test', at: 100_000 });
+  });
+  it('only the last thing sent, one line, for a while', () => {
+    expect(runningCommand([sent('!ls', 1000), sent('and then?', 2000)], [], 3000)).toBeNull();
+    expect(runningCommand([sent('!ls\nmore', 1000)], [], 3000)).toBeNull();
+    expect(runningCommand([sent('!', 1000)], [], 3000)).toBeNull();
+    expect(runningCommand([sent('!ls', 1000)], [], 1000 + RUNNING_FOR_MS + 1)).toBeNull();
+    expect(runningCommand([], [], 0)).toBeNull();
   });
 });

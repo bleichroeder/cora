@@ -4,6 +4,41 @@ What changed in each release. Cora updates itself; each update's notes are on it
 
 ## Unreleased
 
+## 0.1.9
+
+- **Projects.** Group sessions that belong to one piece of work: a Projects section in the nav, each project's own
+  board (its sessions' orbs together in a Constellation, Members, a Thread, Brief & decisions, Across repos,
+  Activity, and any session panel pointed at one member or all of them), Resume all and Wrap up. Name, colour, order
+  and archive from the nav; "Shade its sessions" gives each member a shade of the project's colour.
+  - Coordination is opt-in per project: each session hears nothing, the brief and decisions, or everything on its next
+    turn; it may post only if you let it, and a handoff wakes an idle session only after you say yes.
+- **Go live: share your Cora with a teammate.** A link anyone can open in a browser (through Tailscale Funnel, to a
+  guests-only door; only that share is public), or your tailnet only. They see your sessions with your look, follow
+  your view, and you see each other's pointers.
+  - View, Interactive (they prompt sessions; their answers to a session's prompts wait for yours) or Drive.
+  - Follow only: guests stay on your view, and a click of theirs pulses on your screen where they pointed.
+  - Your Inbox, Notes, Slack and mail and Cora's console stay private unless you open them; Settings and Secrets never.
+- **Your Cora from your other devices.** Cora on your tailnet (Settings › Devices): pair an iPad or a laptop by QR code
+  or a 6-digit code; Cora is in use on one device at a time, and taking it over asks for your PIN.
+  - Your look follows you: layout, boards, tools, colours and what's folded, the same on every device.
+- **Made for the iPad (and phones).** Away from the desktop app: a slim rail of your sessions, the session full screen
+  with Board · Transcript · Explains · Changes · Browser as tabs, touch sizes, and the full nav as a drawer.
+  - The IDE panel works there too: your PC's VS Code, relayed through Cora.
+  - A session's Browser, live from your PC: its pages render on your PC with its logins and stream to the tablet, taps
+    and typing sent back.
+- **Debrief: a walk through the work.** Ask a session for one (Quick or Teach me) and it plays in the IDE panel, step by
+  step, lighting the lines it's about with a bubble saying what changed and why, read aloud if you like; listed in
+  Changes, linked to the turns it covers.
+- **Cora's board and worktrees.** The Overview is a Board of its own, with your sessions grouped by project and every
+  worktree of your repos: who's in each, how far it has got, what can go. A session about to edit a checkout another
+  session is changing is moved into a fresh worktree first.
+- **Cora Secrets.** Tokens and keys kept sealed in Cora that sessions use by name (the command runs with them, and they're
+  masked in its output), with your OK on each session's first use and every use logged.
+- **Slack:** what Cora sends for you carries a small grey line underneath saying so.
+- Also: Resume shows each session's latest recap; a thinking block's notes show in the transcript; new sessions get one
+  of your least-used voices; stickers on the Vibes wall can be dragged; the nav's foot says what's wrong in words;
+  GitLab and cluster reads pause for a minute (said once) when the PC is short of memory.
+
 ## 0.1.8
 
 - **An IDE panel: your own VS Code, in the Board.** + Panel › Tools › IDE runs your installed VS Code (its own web

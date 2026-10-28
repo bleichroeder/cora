@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { newParseCtx, parseLine } from '../src/transcript/parse';
+import { bangOutput, newParseCtx, parseLine, unescapeOutput } from '../src/transcript/parse';
 
 const SID = 's-1';
 const T0 = Date.parse('2026-10-12T13:27:02.000Z');
@@ -52,6 +52,40 @@ describe('parseLine', () => {
     expect(parseLine(u('b3', '<bash-stdout>x</bash-stdout>', 2000, 'nope'), ctx).events).toHaveLength(0);
   });
 
+  it("a command you ran is marked yours, its output as printed (Claude Code's own lines read as what they mean)", () => {
+    const ctx = newParseCtx();
+    const u = (uuid: string, content: string, ms: number, parentUuid?: string) => ({ type: 'user', uuid, parentUuid, promptId: 'p9', timestamp: iso(ms), sessionId: SID, message: { role: 'user', content } });
+    // as Claude Code writes them (2.1.281): the command with the space you typed after `!`, then stdout and stderr
+    const [start] = parseLine(u('c1', '<bash-input> aws login</bash-input>', 0), ctx).events;
+    expect(start.tool).toMatchObject({ name: 'Bash', input: { command: 'aws login' }, byYou: true });
+    expect(start.tool?.input).not.toHaveProperty('description');
+    const [end] = parseLine(u('c2', '<bash-stdout>open https://x.test/a?b=1&amp;c=2\r\nUpdated profile</bash-stdout><bash-stderr></bash-stderr>', 900, 'c1'), ctx).events;
+    expect(end.tool).toMatchObject({ byYou: true, resultSummary: '2 lines' });
+    expect(end.tool?.preview).toContain('b=1&c=2');
+    expect(end.tool?.failed).toBeUndefined();
+    // nothing printed
+    parseLine(u('d1', '<bash-input>sed -i x f</bash-input>', 1000), ctx);
+    const [quiet] = parseLine(u('d2', '<bash-stdout>(Bash completed with no output)</bash-stdout><bash-stderr></bash-stderr>', 1100, 'd1'), ctx).events;
+    expect(quiet.tool).toMatchObject({ resultSummary: 'no output' });
+    expect(quiet.tool?.preview).toBeUndefined();
+    // past Claude Code's 2 minutes: in the background, its task-notification ends it
+    parseLine(u('e1', '<bash-input> cd /c/code/cora && node scripts/package.mjs --publish</bash-input>', 2000), ctx);
+    const bg = '<bash-stdout>Command did not complete within its 120s timeout and was moved to the background (ID: b1glfwtcg). Output is being written to: C:\\Users\\D\\tasks\\b1glfwtcg.output. You will be notified when it completes.</bash-stdout><bash-stderr></bash-stderr>';
+    const [moved] = parseLine(u('e2', bg, 122_000, 'e1'), ctx).events;
+    expect(moved.tool).toMatchObject({ resultSummary: 'running in background', background: { taskId: 'b1glfwtcg', outputFile: 'C:\\Users\\D\\tasks\\b1glfwtcg.output' } });
+    // refused: only Claude Code's error came back
+    parseLine(u('f1', '<bash-input>git -C ../other push</bash-input>', 3000), ctx);
+    const [refused] = parseLine(u('f2', '<bash-stderr>Command failed: This session is isolated in the worktree C:\\w</bash-stderr>', 3100, 'f1'), ctx).events;
+    expect(refused.tool).toMatchObject({ failed: true });
+    expect(refused.tool?.resultSummary).toContain('Command failed');
+  });
+
+  it("a command's output: stdout then stderr, unescaped", () => {
+    expect(unescapeOutput('a &lt;b&gt; &amp;amp; &quot;c&quot; &#39;d&#39;')).toBe(`a <b> &amp; "c" 'd'`);
+    expect(bangOutput('<bash-stdout></bash-stdout><bash-stderr>/usr/bin/bash: awscli: command not found\n</bash-stderr>')).toEqual({ out: '/usr/bin/bash: awscli: command not found', refused: false });
+    expect(bangOutput('<bash-stdout>ok</bash-stdout><bash-stderr>warn</bash-stderr>').out).toBe('ok\nwarn');
+  });
+
   it('interrupt markers are interrupt events, not prompts', () => {
     const ctx = newParseCtx();
     const e1 = parseLine({ type: 'user', uuid: 'i1', timestamp: iso(0), sessionId: SID, interruptedMessageId: 'm', message: { role: 'user', content: [{ type: 'text', text: '[Request interrupted by user]' }] } }, ctx).events;
@@ -93,6 +127,15 @@ describe('parseLine', () => {
     expect(evs[2]).toMatchObject({ kind: 'tool', phase: 'end', toolUseId: 'explain-e1-0' });
     // a reply that is only an explain: no empty reply
     expect(parseLine(asst('e2', 'msgF', { type: 'text', text: '<!-- cora:explain title="X" -->y<!-- /cora:explain -->' }, 200), ctx).events.map((e) => e.kind)).toEqual(['tool', 'tool']);
+  });
+
+  it("a thinking block with words (a model's note on its progress, shown in the terminal) keeps them; an empty one has none", () => {
+    const ctx = newParseCtx();
+    const note = parseLine(asst('n1', 'msgN', { type: 'thinking', thinking: '  Confirmed the buttons only send `{ isActive }`. Doing one last check.  ' }, 1000), ctx).events[0];
+    expect(note).toMatchObject({ kind: 'think', text: 'Confirmed the buttons only send `{ isActive }`. Doing one last check.' });
+    const hidden = parseLine(asst('n2', 'msgO', { type: 'thinking', thinking: '' }, 2000), ctx).events[0];
+    expect(hidden.text).toBeUndefined();
+    expect(parseLine(asst('n3', 'msgP', { type: 'redacted_thinking', data: 'x' }, 3000), ctx).events[0].text).toBeUndefined();
   });
 
   it('a second thinking block of the same response is not timed', () => {

@@ -68,6 +68,25 @@ function tag(s: string, name: string): string | undefined {
   return m?.[1]?.trim();
 }
 
+/** Claude Code escapes a command's output in its <bash-stdout> and <bash-stderr> (`&amp;` for `&`): as it was printed. */
+export function unescapeOutput(s: string): string {
+  return s.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'").replace(/&amp;/g, '&');
+}
+
+/**
+ * The output of a command you ran yourself (`!`), from Claude Code's line after it: stdout and stderr as printed
+ * ("(Bash completed with no output)" is none), and, when it ran past Claude Code's time limit, the background task it
+ * became. `refused`: Claude Code didn't run it (only its "Command failed: …" came back).
+ */
+export function bangOutput(text: string): { out: string; refused: boolean; background?: { taskId: string; outputFile?: string } } {
+  const stdout = unescapeOutput(tag(text, 'bash-stdout') ?? '').replace(/^\(Bash completed with no output\)$/, '');
+  const stderr = unescapeOutput(tag(text, 'bash-stderr') ?? '');
+  const out = [stdout, stderr].filter(Boolean).join('\n');
+  const bg = stdout.match(/moved to the background \(ID: (\w+)\)/)?.[1];
+  const file = stdout.match(/Output is being written to: (.+?\.output)/)?.[1];
+  return { out, refused: !text.includes('<bash-stdout>') && /^Command failed/.test(stderr), ...(bg ? { background: { taskId: bg, ...(file ? { outputFile: file } : {}) } } : {}) };
+}
+
 /** Report body of a "[Subagent hand-back]" message: everything after the fixed preamble, de-indented. */
 function handbackBody(raw: string): string {
   const at = raw.indexOf('The report follows:');
@@ -149,7 +168,9 @@ export function parseLine(obj: any, ctx: ParseCtx): ParseResult {
       if (block?.type === 'thinking' || block?.type === 'redacted_thinking') {
         // Only time thinking from the start of the API call; later blocks of the same response have no own start.
         const timed = prevTs != null && (!msg.id || prevMsg !== msg.id);
-        events.push({ ...base, id: obj.uuid, kind: 'think', phase: 'end', icon: EVENT_ICON.think, durationMs: timed ? Math.max(0, ts - prevTs!) : undefined, ...(tokens ? { tokens } : {}) });
+        // its text, when there is some: newer models write short notes on their progress there, which the terminal shows
+        const note = block.type === 'thinking' && typeof block.thinking === 'string' ? block.thinking.trim() : '';
+        events.push({ ...base, id: obj.uuid, kind: 'think', phase: 'end', icon: EVENT_ICON.think, durationMs: timed ? Math.max(0, ts - prevTs!) : undefined, ...(note ? { text: note } : {}), ...(tokens ? { tokens } : {}) });
         tokens = undefined;
       } else if (block?.type === 'text') {
         const inline = splitExplains(String(block.text ?? '').trim());
@@ -210,23 +231,26 @@ export function parseLine(obj: any, ctx: ParseCtx): ParseResult {
       }
       return { events, meta };
     }
-    // a command the user ran themselves (`!` in Claude Code): shown as a shell call, then its output when it comes
+    // a command you ran yourself (`!` in Claude Code): a shell call of yours (`byYou`), then its output. Claude Code
+    // writes both lines once it has finished, the first with the time it started.
     if (text.startsWith('<bash-input>') && agentId === 'main') {
       const id = `bang:${obj.uuid}`;
-      const input = { command: tag(text, 'bash-input') ?? '', description: 'You ran it (! in the terminal)' };
+      const input = { command: tag(text, 'bash-input') ?? '' };
       ctx.tools.set(id, { name: 'Bash', input, ts, agentId });
       const s = summarizeTool('Bash', input, undefined, undefined, ctx.cwd);
-      events.push({ ...base, id: `tool:${id}:start`, kind: 'tool', phase: 'start', toolUseId: id, icon: iconFor('Bash', input), tool: { name: 'Bash', input, summary: s.summary, resource: s.resource } });
+      events.push({ ...base, id: `tool:${id}:start`, kind: 'tool', phase: 'start', toolUseId: id, icon: iconFor('Bash', input), tool: { name: 'Bash', input, summary: s.summary, resource: s.resource, byYou: true } });
       return { events, meta };
     }
     const bang = /^<bash-(stdout|stderr)>/.test(text) && obj.parentUuid ? `bang:${obj.parentUuid}` : undefined;
     const ran = bang ? ctx.tools.get(bang) : undefined;
     if (bang && ran) {
-      const out = [tag(text, 'bash-stdout'), tag(text, 'bash-stderr')].filter(Boolean).join('\n');
-      const s = summarizeTool('Bash', ran.input, out, undefined, ctx.cwd, false);
+      const o = bangOutput(text);
+      const s = summarizeTool('Bash', ran.input, o.out, undefined, ctx.cwd, o.refused);
+      // past Claude Code's time limit it goes on in the background (its task-notification ends it, as for Claude's)
+      const resultSummary = o.background ? 'running in background' : o.out || o.refused ? s.resultSummary : 'no output';
       events.push({
-        ...base, id: `tool:${bang}:end`, kind: 'tool', phase: 'end', toolUseId: bang, icon: iconFor('Bash', ran.input), durationMs: Math.max(0, ts - ran.ts),
-        tool: { name: 'Bash', input: ran.input, summary: s.summary, resultSummary: s.resultSummary, preview: s.preview, resource: s.resource },
+        ...base, id: `tool:${bang}:end`, kind: 'tool', phase: 'end', toolUseId: bang, icon: o.refused ? EVENT_ICON.fail : iconFor('Bash', ran.input), durationMs: Math.max(0, ts - ran.ts),
+        tool: { name: 'Bash', input: ran.input, summary: s.summary, resultSummary, preview: s.preview, resource: s.resource, byYou: true, ...(o.refused ? { failed: true } : {}), ...(o.background ? { background: o.background } : {}) },
       });
       return { events, meta };
     }
@@ -340,7 +364,7 @@ function taskEnded(content: string, ctx: ParseCtx, sessionId: string, ts: number
   if (!id || !status) return null;
   const toolUseId = tag(content, 'tool-use-id');
   if (toolUseId && ctx.childByToolUse.has(toolUseId)) return null; // a background subagent: it reports as itself
-  const summary = tag(content, 'summary') ?? '';
+  const summary = unescapeOutput(tag(content, 'summary') ?? '');
   const exit = summary.match(/exit code (-?\d+)/)?.[1];
   const outputFile = tag(content, 'output-file');
   const started = toolUseId ? ctx.tools.get(toolUseId) : undefined;

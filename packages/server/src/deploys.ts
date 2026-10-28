@@ -23,7 +23,7 @@ import {
   type Workload,
   type WorkloadKind,
 } from '@cora/shared';
-import { classify, findGlab, json, type Exec } from './ci';
+import { classify, findGlab, json, type Exec, lowMemory, LOW_MEMORY_MS } from './ci';
 import type { EnvState } from './environments';
 import { gitlabHost, registryPrefix } from './gitlabHost';
 import { writeFileAtomic } from './fsx';
@@ -159,6 +159,8 @@ export class Deploys {
   private dismissed = new Set<string>();
   private health: CiHealth = { state: 'ok' };
   private running = 0;
+  /** short of memory a moment ago: no new reads until then */
+  private pausedUntil = 0;
   private timer?: NodeJS.Timeout;
   private flushTimer?: NodeJS.Timeout;
   private saveTimer?: NodeJS.Timeout;
@@ -287,6 +289,7 @@ export class Deploys {
     const clients = this.d.hasClients();
     const rolling = new Set(this.bumps.filter((b) => b.state === 'rolling').map((b) => b.env));
     if (!clients && !rolling.size) return;
+    if (now < this.pausedUntil) return;
     for (const e of this.d.envs()) {
       if (!e.on || !e.kubeconfig || e.reachable !== true) continue;
       if (!clients && !rolling.has(e.id)) continue;
@@ -345,7 +348,9 @@ export class Deploys {
       if (rolling) await this.follow(e, workloads);
       this.changed(true);
     } catch (err: any) {
-      const msg = String(err?.stderr || err?.message || 'kubectl failed').split(/\r?\n/).find((l: string) => l.trim()) ?? 'kubectl failed';
+      // the PC short of memory (kubectl couldn't start): a minute's pause, said once, not the crash text
+      if (lowMemory(err)) this.pausedUntil = this.now() + LOW_MEMORY_MS;
+      const msg = lowMemory(err) ? 'the PC is low on memory: reading again in a minute' : (String(err?.stderr || err?.message || 'kubectl failed').split(/\r?\n/).find((l: string) => l.trim()) ?? 'kubectl failed');
       if (r.error !== msg) (r.error = msg.slice(0, 200)), this.d.log?.(`deploys: ${e.name}: ${r.error}`), this.changed();
     } finally {
       r.busy = false;
@@ -698,6 +703,7 @@ export class Deploys {
 
   private note(e: unknown): void {
     const g = classify(e);
+    if (lowMemory(e)) this.pausedUntil = this.now() + LOW_MEMORY_MS;
     if (g.kind === 'missing') return;
     const h: CiHealth = { state: g.kind === 'no-glab' ? 'no-glab' : (g.kind as CiHealth['state']), message: g.message };
     if (h.state !== this.health.state || h.message !== this.health.message) (this.health = h), this.d.log?.(`deploys: ${g.message}`), this.changed();

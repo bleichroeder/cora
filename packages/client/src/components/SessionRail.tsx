@@ -1,11 +1,15 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { ProjectsSection } from './Projects';
+import { useProjects } from '../state/projects';
+import { GuestCard } from './Live';
+import { useLive, usePrivate } from '../state/live';
 import { useCoraLinks } from '../lib/coraLinks';
 import { desktop } from '../lib/desktop';
 import type { SessionInfo } from '@cora/shared';
 import { useBrain } from '../state/store';
 import { isDismissed, sessionColor, shortCwd } from '../lib/format';
 import { ticketLabel } from '../lib/ticket';
-import { SessionMenu, clearEnded, dismissSession } from './SessionMenu';
+import { SessionMenu, clearEnded, removeSession } from './SessionMenu';
 import { Icon } from './Icon';
 import { RecapPeek } from './Recap';
 import { IssueChip } from './IssuePicker';
@@ -15,7 +19,9 @@ import { GROUPS, dropOrder, inList, sameGroup, saveOrder, sortedSessions } from 
 import { openPalette } from './Palette';
 import { CiGlyph } from './CiStrip';
 import { ToolsDock } from './Tools';
-import { SecurityBadge } from './SecuritySettings';
+import { securityLevel } from '@cora/shared';
+import { useSecurity } from '../state/security';
+import { openSettings } from './SettingsModal';
 import { lockNow } from '../state/lock';
 import { CoraEye } from './CoraEye';
 import { InboxRow } from './Inbox';
@@ -65,6 +71,8 @@ function Entry({ s, onMenu, drag, setDrag }: { s: SessionInfo; onMenu(e: React.M
   const hint = drag?.over?.id === s.id && drag.id !== s.id ? (drag.over.below ? ' drop-below' : ' drop-above') : '';
   const [ending, setEnding] = useState(false);
   const ended = s.state === 'ended';
+  // its Claude Code still open in Cora (it said it ended, and hasn't quit yet): ending it comes before taking it off
+  const hosted = useBrain((st) => st.terminals.some((t) => t.sessionId === s.id && t.alive));
   const name = ticketLabel(s).text;
   const st = s.state === 'needs-you' ? ' need' : s.state === 'working' || s.state === 'thinking' ? ' work' : s.state === 'idle' ? ' idle' : ' done';
   // finished while you were elsewhere (until you open it), and being read aloud now
@@ -82,6 +90,7 @@ function Entry({ s, onMenu, drag, setDrag }: { s: SessionInfo; onMenu(e: React.M
       {peek && s.recap && ref.current ? <RecapPeek sessionId={s.id} row={ref.current} /> : null}
       <button
         ref={ref}
+        data-ping={`ses:${s.id}`}
         className={`ses${st}${fresh ? ' fresh' : ''}${speaking ? ' speaking' : ''}${focus === s.id ? ' on' : ''}${byCora || fromJira ? ' cora' : ''}${isDismissed(s) ? ' dismissed' : ''}${drag?.id === s.id ? ' dragging' : ''}${reached ? ' reached' : ''}${hint}`}
         style={{ ['--sc' as any]: sessionColor(s) }}
         onClick={() => (unpeek(), setFocus(s.id))}
@@ -127,10 +136,10 @@ function Entry({ s, onMenu, drag, setDrag }: { s: SessionInfo; onMenu(e: React.M
           <span
             className="ses-x"
             role="button"
-            title={ended ? 'Remove from the list (it comes back if it has new activity)' : 'End this session…'}
+            title={ended && !hosted ? 'Remove from the list (it comes back if it has new activity)' : 'End this session…'}
             onClick={(e) => {
               e.stopPropagation();
-              if (ended) void dismissSession(s.id).then((err) => err && oops("Couldn't take it off the list", err));
+              if (ended && !hosted) void removeSession(s.id).then((err) => err && oops("Couldn't take it off the list", err));
               else setEnding(true);
             }}
           >
@@ -179,16 +188,32 @@ export function SessionRail() {
   const [folded, toggleFold] = useFolded();
   const focus = useBrain((s) => s.focus);
   // what's live, and what ended in the last few hours; removed ones and older ones are in Resume
-  const list = sortedSessions(sessions).filter((s) => inList(s, now, focus));
+  // a project's members show under it, not again in the groups below
+  const members = useProjects((p) => p.projects);
+  const inProject = useMemo(() => new Set(members.filter((p) => !p.archivedAt).flatMap((p) => p.sessions)), [members]);
+  const list = sortedSessions(sessions).filter((s) => inList(s, now, focus) && !inProject.has(s.id));
   const setModal = useBrain((s) => s.setModal);
+  const guest = useLive((s) => s.role === 'guest');
+  const privateConsole = usePrivate('console');
+  const privateInbox = usePrivate('inbox');
   const onMenu = (e: React.MouseEvent, s: SessionInfo) => {
     e.preventDefault();
+    if (guest) return;
     setMenu({ s, x: e.clientX, y: e.clientY });
   };
   return (
     <nav className="rail">
-      <CoraEye />
-      <InboxRow />
+      {guest && privateConsole ? <GuestCard /> : <CoraEye />}
+      <BoardRow />
+      {guest && privateInbox ? (
+        <div className="inbox-row priv" title="Private">
+          <Icon name="Inbox" size={14} />
+          <b>Inbox</b>
+          <i className="priv-tag">PRIVATE</i>
+        </div>
+      ) : (
+        <InboxRow />
+      )}
       {/* the sessions' section, as Tools has it: its heading with Resume and Search beside it, and the one big button,
           New session (the main thing you do here) */}
       <div className="rail-sessions">
@@ -203,11 +228,14 @@ export function SessionRail() {
             </button>
           </span>
         </div>
-        <button className="btn allow ses-new" onClick={() => setModal('new-session')} title="Start a new Claude Code session">
-          <Icon name="Plus" size={14} /> New session
-        </button>
+        {guest ? null : (
+          <button className="btn allow ses-new" onClick={() => setModal('new-session')} title="Start a new Claude Code session">
+            <Icon name="Plus" size={14} /> New session
+          </button>
+        )}
       </div>
       <div className="rail-scroll">
+      {guest ? null : <ProjectsSection entry={(s) => <Entry key={s.id} s={s} onMenu={onMenu} drag={drag} setDrag={setDrag} />} dragging={drag?.id ?? null} onDropped={() => setDrag(null)} />}
       {GROUPS.map((g) => {
         const all = list.filter((s) => g.states.includes(s.state));
         if (!all.length) return null;
@@ -242,20 +270,33 @@ export function SessionRail() {
           </section>
         );
       })}
-      {!list.length && ready ? <div className="empty">Nothing open. Start a new session, or pick up an earlier one from Resume.</div> : null}
+      {!list.length && !inProject.size && ready ? <div className="empty">Nothing open. Start a new session, or pick up an earlier one from Resume.</div> : null}
       </div>
-      <ToolsDock />
-      <RailFooter />
+      {guest ? null : <ToolsDock />}
+      {guest ? null : <RailFooter />}
       {menu ? <SessionMenu s={sessions[menu.s.id] ?? menu.s} x={menu.x} y={menu.y} onClose={() => setMenu(null)} /> : null}
     </nav>
   );
 }
 
-/** Pinned under the list: settings, the overview toggle, and the connection state when it isn't healthy. */
+/** Cora's board (the Overview), with Cora's other things at the top of the nav: between its card and the Inbox (the foot). */
+function BoardRow() {
+  const overview = useBrain((s) => s.overview);
+  return (
+    <button data-ping="nav:board" className={`inbox-row board-row${overview ? ' on' : ''}`} onClick={() => useBrain.getState().toggleOverview()} title="Cora's board: your sessions, their worktrees, what needs you (G)">
+      <Icon name="LayoutDashboard" size={14} />
+      <b>Cora's board</b>
+      <kbd>G</kbd>
+    </button>
+  );
+}
+
+/**
+ * The nav's foot: a quiet line. It says what's wrong in words when something is (the connection, a new version to
+ * restart into, security updates), else nothing; Settings and Lock as two icons on the right.
+ */
 function RailFooter() {
   const conn = useBrain((s) => s.conn);
-  const overview = useBrain((s) => s.overview);
-  const toggle = useBrain((s) => s.toggleOverview);
   // brief reconnects (a server restart, sleep/wake) shouldn't flash a warning
   const [down, setDown] = useState(false);
   const isOpen = conn === 'open'; // retries flip closed/connecting; only open vs not matters for the delay
@@ -264,48 +305,48 @@ function RailFooter() {
     const t = setTimeout(() => setDown(true), 2000);
     return () => clearTimeout(t);
   }, [isOpen]);
-  return (
-    <div className="rail-foot">
-      <UpdateReady />
-      <button className={`rf-btn${overview ? ' on' : ''}`} onClick={() => toggle()} title="Overview: grid or galaxy (G)">
-        <Icon name="LayoutGrid" size={14} />
-        <span>Overview</span>
-        <kbd>G</kbd>
+  const update = useUpdateReady();
+  const level = useSecurity((s) => securityLevel(s.report));
+  // the one thing worth saying, most urgent first
+  const say =
+    down && conn !== 'open' ? (
+      <span className={`rf-say ${conn === 'unauthorized' ? 'bad' : 'warn'}`} title={conn === 'unauthorized' ? 'Not signed in: open the link printed by cora start' : conn === 'connecting' ? 'Connecting to the Cora server' : 'Lost the connection to the Cora server; retrying'}>
+        <i />
+        {conn === 'unauthorized' ? 'Signed out' : 'Reconnecting…'}
+      </span>
+    ) : update ? (
+      <button className="rf-say cora" onClick={() => desktop?.restartApp?.()} title="Cora restarts on the new version; your sessions keep running">
+        <i />
+        Restart to update <small>v{update}</small>
       </button>
-      <div className="rf-row">
-        <button className="rf-btn" title="Settings" onClick={() => useBrain.getState().setModal('settings')}>
-          <Icon name="Settings" size={14} />
-          <span>Settings</span>
+    ) : level ? (
+      <button className={`rf-say ${level === 'high' ? 'bad' : 'warn'}`} onClick={() => openSettings('security')} title="Settings › Updates & security">
+        <i />
+        {level === 'high' ? 'Security updates needed' : 'Security updates available'}
+      </button>
+    ) : null;
+  return (
+    <div className="rail-foot rf-line">
+      {say}
+      <span className="rf-icons">
+        <button className="rf-ib" title="Settings" aria-label="Settings" onClick={() => useBrain.getState().setModal('settings')}>
+          <Icon name="Settings" size={15} />
         </button>
-        <SecurityBadge />
-        <button className="rf-btn rf-lock" title="Lock Cora (Ctrl+Alt+L)" aria-label="Lock Cora" onClick={() => void lockNow()}>
-          <Icon name="Lock" size={14} />
+        <button className="rf-ib" title="Lock Cora (Ctrl+Alt+L)" aria-label="Lock Cora" onClick={() => void lockNow()}>
+          <Icon name="Lock" size={15} />
         </button>
-      </div>
-      {down && conn !== 'open' ? (
-        <span className="rf-conn" title={conn === 'unauthorized' ? 'Not signed in: open the link printed by cora start' : conn === 'connecting' ? 'Connecting to the Cora server' : 'Lost the connection to the Cora server; retrying'}>
-          <span className={`live-dot ${conn}`} />
-          {conn === 'unauthorized' ? 'signed out' : 'reconnecting…'}
-        </span>
-      ) : null}
+      </span>
     </div>
   );
 }
 
-/** Installed Cora: a new version is downloaded; restarting installs it (sessions keep running). */
-function UpdateReady() {
+/** Installed Cora: a new version is downloaded (its version), restarting installs it (sessions keep running). */
+function useUpdateReady(): string | null {
   const [version, setVersion] = useState<string | null>(null);
   useEffect(() => {
     void desktop?.updateReady?.().then(setVersion);
     return desktop?.onUpdate?.(setVersion);
   }, []);
-  if (!version) return null;
-  return (
-    <button className="rf-btn rf-update" onClick={() => desktop?.restartApp?.()} title="Cora restarts on the new version; your sessions keep running">
-      <Icon name="ArrowUpCircle" size={14} />
-      <span>Restart to update</span>
-      <kbd>v{version}</kbd>
-    </button>
-  );
+  return version;
 }
 

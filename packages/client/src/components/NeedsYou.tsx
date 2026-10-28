@@ -147,8 +147,9 @@ function PermissionCard({ p }: { p: PendingRequest }) {
           </>
         ) : (
           <>
-            <button className="btn allow" onClick={() => send({ decision: 'allow' })}><Icon name="Check" size={13} /> Allow</button>
-            <button className="btn ghost" onClick={() => setEditing(true)}><Icon name="Pencil" size={12} /> Allow + edit</button>
+            <button className="btn allow" onClick={() => send({ decision: 'allow' })}><Icon name="Check" size={13} /> {p.yours ? 'Allow for this session' : 'Allow'}</button>
+            {/* a secret's use: its command is what it is (no editing it here) */}
+            {p.yours ? null : <button className="btn ghost" onClick={() => setEditing(true)}><Icon name="Pencil" size={12} /> Allow + edit</button>}
             <button className="btn ghost no" onClick={() => setDenying(true)}><Icon name="X" size={13} /> Deny…</button>
           </>
         )}

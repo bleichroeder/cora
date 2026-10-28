@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { ProjectMenuRows } from './Projects';
 import type { SessionInfo } from '@cora/shared';
 import { useBrain } from '../state/store';
 import { MAIN_COLORS, isDismissed, sessionColor, sessionName, shortCwd } from '../lib/format';
@@ -27,10 +28,30 @@ export function showSession(sid: string): void {
 }
 
 export async function dismissSession(id: string, undo = false): Promise<string | null> {
-  const r = await post(`/api/sessions/${encodeURIComponent(id)}/dismiss`, { undo });
-  if (!r.ok) return (await r.json().catch(() => ({}))).error ?? 'failed';
+  return (await dismiss(id, { undo }))?.error ?? null;
+}
+
+async function dismiss(id: string, body: { undo?: boolean; closeShells?: boolean }): Promise<{ error: string; shells?: number } | null> {
+  const r = await post(`/api/sessions/${encodeURIComponent(id)}/dismiss`, body);
+  if (!r.ok) {
+    const j = (await r.json().catch(() => ({}))) as { error?: string; shells?: number };
+    return { error: j.error ?? 'failed', ...(j.shells ? { shells: j.shells } : {}) };
+  }
   useBrain.getState().upsertSession(await r.json());
   return null;
+}
+
+/**
+ * Take a session off the list. Shells of its still open in Cora (a tab beside it, a shell on its Board) would run on
+ * out of sight: you're asked, and they're closed with it. Null when it's off; else why not ('' when you said no).
+ */
+export async function removeSession(id: string): Promise<string | null> {
+  const r = await dismiss(id, {});
+  if (!r?.shells) return r?.error ?? null;
+  const n = r.shells;
+  const ok = window.confirm(`It has ${n === 1 ? 'a shell' : `${n} shells`} open in Cora (beside it, or on its Board). Close ${n === 1 ? 'it' : 'them'} and take the session off the list?\n\nWhatever runs in ${n === 1 ? 'it' : 'them'} ends.`);
+  if (!ok) return '';
+  return (await dismiss(id, { closeShells: true }))?.error ?? null;
 }
 
 /** "Suggest a name": a quick Haiku call names the session from its first prompt (it replaces your name for it). */
@@ -119,6 +140,7 @@ export function SessionMenu({ s, x, y, onClose }: { s: SessionInfo; x: number; y
           </button>
         ) : null}
       </div>
+      <ProjectMenuRows s={s} onDone={onClose} />
       <div className="sm-sep" />
       {s.state !== 'ended'
         ? ([-1, 1] as const).map((dir) => {
@@ -145,9 +167,9 @@ export function SessionMenu({ s, x, y, onClose }: { s: SessionInfo; x: number; y
           disabled={hosted}
           title={hosted ? 'Running in Cora: end it first' : 'Off the list until it has new activity; Resume still has it'}
           onClick={async () => {
-            const e = await dismissSession(s.id);
+            const e = await removeSession(s.id);
             if (e) setErr(e);
-            else onClose();
+            else if (e == null) onClose();
           }}
         >
           <Icon name="EyeOff" size={14} /> Remove from the list

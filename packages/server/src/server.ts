@@ -10,6 +10,15 @@ import { Freeze } from './freeze';
 import { Journal, journalDir } from './journal';
 import { displayName, recapText } from '@cora/shared';
 import { LiveExplains } from './liveExplains';
+import { Debriefs } from './debriefs';
+import { Worktrees } from './worktrees';
+import { Vault } from './vault';
+import { Devices } from './devices';
+import { Remote } from './remote';
+import { Shares } from './shares';
+import { Synced } from './synced';
+import { Projects } from './projects';
+import { Door } from './door';
 import { Environments, envLine } from './environments';
 import { homedir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
@@ -77,7 +86,7 @@ export type Running = {
 };
 
 /** Compose and start the whole server. */
-export async function startServer(config: Config, opts: { tail?: boolean; listen?: boolean; spawn?: SpawnFn; ptyBackend?: PtyBackend; onShutdown?: (o: { endTerminals: boolean }) => void; voiceFetch?: Fetch; namerRun?: RunFn; /** Cora's note drafts' `claude -p` (a fake in tests) */ draftRun?: RunFn; /** GitLab pipelines (off in tests) */ ci?: boolean; /** the security check (off in tests and simulations) */ security?: boolean; /** Slack's Web API and Socket Mode (fakes in tests) */ slackApi?: (token: string) => SlackApi; slackSocket?: (url: string) => WsLike; /** environments: where kubeconfigs are, and how reachability is checked (fakes in tests) */ kubeDir?: string; envProbe?: (url: string) => Promise<boolean>; /** setting Cora up: a scratch Claude settings file, and checks to fake (tests) */ claudeSettingsFile?: string; setupChecks?: Partial<import('./setup').SetupDeps> } = {}): Promise<Running> {
+export async function startServer(config: Config, opts: { tail?: boolean; listen?: boolean; spawn?: SpawnFn; ptyBackend?: PtyBackend; onShutdown?: (o: { endTerminals: boolean }) => void; voiceFetch?: Fetch; namerRun?: RunFn; /** Cora's note drafts' `claude -p` (a fake in tests) */ draftRun?: RunFn; /** GitLab pipelines (off in tests) */ ci?: boolean; /** the security check (off in tests and simulations) */ security?: boolean; /** Tailscale's command line (a fake in tests) */ remoteRun?: import('./remote').Run; /** Go live's public door (a fake in tests) */ door?: Pick<Door, 'start' | 'stop' | 'open' | 'port'>; /** Slack's Web API and Socket Mode (fakes in tests) */ slackApi?: (token: string) => SlackApi; slackSocket?: (url: string) => WsLike; /** environments: where kubeconfigs are, and how reachability is checked (fakes in tests) */ kubeDir?: string; envProbe?: (url: string) => Promise<boolean>; /** setting Cora up: a scratch Claude settings file, and checks to fake (tests) */ claudeSettingsFile?: string; setupChecks?: Partial<import('./setup').SetupDeps> } = {}): Promise<Running> {
   const store = new Store(config.dbPath);
   let hub: Hub | undefined;
   let ci: CiWatcher | undefined;
@@ -98,12 +107,14 @@ export async function startServer(config: Config, opts: { tail?: boolean; listen
     }
     if (c.agent) hub?.publishAgent(c.agent);
   }, {
-    // a live terminal in Cora: its process exiting ends the session, so silence doesn't (ptys exists by the first tick)
+    // a live terminal in Cora, and when it started: its process exiting ends the session, so silence doesn't (ptys
+    // exists by the first tick)
     hosted: (sid) => {
       try {
-        return ptys.list().some((t) => t.sessionId === sid && t.alive && !isShell(t));
+        const live = ptys.list().filter((t) => t.sessionId === sid && t.alive && !isShell(t));
+        return live.length ? Math.max(...live.map((t) => t.startedAt)) : null;
       } catch {
-        return false;
+        return null;
       }
     },
   });
@@ -549,7 +560,32 @@ export async function startServer(config: Config, opts: { tail?: boolean; listen
     ...(opts.draftRun ? { run: opts.draftRun } : {}),
   });
   if (config.dbPath !== ':memory:' && opts.ci) deploys.start();
-  const app = await buildApp({ config, store, hub, pipeline, pending, ptys, live: liveExplains, registry, prefs, voice, voiceFront, gmail, mailWatches, mailOutbox, ide, ideBridge, namer, tickets, jira, environments, deploys, notes, drafts, bot, inbox, ...(opts.claudeSettingsFile ? { claudeSettingsFile: opts.claudeSettingsFile } : {}), ...(opts.setupChecks ? { setupChecks: opts.setupChecks } : {}), onShutdown: opts.onShutdown, ci: () => ci, slack: { slack, outbox, live, cwdOf: (sid) => store.getSession(sid)?.cwd }, security: security ?? undefined, orchestrator: o, gitlabIssues, memes, sessionNames, lock, freeze, journal: { add: (sid, kind, text) => journalAdd(sid, kind, text), read: (sid) => journal.read(sid) } });
+  // your repos' worktrees (Cora's board, its agent's tools): your repos and those sessions worked in lately
+  const worktrees = new Worktrees({
+    mine: () => prefs.get().orchestrator.mandate.repos,
+    sessions: () => store.listSessions().filter((s) => s.state !== 'ended' && s.cwd).map((s) => ({ id: s.id, cwd: s.wd || s.cwd, live: true })),
+    recentFolders: () => [...new Set(store.listSessions().filter((s) => s.cwd && s.lastTs > Date.now() - 14 * 86400_000).flatMap((s) => [s.cwd, ...(s.wd ? [s.wd] : [])]))],
+    onChange: (repos) => hub.publishWorktrees({ t: 'worktrees', repos }),
+  });
+  hub.worktreesSnapshot = () => ({ t: 'worktrees', repos: worktrees.list() });
+  // Cora Secrets: kept sealed in its data folder; sessions use them by name (secret_run), never see a value
+  const vault = new Vault({ file: join(config.dataDir, 'secrets.json'), onChange: (list) => hub.publishSecrets({ t: 'secrets', list }) });
+  hub.secretsSnapshot = () => ({ t: 'secrets', list: vault.list() });
+  // your devices (the iPad) and Cora on your tailnet
+  const devices = new Devices({ file: join(config.dataDir, 'devices.json') });
+  // Go live: sharing your Cora with a teammate (one share at a time, kept in memory only)
+  const shares = new Shares();
+  // your Cora's look on every device
+  // your projects: sessions grouped by hand
+  const projects = new Projects(config.dbPath === ':memory:' ? null : join(config.dataDir, 'projects.json'));
+  const synced = new Synced(config.dbPath === ':memory:' ? null : join(config.dataDir, 'synced.json'));
+  // its public door (a port of its own, guests only), opened while a share's link is public
+  const door = opts.door ?? new Door({ target: config.port, port: config.port + 11 });
+  const remote = new Remote({ port: config.port, ...(opts.remoteRun ? { run: opts.remoteRun } : {}) });
+  if (opts.listen !== false) worktrees.start();
+  // sessions' debriefs (~/.cora/debriefs): made by their tool, played from the dashboard
+  const debriefs = new Debriefs({ dir: join(config.dataDir, 'debriefs'), onChange: (sessionId) => hub.publishDebriefs({ t: 'debriefs', sessionId, list: debriefs.list(sessionId) }) });
+  const app = await buildApp({ config, store, hub, pipeline, pending, ptys, live: liveExplains, registry, prefs, voice, voiceFront, gmail, mailWatches, mailOutbox, ide, ideBridge, namer, tickets, jira, environments, deploys, notes, drafts, bot, inbox, ...(opts.claudeSettingsFile ? { claudeSettingsFile: opts.claudeSettingsFile } : {}), ...(opts.setupChecks ? { setupChecks: opts.setupChecks } : {}), onShutdown: opts.onShutdown, ci: () => ci, slack: { slack, outbox, live, cwdOf: (sid) => store.getSession(sid)?.cwd }, security: security ?? undefined, orchestrator: o, gitlabIssues, memes, sessionNames, lock, freeze, journal: { add: (sid, kind, text) => journalAdd(sid, kind, text), read: (sid) => journal.read(sid) }, debriefs, worktrees, vault, devices, remote, shares, door, synced, projects });
 
   let tailer: Tailer | undefined;
   if (opts.tail !== false) {
@@ -613,7 +649,9 @@ export async function startServer(config: Config, opts: { tail?: boolean; listen
   }
 
   if (opts.listen !== false) {
-    await app.listen({ port: config.port, host: config.host });
+    // right after Windows starts, its port can be held for a moment (its networking reserving ranges as it comes up):
+    // try again for a while rather than give up on the first no
+    await listenRetry(() => app.listen({ port: config.port, host: config.host }), { log: (m) => console.log(`  ${m}`) });
     stage('listen', 'done');
   }
   // the orchestrator, when it's on (its session may already be running in the terminal host)
@@ -647,6 +685,7 @@ export async function startServer(config: Config, opts: { tail?: boolean; listen
       await ptys.disposeAll(o?.endTerminals ?? false);
       clearInterval(ticker);
       liveExplains.stop();
+      worktrees.stop();
       ci?.stop();
       deploys.stop();
       bot?.stop();
@@ -663,4 +702,24 @@ export async function startServer(config: Config, opts: { tail?: boolean; listen
       store.close();
     },
   };
+}
+
+/**
+ * Listening, again if the port is briefly not ours (EACCES / EADDRINUSE: right after Windows starts, its networking can
+ * hold a port a moment), for up to a minute; any other failure at once.
+ */
+export async function listenRetry(listen: () => Promise<unknown>, o: { tries?: number; waitMs?: (n: number) => number; log?: (m: string) => void } = {}): Promise<void> {
+  const tries = o.tries ?? 20;
+  for (let n = 1; ; n++) {
+    try {
+      await listen();
+      if (n > 1) o.log?.(`port free now (try ${n})`);
+      return;
+    } catch (e) {
+      const code = (e as NodeJS.ErrnoException).code;
+      if ((code !== 'EACCES' && code !== 'EADDRINUSE') || n >= tries) throw e;
+      if (n === 1) o.log?.(`port not free yet (${code}): trying again for a while`);
+      await new Promise((r) => setTimeout(r, o.waitMs?.(n) ?? Math.min(5000, 500 * n)));
+    }
+  }
 }

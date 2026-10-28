@@ -49,12 +49,20 @@ describe("sessions' voices", () => {
     { id: 'bbbbbbbb', name: 'Roger' },
     { id: 'cccccccc', name: 'Sarah' },
   ];
-  it("a new session gets the voice least in use among the open ones (the first on a tie)", () => {
-    expect(pickVoice(pool, {}, [])).toBe('aaaaaaaa');
-    expect(pickVoice(pool, { s1: 'aaaaaaaa' }, ['s1'])).toBe('bbbbbbbb');
-    expect(pickVoice(pool, { s1: 'aaaaaaaa', s2: 'bbbbbbbb', s3: 'cccccccc', s4: 'aaaaaaaa' }, ['s1', 's2', 's3', 's4'])).toBe('bbbbbbbb');
+  it('a new session gets one of the voices least in use among the open ones, at random', () => {
+    const first = () => 0;
+    const last = () => 0.999;
+    // all tied: any of them (not always the first)
+    expect(pickVoice(pool, {}, [], first)).toBe('aaaaaaaa');
+    expect(pickVoice(pool, {}, [], last)).toBe('cccccccc');
+    expect(new Set(Array.from({ length: 60 }, () => pickVoice(pool, {}, []))).size).toBeGreaterThan(1);
+    // one in use: one of the other two
+    expect(pickVoice(pool, { s1: 'aaaaaaaa' }, ['s1'], first)).toBe('bbbbbbbb');
+    expect(pickVoice(pool, { s1: 'aaaaaaaa' }, ['s1'], last)).toBe('cccccccc');
+    // the only least used: always it
+    expect(pickVoice(pool, { s1: 'aaaaaaaa', s2: 'bbbbbbbb', s3: 'cccccccc', s4: 'aaaaaaaa', s5: 'cccccccc' }, ['s1', 's2', 's3', 's4', 's5'], last)).toBe('bbbbbbbb');
     // closed sessions don't count
-    expect(pickVoice(pool, { gone: 'aaaaaaaa' }, [])).toBe('aaaaaaaa');
+    expect(pickVoice(pool, { gone: 'aaaaaaaa' }, [], first)).toBe('aaaaaaaa');
     expect(pickVoice([], {}, [])).toBeUndefined();
   });
 
@@ -65,7 +73,7 @@ describe("sessions' voices", () => {
     expect(voiceOf('s', DEFAULT_VOICE, { s: { id: 'zzzzzzzz', name: 'Zed' } }, [])).toEqual({ id: 'zzzzzzzz', name: 'Zed' });
     // given from the set: kept while it's in the set, else given again
     expect(voiceOf('s', each, { s: { id: 'cccccccc', name: 'Sarah', auto: true } }, [])).toEqual({ id: 'cccccccc', name: 'Sarah', auto: true });
-    expect(voiceOf('s', each, { s: { id: 'gone0000', name: 'Old', auto: true }, o: { id: 'aaaaaaaa', name: 'Aria', auto: true } }, ['s', 'o'])).toEqual({ id: 'bbbbbbbb', name: 'Roger', auto: true });
+    expect(['bbbbbbbb', 'cccccccc']).toContain(voiceOf('s', each, { s: { id: 'gone0000', name: 'Old', auto: true }, o: { id: 'aaaaaaaa', name: 'Aria', auto: true } }, ['s', 'o'])?.id);
     // no set, nothing picked: the sessions' voice
     expect(voiceOf('s', DEFAULT_VOICE, { s: { id: 'cccccccc', name: 'Sarah', auto: true } }, [])).toBeUndefined();
   });

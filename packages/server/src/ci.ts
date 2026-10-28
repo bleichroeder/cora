@@ -95,10 +95,22 @@ export class GlabError extends Error {
   }
 }
 
+/**
+ * The PC was short of memory when a tool started (glab and kubectl are Go programs: they fail to start with "out of
+ * memory allocating heap arena map" when Windows can't commit what they reserve; Windows itself says "spawn UNKNOWN").
+ * Nothing's wrong with GitLab or the cluster: wait a minute rather than start more.
+ */
+export const LOW_MEMORY_MS = 60_000;
+export function lowMemory(err: any): boolean {
+  const text = `${err?.code ?? ''}\n${err?.stderr ?? ''}\n${err?.message ?? ''}`;
+  return /cannot allocate memory|out of memory|heap arena|ENOMEM|spawn UNKNOWN|paging file is too small/i.test(text);
+}
+
 /** What a failed glab run means: no glab, signed out, the thing isn't there (or isn't ours), offline, or something else. */
 export function classify(err: any): GlabError {
   const text = `${err?.stderr ?? ''}\n${err?.message ?? ''}`;
   if (err?.code === 'ENOENT') return new GlabError('no-glab', 'glab is not installed (or not on PATH)');
+  if (lowMemory(err)) return new GlabError('error', 'the PC is low on memory: reading again in a minute');
   if (/\b401\b|unauthori[sz]ed|not logged in|glab auth login|token.*(invalid|expired)/i.test(text)) return new GlabError('signed-out', `glab is not signed in to ${gitlabHost()} (run \`glab auth login${gitlabHost() === 'gitlab.com' ? '' : ` --hostname ${gitlabHost()}`}\`)`);
   if (/\b40[34]\b|not found/i.test(text)) return new GlabError('missing', 'not found');
   if (err?.killed || /ENOTFOUND|EAI_AGAIN|ECONNRE|ETIMEDOUT|dial tcp|no such host|i\/o timeout|timeout|connection (refused|reset)|network is unreachable|TLS handshake/i.test(text)) return new GlabError('offline', `can't reach ${gitlabHost()}`);
@@ -511,6 +523,8 @@ export class CiWatcher {
   private note(e: unknown): GlabError {
     const g = e instanceof GlabError ? e : classify(e);
     if (g.kind === 'no-glab' || g.kind === 'signed-out') this.pausedUntil = this.now() + PAUSE_MS;
+    // short of memory: no more glab for a minute (starting more only makes it worse)
+    else if (lowMemory(e) || /low on memory/.test(g.message)) this.pausedUntil = Math.max(this.pausedUntil, this.now() + LOW_MEMORY_MS);
     if (g.kind !== 'missing') this.setHealth({ state: g.kind as CiHealth['state'], message: g.message });
     return g;
   }

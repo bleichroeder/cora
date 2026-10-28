@@ -28,3 +28,7 @@ export * from './lock';
 export * from './orbShaders';
 export * from './webChange';
 export * from './ide';
+export * from './projects';
+export * from './debrief';
+export * from './worktrees';
+export * from './secrets';

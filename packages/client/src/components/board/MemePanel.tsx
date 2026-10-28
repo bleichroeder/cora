@@ -172,19 +172,56 @@ function Stickers({ posts, onPick, onRemove, onClear }: { posts: MemePost[]; onP
   const shape = (id: string) => (r: number) => r > 0 && Math.abs((shapes[id] ?? 0) - r) > 0.01 && setShapes((m) => ({ ...m, [id]: r }));
   // fewer stickers, bigger ones
   const share = stuck.length <= 1 ? 0.62 : stuck.length <= 3 ? 0.5 : stuck.length <= 6 ? 0.42 : 0.36;
+  // where you've put them (dragged): kept in this browser, as shares of the panel; the last moved on top
+  const [moved, setMoved] = useState<Placed>(loadPlaced);
+  const [drag, setDrag] = useState<{ id: string; x: number; y: number } | null>(null);
+  const press = useRef<{ id: string; px: number; py: number; x: number; y: number; moved: boolean } | null>(null);
+  const clicked = useRef(false);
+  const top = Math.max(0, ...Object.values(moved).map((m) => m.z));
+  const grab = (id: string, cx: number, cy: number) => (e: React.PointerEvent<HTMLElement>) => {
+    if (e.button !== 0 || !size) return;
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    press.current = { id, px: e.clientX, py: e.clientY, x: cx / size.w, y: cy / size.h, moved: false };
+  };
+  const pull = (e: React.PointerEvent) => {
+    const p = press.current;
+    if (!p || !size) return;
+    const dx = e.clientX - p.px;
+    const dy = e.clientY - p.py;
+    if (!p.moved && Math.hypot(dx, dy) < 4) return;
+    p.moved = true;
+    setDrag({ id: p.id, x: p.x + dx / size.w, y: p.y + dy / size.h });
+  };
+  const drop = () => {
+    const p = press.current;
+    press.current = null;
+    if (!p?.moved || !drag) return;
+    clicked.current = true; // the click that ends a drag doesn't open it
+    const next = { ...pruned(moved, posts), [p.id]: { x: drag.x, y: drag.y, z: top + 1 } };
+    setMoved(next);
+    savePlaced(next);
+    setDrag(null);
+  };
   return (
     <div className="mm-wall" ref={box}>
       {size
         ? stuck.map((p, i) => {
             const tilt = (seed(p.id, 3) - 0.5) * 26;
-            const at = place(size, share, shapes[p.id] ?? (p.kind === 'gif' ? 0.75 : 2 / 3), tilt, SPOTS[i % SPOTS.length], seed(p.id, 1), seed(p.id, 2));
+            const ratio = shapes[p.id] ?? (p.kind === 'gif' ? 0.75 : 2 / 3);
+            const live = drag?.id === p.id ? drag : moved[p.id];
+            const at = place(size, share, ratio, tilt, SPOTS[i % SPOTS.length], seed(p.id, 1), seed(p.id, 2), live ? [live.x, live.y] : undefined);
+            const h = (at.width - 2 * BORDER) * ratio + 2 * BORDER;
             return (
               <button
                 key={p.id}
-                className={`mm-sticker${seen.has(p.id) ? '' : ' slap'}${i === stuck.length - 1 ? ' newest' : ''}`}
-                style={{ left: at.left, top: at.top, width: at.width, zIndex: i + 1, ['--tilt' as never]: `${tilt.toFixed(1)}deg` }}
+                className={`mm-sticker${seen.has(p.id) ? '' : ' slap'}${i === stuck.length - 1 ? ' newest' : ''}${drag?.id === p.id ? ' dragging' : ''}`}
+                style={{ left: at.left, top: at.top, width: at.width, zIndex: drag?.id === p.id ? 999 : moved[p.id] ? MAX_STUCK + moved[p.id].z : i + 1, ['--tilt' as never]: `${tilt.toFixed(1)}deg` }}
                 title={p.why ?? p.template ?? p.query ?? ''}
-                onClick={() => onPick(p.id)}
+                onPointerDown={grab(p.id, at.left + at.width / 2, at.top + h / 2)}
+                onPointerMove={pull}
+                onPointerUp={drop}
+                onPointerCancel={() => ((press.current = null), setDrag(null))}
+                onClick={() => (clicked.current ? (clicked.current = false) : onPick(p.id))}
               >
                 <MemeImage p={p} onShape={shape(p.id)} />
                 <span
@@ -192,6 +229,7 @@ function Stickers({ posts, onPick, onRemove, onClear }: { posts: MemePost[]; onP
                   role="button"
                   aria-label="Take it off the wall"
                   title="Take it off the wall"
+                  onPointerDown={(e) => e.stopPropagation()}
                   onClick={(e) => (e.stopPropagation(), onRemove(p.id))}
                 >
                   ×
@@ -208,6 +246,31 @@ function Stickers({ posts, onPick, onRemove, onClear }: { posts: MemePost[]; onP
   );
 }
 
+/** Where you've put stickers: each one's centre (shares of the panel) and its turn on top. In this browser only. */
+type Placed = Record<string, { x: number; y: number; z: number }>;
+const PLACED = 'cora.vibes.placed';
+function loadPlaced(): Placed {
+  try {
+    const v = JSON.parse(localStorage.getItem(PLACED) ?? '{}');
+    return v && typeof v === 'object' ? v : {};
+  } catch {
+    return {};
+  }
+}
+function savePlaced(p: Placed): void {
+  try {
+    localStorage.setItem(PLACED, JSON.stringify(p));
+  } catch {
+    /* only a convenience */
+  }
+}
+/** Only the stickers still on the wall (and their order on top, closed up). */
+function pruned(p: Placed, posts: MemePost[]): Placed {
+  const ids = new Set(posts.map((x) => x.id));
+  const kept = Object.entries(p).filter(([id]) => ids.has(id)).sort((a, b) => a[1].z - b[1].z);
+  return Object.fromEntries(kept.map(([id, m], i) => [id, { ...m, z: i + 1 }]));
+}
+
 /** A sticker's border (each side), and the room kept between the stickers and the panel's edges. */
 const BORDER = 5;
 const MARGIN = 6;
@@ -217,7 +280,7 @@ const MARGIN = 6;
  * panel unless that would make it too tall (or too wide, tilted) to fit, then smaller; its centre somewhere in the room
  * left, by its spot and a little nudge of its own.
  */
-export function place(panel: { w: number; h: number }, share: number, shape: number, tilt: number, spot: [number, number], jx: number, jy: number): { left: number; top: number; width: number } {
+export function place(panel: { w: number; h: number }, share: number, shape: number, tilt: number, spot: [number, number], jx: number, jy: number, center?: [number, number]): { left: number; top: number; width: number } {
   const rad = (Math.abs(tilt) * Math.PI) / 180;
   const cos = Math.cos(rad);
   const sin = Math.sin(rad);
@@ -239,7 +302,8 @@ export function place(panel: { w: number; h: number }, share: number, shape: num
   const x1 = Math.max(x0, panel.w - MARGIN - o.bw / 2);
   const y0 = MARGIN + o.bh / 2;
   const y1 = Math.max(y0, panel.h - MARGIN - o.bh / 2);
-  const cx = x0 + fx * (x1 - x0);
-  const cy = y0 + fy * (y1 - y0);
+  // where you put it (its centre, as a share of the panel), kept inside; else its spot
+  const cx = center ? Math.max(x0, Math.min(x1, center[0] * panel.w)) : x0 + fx * (x1 - x0);
+  const cy = center ? Math.max(y0, Math.min(y1, center[1] * panel.h)) : y0 + fy * (y1 - y0);
   return { left: Math.round(cx - width / 2), top: Math.round(cy - o.h / 2), width: Math.round(width) };
 }

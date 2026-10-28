@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { guestAct, isGuest } from './live';
 import { BUILTIN_COMMANDS, mergeCommands, type Attachment, type Sent, type SlashCommand } from '../lib/composer';
 import { useBrain } from './store';
 import { desktop } from '../lib/desktop';
@@ -76,6 +77,13 @@ export type SendResult = { ok: true } | { ok: false; error: string; choice?: boo
 export async function sendToSession(sid: string, text: string, force = false): Promise<SendResult> {
   const t = liveTerminal(sid);
   if (!t) return { ok: false, error: "This session isn't running here" };
+  // a guest in an interactive share: their prompt, named, through the share
+  if (isGuest()) {
+    const r = await guestAct({ kind: 'prompt', sessionId: sid, text });
+    if (!r.ok) return { ok: false, error: r.error ?? 'failed', choice: !!r.choice };
+    remember(sid, text);
+    return { ok: true };
+  }
   try {
     const r = await fetch(`/api/terminals/${encodeURIComponent(t.terminalId)}/input`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text, submit: true, force }) });
     const j = await r.json().catch(() => ({}));

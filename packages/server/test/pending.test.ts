@@ -125,3 +125,16 @@ describe('PendingManager', () => {
     expect(pm.resolve('nope', { decision: 'allow' }).ok).toBe(false);
   });
 });
+
+describe("a session asking to use one of your secrets", () => {
+  it('waits for you; only you can answer (never Cora on its mandate); no dashboard means no', async () => {
+    const { pm } = setup();
+    const asked = pm.ask({ sessionId: 's1', toolName: 'Use secret GITHUB_PAT', toolInput: { command: 'curl …', secret: 'GITHUB_PAT' } });
+    const [req] = pm.list();
+    expect(req).toMatchObject({ kind: 'permission', toolName: 'Use secret GITHUB_PAT', yours: true });
+    expect(pm.resolve(req.id, { decision: 'allow' }, { via: 'orchestrator', rule: 'x' })).toEqual({ ok: false, error: 'only the user can answer this' });
+    expect(pm.resolve(req.id, { decision: 'allow' })).toEqual({ ok: true });
+    expect(await asked).toBe(true);
+    expect(await setup({ clients: 0 }).pm.ask({ sessionId: 's1', toolName: 'Use secret X', toolInput: {} })).toBe(false);
+  });
+});

@@ -5,6 +5,8 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { SlackSection, ToolsSection } from './SlackSettings';
 import { SecuritySection } from './SecuritySettings';
 import { LockSection } from './LockSettings';
+import { SecretsSection } from './SecretsSettings';
+import { DevicesSection } from './DevicesSettings';
 import { OrchestratorSection } from './OrchestratorSettings';
 import type { InboxSource, Settings } from '@cora/shared';
 import { BrandIcon } from './BrandIcon';
@@ -37,6 +39,7 @@ export const SETTINGS_SECTIONS: Array<{ id: string; label: string; icon: string;
   { id: 'sessions', label: 'Sessions', icon: 'Tag', group: 'Sessions' },
   { id: 'explains', label: 'Explains', icon: 'FileText', group: 'Sessions' },
   { id: 'terminal', label: 'Terminal', icon: 'SquareTerminal', group: 'Sessions' },
+  { id: 'secrets', label: 'Secrets', icon: 'KeyRound', group: 'Sessions' },
   { id: 'notifications', label: 'Notifications', icon: 'Bell', group: 'Sessions', desktop: true },
   { id: 'jira', label: 'Jira', icon: 'Ticket', group: 'Connected', desktop: true, brand: 'jira' },
   { id: 'gitlab', label: 'GitLab', icon: 'GitBranch', group: 'Connected', brand: 'gitlab' },
@@ -44,6 +47,7 @@ export const SETTINGS_SECTIONS: Array<{ id: string; label: string; icon: string;
   { id: 'gmail', label: 'Gmail', icon: 'Mail', group: 'Connected', brand: 'mail' },
   { id: 'onepassword', label: '1Password', icon: 'KeyRound', group: 'Connected', desktop: true },
   { id: 'tools', label: 'Tools', icon: 'Wrench', group: 'Connected' },
+  { id: 'devices', label: 'Devices', icon: 'Tablet', group: 'This machine' },
   { id: 'environments', label: 'Environments', icon: 'Network', group: 'This machine' },
   { id: 'scene', label: 'Scene', icon: 'Orbit', group: 'This machine' },
   { id: 'lock', label: 'Lockdown', icon: 'Lock', group: 'This machine' },
@@ -313,6 +317,36 @@ export function SettingsModal() {
                     onChange={(on) => void save({ journal: { on } })}
                   />
                 ) : null}
+                {server ? (
+                  <>
+                    <Row
+                      label="Debrief"
+                      hint={
+                        (server.debrief?.offer ?? 'bigger') === 'never'
+                          ? 'Sessions walk you through their work only when you ask (the Debrief button on the card, or in Changes).'
+                          : `When a session finishes ${(server.debrief?.offer ?? 'bigger') === 'always' ? 'a piece of work' : 'a bigger change (across files, or anything a reviewer would ask about)'}, it offers to walk you through it in the IDE panel: each step's lines lit, a bubble beside them saying what changed and why. For sessions started from now on.`
+                      }
+                    >
+                      <Choice value={server.debrief?.offer ?? 'bigger'} onChange={(offer) => void save({ debrief: { offer } })} options={[['bigger', 'After bigger changes'], ['always', 'Always'], ['never', 'Only when asked']]} />
+                    </Row>
+                    <Row label="Debrief depth" hint="Quick: the delta, the why, the risks. Teach me: also the concepts and patterns it relies on, how it fits, links to read more, and a short quiz. You can pick either each time.">
+                      <Choice value={server.debrief?.depth ?? 'quick'} onChange={(depth) => void save({ debrief: { depth } })} options={[['quick', 'Quick'], ['teach', 'Teach me']]} />
+                    </Row>
+                    <Row
+                      label="Worktrees"
+                      hint={
+                        (server.worktrees?.move ?? 'collide') === 'ask'
+                          ? 'Sessions stay where they are; Cora (or you, from its board) moves one into a worktree when asked.'
+                          : (server.worktrees?.move ?? 'collide') === 'always'
+                            ? "Before a session started from Cora changes a file in a repo's main checkout, Cora makes it a worktree of its own (fresh from main, a branch named for the work) and it carries on there. Reading never moves it."
+                            : "When a session started from Cora is about to change a checkout another session is already changing, Cora makes it a worktree of its own (fresh from main, a branch named for the work) and it carries on there. Reading never moves it."
+                      }
+                    >
+                      <Choice value={server.worktrees?.move ?? 'collide'} onChange={(move) => void save({ worktrees: { move } })} options={[['collide', 'When they would collide'], ['always', 'Always'], ['ask', 'Only when asked']]} />
+                    </Row>
+                    <Toggle label="Read debriefs aloud" hint="As you step through one, each step is read in the session's voice (playing one through always reads it, with voice on)." checked={!!server.debrief?.speak} onChange={(speak) => void save({ debrief: { speak } })} />
+                  </>
+                ) : null}
                 {server ? <MemeRows server={server} save={trySave} /> : null}
                 <Row label="Ended sessions" hint="Take them off the list. Their transcripts stay.">
                   <button className="btn" onClick={async () => { await clearEnded(); setCleared(true); }}>
@@ -450,6 +484,14 @@ export function SettingsModal() {
 
               <Boundary name="Environments settings">
                 <EnvironmentsSection server={server} save={trySave} />
+              </Boundary>
+
+              <Boundary name="Secrets settings">
+                <SecretsSection />
+              </Boundary>
+
+              <Boundary name="Devices settings">
+                <DevicesSection />
               </Boundary>
 
               <Boundary name="Lockdown settings">

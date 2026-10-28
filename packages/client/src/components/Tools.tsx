@@ -5,9 +5,11 @@ import { useWeb } from '../state/web';
 import { NOTES_ID, notesUnseen, useNotes } from '../state/notes';
 import { NotesPane } from './Notes';
 import { desktop } from '../lib/desktop';
-import { toolEntries, toolHost, toolSite, unreadOf, type ToolDef, type ToolEntry } from '../lib/tools';
+import { tintOf, toolEntries, toolHost, toolSite, unreadOf, type ToolDef, type ToolEntry } from '../lib/tools';
 import { BrowserTool, WEB_PARTITION, openFind } from './WebPane';
 import { BROWSER_ID, currentGroup, isBrowserGroup } from '../state/browser';
+import { SECRETS_ID, useSecrets } from '../state/secrets';
+import { SecretsPane } from './SecretsSettings';
 import { openSettings } from './SettingsModal';
 import { Icon } from './Icon';
 import { FindBar } from './FindBar';
@@ -68,6 +70,7 @@ export function ToolsDock() {
   const tools = useBrain((s) => s.prefs.tools);
   const open = useTools((s) => s.open);
   const unread = useTools((s) => s.unread);
+  const playing = useTools((s) => s.playing);
   const [expanded, setExpanded] = useState(readExpanded);
   // the folder popped up from the icon row
   const [pop, setPop] = useState<string | null>(null);
@@ -168,6 +171,7 @@ export function ToolsDock() {
           <div className="rt-card">
             <NotesRow on={open === NOTES_ID} />
             {desktop?.browser ? <BrowserRow on={open === BROWSER_ID} /> : null}
+            <SecretsRow on={open === SECRETS_ID} />
           </div>
         </>
       ) : null}
@@ -175,9 +179,17 @@ export function ToolsDock() {
         <div className="rt-row">
           {entries.map((e) =>
             e.kind === 'tool' ? (
-              <button key={e.t.id} className={`rt-b${open === e.t.id ? ' on' : ''}`} title={`${e.t.name}${e.n < 9 ? ` (Ctrl+${e.n + 1})` : ''}`} onClick={() => openTool(e.t)}>
+              <button
+                key={e.t.id}
+                className={`rt-b${open === e.t.id ? ' on' : ''}`}
+                // its tint for the tile itself (the tinted tile's rule is on the button; without it here, the tile went blank)
+                style={tintOf(e.t) ? ({ ['--tc' as string]: tintOf(e.t) } as React.CSSProperties) : undefined}
+                title={`${e.t.name}${e.n < 9 ? ` (Ctrl+${e.n + 1})` : ''}`}
+                onClick={() => openTool(e.t)}
+              >
                 <ToolIcon t={e.t} size={22} />
                 {badge(unread[e.t.id])}
+                {playing[e.t.id] ? <Playing /> : null}
               </button>
             ) : (
               <button
@@ -188,11 +200,12 @@ export function ToolsDock() {
                 onClick={() => setPop(pop === e.name ? null : e.name)}
               >
                 {e.tools.slice(0, 4).map(({ t }) => (
-                  <span key={t.id} className="rt-mini" style={t.tint ? ({ ['--tc' as string]: t.tint } as React.CSSProperties) : undefined}>
+                  <span key={t.id} className="rt-mini" style={tintOf(t) ? ({ ['--tc' as string]: tintOf(t) } as React.CSSProperties) : undefined}>
                     <ToolGlyph t={t} size={10} />
                   </span>
                 ))}
                 {badge(folderNews(e.tools))}
+                {e.tools.some(({ t }) => playing[t.id]) ? <Playing /> : null}
               </button>
             ),
           )}
@@ -205,6 +218,7 @@ export function ToolsDock() {
           <div className="rt-row">
             <NotesButton on={open === NOTES_ID} />
             {desktop?.browser ? <BrowserButton on={open === BROWSER_ID} /> : null}
+            <SecretsButton on={open === SECRETS_ID} />
           </div>
         </>
       )}
@@ -214,6 +228,35 @@ export function ToolsDock() {
 
 const openNotes = () => useTools.getState().toggle(NOTES_ID);
 const openBrowser = () => (useBrain.getState().setInbox(false), useTools.getState().toggle(BROWSER_ID));
+
+const openSecrets = () => useTools.getState().toggle(SECRETS_ID);
+/** Cora's Secrets in the icon row: amber while one of them has expired. */
+function SecretsButton({ on }: { on: boolean }) {
+  const expired = useSecrets((s) => (s.list ?? []).some((x) => !!x.expiresAt && x.expiresAt < Date.now()));
+  return (
+    <button className={`rt-b rt-cora${on ? ' on' : ''}`} title={expired ? 'Secrets: one has expired' : 'Secrets: tokens and keys your sessions use by name'} onClick={openSecrets}>
+      <Icon name="KeyRound" size={18} />
+      {expired ? <span className="rt-badge dot" /> : null}
+    </button>
+  );
+}
+/** Cora's Secrets as a named row: how many, and whether one has expired. */
+function SecretsRow({ on }: { on: boolean }) {
+  const list = useSecrets((s) => s.list);
+  const n = list?.length ?? 0;
+  const expired = (list ?? []).filter((x) => !!x.expiresAt && x.expiresAt < Date.now()).length;
+  return (
+    <button className={`rt-r${on ? ' on' : ''}`} title="Secrets: tokens and keys your sessions use by name" onClick={openSecrets}>
+      <span className="rt-cora-ico">
+        <Icon name="KeyRound" size={14} />
+      </span>
+      <span className="rt-nm">
+        <b>Secrets</b>
+        <i>{expired ? `${expired} expired` : n ? `${n} kept` : 'None yet'}</i>
+      </span>
+    </button>
+  );
+}
 
 /** Cora's Browser in the icon row. */
 function BrowserButton({ on }: { on: boolean }) {
@@ -284,7 +327,7 @@ function NotesRow({ on }: { on: boolean }) {
 /** A tool's icon with its look: its tile tinted, its tag on the corner. */
 function ToolIcon({ t, size }: { t: ToolDef; size: number }) {
   return (
-    <span className={`rt-ico${t.tint ? ' tinted' : ''}`} style={t.tint ? ({ ['--tc' as string]: t.tint } as React.CSSProperties) : undefined}>
+    <span className={`rt-ico${tintOf(t) ? ' tinted' : ''}`} style={tintOf(t) ? ({ ['--tc' as string]: tintOf(t) } as React.CSSProperties) : undefined}>
       <ToolGlyph t={t} size={size} />
       {t.tag ? <span className="rt-tag">{t.tag}</span> : null}
     </span>
@@ -292,10 +335,25 @@ function ToolIcon({ t, size }: { t: ToolDef; size: number }) {
 }
 
 /** A tool as a named row (the names view, and a folder opened from the icon row). */
+/** Sound playing from a tool's page: three small bars on its button. */
+function Playing() {
+  return (
+    <span className="rt-playing" title="Playing">
+      <i />
+      <i />
+      <i />
+    </span>
+  );
+}
+
 function ToolRow({ t, n, on, u, onPick }: { t: ToolDef; n: number; on: boolean; u: number | 'dot' | undefined; onPick?: () => void }) {
+  const playing = useTools((s) => !!s.playing[t.id]);
   return (
     <button className={`rt-r${on ? ' on' : ''}`} title={`${t.name}: ${t.url}`} onClick={() => (openTool(t), onPick?.())}>
-      <ToolIcon t={t} size={22} />
+      <span className="rt-ico">
+        <ToolIcon t={t} size={22} />
+        {playing ? <Playing /> : null}
+      </span>
       <span className="rt-nm">
         <b>{t.name}</b>
         <i>{toolSite(t.url)}</i>
@@ -415,12 +473,16 @@ function ToolPage({ t, visible }: { t: ToolDef; visible: boolean }) {
       ['did-navigate', (e) => useTools.getState().setPage(t.id, { url: e.url })],
       ['did-navigate-in-page', (e) => e.isMainFrame && useTools.getState().setPage(t.id, { url: e.url })],
       ['page-favicon-updated', (e) => e.favicons?.[0] && setIcon(t.id, e.favicons[0])],
+      // sound from its page (music, a video): its button shows it while it plays, drawer open or not
+      ['media-started-playing', () => useTools.getState().setPlaying(t.id, true)],
+      ['media-paused', () => useTools.getState().setPlaying(t.id, false)],
     ];
     for (const [k, f] of on) w.addEventListener(k, f);
     return () => {
       for (const [k, f] of on) w.removeEventListener(k, f);
       pages.delete(t.id);
       if (wcId) toolOfPage.delete(wcId);
+      useTools.getState().setPlaying(t.id, false);
     };
   }, [t.id]);
 
@@ -449,7 +511,8 @@ export function ToolDrawer() {
   const mounted = useTools((s) => s.mounted);
   const box = useRef<HTMLDivElement>(null);
   const tool = tools.find((t) => t.id === open);
-  const builtin = open === NOTES_ID || open === BROWSER_ID;
+  const builtin = open === NOTES_ID || open === BROWSER_ID || open === SECRETS_ID;
+  const secrets = open === SECRETS_ID;
   const browser = open === BROWSER_ID;
   const at = useTools((s) => (open ? s.page[open] : undefined));
   const [dragging, setDragging] = useState(false);
@@ -518,7 +581,7 @@ export function ToolDrawer() {
     desktop?.setToolHosts?.(tools.map((t) => toolHost(t.url)).filter(Boolean));
   }, [tools]);
 
-  if (!Object.keys(mounted).length || (!desktop?.browser && !mounted[NOTES_ID])) return null;
+  if (!Object.keys(mounted).length || (!desktop?.browser && !mounted[NOTES_ID] && !mounted[SECRETS_ID])) return null;
   const page = () => (open ? pages.get(open) : undefined);
   const resize = (e: React.PointerEvent) => {
     e.preventDefault();
@@ -551,10 +614,10 @@ export function ToolDrawer() {
       {builtin ? (
         <div className="td-h" style={headPad}>
           <span className="td-tile cora">
-            <Icon name={browser ? 'Globe' : 'NotebookPen'} size={13} />
+            <Icon name={browser ? 'Globe' : secrets ? 'KeyRound' : 'NotebookPen'} size={13} />
           </span>
-          <b>{browser ? 'Browser' : 'Notes'}</b>
-          <span className="td-host">{browser ? '' : '~/.cora/notes'}</span>
+          <b>{browser ? 'Browser' : secrets ? 'Secrets' : 'Notes'}</b>
+          <span className="td-host">{browser ? '' : secrets ? 'encrypted on this PC' : '~/.cora/notes'}</span>
           <span className="spacer" />
           <button className="icon-btn" title="Close (Esc)" onClick={() => useTools.getState().close()}>
             <Icon name="X" size={15} />
@@ -601,6 +664,7 @@ export function ToolDrawer() {
         {at?.loading && !builtin ? <div className="td-progress" /> : null}
         {finding && open && !builtin && pages.get(open) ? <FindBar press={finding} page={pages.get(open) as never} onClose={() => setFinding(0)} /> : null}
         {mounted[NOTES_ID] ? <NotesPane visible={open === NOTES_ID} /> : null}
+        {mounted[SECRETS_ID] ? <SecretsPane visible={secrets} /> : null}
         {mounted[BROWSER_ID] && desktop?.browser ? <BrowserTool visible={browser} /> : null}
         {tools
           .filter((t) => desktop?.browser && mounted[t.id])

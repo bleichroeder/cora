@@ -1,4 +1,6 @@
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { sessionName } from '../lib/format';
+import { projectOfBoard, useProjects } from '../state/projects';
 import { BOARD_LAYOUTS, BOARD_LAYOUT_INFO, displayPath, type AgentInfo, type BoardLayoutId, type BoardPageMode, type BrainEvent } from '@cora/shared';
 import { sessionEvents, useBrain } from '../state/store';
 import { derive, fileOf, type AgentView } from '../scene/derive';
@@ -17,6 +19,11 @@ import {
   movePage,
   movedTo,
   addPanel,
+  boardFor,
+  fitsBoard,
+  CORA_BOARD,
+  FOR_ALL,
+  forMember,
   asLayout,
   LAYOUTS,
   namesWithout,
@@ -55,6 +62,7 @@ import { openChanges } from '../lib/changes';
 import { maskSecrets } from '../lib/mask';
 import { explainFrom, looksLikeHtmlDoc, sandboxedHtml, type Explain } from './Viewer';
 import { Icon } from './Icon';
+import { useDebrief } from '../state/debrief';
 import { MorePanel } from './board/panels';
 import { BoardTerminal } from './board/ToolPanels';
 import { BoardBar, type BoardNote } from './board/BoardBar';
@@ -252,7 +260,7 @@ export function LiveBoard({ sessionId }: { sessionId: string }) {
   // this session's own board (none yet: the layout new sessions start with)
   const mine = useBrain((s) => s.prefs.boards?.[sessionId]);
   const firstLayout = useBrain((s) => s.prefs.board);
-  const all = useMemo(() => (mine ? normalize(mine.items) : template(firstLayout)), [mine, firstLayout]);
+  const all = useMemo(() => boardFor(mine?.items, sessionId, firstLayout), [mine, firstLayout, sessionId]);
   const pages = pageCount(all, mine?.pages ?? 1);
   const pg = Math.min(mine?.page ?? 0, pages - 1);
   const items = useMemo(() => visible(all, sessionId, pg), [all, sessionId, pg]);
@@ -262,7 +270,7 @@ export function LiveBoard({ sessionId }: { sessionId: string }) {
   const latest = () => {
     const s = useBrain.getState();
     const b = s.prefs.boards?.[sessionId];
-    const a = b ? normalize(b.items) : template(s.prefs.board);
+    const a = boardFor(b?.items, sessionId, s.prefs.board);
     const n = pageCount(a, b?.pages ?? 1);
     return { b, all: a, pages: n, page: Math.min(b?.page ?? 0, n - 1) };
   };
@@ -281,6 +289,10 @@ export function LiveBoard({ sessionId }: { sessionId: string }) {
   const [maxed, setMaxed] = useState<string | null>(null);
   useEffect(() => setMaxed(null), [sessionId]);
   const [menu, setMenu] = useState(false);
+  // a debrief waiting for an IDE panel: one here, one on another page, or none
+  const debriefWaits = useDebrief((s) => s.needsIde === sessionId);
+  const ideHere = items.some((p) => p.k === 'ide');
+  const idePage = ideHere ? null : (all.find((p) => p.k === 'ide')?.pg ?? (all.some((p) => p.k === 'ide') ? 0 : null));
   const [act, setAct] = useState<Act | null>(null);
   // the drag in progress (its way to stop): a page or session change stops it, nothing kept
   const dragging = useRef<((keep: boolean) => void) | null>(null);
@@ -532,6 +544,7 @@ export function LiveBoard({ sessionId }: { sessionId: string }) {
       p={p}
       data={data}
       sessionId={sessionId}
+      onFor={(f) => patch(p.id, { for: f })}
       max={isMax}
       popped={popped}
       page={pg}
@@ -552,6 +565,17 @@ export function LiveBoard({ sessionId }: { sessionId: string }) {
 
   return (
     <div className={`live-board${act ? ` acting ${act.mode === 'move' ? 'moving' : 'sizing'}` : ''}`}>
+      {debriefWaits ? (
+        // a debrief plays in the IDE panel: none open on the session's folder, so offer one (it starts once it's up)
+        <div className="bd-debrief">
+          <Icon name="Presentation" size={14} />
+          <span>{ideHere ? 'Debrief: waiting for the IDE panel…' : idePage != null ? 'Debrief plays in the IDE panel, on another page.' : 'Debrief plays in the IDE panel.'}</span>
+          {ideHere ? null : idePage != null ? <button onClick={() => goTo(idePage)}>Go to it</button> : <button onClick={() => save(addPanel(items, 'ide'))}>Add it here</button>}
+          <button className="ghost" onClick={() => useDebrief.getState().end()}>
+            Not now
+          </button>
+        </div>
+      ) : null}
       <div
         ref={grid}
         className={`bd-grid${narrow ? ' narrow' : ''}${tall ? ' tall' : ''}`}
@@ -707,7 +731,7 @@ export function LiveBoard({ sessionId }: { sessionId: string }) {
             <button className={`bd-tb${menu ? ' on' : ''}`} title="Add a panel" onClick={() => setMenu(!menu)}>
               <Icon name="LayoutGrid" size={13} /> Panel
             </button>
-            {menu ? <AddMenu items={items} explains={data.explains} onPick={(next) => (save(next), setMenu(false))} onPop={(title) => (pop(title), setMenu(false))} onClose={() => setMenu(false)} /> : null}
+            {menu ? <AddMenu owner={sessionId} items={items} explains={data.explains} onPick={(next) => (save(next), setMenu(false))} onPop={(title) => (pop(title), setMenu(false))} onClose={() => setMenu(false)} /> : null}
           </span>
         }
       />
@@ -716,16 +740,18 @@ export function LiveBoard({ sessionId }: { sessionId: string }) {
 }
 
 /** Each group's tint in the + Panel menu. */
-const GROUP_TINT: Record<string, string> = { 'This session': 'var(--cora)', Code: '#a78bfa', Delivery: '#fb923c', 'Around you': '#38bdf8', Tools: '#34d399' };
+const GROUP_TINT: Record<string, string> = { Cora: 'var(--cora)', 'This session': 'var(--cora)', Code: '#a78bfa', Delivery: '#fb923c', 'Around you': '#38bdf8', Tools: '#34d399' };
 
 /** + Panel: the panels not on this page, and this session's explains to pop out. */
 function AddMenu({
+  owner,
   items,
   explains,
   onPick,
   onPop,
   onClose,
 }: {
+  owner: string;
   items: BoardItem[];
   explains: BoardExplain[];
   onPick(next: BoardItem[]): void;
@@ -745,8 +771,8 @@ function AddMenu({
   }, [onClose]);
   const [q, setQ] = useState('');
   const words = q.trim().toLowerCase();
-  const fits = (k: Exclude<PanelKind, 'explain'>) => !words || `${PANELS[k].name} ${PANELS[k].hint} ${PANELS[k].group}`.toLowerCase().includes(words);
-  const list = explains.filter((x) => !words || x.title.toLowerCase().includes(words));
+  const fits = (k: Exclude<PanelKind, 'explain'>) => fitsBoard(k, owner) && (!words || `${PANELS[k].name} ${PANELS[k].hint} ${PANELS[k].group}`.toLowerCase().includes(words));
+  const list = owner === CORA_BOARD ? [] : explains.filter((x) => !words || x.title.toLowerCase().includes(words));
   return (
     <div className="bd-menu wide" ref={box} role="menu">
       <label className="bd-mq">
@@ -860,10 +886,13 @@ function BoardPanelView({
   onMax,
   onClose,
   onGrab,
+  onFor,
 }: {
   p: BoardItem;
   data: BoardData;
   sessionId: string;
+  /** on a project's board: a session's panel picks its member */
+  onFor?(member: string): void;
   max: boolean;
   popped: Map<string, number>;
   page: number;
@@ -876,6 +905,70 @@ function BoardPanelView({
   onClose(): void;
   onGrab?(e: React.PointerEvent): void;
 }) {
+  // a project's board: a session's panel is for one of its members (or all of them, where it can)
+  if (projectOfBoard(sessionId) && forMember(p.k)) return <MemberPanelView {...{ p, sessionId, max, popped, page, onPage, onUpdate, onGo, onPop, onMax, onClose, onGrab, onFor }} />;
+  return <PanelFrame {...{ p, data, sessionId, max, popped, page, onPage, onUpdate, onGo, onPop, onMax, onClose, onGrab }} />;
+}
+
+/** A session's panel on a project's board: its member's data, and the picker in its header. */
+function MemberPanelView(props: Omit<Parameters<typeof BoardPanelView>[0], 'data'>) {
+  const { p, sessionId: owner, onFor } = props;
+  const pid = projectOfBoard(owner)!;
+  const members = useProjects((s) => s.projects.find((x) => x.id === pid)?.sessions) ?? NO_MEMBERS;
+  const sessions = useBrain((s) => s.sessions);
+  const all = p.for === '*' && FOR_ALL.has(p.k) && members.length > 1;
+  const member = p.for && members.includes(p.for) ? p.for : (members[0] ?? '');
+  const data = useBoardData(member || owner);
+  const nameOf = (id: string) => (sessions[id] ? sessionName(sessions[id]) : id.slice(0, 8));
+  const pick = members.length ? (
+    <select className="bd-for" value={all ? '*' : member} title="Which session it shows" onChange={(e) => onFor?.(e.target.value)} onPointerDown={(e) => e.stopPropagation()}>
+      {FOR_ALL.has(p.k) && members.length > 1 ? <option value="*">All sessions</option> : null}
+      {members.map((id) => (
+        <option key={id} value={id}>
+          {nameOf(id)}
+        </option>
+      ))}
+    </select>
+  ) : null;
+  const body = !members.length ? (
+    <div className="pp-empty">No sessions in this project yet: drag one onto the project in the nav.</div>
+  ) : all ? (
+    <div className="bd-for-each">
+      {members.map((id) => (
+        <EachMember key={id} k={p.k} sid={id} name={nameOf(id)} />
+      ))}
+    </div>
+  ) : undefined;
+  return <PanelFrame {...props} sessionId={member || owner} data={data} pick={pick} body={body} />;
+}
+const NO_MEMBERS: string[] = [];
+function EachMember({ k, sid, name }: { k: PanelKind; sid: string; name: string }) {
+  const data = useBoardData(sid);
+  return (
+    <div>
+      <h5>{name}</h5>
+      <MorePanel k={k} sessionId={sid} data={data} />
+    </div>
+  );
+}
+
+function PanelFrame({
+  p,
+  data,
+  sessionId,
+  max,
+  popped,
+  page,
+  onPage,
+  onUpdate,
+  onGo,
+  onPop,
+  onMax,
+  onClose,
+  onGrab,
+  pick,
+  body,
+}: Omit<Parameters<typeof BoardPanelView>[0], 'onFor'> & { pick?: React.ReactNode; body?: React.ReactNode }) {
   const name = p.k === 'explain' ? p.title! : PANELS[p.k].name;
   const live = p.k === 'explain' ? data.explains.find((x) => x.title === p.title)?.live : undefined;
   const count =
@@ -887,7 +980,7 @@ function BoardPanelView({
           ? `${taskProgress(data.tasks).done}/${data.tasks.length}`
           : '';
   return (
-    <section className="bd-pn" data-id={p.id}>
+    <section className="bd-pn" data-id={p.id} data-ping={`pn:${p.id}`}>
       <div
         className={`bd-ph${onGrab ? ' grab' : ''}`}
         onPointerDown={onGrab}
@@ -896,6 +989,7 @@ function BoardPanelView({
       >
         {onGrab ? <Icon name="GripVertical" size={12} className="g" /> : null}
         <span className="nm">{name}</span>
+        {pick}
         {live ? <span className="live" title="live" /> : null}
         {count ? <span className="n">{count}</span> : null}
         <span className="sp" />
@@ -919,7 +1013,7 @@ function BoardPanelView({
         </button>
       </div>
       <div className="bd-pb">
-        {p.k === 'agents' ? (
+        {body !== undefined ? body : p.k === 'agents' ? (
           <AgentsBody data={data} />
         ) : p.k === 'touching' ? (
           <TouchingBody data={data} sessionId={sessionId} />

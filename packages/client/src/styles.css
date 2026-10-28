@@ -16,6 +16,11 @@
 }
 * { box-sizing: border-box; }
 html, body, #root { height: 100%; margin: 0; }
+/* the page is exactly the window, never a scrolling document: in a tablet's browser the toolbars come and go, and a
+   page sized to the taller viewport scrolls (black under it) and bounces. Pinned to the visible area, it can't. */
+html, body { position: fixed; inset: 0; overflow: hidden; overscroll-behavior: none; }
+/* away from the desktop app: the height of what's visible (main.tsx keeps --vvh) */
+html.vv, html.vv body { bottom: auto; height: var(--vvh, 100%); }
 body { background: var(--bg); color: var(--text); font-family: system-ui, -apple-system, 'Segoe UI', sans-serif; font-size: 13px; overflow: hidden; }
 button { font: inherit; color: inherit; background: none; border: none; cursor: pointer; padding: 0; text-align: inherit; }
 input, textarea, select { font: inherit; color: var(--text); background: #0b111c; border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; }
@@ -25,6 +30,11 @@ kbd { font: 10px var(--mono); border: 1px solid #334155; border-radius: 3px; pad
 .empty { color: #475569; padding: 18px; font-size: 12px; }
 .empty.big { display: grid; place-items: center; height: 100%; font-size: 14px; }
 .splash { display: grid; place-content: center; height: 100%; text-align: center; color: var(--text); }
+.splash.unpaired { justify-items: center; gap: 4px; padding: 24px; }
+.splash.unpaired p { max-width: 420px; color: var(--ink3); line-height: 1.55; }
+.splash.unpaired b { color: var(--ink); }
+.up-orb { width: 44px; height: 44px; margin-bottom: 8px; border-radius: 50%; background: radial-gradient(circle at 38% 32%, #fbcfe8, #f472b6 48%, #831843); box-shadow: 0 0 22px rgba(244, 114, 182, .45); }
+.up-go { margin-top: 12px; height: 42px; padding: 0 20px; display: inline-flex; align-items: center; text-decoration: none; font-size: 14px; }
 .splash code { color: var(--blue); }
 
 /* ---------- shell ---------- */
@@ -57,8 +67,6 @@ kbd { font: 10px var(--mono); border: 1px solid #334155; border-radius: 3px; pad
 .rf-btn.on { color: #22d3ee; border-color: #155e75; }
 .rf-btn kbd { flex: none; line-height: 14px; font-size: 10px; color: #475569; border: 1px solid #1e293b; border-radius: 3px; padding: 0 4px; }
 /* shown only after the connection has been down a moment, and says what it means */
-.rf-conn { position: absolute; top: 2px; right: 10px; display: inline-flex; align-items: center; gap: 5px; padding: 0 6px; border: 1px solid #3f3214; border-radius: 9px; background: #120f08; color: var(--amber); font: 9px/12px var(--mono); }
-.rf-conn .live-dot { width: 6px; height: 6px; }
 .focus-h .drift { color: var(--amber); display: inline-flex; gap: 4px; align-items: center; font: 11px var(--mono); }
 .rail .h { color: #475569; font: 600 10px var(--mono); text-transform: uppercase; letter-spacing: .08em; margin: 8px 2px 4px; }
 .ri { display: block; width: 100%; border: 1px solid var(--line); border-radius: 8px; padding: 7px 9px; background: var(--panel); margin-bottom: 5px; font-family: var(--mono); }

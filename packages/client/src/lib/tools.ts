@@ -15,6 +15,9 @@ export type ToolDef = {
 /** The tints a tool can have: Cora's palette (red, orange, amber, green, teal, blue, violet, pink). */
 export const TOOL_TINTS = ['#f87171', '#fb923c', '#fbbf24', '#4ade80', '#2dd4bf', '#60a5fa', '#a78bfa', '#f472b6'] as const;
 
+/** A tool's tint when it's a colour the tile can use (anything else, an older setting say, is no tint, not a blank tile). */
+export const tintOf = (t: Pick<ToolDef, 'tint'>) => (t.tint && /^#[0-9a-f]{3,8}$/i.test(t.tint) ? t.tint : undefined);
+
 /** A tool's tag as kept: letters and digits, upper case, at most 3. */
 export const cleanTag = (s: string) => s.replace(/[^a-z0-9]/gi, '').toUpperCase().slice(0, 3);
 

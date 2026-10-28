@@ -17,6 +17,25 @@ describe('settings', () => {
     expect(() => applyPatch(DEFAULT_SETTINGS, { autoName: 'yes' as any })).toThrow(/autoName/);
   });
 
+  it('debrief: offered after bigger changes, quick, silent by default; changed one part at a time; nonsense refused', () => {
+    expect(applyPatch(DEFAULT_SETTINGS, {}).debrief).toEqual({ offer: 'bigger', depth: 'quick', speak: false });
+    expect(applyPatch(DEFAULT_SETTINGS, { debrief: { depth: 'teach' } }).debrief).toEqual({ offer: 'bigger', depth: 'teach', speak: false });
+    expect(() => applyPatch(DEFAULT_SETTINGS, { debrief: { offer: 'sometimes' } })).toThrow(/debrief.offer/);
+    expect(() => applyPatch(DEFAULT_SETTINGS, { debrief: { speak: 'yes' } })).toThrow(/debrief.speak/);
+    const on = nudgeFor(DEFAULT_SETTINGS.explains, undefined, 'off', 'off', false, { offer: 'bigger', depth: 'teach', speak: false });
+    expect(on).toMatch(/crosses files.*`Debrief\? · Quick · Teach me`.*usual depth is Teach me/);
+    expect(on).toMatch(/with the `debrief` tool/);
+    const never = nudgeFor(DEFAULT_SETTINGS.explains, undefined, 'off', 'off', false, { offer: 'never', depth: 'quick', speak: false });
+    expect(never).not.toMatch(/Debrief\?/);
+    expect(never).toMatch(/with the `debrief` tool/);
+  });
+
+  it('worktrees: sessions move when they would collide by default; always or only when asked; nonsense refused', () => {
+    expect(applyPatch(DEFAULT_SETTINGS, {}).worktrees).toEqual({ move: 'collide' });
+    expect(applyPatch(DEFAULT_SETTINGS, { worktrees: { move: 'ask' } }).worktrees).toEqual({ move: 'ask' });
+    expect(() => applyPatch(DEFAULT_SETTINGS, { worktrees: { move: 'sometimes' } })).toThrow(/worktrees.move/);
+  });
+
   it('persists into config.json without clobbering other keys', () => {
     const file = join(mkdtempSync(join(tmpdir(), 'ab-prefs-')), 'config.json');
     writeFileSync(file, JSON.stringify({ port: 4400 }));
@@ -71,11 +90,11 @@ describe('settings', () => {
   it('hosted sessions get open_tab; explains are written in the reply (no present tool), only when they are on', () => {
     const cfg = loadConfig({ dataDir: mkdtempSync(join(tmpdir(), 'ab-host-')), hookToken: 't', uiToken: 'u' });
     const off = hostedArgs(cfg, { ...DEFAULT_SETTINGS, explains: { ...DEFAULT_SETTINGS.explains, mode: 'off' } });
-    expect(off[off.indexOf('--allowedTools') + 1]).toBe('mcp__cora__open_tab,mcp__cora__spotlight,mcp__cora__board,mcp__cora__journal,mcp__cora__environment,mcp__cora__deploys,mcp__cora__notes_list,mcp__cora__notes_search,mcp__cora__notes_read,mcp__cora__notes_add,mcp__cora__slack_find,mcp__cora__slack_read,mcp__cora__slack_send');
+    expect(off[off.indexOf('--allowedTools') + 1]).toBe('mcp__cora__open_tab,mcp__cora__spotlight,mcp__cora__board,mcp__cora__journal,mcp__cora__debrief,mcp__cora__secrets,mcp__cora__secret_run,EnterWorktree,mcp__cora__environment,mcp__cora__deploys,mcp__cora__notes_list,mcp__cora__notes_search,mcp__cora__notes_read,mcp__cora__notes_add,mcp__cora__slack_find,mcp__cora__slack_read,mcp__cora__slack_send');
     expect(readFileSync(off[off.indexOf('--append-system-prompt-file') + 1], 'utf8')).not.toMatch(/cora:explain/);
     const args = hostedArgs(cfg, DEFAULT_SETTINGS);
     // with HTML explains on: live explains too, and editing in their folder (only there in Cora's) with no prompt
-    expect(args[args.indexOf('--allowedTools') + 1]).toBe(`mcp__cora__open_tab,mcp__cora__spotlight,mcp__cora__board,mcp__cora__journal,mcp__cora__environment,mcp__cora__deploys,mcp__cora__notes_list,mcp__cora__notes_search,mcp__cora__notes_read,mcp__cora__notes_add,mcp__cora__slack_find,mcp__cora__slack_read,mcp__cora__slack_send,mcp__cora__live_explain,Edit(${ruleFor(join(cfg.dataDir, 'explains'))}/**)`);
+    expect(args[args.indexOf('--allowedTools') + 1]).toBe(`mcp__cora__open_tab,mcp__cora__spotlight,mcp__cora__board,mcp__cora__journal,mcp__cora__debrief,mcp__cora__secrets,mcp__cora__secret_run,EnterWorktree,mcp__cora__environment,mcp__cora__deploys,mcp__cora__notes_list,mcp__cora__notes_search,mcp__cora__notes_read,mcp__cora__notes_add,mcp__cora__slack_find,mcp__cora__slack_read,mcp__cora__slack_send,mcp__cora__live_explain,Edit(${ruleFor(join(cfg.dataDir, 'explains'))}/**)`);
     expect(args.slice(args.indexOf('--add-dir') + 1, args.indexOf('--add-dir') + 3)).toEqual([join(cfg.dataDir, 'attachments'), join(cfg.dataDir, 'explains')]);
     expect(off.slice(off.indexOf('--add-dir') + 1, off.indexOf('--add-dir') + 3)).toEqual([join(cfg.dataDir, 'attachments'), '--mcp-config']);
     const guide = readFileSync(args[args.indexOf('--append-system-prompt-file') + 1], 'utf8');

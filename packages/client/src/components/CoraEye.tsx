@@ -1,4 +1,5 @@
 import { setWakeMuted, useWake } from '../lib/wake/controller';
+import { useWorktrees } from '../state/worktrees';
 import { useCoraLinksDriver, useReachHalo, useWidth } from './OrbReach';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { briefMe, setConsoleOpen, useCoraState, useOrch, type CoraState } from '../state/orchestrator';
@@ -189,6 +190,7 @@ export function CoraEye() {
   useCoraLinksDriver();
   const cardW = useWidth(card);
   const halo = useReachHalo();
+  const doneTrees = useWorktrees((w) => (w.repos ?? []).reduce((n, r) => n + r.trees.filter((t) => t.state === 'done').length, 0));
 
   if (!enabled)
     return (
@@ -285,6 +287,14 @@ export function CoraEye() {
           <Icon name="Rocket" size={12} /> Goal
         </button>
       </div>
+      {doneTrees ? (
+        // worktrees whose work is merged and that nobody uses: to Cora's board, where they're cleaned up
+        <button className="cb-nudge" onClick={() => (useBrain.getState().setPrefs({ overviewStyle: 'grid' }), useBrain.getState().toggleOverview(true))} title="Merged, clean, nobody in them: clean them up on Cora's board">
+          <i />
+          {doneTrees} worktree{doneTrees === 1 ? '' : 's'} done
+          <u>Clean up</u>
+        </button>
+      ) : null}
     </div>
   );
 }

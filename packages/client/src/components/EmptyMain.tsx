@@ -6,8 +6,8 @@ import { Icon } from './Icon';
 import './emptyMain.css';
 
 /**
- * The main view with nothing open: Cora's orb in your colour, what to do next, and the last few sessions to go back to
- * (one click shows it here; Resume has the rest).
+ * The main view with nothing open: quiet type, what to do next, and the last few sessions to go back to (one click
+ * shows it here; Resume has the rest).
  */
 export function EmptyMain() {
   const sessions = useBrain((s) => s.sessions);
@@ -17,13 +17,10 @@ export function EmptyMain() {
   const setModal = useBrain((s) => s.setModal);
   return (
     <div className="empty-state em">
-      <span className="em-hero" aria-hidden>
-        <span className="orb-glyph em-orb" />
-      </span>
       {all.length ? (
         <>
           <h3>Nothing open</h3>
-          <p>Every session is closed. Start a new one, or pick up where you left off.</p>
+          <p>Start a session, or pick one up where you left it.</p>
         </>
       ) : (
         <>
@@ -36,22 +33,24 @@ export function EmptyMain() {
           <Icon name="Plus" size={14} /> New session
         </button>
         <button className="btn ghost" onClick={() => setModal('history')}>
-          <Icon name="History" size={13} /> Resume
+          Resume…
         </button>
       </div>
       {recent.length ? (
         <div className="em-recent">
-          <div className="em-h">Recent</div>
+          <div className="em-h">
+            <span>Recent</span>
+            <i />
+          </div>
           {recent.map((s) => (
             <button key={s.id} className="em-row" style={{ '--sc': sessionColor(s) } as React.CSSProperties} onClick={() => showSession(s.id)} title="Show it here (resume it from its composer)">
-              <span className="em-dot" />
+              <span className="em-tile">{(sessionName(s).match(/[A-Za-z0-9]/)?.[0] ?? '·').toUpperCase()}</span>
               <span className="em-t">
                 <b>{sessionName(s)}</b>
-                <span>
-                  {shortCwd(s.cwd)} · {ago(s.lastTs, now)} ago
-                </span>
+                <span>{shortCwd(s.cwd)}</span>
               </span>
-              <Icon name="ChevronRight" size={14} />
+              <span className="em-ago">{ago(s.lastTs, now)}</span>
+              <span className="em-show">show ›</span>
             </button>
           ))}
         </div>

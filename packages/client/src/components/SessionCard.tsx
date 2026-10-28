@@ -15,6 +15,7 @@ import { webChangeText } from '@cora/shared';
 import { webChangeLink } from '../state/webChanges';
 import { useWeb } from '../state/web';
 import type { CoraState } from '../state/orchestrator';
+import { DebriefAsk } from './DebriefAsk';
 import { Icon } from './Icon';
 import './sessionCard.css';
 
@@ -159,6 +160,8 @@ export function SessionCard({ sessionId }: { sessionId: string }) {
         }
       : null,
     { k: 'up', v: age(t - s.startedAt) },
+    // it changed something: it can walk you through it (Quick or Teach me), in the IDE panel
+    ch.files && hosted && s.state !== 'ended' ? { k: 'debrief', v: <DebriefAsk sessionId={sessionId} inline /> } : null,
   ] as (Cell | null)[]).filter((c): c is Cell => !!c);
   const cells = (cs: Cell[], cls: string) => (
     <div className={`sc-cells ${cls}`}>

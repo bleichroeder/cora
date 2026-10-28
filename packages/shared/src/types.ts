@@ -25,6 +25,8 @@ export type ToolInfo = {
   web?: import('./webChange').WebChange;
   /** a shell command sent to the background: its task id and where its output goes */
   background?: { taskId: string; outputFile?: string };
+  /** a command you ran yourself (`!` in Claude Code), not one of Claude's */
+  byYou?: true;
 };
 
 export type BrainEvent = {
@@ -63,6 +65,8 @@ export type SessionState = 'needs-you' | 'working' | 'thinking' | 'idle' | 'ende
 export type SessionInfo = {
   id: string;
   cwd: string;
+  /** where it works now, when that isn't where it started (a worktree it moved into) */
+  wd?: string | null;
   project: string;
   title: string;
   state: SessionState;
@@ -277,6 +281,10 @@ export type Settings = {
   board?: { pages: import('./boardLayouts').BoardPageMode };
   /** each session's journal (Documents\\Cora\\Journal): its milestones, its wrap-up, recaps (on unless you turn it off) */
   journal?: { on: boolean };
+  /** Debrief: when sessions offer to walk you through their work, the depth, speaking as you step */
+  debrief?: import('./debrief').DebriefSettings;
+  /** worktrees: when a session Cora hosts moves into one of its own */
+  worktrees?: import('./worktrees').WorktreeSettings;
   /** the Cora Orchestrator (off by default) */
   orchestrator: import('./orchestrator').OrchestratorSettings;
   /** Jira: watching it for you (off by default) */
@@ -349,6 +357,8 @@ export type PendingRequest = {
   elicitation?: { server: string; message: string; schema: unknown };
   /** AskUserQuestion: whether answering from the dashboard is enabled */
   canAnswer?: boolean;
+  /** only you may answer it (a session asking to use one of your secrets): never Cora's agent */
+  yours?: boolean;
 };
 
 export type PendingDecision = {
@@ -391,6 +401,8 @@ export type HistoryItem = {
   size: number;
   /** what Cora calls it (as in the nav), when Cora knows it: your name, its ticket's… (naming.ts) */
   name?: string;
+  /** Claude Code's latest recap of it (where it got to), when there is one */
+  recap?: string;
 };
 
 /** A GitLab CI status, as the API spells it. */
@@ -459,6 +471,25 @@ export type ExplainDataMsg = { t: 'explain-data'; sessionId: string; slug: strin
 
 export type ServerMsg =
   | CiMsg
+  | import('./debrief').DebriefsMsg
+  | import('./worktrees').WorktreesMsg
+  | import('./secrets').SecretsMsg
+  /** Cora is in use on another of your devices (named): this screen shows nothing until you use it here */
+  | { t: 'elsewhere'; name: string }
+  /** Go live: the share as this screen may know it (none: not live) */
+  | { t: 'live'; live: LiveState | null }
+  /** Go live: what the host is looking at (guests following them go there too) */
+  | { t: 'live-view'; view: LiveView }
+  /** Go live: someone's pointer (as a share of the window), or gone */
+  | { t: 'cursor'; id: string; name: string; x: number; y: number; gone?: boolean; anchor?: string; ax?: number; ay?: number }
+  /** Go live: someone pointing at something (a guest's click in Follow only): a pulse there */
+  | { t: 'ping'; id: string; name: string; x: number; y: number; anchor?: string; ax?: number; ay?: number }
+  /** Go live: guests' asks waiting for the host (an answer to a prompt that acts on the host's machine) */
+  | { t: 'live-asks'; asks: LiveAsk[] }
+  /** a session's browser on your other devices: the tabs the desktop app renders for them, and whether it's here */
+  | { t: 'rbrowse'; available: boolean; tabs: Array<{ id: string; sessionId: string; url: string; title: string; at: number; canBack?: boolean; canForward?: boolean; loading?: boolean }> }
+  /** your Cora's look (a screen's own settings that follow you across devices) changed on one of your screens */
+  | { t: 'synced'; key: string; value: string | null }
   | import('./gmail').MailOutboxMsg
   | import('./deploys').DeploysMsg
   | import('./notes').NotesMsg
@@ -467,6 +498,7 @@ export type ServerMsg =
   | import('./inbox').InboxMsg
   | import('./security').SecurityMsg
   | import('./orchestrator').OrchMsg
+  | import('./projects').ProjectsMsg
   | import('./orchestrator').UiCommandMsg
   | ExplainDataMsg
   /** Cora locked: every page goes to the lock screen */
@@ -480,7 +512,26 @@ export type ServerMsg =
   | { t: 'agent'; agent: AgentInfo }
   | { t: 'pending'; pending: PendingRequest[] };
 
-export type ClientMsg = { t: 'hello'; lastSeq: number };
+export type ClientMsg = { t: 'hello'; lastSeq: number } | { t: 'view'; view: LiveView } | { t: 'cursor'; x: number; y: number; anchor?: string; ax?: number; ay?: number } | { t: 'cursor-gone' } | { t: 'ping'; x: number; y: number; anchor?: string; ax?: number; ay?: number };
+
+/** Go live: a share as a screen knows it. The host's screen gets the link; a guest's, who they are (`you`). */
+export type LiveState = {
+  host: string;
+  mode: 'view' | 'interactive' | 'drive';
+  /** Follow only: guests stay on your view; a click of theirs is a pulse on your screen, not a move of their own */
+  followOnly: boolean;
+  /** private areas opened to guests (inbox, notes, messages, console) */
+  open: string[];
+  guests: Array<{ id: string; name: string; login?: string; since: number }>;
+  link?: string;
+  /** who can open the link: anyone (Tailscale Funnel, a browser is all they need) or your tailnet */
+  reach: 'public' | 'tailnet';
+  you?: string;
+  startedAt: number;
+};
+/** What the host is looking at: their session, the overview, the right column's tab. */
+export type LiveView = { focus: string | null; overview: boolean; rightTab?: string };
+export type LiveAsk = { id: string; guest: string; what: string; at: number };
 
 /** A kind of shell a shell tab can be (PowerShell, Command Prompt, Git Bash, a WSL distro…). */
 export type ShellProfile = { id: string; name: string; wsl?: boolean };

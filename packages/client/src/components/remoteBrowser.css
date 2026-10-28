@@ -1,0 +1,22 @@
+/* a session's browser on your other devices: its tabs, its bar, the live page */
+.rb { display: flex; flex-direction: column; height: 100%; min-height: 0; background: var(--nav); }
+.rb-tabs { flex: none; display: flex; align-items: center; gap: 4px; padding: 6px 8px 0; overflow-x: auto; scrollbar-width: none; }
+.rb-tabs::-webkit-scrollbar { display: none; }
+.rb-tab { flex: none; display: inline-flex; align-items: center; gap: 6px; max-width: 220px; height: 34px; padding: 0 4px 0 12px; border-radius: 9px 9px 0 0; background: rgba(148, 163, 184, .05); color: var(--ink3); font: 500 12.5px var(--ui); cursor: pointer; }
+.rb-tab span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rb-tab.on { background: var(--raise); box-shadow: inset 0 1px 0 var(--hair2); color: var(--ink); }
+.rb-tab button { display: grid; place-items: center; width: 24px; height: 24px; padding: 0; border: 0; border-radius: 6px; background: none; color: var(--ink4); cursor: pointer; }
+.rb-tab button:hover { background: var(--raise2); color: var(--ink); }
+.rb-bar { flex: none; display: flex; align-items: center; gap: 4px; padding: 6px 8px; background: var(--raise); border-bottom: 1px solid var(--hair2); }
+.rb-bar input { flex: 1; min-width: 0; height: 36px; padding: 0 12px; border: 0; border-radius: 9px; outline: none; background: var(--nav); box-shadow: inset 0 0 0 1px var(--hair2); color: var(--ink); font: 400 15px var(--ui); }
+.rb-bar input:focus { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cora) 45%, transparent); }
+.rb-ib { flex: none; display: grid; place-items: center; width: 38px; height: 38px; padding: 0; border: 0; border-radius: 9px; background: none; color: var(--ink2); cursor: pointer; }
+.rb-ib:disabled { opacity: .35; cursor: default; }
+.rb-ib:not(:disabled):active { background: var(--raise2); }
+.rb-page { position: relative; flex: 1; min-height: 0; overflow: hidden; background: #fff; outline: none; touch-action: none; -webkit-user-select: none; user-select: none; }
+.rb-img { display: block; width: 100%; height: 100%; object-fit: fill; pointer-events: none; }
+.rb-empty { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; padding: 24px; background: var(--nav); color: var(--ink4); font: 400 13px var(--ui); text-align: center; }
+.rb-empty b { color: var(--ink2); font: 600 14px var(--ui); }
+.rb-spin { display: inline-block; width: 10px; height: 10px; border-radius: 50%; border: 2px solid var(--ink4); border-top-color: transparent; animation: rb-spin .8s linear infinite; }
+.rb-spin.big { width: 20px; height: 20px; }
+@keyframes rb-spin { to { transform: rotate(360deg); } }

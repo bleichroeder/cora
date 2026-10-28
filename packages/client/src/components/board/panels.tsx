@@ -1,4 +1,9 @@
 import type { PanelKind } from '../../lib/boardLayout';
+import { RemoteBrowserView } from '../RemoteBrowser';
+import { desktop } from '../../lib/desktop';
+import { ActivityPanel, BriefPanel, ConstellationPanel, MembersPanel, ProjectPanel, ReposPanel, ThreadPanel } from './ProjectPanels';
+import { PrivateCard } from '../Live';
+import { useLive } from '../../state/live';
 import type { BoardData } from '../LiveBoard';
 import { Boundary } from '../Boundary';
 import { BackgroundPanel, ChangesPanel, GitPanel, TestsPanel } from './CodePanels';
@@ -10,9 +15,12 @@ import { RecapPanel } from '../Recap';
 import { MemePanel } from './MemePanel';
 import { JournalPanel } from './JournalPanel';
 import { IdePanel } from './IdePanel';
+import { WorktreesPanel } from './WorktreesPanel';
+import { GridOverview } from '../GridOverview';
 import './panels.css';
 
 type Props = { sessionId: string; data: BoardData };
+/** Cora opened on its own PC (not from another device over your tailnet). */
 const BODIES: Partial<Record<PanelKind, React.ComponentType<Props>>> = {
   goal: GoalPanel,
   recap: RecapPanel,
@@ -32,14 +40,34 @@ const BODIES: Partial<Record<PanelKind, React.ComponentType<Props>>> = {
   sessions: SessionsPanel,
   usage: UsagePanel,
   terminal: TerminalPanel,
-  browser: BrowserPanel,
-  ide: IdePanel,
+  // away from the desktop app: the session's browser rendered on your PC
+  browser: (p: Props) => (desktop?.browser ? <BrowserPanel {...p} /> : <RemoteBrowserView sessionId={p.sessionId} />),
+  // VS Code runs on your PC, at an address only it can open: from another device (the iPad), a word instead
+  ide: (p: Props) => <IdePanel {...p} />,
+  worktrees: WorktreesPanel,
+  constellation: ConstellationPanel,
+  members: MembersPanel,
+  thread: ThreadPanel,
+  brief: BriefPanel,
+  repos: ReposPanel,
+  activity: ActivityPanel,
+  project: ProjectPanel,
+  // every live session as a card (the Overview's grid, on Cora's board)
+  wall: () => (
+    <div className="lb-wall">
+      <GridOverview />
+    </div>
+  ),
 };
 
 /** The live board's other panels (the first four live in LiveBoard), each in its own boundary: one failing leaves the rest. */
 export function MorePanel({ k, sessionId, data }: { k: PanelKind } & Props) {
   const Body = BODIES[k];
+  // a guest: your private areas' panels stay a quiet card (unless you've opened that area to them)
+  const area = k === 'notes' ? 'notes' : k === 'mentions' ? 'inbox' : null;
+  const closed = useLive((s) => s.role === 'guest' && (k === 'browser' || k === 'ide' || k === 'project' || (!!area && !s.live?.open.includes(area))));
   if (!Body) return null;
+  if (closed) return <PrivateCard />;
   return (
     <Boundary quiet name={`board ${k}`}>
       <Body sessionId={sessionId} data={data} />

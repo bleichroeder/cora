@@ -11,13 +11,3 @@
 .sec-list li b { color: #e2e8f0; font-weight: 600; flex: none; }
 .sec-list li .dim { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .sec-tag { flex: none; padding: 0 6px; border-radius: 8px; background: #1e293b; color: #94a3b8; font-size: 10px; }
-.rf-row { display: flex; gap: 6px; }
-.rf-row .rf-btn { flex: 1; }
-.rf-sec { display: grid; place-items: center; flex: none; width: 34px; border: 1px solid #1a2433; border-radius: 7px; background: #0b111c; cursor: pointer; }
-.rf-sec.some { color: #fbbf24; border-color: #4a3a12; }
-.rf-sec.high { color: #f87171; border-color: #5b1d1d; animation: sec-pulse 2.4s ease-in-out infinite; }
-.rf-sec:hover { background: #0f1724; }
-@keyframes sec-pulse { 50% { box-shadow: 0 0 10px rgba(248, 113, 113, .45); } }
-@media (prefers-reduced-motion: reduce) { .rf-sec.high { animation: none; } }
-/* lock Cora: a square beside Settings */
-.rf-row .rf-btn.rf-lock { flex: none; width: 34px; padding: 0; justify-content: center; }

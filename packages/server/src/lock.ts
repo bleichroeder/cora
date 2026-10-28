@@ -113,6 +113,24 @@ export class Lock {
     return { ok: true };
   }
 
+  /** Is this the PIN? (Wrong tries count, and wait, as at the lock screen.) For taking Cora back to this PC. */
+  verify(pin: unknown): { ok: true } | { ok: false; waitMs: number } {
+    const now = this.now();
+    const wait = (this.s.waitUntil ?? 0) - now;
+    if (wait > 0) return { ok: false, waitMs: wait };
+    if (!this.matches(pin)) {
+      const fails = (this.s.fails ?? 0) + 1;
+      this.s.fails = fails;
+      this.s.waitUntil = fails >= FREE_TRIES ? now + Math.min(WAIT_MAX_MS, WAIT_MS * 2 ** (fails - FREE_TRIES)) : 0;
+      this.save();
+      return { ok: false, waitMs: Math.max(0, this.s.waitUntil - now) };
+    }
+    this.s.fails = 0;
+    this.s.waitUntil = 0;
+    this.save();
+    return { ok: true };
+  }
+
   private matches(pin: unknown): boolean {
     const p = this.s.pin;
     if (!p || typeof pin !== 'string' || !LOCK_PIN.test(pin)) return false;

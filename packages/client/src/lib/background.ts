@@ -57,13 +57,17 @@ function backgroundTasksUncached(events: BrainEvent[], now: number): BgTask[] {
   for (const e of events) {
     if (e.kind === 'tool' && e.toolUseId && SHELL.has(e.tool?.name ?? '')) {
       const inp = (e.tool?.input ?? {}) as { command?: unknown; description?: unknown; run_in_background?: unknown };
-      // only calls that asked for the background (events recorded before this rule may carry a stray `background`)
-      if (inp.run_in_background !== true && !byKey.has(e.toolUseId)) continue;
+      // only calls that asked for the background (events recorded before this rule may carry a stray `background`), and
+      // commands you ran yourself (`!`) that Claude Code moved there when they ran past its time limit
+      const yours = !!e.tool?.byYou && !!e.tool.background;
+      if (inp.run_in_background !== true && !yours && !byKey.has(e.toolUseId)) continue;
       const bg = e.tool?.background;
       let t = byKey.get(e.toolUseId);
       if (!t) {
         const command = String(inp.command ?? e.tool?.summary ?? '');
-        t = { key: e.toolUseId, taskId: null, agentId: e.agentId, label: clip(String(inp.description ?? '')) || clip(command), command, program: programOf(command), startedAt: e.ts, endedAt: null, status: 'running' };
+        // yours shows only once it's in the background (both its lines at once): it started that long before
+        const startedAt = e.phase === 'end' ? e.ts - (e.durationMs ?? 0) : e.ts;
+        t = { key: e.toolUseId, taskId: null, agentId: e.agentId, label: clip(String(inp.description ?? '')) || clip(command), command, program: programOf(command), startedAt, endedAt: null, status: 'running' };
         byKey.set(e.toolUseId, t);
       }
       if (e.phase !== 'end') continue;

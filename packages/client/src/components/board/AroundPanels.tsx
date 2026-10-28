@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { isUnread, type InboxItem, type Jot } from '@cora/shared';
 import { useBrain, sessionEvents } from '../../state/store';
 import { useCi } from '../../state/ci';
@@ -8,6 +8,7 @@ import { useTools } from '../../state/tools';
 import { dockNeeds } from '../../state/boardDock';
 import { sortedSessions } from '../../lib/sessionOrder';
 import { ago, currentAction, isDismissed, sessionColor, sessionName } from '../../lib/format';
+import { CORA_BOARD } from '../../lib/boardLayout';
 import { maskSecrets } from '../../lib/mask';
 import { NeedsYou } from '../NeedsYou';
 import { CiGlyph } from '../CiStrip';
@@ -20,11 +21,26 @@ const SCRATCH = 'scratch';
 
 /** Approvals and questions waiting on you, with their buttons (the floating cards stand down while this shows them). */
 export function NeedsPanel({ sessionId }: { sessionId: string }) {
-  const n = useBrain((s) => s.pending.filter((p) => p.sessionId === sessionId).length);
+  const cora = sessionId === CORA_BOARD;
+  // on Cora's board: every session's, each under its name
+  const ids = useBrain((s) => [...new Set(s.pending.filter((p) => cora || p.sessionId === sessionId).map((p) => p.sessionId))].join(','));
+  const sessions = useBrain((s) => s.sessions);
   useEffect(() => dockNeeds(sessionId), [sessionId]);
+  const list = ids ? ids.split(',') : [];
   return (
     <div className="lb-needs">
-      {n ? <NeedsYou sessionId={sessionId} /> : <div className="lb-empty">Nothing waiting on you. Approvals and questions show here, with their buttons.</div>}
+      {!list.length ? <div className="lb-empty">Nothing waiting on you. Approvals and questions show here, with their buttons.</div> : null}
+      {cora
+        ? list.map((id) => (
+            <div key={id} className="lb-needs-s">
+              <div className="lb-needs-h" style={{ ['--k' as string]: sessions[id] ? sessionColor(sessions[id]) : 'var(--ink3)' }}>
+                <i />
+                {sessions[id] ? sessionName(sessions[id]) : id.slice(0, 8)}
+              </div>
+              <NeedsYou sessionId={id} />
+            </div>
+          ))
+        : list.length ? <NeedsYou sessionId={sessionId} /> : null}
     </div>
   );
 }
@@ -67,20 +83,44 @@ export function MentionsPanel({ sessionId }: { sessionId: string }) {
 
 /* ------------------------------------------------------------------ Notes */
 
-/** Scratch, from this session's side: its jots (or everyone's), newest first, and a line to jot one down. */
+/** Scratch, from this session's side: its jots (or everyone's), newest first, a line to jot one down, and a delete on each (with an undo, as in Notes). */
 export function NotesPanel({ sessionId }: { sessionId: string }) {
   const session = useBrain((s) => s.sessions[sessionId]);
   const name = session ? sessionName(session) : '';
-  const changed = useNotes((n) => n.list.find((x) => x.id === SCRATCH)?.updatedAt);
+  // read again when Scratch changes: a new jot moves its time, a deleted one its count
+  const changed = useNotes((n) => {
+    const x = n.list.find((y) => y.id === SCRATCH);
+    return x ? `${x.updatedAt}|${x.count ?? 0}` : '';
+  });
   const [jots, setJots] = useState<Jot[] | null>(null);
   const [all, setAll] = useState(false);
   const [text, setText] = useState('');
   const [err, setErr] = useState<string | null>(null);
+  const [undo, setUndo] = useState<Jot | null>(null);
+  const undoTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => clearTimeout(undoTimer.current), []);
   useEffect(() => {
     let on = true;
     void notesApi.read(SCRATCH).then((r) => on && r.ok && setJots(r.v.jots ?? []));
     return () => void (on = false);
   }, [changed]);
+  const remove = async (j: Jot) => {
+    const r = await notesApi.deleteJot(j.id);
+    if (!r.ok) return setErr(r.error);
+    setErr(null);
+    setJots((js) => (js ?? []).filter((x) => x.id !== j.id));
+    setUndo(j);
+    clearTimeout(undoTimer.current);
+    undoTimer.current = setTimeout(() => setUndo(null), 7000);
+  };
+  const restore = async () => {
+    if (!undo) return;
+    clearTimeout(undoTimer.current);
+    const j = undo;
+    setUndo(null);
+    const r = await notesApi.restoreJot(j);
+    if (r.ok) setJots((js) => [j, ...(js ?? []).filter((x) => x.id !== j.id)]);
+  };
   const ofThis = (j: Jot) => !!name && (j.src === name || j.by === name);
   const shown = (jots ?? []).filter((j) => all || ofThis(j)).sort((a, b) => b.at - a.at);
   const add = async () => {
@@ -119,10 +159,21 @@ export function NotesPanel({ sessionId }: { sessionId: string }) {
                 {j.src || j.by ? `${j.src || j.by} · ` : ''}
                 {ago(j.at)}
               </div>
+              <button className="icon-btn lb-jotx" title="Delete this jot" onClick={() => void remove(j)}>
+                <Icon name="Trash2" size={12} />
+              </button>
             </div>
           ))
         )}
       </div>
+      {undo ? (
+        <div className="lb-undo">
+          Jot deleted
+          <button className="btn ghost" onClick={() => void restore()}>
+            Undo
+          </button>
+        </div>
+      ) : null}
       <div className="lb-jotin">
         <input value={text} placeholder="Jot something down (Enter)" onChange={(e) => setText(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && void add()} />
         {err ? <span className="err">{err}</span> : null}

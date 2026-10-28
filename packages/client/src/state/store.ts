@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { isMirror } from '../lib/synced';
 import { DEFAULT_TOOLS, type ToolDef } from '../lib/tools';
 import { isShell, type AgentInfo, type BrainEvent, type PendingRequest, type SessionInfo, type TerminalInfo } from '@cora/shared';
 import { byTime } from '../lib/steps';
@@ -108,6 +109,8 @@ function loadPrefs(): UiPrefs {
 }
 
 const savePref = (k: string, v: unknown) => {
+  // a guest's screen (Go live) mirrors the host's look: what they change of it isn't kept
+  if (isMirror()) return;
   try {
     localStorage.setItem(`ab:${k}`, JSON.stringify(v));
   } catch {
@@ -135,6 +138,9 @@ type State = {
   focus: string | null;
   agentFilter: 'all' | string;
   overview: boolean;
+  /** a project's board open in the main area (its id) */
+  projectOpen: string | null;
+  openProject(id: string | null): void;
   /** Cora's Inbox (a drawer beside Cora's console) */
   inbox: boolean;
   /** hosted Claude terminals (shells are kept apart, so "the session's terminal" always means its Claude) */
@@ -166,6 +172,8 @@ type State = {
   setRightTab(t: 'transcript' | 'explains' | 'changes'): void;
   setDiff(d: DiffTarget | null): void;
   setDiffWide(v: boolean): void;
+  /** the UI preferences as this browser now has them (another screen of yours changed them) */
+  reloadPrefs(): void;
   setPrefs(p: Partial<UiPrefs>): void;
   setConn(c: Conn): void;
   applySnapshot(s: { sessions: SessionInfo[]; agents: AgentInfo[]; pending: PendingRequest[]; terminals?: TerminalInfo[]; lastSeq: number; recent: Record<string, BrainEvent[]> }): void;
@@ -225,6 +233,7 @@ export const useBrain = create<State>((set, get) => ({
   focus: null,
   agentFilter: 'all',
   overview: false,
+  projectOpen: null,
   inbox: false,
   terminals: [],
   shells: [],
@@ -280,6 +289,7 @@ export const useBrain = create<State>((set, get) => ({
   setRightTab: (rightTab) => set({ rightTab }),
   setDiff: (diff) => set({ diff, ...(diff ? hideWeb(diff.sessionId) : { diffWide: false }) }),
   setDiffWide: (diffWide) => set({ diffWide }),
+  reloadPrefs: () => set({ prefs: loadPrefs() }),
   setPrefs: (p) => {
     const prefs = { ...get().prefs, ...p };
     savePref('ui', prefs);
@@ -326,9 +336,13 @@ export const useBrain = create<State>((set, get) => ({
 
   markLoaded: (sid) => set({ loaded: { ...get().loaded, [sid]: true }, versions: { ...get().versions, [sid]: (get().versions[sid] ?? 0) + 1 } }),
   setFocus: (focus) =>
-    set({ focus, agentFilter: 'all', overview: false, ...(focus && get().unseen[focus] ? { unseen: Object.fromEntries(Object.entries(get().unseen).filter(([k]) => k !== focus)) } : {}), ...(focus !== get().focus ? { cursor: null } : {}), toasts: get().toasts.filter((t) => t.sessionId !== focus), ...(get().viewer?.pinned && focus !== get().focus ? { viewer: null, viewerWide: false } : {}) }),
+    set({ focus, agentFilter: 'all', overview: false, projectOpen: null, ...(focus && get().unseen[focus] ? { unseen: Object.fromEntries(Object.entries(get().unseen).filter(([k]) => k !== focus)) } : {}), ...(focus !== get().focus ? { cursor: null } : {}), toasts: get().toasts.filter((t) => t.sessionId !== focus), ...(get().viewer?.pinned && focus !== get().focus ? { viewer: null, viewerWide: false } : {}) }),
   setAgentFilter: (agentFilter) => set({ agentFilter }),
-  toggleOverview: (force) => set({ overview: force ?? !get().overview }),
+  toggleOverview: (force) => {
+    const overview = force ?? !get().overview;
+    set({ overview, ...(overview ? { projectOpen: null } : {}) });
+  },
+  openProject: (id) => set({ projectOpen: id, ...(id ? { overview: false } : {}) }),
   setInbox: (on) => set({ inbox: on }),
   dismissToast: (id) => set({ toasts: get().toasts.filter((t) => t.id !== id) }),
 }));

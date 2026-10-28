@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { BrainEvent } from '@cora/shared';
-import { buildSteps } from '../src/lib/steps';
+import { buildSteps, isYourCommand } from '../src/lib/steps';
 
 let seq = 0;
 const E = (o: Partial<BrainEvent> & Pick<BrainEvent, 'kind'>): BrainEvent => ({
@@ -128,5 +128,27 @@ describe('buildSteps', () => {
       tool('main', 't3'),
     ], 'all');
     expect(steps.map((s) => [s.prompt, !!s.mid])).toEqual([['pick more profiles', false], ['add a home button', true]]);
+  });
+});
+
+describe('a command you ran yourself (!)', () => {
+  const yours = (id: string, phase: 'start' | 'end', extra: Partial<BrainEvent> = {}) =>
+    E({ kind: 'tool', phase, toolUseId: `bang:${id}`, tool: { name: 'Bash', input: { command: 'ls' }, summary: 'ls', byYou: true }, icon: { name: 'SquareTerminal', family: 'run' }, ...extra });
+  it("is a step of its own, not inside Claude's reply; what Claude does next starts another", () => {
+    const steps = buildSteps([E({ kind: 'say', text: 'Done.' }), E({ kind: 'turn_end' }), yours('u1', 'start'), yours('u1', 'end'), tool('main', 't9')], 'all');
+    expect(steps).toHaveLength(3);
+    expect(steps[0].items.map((i) => i.kind)).toEqual(['turn_end']);
+    expect(steps[1]).toMatchObject({ ran: true });
+    expect(steps[1].items).toHaveLength(1);
+    const it0 = steps[1].items[0];
+    expect(it0.kind === 'tool' && it0.start && it0.end).toBeTruthy();
+    expect(steps[2].ran).toBeUndefined();
+    expect(steps[2].items.map((i) => (i.kind === 'tool' ? i.start?.toolUseId : i.kind))).toEqual(['t9']);
+  });
+  it('one recorded before it was marked yours is known by its id', () => {
+    const old = E({ kind: 'tool', phase: 'start', toolUseId: 'bang:u0', tool: { name: 'Bash', input: { command: 'ls', description: 'You ran it (! in the terminal)' }, summary: 'ls' } });
+    expect(isYourCommand(old)).toBe(true);
+    expect(isYourCommand(tool('main', 't1', 'Bash'))).toBe(false);
+    expect(buildSteps([old], 'all')[0]).toMatchObject({ ran: true });
   });
 });

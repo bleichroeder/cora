@@ -1,4 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { desktop } from '../lib/desktop';
+import { useLive } from '../state/live';
 import { useBrain, sessionEvents } from '../state/store';
 import { attachFile, composerInbox, draftOf, loadCommands, previews, sendToSession, useComposer, interruptSession } from '../state/composer';
 import { buildPrompt, caretOnEdge, filterCommands, keyAction, promptHistory, slashQuery, stepHistory, type Attachment, type SlashCommand, stopKey } from '../lib/composer';
@@ -15,10 +17,22 @@ const focusTerminal = () => (document.querySelector('.term-window:not(.hidden) .
  * typed into Claude Code's input and submitted. Claude Code's own menus and questions still happen in its terminal,
  * which shows itself above for them.
  */
+/** a touch screen away from the desktop app (an iPad): the composer waits for a tap */
+const touchScreen = !desktop && typeof navigator !== 'undefined' && navigator.maxTouchPoints > 1;
+
 export function Composer({ sessionId }: { sessionId: string }) {
   const live = useBrain((s) => s.terminals.some((t) => t.sessionId === sessionId && t.alive));
   const on = useBrain((s) => s.prefs.inputMode === 'composer');
-  return live && on ? <ComposerBox key={sessionId} sessionId={sessionId} /> : null;
+  // a guest: they prompt only in an interactive share (and only through the composer)
+  const guestMode = useLive((s) => (s.role === 'guest' ? (s.live?.mode ?? 'view') : null));
+  const host = useLive((s) => s.live?.host ?? 'They');
+  if (guestMode === 'view' && live)
+    return (
+      <div className="live-watching">
+        <Icon name="Eye" size={13} /> Watching. {host} can let you prompt sessions (Interactive).
+      </div>
+    );
+  return live && (on || guestMode) ? <ComposerBox key={sessionId} sessionId={sessionId} /> : null;
 }
 
 function ComposerBox({ sessionId }: { sessionId: string }) {
@@ -35,7 +49,8 @@ function ComposerBox({ sessionId }: { sessionId: string }) {
   useEffect(() => {
     const el = document.activeElement;
     const typing = (el instanceof HTMLTextAreaElement || el instanceof HTMLInputElement) && !el.classList.contains('xterm-helper-textarea');
-    if (!typing) requestAnimationFrame(() => ta.current?.focus());
+    // (not on a touch screen: focusing calls up its keyboard bar, which takes over the screen; you tap to type)
+    if (!typing && !touchScreen) requestAnimationFrame(() => ta.current?.focus());
   }, []);
   const [focused, setFocused] = useState(false);
   const [caret, setCaret] = useState(0);

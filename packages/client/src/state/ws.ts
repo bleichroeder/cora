@@ -1,4 +1,11 @@
 import { applyJira } from './jiraWatch';
+import { applyRBrowse } from '../components/RemoteBrowser';
+import { addToProject, useProjects } from './projects';
+import { useDebrief } from './debrief';
+import { useWorktrees } from './worktrees';
+import { useSecrets } from './secrets';
+import { useSeat } from '../components/SeatCover';
+import { stopSpeaking } from '../lib/voice';
 import { useMailOutbox } from '../components/MailOutbox';
 import { onWebChanges } from './webChanges';
 import { memePosted } from '../components/board/memeNews';
@@ -14,6 +21,8 @@ import { applySecurity } from './security';
 import { applyOrch, runUi } from './orchestrator';
 import { applyExplainData } from './liveExplains';
 import { toLockScreen } from './lock';
+import { applyLive, guestAct, isGuest, liveNote, liveSender, useLive } from './live';
+import { pullSynced, restartWithSynced, syncedFromServer, syncedSettled, wipeSynced } from '../lib/synced';
 
 let ws: WebSocket | null = null;
 let delay = 500;
@@ -38,12 +47,19 @@ function open() {
     delay = 500;
     useBrain.getState().setConn('open');
     ws!.send(JSON.stringify({ t: 'hello', lastSeq: useBrain.getState().lastSeq }));
+    const me = ws;
+    liveSender((m) => me?.readyState === 1 && me.send(JSON.stringify(m)));
   };
   ws.onmessage = (m) => {
     const msg = JSON.parse(m.data) as ServerMsg;
     const s = useBrain.getState();
     switch (msg.t) {
       case 'snapshot': {
+        // fed again: Cora is in use here (moved here from another device: your Cora's look as you left it there)
+        if (useSeat.getState().elsewhere) {
+          useSeat.setState({ elsewhere: null });
+          void pullSynced(false).then((changed) => (changed ? restartWithSynced() : syncedSettled()));
+        }
         // away longer than the server replays: what's loaded has a hole, so sessions fetch again when shown
         const gap = s.lastSeq > 0 && msg.lastSeq - s.lastSeq > MAX_REPLAY;
         s.applySnapshot(msg);
@@ -103,16 +119,55 @@ function open() {
       case 'explain-data':
         applyExplainData(msg);
         break;
+      case 'secrets':
+        useSecrets.getState().apply(msg);
+        break;
+      case 'worktrees':
+        useWorktrees.getState().apply(msg);
+        break;
+      case 'debriefs':
+        useDebrief.getState().apply(msg);
+        break;
       case 'meme':
         memePosted(msg.sessionId);
+        break;
+      case 'elsewhere':
+        // Cora is in use on another device: this screen is covered (and says nothing aloud)
+        useSeat.setState({ elsewhere: msg.name });
+        stopSpeaking();
         break;
       case 'lock':
         toLockScreen();
         break;
+      case 'rbrowse':
+        applyRBrowse(msg);
+        break;
+      case 'projects':
+        useProjects.getState().apply(msg);
+        break;
+      case 'synced':
+        if (syncedFromServer(msg.key, msg.value) && msg.key === 'ab:ui') useBrain.getState().reloadPrefs();
+        break;
+      case 'live':
+      case 'live-view':
+      case 'live-asks':
+      case 'cursor':
+      case 'ping':
+        applyLive(msg);
+        break;
     }
   };
   ws.onclose = () => {
+    liveSender(null);
     useBrain.getState().setConn('closed');
+    // a guest whose share is over (ended, removed, or Cora restarted): the page says so, no retries
+    if (isGuest()) {
+      void fetch('/api/me')
+        .then((r) => (r.status === 401 ? (wipeSynced(), location.replace('/live/ended')) : setTimeout(open, delay)))
+        .catch(() => setTimeout(open, delay));
+      delay = Math.min(delay * 2, 8000);
+      return;
+    }
     // locked while away (the stream is refused): the lock screen, not retries
     void fetch('/api/me')
       .then((r) => r.status === 423 && toLockScreen())
@@ -154,10 +209,18 @@ export async function fetchToolDetail(sid: string, toolUseId: string): Promise<{
 
 /** Close a needs-you card without deciding: the terminal's own prompt (already showing there) decides. */
 export async function releasePending(id: string): Promise<void> {
+  if (isGuest()) return;
   await fetch(`/api/pending/${encodeURIComponent(id)}/release`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
 }
 
 export async function decide(id: string, d: PendingDecision): Promise<{ ok: boolean; error?: string }> {
+  // a guest: their answer (in an interactive share, it waits for the host's)
+  if (isGuest()) {
+    const r = await guestAct({ kind: 'answer', pendingId: id, decision: d.decision, ...(d.answers ? { answers: d.answers } : {}) });
+    if (r.asked) liveNote(`Asked ${useLive.getState().live?.host ?? 'them'}: it goes ahead once they say yes.`);
+    else if (!r.ok && r.error) liveNote(r.error);
+    return { ok: r.ok, ...(r.error ? { error: r.error } : {}) };
+  }
   const r = await fetch(`/api/pending/${encodeURIComponent(id)}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(d) });
   return r.json();
 }
@@ -190,6 +253,9 @@ export async function launchTerminal(body: { mode: ClaudeMode; cwd?: string; ses
   }
   st.setBang(t.sessionId);
   st.setFocus(t.sessionId);
+  // started from a project's header: it's in that project
+  const joining = useProjects.getState().joining;
+  if (joining) void addToProject(joining, t.sessionId);
   st.setModal(null);
   return { ok: true, terminal: t };
 }

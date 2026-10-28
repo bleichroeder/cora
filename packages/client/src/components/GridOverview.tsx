@@ -1,4 +1,8 @@
 import { FAM, recapText } from '@cora/shared';
+import { useMemo } from 'react';
+import type { Project, SessionInfo } from '@cora/shared';
+import { useProjects } from '../state/projects';
+import './projects.css';
 import { sessionEvents, useBrain } from '../state/store';
 import { agentColor, ago, currentAction, isDismissed, sessionColor, sessionName, shortCwd } from '../lib/format';
 import { sortedSessions } from './SessionRail';
@@ -21,10 +25,50 @@ export function GridOverview() {
   useBrain((s) => s.versions);
   const setFocus = useBrain((s) => s.setFocus);
   const list = sortedSessions(sessions).filter((s) => s.state !== 'ended' && !isDismissed(s)).slice(0, 24);
+  // your projects first (each a header over its sessions' cards), then the sessions in none
+  const projects = useProjects((p) => p.projects);
+  const groups = useMemo(() => {
+    const live = projects.filter((p) => !p.archivedAt);
+    const placed = new Set<string>();
+    const out: Array<{ p: Project | null; rows: SessionInfo[] }> = [];
+    for (const p of live) {
+      const rows = list.filter((s) => p.sessions.includes(s.id));
+      rows.forEach((s) => placed.add(s.id));
+      if (rows.length) out.push({ p, rows });
+    }
+    const rest = list.filter((s) => !placed.has(s.id));
+    if (rest.length) out.push({ p: null, rows: rest });
+    return out;
+  }, [projects, list]);
+  const grouped = groups.some((g) => g.p);
+  let n = 0;
 
   return (
     <div className="grid-overview">
-      {list.map((s, i) => {
+      {groups.map((g) => [
+        grouped ? (
+          g.p ? (
+            <button key={`h-${g.p.id}`} className="ov-proj" style={{ ['--pc' as any]: g.p.color }} onClick={() => useBrain.getState().openProject(g.p!.id)} title="Its board">
+              <span className="pj-sq" />
+              <b>{g.p.name}</b>
+              <span>
+                {g.rows.length} session{g.rows.length === 1 ? '' : 's'}
+              </span>
+            </button>
+          ) : (
+            <div key="h-rest" className="ov-proj rest">
+              <b>Other sessions</b>
+            </div>
+          )
+        ) : null,
+        ...g.rows.map((s) => card(s, n++)),
+      ])}
+      {!list.length ? <div className="empty">No live sessions.</div> : null}
+    </div>
+  );
+
+  function card(s: SessionInfo, i: number) {
+    {
         const events = sessionEvents(s.id);
         const subs = Object.values(agents)
           .filter((a) => a.sessionId === s.id && a.agentId !== 'main' && a.state !== 'done')
@@ -81,8 +125,6 @@ export function GridOverview() {
             </div>
           </button>
         );
-      })}
-      {!list.length ? <div className="empty">No live sessions.</div> : null}
-    </div>
-  );
+    }
+  }
 }

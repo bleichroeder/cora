@@ -54,6 +54,22 @@ export function slackManifest(): object {
   };
 }
 
+/** A message's text as section blocks: Slack takes at most 3000 characters a section. */
+export function sections(text: string): Array<{ type: 'section'; text: { type: 'mrkdwn'; text: string } }> {
+  const out: string[] = [];
+  let rest = text;
+  while (rest.length > 2900) {
+    // between paragraphs where it can, else between lines, else where it must
+    const para = rest.lastIndexOf('\n\n', 2900);
+    const line = rest.lastIndexOf('\n', 2900);
+    const at = para > 1000 ? para : line > 1000 ? line : 2900;
+    out.push(rest.slice(0, at).replace(/\n+$/, ''));
+    rest = rest.slice(at).replace(/^\n+/, '');
+  }
+  if (rest.trim()) out.push(rest);
+  return out.map((t) => ({ type: 'section', text: { type: 'mrkdwn', text: t } }));
+}
+
 export class SlackError extends Error {
   constructor(public code: string) {
     super(code);
@@ -260,6 +276,13 @@ export class Slack {
     this.o.onChange?.();
     void this.checkSearch();
     return this.status();
+  }
+
+  /** Your first name on Slack (your profile's real name, else your handle), for the line under messages Cora sends. */
+  async firstName(): Promise<string> {
+    if (!this.auth) return '';
+    const me = (await this.directory().catch(() => null))?.people.find((p) => p.id === this.auth!.userId);
+    return ((me?.real || me?.name || this.auth.user || '').trim().split(/\s+/)[0] ?? '').slice(0, 40);
   }
 
   /** Can the app search (for what's waiting in briefs)? One tiny search tells. */
@@ -476,12 +499,16 @@ export class Slack {
     });
   }
 
-  /** Post as you. Returns the message's link. */
-  async post(to: SlackTarget, text: string, threadTs?: string): Promise<{ channel: string; ts: string; link: string }> {
+  /**
+   * Post as you. Returns the message's link. `footer`: a small grey line under it (Slack's context block), so whoever
+   * reads it knows Cora sent it for you; the message's own text stays as it is (notifications, search).
+   */
+  async post(to: SlackTarget, text: string, threadTs?: string, footer?: string): Promise<{ channel: string; ts: string; link: string }> {
     try {
       const channel = await this.conversation(to);
       const body = await this.mentions(toMrkdwn(text));
-      const j = await this.call()('chat.postMessage', { channel, text: body, ...(threadTs ? { thread_ts: threadTs } : {}) });
+      const blocks = footer ? [...sections(body), { type: 'context', elements: [{ type: 'mrkdwn', text: footer }] }] : undefined;
+      const j = await this.call()('chat.postMessage', { channel, text: body, ...(blocks ? { blocks } : {}), ...(threadTs ? { thread_ts: threadTs } : {}) });
       const ts = String(j.ts);
       const p = await this.call()('chat.getPermalink', { channel, message_ts: ts }).catch(() => null);
       return { channel, ts, link: p?.permalink ? String(p.permalink) : '' };
@@ -876,7 +903,18 @@ export class Outbox {
     return files?.[i];
   }
 
-  /** A message Cora sends for you, signed so whoever reads it knows (the user's setting; once, at the end). */
+  /**
+   * The line under a message Cora sends for you: your sign-off (the user's setting, e.g. :cora:) and who it's for.
+   * None when the sign-off is turned off.
+   */
+  private async footer(): Promise<string | undefined> {
+    const sign = this.o.sign?.().trim();
+    if (!sign) return undefined;
+    const name = await this.o.slack.firstName().catch(() => '');
+    return `${sign}  Sent from Cora${name ? ` on ${name}'s behalf` : ''}`;
+  }
+
+  /** A message with files, signed at its end (their message takes no line under it): once. */
   private signed(text: string): string {
     const sign = this.o.sign?.().trim();
     return sign && !text.trimEnd().endsWith(sign) ? `${text.trimEnd()} ${sign}` : text;
@@ -887,8 +925,8 @@ export class Outbox {
    * `typed`: you wrote it yourself (the Inbox's reply), so it isn't signed as Cora's.
    */
   async sendNow(d: { to: SlackTarget; text: string; threadTs?: string; own?: boolean; typed?: boolean; files?: SlackAttachment[] }): Promise<{ id: string; link: string }> {
-    const body = d.typed ? d.text : this.signed(d.text);
-    const r = d.files?.length ? await this.o.slack.postFiles(d.to, body, d.files, d.threadTs) : { ...(await this.o.slack.post(d.to, body, d.threadTs)), fileIds: undefined };
+    const footer = d.typed ? undefined : await this.footer();
+    const r = d.files?.length ? await this.o.slack.postFiles(d.to, d.typed ? d.text : this.signed(d.text), d.files, d.threadTs) : { ...(await this.o.slack.post(d.to, d.text, d.threadTs, footer)), fileIds: undefined };
     const at = Date.now();
     const id = randomUUID();
     this.sentNow.set(id, { id, to: d.to, text: d.text, link: r.link, at, until: at + UNDO_MS, channel: r.channel, ...(r.ts ? { ts: r.ts } : {}), ...(r.fileIds ? { fileIds: r.fileIds, files: d.files } : {}), ...(d.own ? { own: r.channel } : {}) });
@@ -966,7 +1004,7 @@ export class Outbox {
     }
     if (!text) return { ok: false, error: 'the message is empty' };
     try {
-      const r = h.draft.files?.length ? await this.o.slack.postFiles(to, this.signed(text), h.draft.files, h.draft.threadTs) : await this.o.slack.post(to, this.signed(text), h.draft.threadTs);
+      const r = h.draft.files?.length ? await this.o.slack.postFiles(to, this.signed(text), h.draft.files, h.draft.threadTs) : await this.o.slack.post(to, text, h.draft.threadTs, await this.footer());
       this.held.delete(id);
       h.answer({ sent: true, link: r.link, text, to, edited: text !== h.draft.text.trim() || to.id !== h.draft.to.id });
       this.changed();

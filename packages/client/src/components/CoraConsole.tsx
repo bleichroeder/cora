@@ -18,7 +18,7 @@ import { NeedsYou } from './NeedsYou';
 import './cora.css';
 import './console.css';
 
-const KIND_ICON: Record<Approval['kind'], string> = { start: 'Play', send: 'SendHorizontal', end: 'Square', ask: 'CircleHelp' };
+const KIND_ICON: Record<Approval['kind'], string> = { start: 'Play', send: 'SendHorizontal', end: 'Square', ask: 'CircleHelp', worktree: 'GitBranchPlus', cleanup: 'Trash2' };
 
 /** The conversation from the agent's events: your prompts, its replies, and what it did in between. */
 type Line = { id: string; kind: 'you' | 'cora' | 'act'; text: string; failed?: boolean };
@@ -431,7 +431,7 @@ export function ApprovalCard({ a }: { a: Approval }) {
       {err ? <div className="cc-inerr">{err}</div> : null}
       <div className="cc-card-a">
         <button className="btn allow" disabled={busy || (a.kind === 'ask' && !text.trim())} onClick={() => void decide(true)} title="Ctrl+Enter">
-          {a.kind === 'start' ? 'Start it' : a.kind === 'send' ? 'Send it' : a.kind === 'ask' ? 'Answer' : 'End it'}
+          {a.kind === 'start' ? 'Start it' : a.kind === 'send' ? 'Send it' : a.kind === 'ask' ? 'Answer' : a.kind === 'worktree' ? 'Make it' : a.kind === 'cleanup' ? 'Remove them' : 'End it'}
         </button>
         <button className="btn ghost" disabled={busy} onClick={() => void decide(false)}>
           {a.kind === 'ask' ? 'Dismiss' : 'No'}

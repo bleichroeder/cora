@@ -35,7 +35,7 @@ export function setupBrowser(win: BrowserWindow, base: string) {
 
 /** Each browser profile's logins, set up once like the browser's: what pages may ask for, kept sign-ins, spelling. */
 const readied = new Set<string>();
-function webSession(partition: string): Electron.Session {
+export function webSession(partition: string): Electron.Session {
   const ses = session.fromPartition(partition);
   if (readied.has(partition)) return ses;
   readied.add(partition);

@@ -2,10 +2,14 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { FAM } from '@cora/shared';
 import { agentKey, sessionEvents, useBrain } from '../state/store';
-import { buildSteps, type Item, type Step } from '../lib/steps';
+import { buildSteps, isYourCommand, type Item, type Step } from '../lib/steps';
+import { runningCommand } from '../lib/composer';
+import { shortDur } from '../lib/background';
+import { maskSecrets } from '../lib/mask';
+import { useComposer } from '../state/composer';
 import { agentColor, clock, dur } from '../lib/format';
 import { Icon, Tile } from './Icon';
-import { SaidLine, ToolRow } from './ToolRow';
+import { RanRow, SaidLine, ToolRow } from './ToolRow';
 import { Markdown } from './Markdown';
 import { LiveActivity } from './LiveActivity';
 import { TaskPanel } from './TaskPanel';
@@ -122,6 +126,11 @@ function StepView({ step, sessionId, hosted, bare }: { step: Step; sessionId: st
   const name = step.agentId === 'main' ? 'main' : a?.label ?? step.agentId.slice(0, 7);
 
   if (bare) return <div className="fold-body">{body()}</div>;
+  // a command you ran yourself: yours, like a prompt (no "main" head: Claude didn't do it)
+  if (step.ran) {
+    const it = step.items[0];
+    return <div className="step ran-step">{it?.kind === 'tool' ? <RanRow item={it} sessionId={sessionId} /> : null}</div>;
+  }
   return (
     <div className={`step${step.agentId === 'main' ? '' : ' sub'}${step.cont ? ' cont' : ''}`} style={{ ['--c' as any]: color }}>
       {step.prompt ? (
@@ -153,6 +162,13 @@ function StepView({ step, sessionId, hosted, bare }: { step: Step; sessionId: st
             case 'tool':
               return <ToolRow key={it.key} item={it} sessionId={sessionId} />;
             case 'think':
+              // a note it wrote on its progress (shown in the terminal too): its words, quieter than a reply
+              if (it.e.text)
+                return (
+                  <div key={it.key} className="think-note">
+                    <Say text={it.e.text} clamp={false} />
+                  </div>
+                );
               if (it.e.durationMs == null && !it.e.tokens?.thinking) return null;
               return (
                 <div key={it.key} className="think" title={it.e.tokens?.thinking ? `~${it.e.tokens.thinking} tokens of thinking (its content is hidden)` : 'its thinking is hidden'}>
@@ -234,6 +250,40 @@ function Queued({ sessionId, version }: { sessionId: string; version: number | u
         </div>
       ))}
       <div className="q-note">Claude gets {waiting.length === 1 ? 'it' : 'them'} at its next step.</div>
+    </div>
+  );
+}
+
+/**
+ * A command you sent from the composer with `!`, while it runs: Claude Code writes it to the transcript only once it's
+ * done (then it shows as "you ran" in the feed and this goes).
+ */
+function Running({ sessionId, version }: { sessionId: string; version: number | undefined }) {
+  const sent = useComposer((c) => c.sent[sessionId]);
+  const live = useBrain((s) => s.terminals.some((t) => t.sessionId === sessionId && t.alive));
+  const ran = useMemo(
+    () => sessionEvents(sessionId).filter((e) => e.kind === 'tool' && isYourCommand(e)).map((e) => (e.phase === 'end' ? e.ts - (e.durationMs ?? 0) : e.ts)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [sessionId, version],
+  );
+  const r = live && sent ? runningCommand(sent, ran, Date.now()) : null;
+  const [, tick] = useState(0);
+  useEffect(() => {
+    if (!r) return;
+    const h = setInterval(() => tick((n) => n + 1), 1000);
+    return () => clearInterval(h);
+  }, [r?.at]);
+  if (!r) return null;
+  return (
+    <div className="ran live ran-now" title="Claude Code writes it to the transcript once it's done">
+      <div className="ran-h">
+        <span className="pl">you ran</span>
+        <span className="out">running · {shortDur(Date.now() - r.at)}</span>
+        <span className="spin" />
+      </div>
+      <pre className="ran-cmd">
+        <span className="ps">!</span> {maskSecrets(r.command).text}
+      </pre>
     </div>
   );
 }
@@ -359,6 +409,7 @@ export function Transcript({ sessionId }: { sessionId: string }) {
         {!steps.length ? <div className="empty">{q ? 'No matches.' : 'Nothing yet.'}</div> : null}
       </div>
       <Queued sessionId={sessionId} version={version} />
+      <Running sessionId={sessionId} version={version} />
       <LiveActivity sessionId={sessionId} />
       {unseen && !follow ? (
         <button

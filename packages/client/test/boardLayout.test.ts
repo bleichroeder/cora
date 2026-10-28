@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { COLS, DEFAULT_BOARD, LAYOUTS, ROWS, shellsOf, addLayoutPage, duplicatePage, moveName, movePage, movedTo, addPanel, asLayout, fromLayout, namesWithout, crossings, moveMeet, dropEdge, dropOn, keepBoards, lineAt, lines, merge, moveEdge, moveLine, normalize, pageCount, popExplain, removePage, removePanel, scrollToShow, sendToPage, shareOut, template, tile, tiles, visible, type BoardItem, type PanelKind } from '../src/lib/boardLayout';
+import { CORA_BOARD, CORA_LAYOUT, boardFor, fitsBoard, COLS, DEFAULT_BOARD, LAYOUTS, ROWS, shellsOf, addLayoutPage, duplicatePage, moveName, movePage, movedTo, addPanel, asLayout, fromLayout, namesWithout, crossings, moveMeet, dropEdge, dropOn, keepBoards, lineAt, lines, merge, moveEdge, moveLine, normalize, pageCount, popExplain, removePage, removePanel, scrollToShow, sendToPage, shareOut, template, tile, tiles, visible, type BoardItem, type PanelKind } from '../src/lib/boardLayout';
 
 const at = (items: BoardItem[]) => Object.fromEntries(items.map((i) => [i.id, [i.x, i.y, i.w, i.h]]));
 const it_ = (id: string, x: number, y: number, w: number, h: number): BoardItem => ({ id, k: 'agents', x, y, w, h });
@@ -247,5 +247,30 @@ describe("the bar's strip of page tabs", () => {
 
   it('a tab wider than the strip shows from its start', () => {
     expect(scrollToShow(0, 100, 200, 176, 18)).toBe(182);
+  });
+});
+
+describe("Cora's board", () => {
+  it('panels fit their board: session ones on sessions, Cora ones on Cora, some on both', () => {
+    expect(fitsBoard('agents', 's1')).toBe(true);
+    expect(fitsBoard('agents', CORA_BOARD)).toBe(false);
+    expect(fitsBoard('worktrees', CORA_BOARD)).toBe(true);
+    expect(fitsBoard('worktrees', 's1')).toBe(false);
+    expect(fitsBoard('needs', CORA_BOARD) && fitsBoard('needs', 's1')).toBe(true);
+    expect(fitsBoard('explain', CORA_BOARD)).toBe(false);
+  });
+
+  it('starts with Sessions, Worktrees and Needs you; a saved one keeps only what fits', () => {
+    expect(boardFor(undefined, CORA_BOARD, null).map((p) => p.k)).toEqual(['wall', 'worktrees', 'needs']);
+    const saved: BoardItem[] = [{ id: 'w', k: 'wall', x: 0, y: 0, w: 12, h: 12 }, { id: 'a', k: 'agents', x: 12, y: 0, w: 12, h: 12 }];
+    expect(boardFor(saved, CORA_BOARD, null).map((p) => p.k)).toEqual(['wall']);
+    expect(boardFor([{ id: 'a', k: 'agents', x: 0, y: 0, w: 12, h: 12 }], CORA_BOARD, null).map((p) => p.k)).toEqual(['wall', 'worktrees', 'needs']);
+    expect(boardFor(undefined, 's1', null)).toEqual(template(null));
+  });
+
+  it("is kept when sessions' boards come and go", () => {
+    const boards = keepBoards({ [CORA_BOARD]: { items: CORA_LAYOUT }, s1: { items: DEFAULT_BOARD } }, 's2', { items: DEFAULT_BOARD }, (id) => id === 's1');
+    expect(Object.keys(boards)).toEqual([CORA_BOARD, 's1', 's2']);
+    expect(Object.keys(keepBoards(boards, CORA_BOARD, { items: CORA_LAYOUT, page: 0 }, () => false))).toEqual([CORA_BOARD]);
   });
 });

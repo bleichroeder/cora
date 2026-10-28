@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useLive } from '../state/live';
 import { create } from 'zustand';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
@@ -318,6 +319,7 @@ export function LiveTerminal({ terminal, compact, shown = true, sized = false, o
 /** Shown for sessions Cora doesn't host: resume or fork them here. */
 function ExternalPanel({ sessionId }: { sessionId: string }) {
   const s = useBrain((st) => st.sessions[sessionId]);
+  const guest = useLive((l) => l.role === 'guest');
   const [phase, setPhase] = useState<'idle' | 'checking' | 'confirm' | 'blocked' | 'launching'>('idle');
   const [err, setErr] = useState<string | null>(null);
   if (!s) return null;
@@ -350,10 +352,12 @@ function ExternalPanel({ sessionId }: { sessionId: string }) {
           {recentlyActive ? `It was active ${ago(s.lastTs)} ago, so it's probably still open somewhere. ` : ''}
           Make sure it isn't open in another terminal: resuming it in two places splits the conversation.
         </p>
+      ) : guest ? (
+        <p className="dim">Its transcript is above.</p>
       ) : (
         <p className="dim">You can read it here. Resume it here to type into it; its history stays in the transcript above.</p>
       )}
-      <div className="ext-actions">
+      {guest ? null : <div className="ext-actions">
         {phase === 'confirm' ? (
           <>
             <button className="btn allow" onClick={() => go('resume')}><Icon name="Play" size={12} /> Resume here</button>
@@ -367,7 +371,7 @@ function ExternalPanel({ sessionId }: { sessionId: string }) {
         <button className="btn ghost" disabled={phase === 'launching'} onClick={() => go('fork')} title="Continue in a new copy of this conversation; the original is untouched">
           <Icon name="GitBranch" size={12} /> Fork a copy
         </button>
-      </div>
+      </div>}
       {err ? <div className="ny-err">{err}</div> : null}
     </div>
   );

@@ -1,4 +1,4 @@
-import { mkdtempSync } from 'node:fs';
+import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -30,6 +30,65 @@ describe('MCP tools', () => {
     expect(await listed({ ...H, 'x-cora-session': 'sess-live-1' })).toContain('live_explain');
     expect(await listed(H)).not.toContain('live_explain');
   });
+
+  it('a debrief: checked against the files, saved, listed, its markdown; a bad one comes back named', async () => {
+    const dataDir = mkdtempSync(join(tmpdir(), 'ab-mcp-'));
+    const cwd = mkdtempSync(join(tmpdir(), 'ab-mcp-repo-'));
+    writeFileSync(join(cwd, 'a.ts'), 'one\ntwo\nthree\n');
+    srv = await startServer(loadConfig({ dataDir, dbPath: ':memory:', hookToken: 'hooktok', uiToken: 'u' }), { tail: false, listen: false });
+    srv.store.upsertSession({ id: 'sess-debrief-1', cwd });
+    await call(rpc('initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 't', version: '1' } }));
+    const S = { ...H, 'x-cora-session': 'sess-debrief-1' };
+    const step = { title: 'The change', kind: 'change', path: 'a.ts', range: [2, 3], beats: [{ text: 'Two and three.' }], why: 'Because.' };
+    const script = { title: 'Counting', task: 'Count to three.', depth: 'quick', steps: [step] };
+    const bad = await call(rpc('tools/call', { name: 'debrief', arguments: { ...script, steps: [{ ...step, range: [2, 9] }] } }, 2), S);
+    expect(bad.json.result.isError).toBe(true);
+    expect(bad.json.result.content[0].text).toContain('step 1: lines 2-9 are past the end of a.ts (3 lines)');
+    const ok = await call(rpc('tools/call', { name: 'debrief', arguments: script }, 3), S);
+    expect(ok.json.result.content[0].text).toMatch(/^Saved "Counting" \(1 steps\)/);
+    const list = (await srv.app.inject({ url: '/api/debriefs/sess-debrief-1', headers: { cookie: 'ab_session=u' } })).json().list;
+    expect(list).toMatchObject([{ title: 'Counting', depth: 'quick', steps: 1 }]);
+    const md = await srv.app.inject({ url: `/api/debriefs/sess-debrief-1/${list[0].id}/markdown`, headers: { cookie: 'ab_session=u' } });
+    expect(md.body).toContain('`a.ts:2-3`');
+    expect(md.body).toContain('```\ntwo\nthree\n```');
+    expect((await srv.app.inject({ url: '/api/debriefs/sess-debrief-1/nope', headers: { cookie: 'ab_session=u' } })).statusCode).toBe(404);
+    // no IDE open on the folder: the dashboard hears so (and offers to add one)
+    const show = await srv.app.inject({ method: 'POST', url: '/api/ide/debrief/show', headers: { cookie: 'ab_session=u', origin: 'http://127.0.0.1:4317' }, payload: { sessionId: 'sess-debrief-1', id: list[0].id, step: 0 } });
+    expect(show.json()).toEqual({ ok: false, reason: 'no-ide' });
+    const past = await srv.app.inject({ method: 'POST', url: '/api/ide/debrief/show', headers: { cookie: 'ab_session=u', origin: 'http://127.0.0.1:4317' }, payload: { sessionId: 'sess-debrief-1', id: list[0].id, step: 5 } });
+    expect(past.statusCode).toBe(404);
+    // the bubble's buttons come only from the IDE's extension (its own key)
+    expect((await srv.app.inject({ method: 'POST', url: '/api/ide/bridge/debrief', payload: { sessionId: 'sess-debrief-1', act: 'next' } })).statusCode).toBe(401);
+  });
+
+  it("secrets: a session sees names, never values; its first use waits for the user (no dashboard: no); an expired one is refused", async () => {
+    const dataDir = mkdtempSync(join(tmpdir(), 'ab-mcp-'));
+    srv = await startServer(loadConfig({ dataDir, dbPath: ':memory:', hookToken: 'hooktok', uiToken: 'u' }), { tail: false, listen: false });
+    srv.store.upsertSession({ id: 'sess-secret-1', cwd: dataDir });
+    const UI = { cookie: 'ab_session=u', origin: 'http://127.0.0.1:4317' };
+    const add = (payload: object) => srv.app.inject({ method: 'POST', url: '/api/secrets', headers: UI, payload });
+    expect((await add({ name: 'GITHUB_PAT', value: 'ghp_very-secret', note: 'GitHub sandbox' })).statusCode).toBe(200);
+    const old = `eyJhbGciOiJIUzI1NiJ9.${Buffer.from(JSON.stringify({ exp: 1000 })).toString('base64url')}.c2ln`;
+    expect((await add({ name: 'OLD_JWT', value: old })).json()).toMatchObject({ name: 'OLD_JWT', expiresAt: 1_000_000 });
+    expect((await add({ name: 'bad', value: 'x' })).statusCode).toBe(400);
+    const listed = (await srv.app.inject({ url: '/api/secrets', headers: { cookie: 'ab_session=u' } })).body;
+    expect(listed).toContain('GITHUB_PAT');
+    expect(listed).not.toContain('ghp_very-secret');
+    expect((await srv.app.inject({ method: 'POST', url: '/api/secrets/GITHUB_PAT/reveal', headers: UI })).json()).toEqual({ value: 'ghp_very-secret' });
+    await call(rpc('initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 't', version: '1' } }));
+    const S = { ...H, 'x-cora-session': 'sess-secret-1' };
+    const tool = async (name: string, args: object, id: number) => (await call(rpc('tools/call', { name, arguments: args }, id), S)).json.result;
+    const names = (await tool('secrets', {}, 2)).content[0].text as string;
+    expect(names).toContain('GITHUB_PAT: GitHub sandbox');
+    expect(names).toContain('OLD_JWT · EXPIRED');
+    expect(names).not.toContain('pat-na1');
+    expect((await tool('secret_run', { command: 'echo $OLD_JWT', secrets: ['OLD_JWT'] }, 3)).content[0].text).toMatch(/expired/);
+    expect((await tool('secret_run', { command: 'echo $NOPE', secrets: ['NOPE'] }, 4)).content[0].text).toMatch(/No secret NOPE/);
+    // nobody at the dashboard to OK its first use: refused, nothing run
+    const r = await tool('secret_run', { command: 'echo $GITHUB_PAT', secrets: ['GITHUB_PAT'] }, 5);
+    expect(r.isError).toBe(true);
+    expect(r.content[0].text).toMatch(/didn't allow GITHUB_PAT/);
+  }, 30_000);
 
   it("sessions read the user's notes and add to them (marked, never editing)", async () => {
     srv = await startServer(loadConfig({ dataDir: mkdtempSync(join(tmpdir(), 'ab-mcp-')), dbPath: ':memory:', hookToken: 'hooktok', uiToken: 'u' }), { tail: false, listen: false });

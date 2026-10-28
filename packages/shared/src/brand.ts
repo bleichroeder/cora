@@ -39,6 +39,10 @@ export const SPOTLIGHT_TOOL = 'mcp__cora__spotlight';
 export const BOARD_TOOL = 'mcp__cora__board';
 /** a session adds to its journal (a milestone, its wrap-up) */
 export const JOURNAL_TOOL = 'mcp__cora__journal';
+/** a session walks the user through its work (Debrief): the script, checked and kept by Cora */
+export const DEBRIEF_TOOL = 'mcp__cora__debrief';
+/** Cora Secrets: the names a session may use, and running a command with them (values never shown to it) */
+export const SECRETS_TOOLS = ['mcp__cora__secrets', 'mcp__cora__secret_run'] as const;
 /** Says a short spoken summary to the user (voice "summaries" reading mode). */
 export const SPEAK_TOOL = 'mcp__cora__speak';
 /** Which of the user's environments (their VPNs) is reachable right now: read-only, for every session. */

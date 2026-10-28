@@ -49,12 +49,27 @@ export class PendingManager {
         ? { elicitation: { server: String(p.mcp_server_name ?? p.server_name ?? 'server'), message: String(p.message ?? ''), schema: p.requested_schema ?? p.schema ?? null } }
         : {}),
       ...(kind === 'question' ? { canAnswer: this.o.askAnswering } : {}),
+      ...(p.yours ? { yours: true } : {}),
     };
     return new Promise((resolve) => {
       const timer = setTimeout(() => this.finish(req.id, NO_DECISION, 'timeout', 'timeout'), this.o.holdMs);
       this.held.set(req.id, { req, resolve, timer });
       this.o.onChange(this.list());
     });
+  }
+
+  /**
+   * Ask you something a session's tool needs (a secret's first use), shown as a permission prompt with Allow / Deny;
+   * only you can answer it. True when you allowed it (no dashboard open, or no answer in time: false).
+   */
+  /** Something done on your say-so (a command run with a secret), in the audit log beside the decisions. */
+  note(e: import('./audit').AuditEntry): void {
+    this.o.audit.log(e);
+  }
+
+  async ask(o: { sessionId: string; toolName: string; toolInput: unknown }): Promise<boolean> {
+    const out = (await this.request('permission', { session_id: o.sessionId, tool_name: o.toolName, tool_input: o.toolInput, yours: true })) as { hookSpecificOutput?: { decision?: { behavior?: string } } };
+    return out.hookSpecificOutput?.decision?.behavior === 'allow';
   }
 
   /**
@@ -82,6 +97,7 @@ export class PendingManager {
       this.finish(id, out, d.decision, 'dashboard', false);
       return { ok: true };
     }
+    if (req.yours && by?.via === 'orchestrator') return { ok: false, error: 'only the user can answer this' };
     if (d.decision !== 'allow' && d.decision !== 'deny') return { ok: false, error: 'permission needs allow|deny' };
     if (req.kind === 'question' && d.answers && !req.canAnswer) return { ok: false, error: 'answering questions from the dashboard is disabled' };
     let decision: Record<string, unknown>;

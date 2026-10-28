@@ -245,15 +245,3 @@ function UpdatesSection({ node }: { node: string | null }) {
     </Section>
   );
 }
-
-/** The left nav's shield: only when the check found something (red when it matters). */
-export function SecurityBadge() {
-  const r = useSecurity((s) => s.report);
-  const level = securityLevel(r);
-  if (!level) return null;
-  return (
-    <button className={`rf-sec ${level}`} title={level === 'high' ? 'Security updates needed (Settings → Updates & security)' : 'Security updates available (Settings → Updates & security)'} onClick={() => openSettings('security')}>
-      <Icon name={level === 'high' ? 'ShieldAlert' : 'Shield'} size={14} />
-    </button>
-  );
-}

@@ -167,14 +167,21 @@ describe('terminal endpoints', () => {
     expect((await srv.app.inject({ url: '/api/sessions/s1/running', headers: { cookie: H.cookie } })).json()).toMatchObject({ hosted: false });
     const live = await srv.app.inject({ url: '/api/local/terminals', headers: { 'x-cora-token': 'hooktok' } });
     expect(live.json()).toMatchObject({ live: 1, shells: 1 });
-    // its shells keep a session from being hidden
-    expect((await srv.app.inject({ method: 'POST', url: '/api/sessions/s1/dismiss', headers: H, payload: {} })).statusCode).toBe(409);
+    // its shells keep a session from being hidden (the answer says how many, so the list can offer to close them)
+    const kept = await srv.app.inject({ method: 'POST', url: '/api/sessions/s1/dismiss', headers: H, payload: {} });
+    expect(kept.statusCode).toBe(409);
+    expect(kept.json()).toMatchObject({ shells: 1 });
     expect((await srv.app.inject({ method: 'POST', url: '/api/sessions/dismiss-ended', headers: H, payload: {} })).json()).toEqual({ dismissed: 0 });
     // close: the process ends and the shell is gone from the list
     expect((await srv.app.inject({ method: 'POST', url: `/api/terminals/${r.json().terminalId}/close`, headers: { cookie: H.cookie, origin: 'https://evil.example' } })).statusCode).toBe(403);
     expect((await srv.app.inject({ method: 'POST', url: `/api/terminals/${r.json().terminalId}/close`, headers: H })).json()).toEqual({ ok: true });
     expect((await srv.app.inject({ url: '/api/terminals', headers: { cookie: H.cookie } })).json().terminals).toEqual([]);
     expect(srv.store.getSession('s1')?.state).toBe('ended');
+    // or it goes off the list with them when you say so: they're closed
+    await srv.app.inject({ method: 'POST', url: '/api/terminals', headers: H, payload: { mode: 'shell', sessionId: 's1' } });
+    const off = await srv.app.inject({ method: 'POST', url: '/api/sessions/s1/dismiss', headers: H, payload: { closeShells: true } });
+    expect(off.json().dismissedAt).toBeGreaterThan(0);
+    expect((await srv.app.inject({ url: '/api/terminals', headers: { cookie: H.cookie } })).json().terminals).toEqual([]);
     // a Claude terminal isn't closed this way
     const c = await srv.app.inject({ method: 'POST', url: '/api/terminals', headers: H, payload: { mode: 'new', cwd } });
     expect((await srv.app.inject({ method: 'POST', url: `/api/terminals/${c.json().terminalId}/close`, headers: H })).statusCode).toBe(404);

@@ -48,6 +48,23 @@
 .journal .feed.single .step.sub { margin-left: 0; padding-left: 0; border-left: 0; }
 /* your prompt: a quiet surface, labelled */
 .journal .prompt { margin: 12px 0 4px; padding: 10px 12px; max-height: 240px; border: 0; border-radius: 10px; background: var(--raise); box-shadow: inset 0 0 0 1px var(--hair); color: var(--ink); font: 400 13px/1.55 var(--ui); }
+/* a command you ran yourself (! in Claude Code): the command, then its output's first lines */
+.journal .ran { margin: 12px 0 4px; padding: 8px 12px 9px; border-radius: 10px; background: var(--raise); box-shadow: inset 0 0 0 1px var(--hair); }
+.journal .ran-h { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.journal .ran-h .pl { flex: none; margin: 0; }
+.journal .ran-h .out { flex: 1; min-width: 0; overflow: hidden; color: var(--ink4); font: 400 10.5px var(--code); text-overflow: ellipsis; white-space: nowrap; }
+.journal .ran.live .ran-h .out { color: var(--run); }
+.journal .ran.fail .ran-h .out { color: var(--need); }
+.journal .ran-h .row-acts { opacity: 1; }
+.journal .ran pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.journal .ran-cmd { margin-top: 5px !important; color: var(--ink); font: 500 12px/1.5 var(--code); }
+.journal .ran-cmd .ps { color: var(--ink4); user-select: none; }
+.journal .ran-o { max-height: 320px; overflow: auto; margin-top: 6px !important; padding-top: 6px; border-top: 1px solid var(--hair); color: var(--ink3); font: 400 10.5px/1.55 var(--code); }
+.journal .ran.fail .ran-o { color: color-mix(in srgb, var(--need) 70%, var(--ink3)); }
+.journal .ran-more { margin-top: 4px; padding: 0; border: 0; background: none; color: var(--ink3); font: 500 10.5px var(--code); cursor: pointer; }
+.journal .ran-more:hover { color: var(--ink); }
+.journal .ran-now { flex: none; margin: 0 12px 8px; }
+.journal .ran-now .spin { flex: none; margin: 0; border-color: var(--run); border-right-color: transparent; }
 .journal .task { margin: 4px 0; padding: 8px 10px; border-radius: 9px; background: color-mix(in srgb, var(--c) 6%, var(--nav)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c) 18%, transparent); color: var(--ink2); font: 400 12.5px/1.5 var(--ui); }
 .journal .pl { display: block; margin-bottom: 3px; font: 600 9.5px var(--code); letter-spacing: .14em; text-transform: uppercase; color: var(--ink4); }
 /* a step's head: who, a hairline, when */
@@ -139,6 +156,50 @@
 .ex-l2 { display: flex; align-items: center; gap: 8px; min-width: 0; color: var(--ink4); font: 400 10.5px/14px var(--code); white-space: nowrap; overflow: hidden; }
 .ex-s { display: inline-flex; align-items: center; gap: 5px; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--ink3); }
 .ex-s i { flex: none; width: 6px; height: 6px; border-radius: 50%; }
+/* a debrief being written: the session's colour breathing on its tile, what it's doing now, and the time it's taken */
+.db-writing { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--k) 30%, var(--hair2)); background: linear-gradient(90deg, color-mix(in srgb, var(--k) 7%, transparent), transparent 70%); }
+.db-writing:not(.missed) .db-tile { animation: db-breathe 1.8s ease-in-out infinite; }
+@keyframes db-breathe { 50% { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--k) 70%, transparent), 0 0 12px color-mix(in srgb, var(--k) 40%, transparent); } }
+.db-writing .db-main { cursor: default; }
+.db-now { overflow: hidden; text-overflow: ellipsis; min-width: 0; color: var(--ink3); }
+.db-took { flex: none; color: var(--ink4); font-variant-numeric: tabular-nums; }
+.db-writing.missed { --k: var(--think); }
+@media (prefers-reduced-motion: reduce) { .db-writing .db-tile { animation: none; } }
+/* what a debrief covers of the work's changes (a gap in the think colour, its files on hover) */
+.db-cov { margin-left: 8px; color: var(--ink4); }
+.db-cov.gap { color: var(--think); }
+/* a turn a debrief covers: its tag on the turn's header */
+.ch-db { display: inline-flex; align-items: center; gap: 4px; height: 18px; margin-right: 8px; padding: 0 7px; border: 0; border-radius: 5px; background: color-mix(in srgb, var(--cora) 12%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cora) 32%, transparent); color: var(--cora-hi); font: 600 9.5px var(--code); letter-spacing: .06em; cursor: pointer; }
+.ch-db:hover { background: color-mix(in srgb, var(--cora) 20%, transparent); }
+/* a new debrief waiting in Changes: a dot on its tab */
+.rt-new { display: inline-block; width: 6px; height: 6px; margin-left: 6px; border-radius: 50%; background: var(--cora); box-shadow: 0 0 6px color-mix(in srgb, var(--cora) 70%, transparent); vertical-align: 1px; }
+/* the Debrief button: Quick or Teach me, then "asked" (the card's foot shows the choice at once) */
+.db-ask { display: inline-flex; align-items: center; gap: 4px; }
+.db-ask button { display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 8px; border: 0; border-radius: 7px; background: none; color: var(--ink2); font: 500 11px var(--code); }
+.db-ask button:hover:not(:disabled) { color: var(--ink); background: var(--raise); }
+.db-ask button:disabled { opacity: .45; }
+.db-ask i { color: var(--ink4); font-style: normal; }
+.db-said { color: var(--ink3); font: 500 11px var(--code); }
+.ch-h .db-ask { margin-right: 4px; }
+.scard .db-ask button { height: auto; padding: 0; color: var(--ink2); font: 500 12px var(--ui); }
+.scard .db-ask button:hover { color: var(--sc, var(--cora)); background: none; }
+.scard .db-said { font: 500 12px var(--ui); }
+/* a session's debriefs, at the top of its Changes: play one in the IDE panel (its controls here too), or export it */
+.db-list { margin-bottom: 4px; }
+.ch-debriefs:has(.db-list) { padding: 2px 8px 0; }
+.db-row { position: relative; display: flex; align-items: center; gap: 4px; border-radius: 9px; }
+.db-row:hover { background: rgba(148, 163, 184, .05); }
+.db-row.on { background: var(--raise); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cora) 40%, var(--hair2)); }
+.db-main { flex: 1; min-width: 0; display: grid; grid-template-columns: 28px minmax(0, 1fr); align-items: center; column-gap: 10px; height: 46px; padding: 0 4px 0 6px; border: 0; background: none; color: inherit; text-align: left; }
+.db-main:hover { background: none; }
+.db-tile { --k: #f59e0b; }
+.db-tile.teach { --k: #34d399; }
+.db-ctl { display: inline-flex; align-items: center; gap: 1px; padding-right: 6px; }
+.db-ctl button { display: grid; place-items: center; width: 24px; height: 24px; padding: 0; border: 0; border-radius: 6px; background: none; color: var(--ink3); }
+.db-ctl button:hover { color: var(--ink); background: var(--raise2, rgba(148, 163, 184, .1)); }
+.db-ctl button.lit { color: var(--cora); }
+.db-ctl.quiet { opacity: 0; transition: opacity .15s; }
+.db-row:hover .db-ctl.quiet, .db-ctl.quiet:focus-within { opacity: 1; }
 .explains .empty { color: var(--ink4); font: 400 12.5px/1.5 var(--ui); }
 
 /* ---------- Changes: a summary line, turns as their prompt on a hairline, files as quiet rows ---------- */
@@ -314,3 +375,7 @@
 .rightcol > .term-pane .term-tab.on { background: none; box-shadow: none; color: var(--ink); }
 .rightcol > .term-pane .term-tab.on::after { content: ''; position: absolute; left: 0; right: 0; bottom: 4px; height: 2px; border-radius: 2px; background: var(--cora); }
 .rightcol > .term-pane .term-tab .tt-t { font-weight: 600; }
+
+/* a note the session wrote on its progress (a thinking block with words, as the terminal shows it): quieter than a reply */
+.journal .think-note { margin: 2px 0; padding-left: 10px; border-left: 2px solid var(--hair2); }
+.journal .think-note .say, .journal .think-note p { color: var(--ink3); font-size: 12.5px; }

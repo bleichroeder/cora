@@ -275,6 +275,8 @@ export const IDE_DEFAULTS: Record<string, unknown> = {
 export const APP_DEFAULTS: Record<string, unknown> = {
   'security.workspace.trust.enabled': false,
   'workbench.startupEditor': 'none',
+  // a debrief's bubble is a comment thread: the Comments panel opening for it would push it off the screen
+  'comments.openView': 'never',
   'workbench.secondarySideBar.defaultVisibility': 'hidden',
   'chat.commandCenter.enabled': false,
   'workbench.tips.enabled': false,

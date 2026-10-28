@@ -36,6 +36,15 @@ export type PanelKind =
   | 'recap'
   | 'memes'
   | 'journal'
+  | 'wall'
+  | 'worktrees'
+  | 'constellation'
+  | 'members'
+  | 'thread'
+  | 'brief'
+  | 'repos'
+  | 'activity'
+  | 'project'
   | 'explain';
 export type BoardItem = {
   id: string;
@@ -55,6 +64,8 @@ export type BoardItem = {
   /** a Terminal panel: its own shells, as tabs (their terminal ids), and the one on show */
   terms?: string[];
   term?: string;
+  /** on a project's board, a session's panel: the member it's for ('*': all of them, where it can) */
+  for?: string;
 };
 
 /** A Terminal panel's shells (one from before tabs: just it). */
@@ -80,10 +91,12 @@ export const PANEL_ICON: Record<Exclude<PanelKind, 'explain'>, string> = {
   pipeline: 'GitPullRequest', deploys: 'Rocket', ticket: 'Ticket',
   needs: 'Hand', mentions: 'AtSign', notes: 'NotebookPen', usage: 'ChartPie', sessions: 'LayoutList',
   terminal: 'SquareTerminal', browser: 'Globe', ide: 'Code',
+  wall: 'LayoutGrid', worktrees: 'GitFork',
+  constellation: 'Orbit', members: 'Users', thread: 'MessagesSquare', brief: 'NotebookText', repos: 'FolderGit2', activity: 'History', project: 'FolderKanban',
 };
 
 /** Where a panel sits in the + Panel menu. */
-export const PANEL_GROUPS = ['This session', 'Code', 'Delivery', 'Around you', 'Tools'] as const;
+export const PANEL_GROUPS = ['Project', 'Cora', 'This session', 'Code', 'Delivery', 'Around you', 'Tools'] as const;
 export type PanelGroup = (typeof PANEL_GROUPS)[number];
 
 /** The panels you can add (an explain is added from the Explains panel, or the menu's explains), and their size when added. */
@@ -113,7 +126,63 @@ export const PANELS: Record<Exclude<PanelKind, 'explain'>, { name: string; hint:
   terminal: { name: 'Terminal', hint: "The session's terminal or a shell, live (to watch; type in the terminal pane)", group: 'Tools', size: [14, 14] },
   browser: { name: 'Browser', hint: 'A browser of its own, with its own tabs and profiles', group: 'Tools', size: [14, 16] },
   ide: { name: 'IDE', hint: "Your VS Code (extensions, debugger, git, its terminal), opened at the session's folder", group: 'Tools', size: [16, 18] },
+  wall: { name: 'Sessions', hint: "Every live session as a card: what it's doing, its agents, what it said last", group: 'Cora', size: [14, 24] },
+  worktrees: { name: 'Worktrees', hint: 'Every worktree of your repos: who works in it, how far it has got, what can go', group: 'Cora', size: [10, 15] },
+  constellation: { name: 'Constellation', hint: "The project's sessions as their orbs, together: what each is doing, and the thread's posts between them", group: 'Project', size: [12, 12] },
+  members: { name: 'Members', hint: 'Each session in the project, what it needs, and what it hears of the others', group: 'Project', size: [10, 12] },
+  thread: { name: 'Thread', hint: "The project's conversation: the sessions' posts and yours", group: 'Project', size: [10, 14] },
+  brief: { name: 'Brief & decisions', hint: "The project's goal and the decisions it keeps", group: 'Project', size: [10, 10] },
+  repos: { name: 'Across repos', hint: "The members' worktrees, tickets, merge requests and pipelines in one list", group: 'Project', size: [12, 10] },
+  activity: { name: 'Activity', hint: "What the project's sessions did lately, together", group: 'Project', size: [12, 10] },
+  project: { name: 'Project', hint: "This session's project: its brief and thread", group: 'This session', size: [10, 12] },
 };
+
+/** The board that is Cora's own (the Overview's Board), kept with the sessions' boards under this key. */
+export const CORA_BOARD = 'cora';
+/** Whose board a panel fits: one session's (it reads that session), Cora's (all your work), or both. */
+export type PanelScope = 'session' | 'cora' | 'both' | 'project';
+export const PANEL_SCOPE: Record<Exclude<PanelKind, 'explain'>, PanelScope> = {
+  spotlight: 'session', agents: 'session', touching: 'session', tasks: 'session', explains: 'session', goal: 'session', memes: 'session', journal: 'session', recap: 'session', context: 'session',
+  changes: 'session', git: 'session', tests: 'session', background: 'session', pipeline: 'session', deploys: 'session', ticket: 'session', mentions: 'session', terminal: 'session', ide: 'session',
+  needs: 'both', notes: 'both', usage: 'both', sessions: 'both', browser: 'both',
+  wall: 'cora', worktrees: 'cora',
+  constellation: 'project', members: 'project', thread: 'project', brief: 'project', repos: 'project', activity: 'project', project: 'session',
+};
+/** Does this panel fit this board (a session's, or Cora's)? An explain is a session's. */
+export const fitsBoard = (k: PanelKind, owner: string) => {
+  // a project's board: its own panels, and a session's (each for a member); not an explain, nor its project panel
+  if (owner.startsWith('project:')) return k !== 'explain' && k !== 'project' && PANEL_SCOPE[k] !== 'cora';
+  const s = k === 'explain' ? 'session' : PANEL_SCOPE[k];
+  return s === 'both' || (owner === CORA_BOARD ? s === 'cora' : s === 'session');
+};
+/** Is it a session's panel (on a project's board: for one member)? */
+export const forMember = (k: PanelKind) => k === 'explain' || PANEL_SCOPE[k] === 'session';
+/** A session's panels that can show every member at once on a project's board. */
+export const FOR_ALL = new Set<PanelKind>(['changes', 'tests', 'pipeline', 'git']);
+/** A project's board as it starts: the orbs and members on the left, the thread on the right, brief and repos below. */
+export const PROJECT_LAYOUT: BoardItem[] = [
+  { id: 'constellation', k: 'constellation', x: 0, y: 0, w: 13, h: 11 },
+  { id: 'members', k: 'members', x: 0, y: 11, w: 13, h: 7 },
+  { id: 'thread', k: 'thread', x: 13, y: 0, w: 11, h: 18 },
+  { id: 'brief', k: 'brief', x: 0, y: 18, w: 13, h: 6 },
+  { id: 'repos', k: 'repos', x: 13, y: 18, w: 11, h: 6 },
+];
+/** Cora's board as it starts: the sessions large, their worktrees and what needs you beside them. */
+export const CORA_LAYOUT: BoardItem[] = [
+  { id: 'wall', k: 'wall', x: 0, y: 0, w: 14, h: 24 },
+  { id: 'worktrees', k: 'worktrees', x: 14, y: 0, w: 10, h: 15 },
+  { id: 'needs', k: 'needs', x: 14, y: 15, w: 10, h: 9 },
+];
+/** A board's panels from the preferences, for its owner: what doesn't fit it dropped (none left: how it starts). */
+export function boardFor(raw: unknown, owner: string, first: unknown): BoardItem[] {
+  if (owner.startsWith('project:')) {
+    const items = raw ? normalize(raw).filter((p) => fitsBoard(p.k, owner)) : [];
+    return items.length ? items : PROJECT_LAYOUT;
+  }
+  if (owner !== CORA_BOARD) return raw ? normalize(raw) : template(first);
+  const items = raw ? normalize(raw).filter((p) => fitsBoard(p.k, owner)) : [];
+  return items.length ? items : CORA_LAYOUT;
+}
 
 export const DEFAULT_BOARD: BoardItem[] = [
   { id: 'agents', k: 'agents', x: 0, y: 0, w: 14, h: 16 },
@@ -544,8 +613,12 @@ export function template(raw: unknown): BoardItem[] {
 
 /** The sessions' boards with one changed: only sessions still around (`alive`), at most BOARDS_KEPT, newest last. */
 export function keepBoards(boards: Record<string, SessionBoard> | undefined, sid: string, next: SessionBoard, alive: (sid: string) => boolean): Record<string, SessionBoard> {
-  const rest = Object.entries(boards ?? {}).filter(([k]) => k !== sid && alive(k));
-  return Object.fromEntries([...rest.slice(-(BOARDS_KEPT - 1)), [sid, next]]);
+  // Cora's own board is never one of the sessions' to let go
+  // Cora's own board and the projects' are never the sessions' to let go
+  const ours = (k: string) => k === CORA_BOARD || k.startsWith('project:');
+  const kept = Object.entries(boards ?? {}).filter(([k]) => k !== sid && ours(k));
+  const rest = Object.entries(boards ?? {}).filter(([k]) => k !== sid && !ours(k) && alive(k));
+  return Object.fromEntries([...kept, ...rest.slice(-(BOARDS_KEPT - 1)), [sid, next]]);
 }
 
 /** A layout from the preferences (anything odd dropped). The earlier columns layout is turned into the grid. */
@@ -576,6 +649,7 @@ export function normalize(raw: unknown): BoardItem[] {
         ...(int(p.pg, 0, MAX_PAGES - 1, 0) ? { pg: int(p.pg, 0, MAX_PAGES - 1, 0) } : {}),
         ...(p.k === 'spotlight' && typeof p.pin === 'string' && p.pin.length < 200 ? { pin: p.pin } : {}),
         ...(p.k === 'terminal' && typeof p.term === 'string' && p.term.length < 80 ? { term: p.term } : {}),
+        ...(typeof p.for === 'string' && p.for.length < 90 ? { for: p.for } : {}),
         ...(p.k === 'terminal' && Array.isArray(p.terms) ? { terms: (p.terms as unknown[]).filter((t): t is string => typeof t === 'string' && t.length < 80).slice(0, 12) } : {}),
       };
     });

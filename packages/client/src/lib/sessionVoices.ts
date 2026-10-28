@@ -4,7 +4,7 @@ import type { VoiceSettings } from '@cora/shared';
 /**
  * A session's own voice. Two ways it gets one: you pick any of your ElevenLabs voices on its card (it keeps that), or,
  * with Settings › Voice › Sessions' voices on "each its own", a new session is given one from the set you ticked
- * there, whichever is least in use among the sessions open now (so neighbours sound different). Neither: it speaks
+ * there, one of those least in use among the sessions open now, at random (so neighbours sound different). Neither: it speaks
  * with the sessions' voice. Kept in this browser.
  */
 const KEY = 'cora.session.voice';
@@ -41,8 +41,11 @@ export const useSessionVoices = create<{ by: Record<string, Kept>; set(sessionId
 /** The set sessions are given voices from (none: they speak with the sessions' one voice, unless you pick one). */
 export const voicePool = (v: VoiceSettings): Voice[] => (v.sessionVoices?.each ? (v.sessionVoices.pool ?? []) : []);
 
-/** Which of `pool` a new session gets: the least used among `open` sessions' voices, the first of them on a tie. */
-export function pickVoice(pool: Voice[], by: Record<string, Kept | string>, open: string[]): string | undefined {
+/**
+ * Which of `pool` a new session gets: one of the least used among `open` sessions' voices, at random (so neighbours
+ * sound different, and which voice you get varies: the first of the set every time sounded the same).
+ */
+export function pickVoice(pool: Voice[], by: Record<string, Kept | string>, open: string[], rand: () => number = Math.random): string | undefined {
   if (!pool.length) return undefined;
   const uses = new Map(pool.map((p) => [p.id, 0]));
   for (const sid of open) {
@@ -50,7 +53,9 @@ export function pickVoice(pool: Voice[], by: Record<string, Kept | string>, open
     const id = typeof k === 'string' ? k : k?.id;
     if (id && uses.has(id)) uses.set(id, uses.get(id)! + 1);
   }
-  return [...pool].sort((a, b) => uses.get(a.id)! - uses.get(b.id)!)[0].id;
+  const least = Math.min(...uses.values());
+  const ties = pool.filter((p) => uses.get(p.id) === least);
+  return ties[Math.min(ties.length - 1, Math.floor(rand() * ties.length))].id;
 }
 
 /**
