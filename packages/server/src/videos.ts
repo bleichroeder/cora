@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
 import { createWriteStream, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { DEFAULT_VIDEO, captions, planSlides, videoPlanProblem, videoSlides, type Debrief, type FfmpegState, type VideoJob, type VideoPlan, type VideoSettings, type VideoSlide } from '@cora/shared';
+import { DEFAULT_VIDEO, SHOT_BOX, captions, planSlides, videoPlanProblem, videoSlides, type Debrief, type FfmpegState, type VideoJob, type VideoPlan, type VideoSettings, type VideoSlide } from '@cora/shared';
 
 /**
  * Debrief videos: a debrief as a short narrated video. Its
@@ -37,6 +37,8 @@ const REC_FPS = 24;
 const LEAD = 0.4;
 const TAIL = 0.9;
 const FADE = 0.35;
+/** a step's picture is pushed in at most this far (its focus fills the box, or as near as this gets) */
+const MAX_PUSH = 1.5;
 /** a slide with nothing to say stays this long */
 const QUIET = 3;
 const VOICE_KEEP_MS = 7 * 86_400_000;
@@ -337,11 +339,16 @@ export class Videos {
           picture = ['-loop', '1', '-framerate', String(FPS), '-i', files[i][0]];
           vf = slides[i].kind === 'title' ? `scale=${W * 2}:-1,zoompan=z='1+0.05*in/${frames}':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=1:s=${W}x${H}:fps=${FPS}` : `scale=${W}:${H},fps=${FPS}`;
         }
-        vf += `,fade=t=in:st=0:d=${FADE},fade=t=out:st=${(total - FADE).toFixed(3)}:d=${FADE},format=yuv420p`;
+        const fades = `fade=t=in:st=0:d=${FADE},fade=t=out:st=${(total - FADE).toFixed(3)}:d=${FADE},format=yuv420p`;
         const ms = Math.round(LEAD * 1000);
         const sound = a ? ['-i', a] : ['-f', 'lavfi', '-i', 'anullsrc=r=44100:cl=stereo'];
         const af = a ? `adelay=${ms}|${ms},apad,atrim=0:${total.toFixed(3)},aformat=sample_rates=44100:channel_layouts=stereo` : `atrim=0:${total.toFixed(3)}`;
-        const r = await this.run(tools.ffmpeg, ['-y', '-v', 'error', ...picture, ...sound, '-vf', vf, '-af', af, '-t', total.toFixed(3), '-c:v', 'libx264', '-preset', 'medium', '-crf', '20', '-c:a', 'aac', '-b:a', '160k', out]);
+        const shot = slides[i].shot;
+        const args = shot
+          ? // its picture (or clip: played once, then held) in the slide's frame, pushed in toward what it's about
+            [...picture, ...(shot.clip ? ['-i', shot.file] : ['-loop', '1', '-framerate', String(FPS), '-i', shot.file]), ...sound, '-filter_complex', `${shotGraph(shot, W, H, frames, vf, fades)};[2:a]${af}[a]`, '-map', '[v]', '-map', '[a]']
+          : [...picture, ...sound, '-vf', `${vf},${fades}`, '-af', af];
+        const r = await this.run(tools.ffmpeg, ['-y', '-v', 'error', ...args, '-t', total.toFixed(3), '-c:v', 'libx264', '-preset', 'medium', '-crf', '20', '-c:a', 'aac', '-b:a', '160k', out]);
         if (r.code !== 0) throw new Error(`ffmpeg failed on slide ${i + 1}: ${r.err.trim().split('\n').pop()?.slice(0, 200)}`);
         parts.push(out);
         seconds += total;
@@ -404,6 +411,32 @@ const safeList = (dir: string) => {
 };
 
 /** The folder holding ffmpeg (and ffprobe) somewhere in what was unpacked. */
+/**
+ * A step's picture on its slide, as an ffmpeg graph: the slide's frame (input 0, through `bg`), the picture (input 1; a
+ * clip plays once, then holds its last frame) fitted into SHOT_BOX and eased from the whole of it toward its focus over
+ * most of the slide (no focus: a gentle push-in), laid on the frame; out as [v].
+ */
+export function shotGraph(shot: NonNullable<VideoSlide['shot']>, W: number, H: number, frames: number, bg: string, fades: string): string {
+  const k = W / 1920;
+  const even = (n: number) => Math.max(2, Math.round(n / 2) * 2);
+  const [bw, bh] = [even(SHOT_BOX.w * k), even(SHOT_BOX.h * k)];
+  const [fx, fy, fw, fh] = shot.focus ?? [0, 0, 1, 1];
+  const zoom = shot.focus ? Math.min(MAX_PUSH, Math.max(1, 0.92 / Math.max(fw, fh))) : 1.04;
+  const [cx, cy] = [fx + fw / 2, fy + fh / 2];
+  const n = Math.max(1, Math.round(frames * 0.65));
+  // smoothstep over the first two thirds, then held
+  const e = `(pow(min(1,on/${n}),2)*(3-2*min(1,on/${n})))`;
+  const z = `1+${(zoom - 1).toFixed(4)}*${e}`;
+  const x = `max(0,min(iw-iw/zoom,(0.5+${(cx - 0.5).toFixed(4)}*${e})*iw-iw/zoom/2))`;
+  const y = `max(0,min(ih-ih/zoom,(0.5+${(cy - 0.5).toFixed(4)}*${e})*ih-ih/zoom/2))`;
+  const hold = shot.clip ? 'tpad=stop_mode=clone:stop_duration=3600,' : '';
+  return (
+    `[0:v]${bg}[b];` +
+    `[1:v]${hold}fps=${FPS},scale=${bw * 2}:${bh * 2}:force_original_aspect_ratio=increase,crop=${bw * 2}:${bh * 2},setsar=1,zoompan=z='${z}':x='${x}':y='${y}':d=1:s=${bw}x${bh}:fps=${FPS}[m];` +
+    `[b][m]overlay=${Math.round(SHOT_BOX.x * k)}:${Math.round(SHOT_BOX.y * k)}:eof_action=repeat,${fades}[v]`
+  );
+}
+
 function findBin(root: string, depth = 0): string | null {
   if (existsSync(join(root, `ffmpeg${EXE}`)) && existsSync(join(root, `ffprobe${EXE}`))) return root;
   if (depth > 3) return null;

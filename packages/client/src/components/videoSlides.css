@@ -236,3 +236,50 @@ html.slides-page #root {
   font-weight: 560;
   text-align: center;
 }
+
+/* a step with a picture: its title over the box the picture goes in (SHOT_BOX; the video lays it on), framed */
+.vs-shead {
+  position: absolute;
+  top: 0;
+  display: flex;
+  align-items: center;
+  gap: 40px;
+}
+.vs-shead h2 {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 50px;
+  font-weight: 720;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.vs-shead .vs-dots i {
+  width: 28px;
+}
+.vs-sbox {
+  position: absolute;
+  overflow: hidden;
+  background: var(--raise);
+  outline: 2px solid color-mix(in srgb, var(--cora) 45%, var(--hair2));
+  outline-offset: 0;
+  box-shadow:
+    0 0 0 10px color-mix(in srgb, var(--cora) 7%, transparent),
+    0 30px 90px rgba(0, 0, 0, 0.55),
+    0 0 120px color-mix(in srgb, var(--cora) 16%, transparent);
+}
+.vs-sbox img,
+.vs-sbox video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.vslides.shot .vs-caption {
+  bottom: 20px;
+  max-width: 1760px;
+  padding: 12px 28px;
+  font-size: 32px;
+  line-height: 1.3;
+}

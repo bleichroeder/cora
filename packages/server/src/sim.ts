@@ -1,9 +1,11 @@
 import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { EVENT_ICON, PRESENT_TOOL, type OrchestratorStatus } from '@cora/shared';
+import { BOARD_TOOL, EVENT_ICON, PRESENT_TOOL, type OrchestratorStatus } from '@cora/shared';
 import type { PendingManager } from './pending';
 import type { Pipeline } from './pipeline';
+import { loadDashboard } from './simLoad';
+import { startSimShow } from './simShow';
 
 // Simulated sessions for UI development (`cora start --sim`). Feeds hook-shaped payloads through the
 // real pipeline (plus narration/thinking events that normally come from transcripts).
@@ -24,9 +26,10 @@ type Call = { tool: string; input: Record<string, unknown>; response: Record<str
 const CWD: Record<string, string> = { api: 'C:\\code\\orion-api', web: 'C:\\code\\aurora-web', cli: 'C:\\code\\nimbus-cli' };
 
 /** What one simulated session is working on: its name, your prompt, the explain it writes, how it wraps up. */
-type Topic = { name: string; prompt: string; explain: { title: string; content: string }; done: string; /** Claude's task list: [subject, while doing it] */ plan: Array<[string, string]> };
+type Topic = { name: string; prompt: string; /** none: it keeps a live one instead (the load test) */ explain?: { title: string; content: string }; done: string; /** Claude's task list: [subject, while doing it] */ plan: Array<[string, string]>; /** the Board's page for its work (the board tool) */ board?: [string, string] };
 const TOPICS: Record<string, Topic> = {
   audit: {
+    board: ['investigating', 'Checking the hooks brief'],
     name: 'Hook payload audit',
     prompt: 'Review the hooks design and verify the claims in the brief.',
     plan: [['Read the design brief', 'Reading the design brief'], ['Verify each claim with explorers', 'Verifying the claims'], ['Write up what holds', 'Writing it up']],
@@ -55,6 +58,7 @@ const payload = { session_id, agent_id, agent_type, tool_use_id };
     },
   },
   release: {
+    board: ['shipping', 'Release 2.4 to staging'],
     name: 'Ship release 2.4',
     prompt: 'Cut the 2.4 release: bump the version, build the image and push it.',
     plan: [['Bump the version and changelog', 'Bumping the version'], ['Build and check the image', 'Building the image'], ['Push the image and tag', 'Pushing the release']],
@@ -80,6 +84,7 @@ const payload = { session_id, agent_id, agent_type, tool_use_id };
     },
   },
   scheduler: {
+    board: ['reviewing', 'Reviewing the schedule change'],
     name: 'Thermostat scheduler',
     prompt: 'Why does the scheduler skip the 6 am setpoint on Mondays?',
     plan: [['Reproduce the Monday skip', 'Reproducing it'], ['Find where the day is computed', 'Tracing the day boundary'], ['Fix it and test both DST changes', 'Fixing and testing']],
@@ -100,7 +105,15 @@ Added a test for each DST change, both directions. All 41 scheduler tests pass.
 `,
     },
   },
+  loadtest: {
+    board: ['investigating', 'Load testing search'],
+    name: 'Load test the search API',
+    prompt: 'Load test search up to 400 users and find out why p99 jumps.',
+    plan: [['Ramp to 400 users', 'Ramping up the load'], ['Watch the tail latency', 'Watching p99'], ['Find the cause', 'Finding the cause']],
+    done: "Found it: the indexer's GC pauses every 30 s. The dashboard has the details.",
+  },
   sink: {
+    board: ['coding', 'Wiring the sink'],
     name: 'Wire the HTTP sink',
     prompt: 'Wire the HTTP sink into the server and test it end to end.',
     plan: [['Read how sinks register', 'Reading the sink registry'], ['Wire the HTTP sink in', 'Wiring the sink'], ['Test it end to end', 'Testing end to end']],
@@ -285,6 +298,8 @@ class SimSession {
       }
       const task = async (i: number, status: string) => void (ids[i] && (await this.tool('main', { tool: 'TaskUpdate', input: { taskId: ids[i], status }, response: { success: true } }, rnd(80, 160))));
       await task(0, 'in_progress');
+      // the Board laid out for its work, as a session does with the board tool
+      if (this.topic.board) await this.tool('main', { tool: BOARD_TOOL, input: { layout: this.topic.board[0], reason: this.topic.board[1] }, response: { content: [{ type: 'text', text: 'Asked Cora to lay out the Board.' }] } }, rnd(150, 300));
       if (Math.random() < 0.5) void this.background();
       this.narrate('main', `${this.topic.plan[0][1]} before I fan out.`);
       await this.tool('main', calls(this.cwd)[1], rnd(600, 1200));
@@ -309,7 +324,7 @@ class SimSession {
         await this.think('main', rnd(600, 1500));
         await this.tool('main', pick(calls(this.cwd)), rnd(500, 1800));
       }
-      if (Math.random() < 0.6) {
+      if (this.topic.explain && Math.random() < 0.6) {
         const input = { title: this.topic.explain.title, format: 'markdown', content: this.topic.explain.content };
         await this.tool('main', { tool: PRESENT_TOOL, input, response: { content: [{ type: 'text', text: `Shown to the user as "${input.title}".` }] } }, rnd(500, 900));
       }
@@ -447,7 +462,7 @@ function simCora(p: Pipeline, show: (st: OrchestratorStatus) => void, stopped: (
  * looking at the default branch's pipeline, as `glab ci status --branch main` would. `name`: gives the sessions their
  * names (as you'd rename one); `cora`: shows Cora's agent as on, with a goal and a conversation.
  */
-export function startSim(pipeline: Pipeline, pending?: PendingManager, o: { repo?: string; name?: (sessionId: string, name: string) => void; cora?: (st: OrchestratorStatus) => void; live?: { start(sid: string, title: string): { page: string; data: string } } } = {}): () => void {
+export function startSim(pipeline: Pipeline, pending?: PendingManager, o: { repo?: string; name?: (sessionId: string, name: string) => void; cora?: (st: OrchestratorStatus) => void; live?: { start(sid: string, title: string): { page: string; data: string } }; /** shows the simulated integrations (simShow.ts) */ show?: (m: import('@cora/shared').ServerMsg) => void } = {}): () => void {
   let stopped = false;
   const look: Call = { tool: 'Bash', input: { command: 'glab ci status --branch main' }, response: { stdout: '', stderr: '' } };
   const sessions: Array<[string, SimSession, Topic]> = [
@@ -456,6 +471,8 @@ export function startSim(pipeline: Pipeline, pending?: PendingManager, o: { repo
     ['sim-cli-0003', new SimSession('sim-cli-0003', o.repo ?? CWD.cli, pipeline, pending, 0, TOPICS.scheduler, o.repo ? look : undefined), TOPICS.scheduler],
     // a second session in the same folder (the galaxy overview clusters by directory)
     ['sim-api-0004', new SimSession('sim-api-0004', CWD.api, pipeline, pending, 0, TOPICS.sink), TOPICS.sink],
+    // the Spotlight's showpiece: a live load test (simLoad.ts)
+    ['sim-api-0005', new SimSession('sim-api-0005', CWD.api, pipeline, pending, 0, TOPICS.loadtest), TOPICS.loadtest],
   ];
   (LITE ? sessions.slice(0, 2) : sessions).forEach(([id, s, t], i) =>
     setTimeout(() => {
@@ -467,6 +484,8 @@ export function startSim(pipeline: Pipeline, pending?: PendingManager, o: { repo
   if (o.cora) simCora(pipeline, o.cora, () => stopped);
   // the release session keeps a live dashboard
   if (o.live) void releaseDashboard(o.live, 'sim-web-0002', () => stopped);
+  if (o.show) startSimShow(o.show, () => stopped);
+  if (o.live && !LITE) void loadDashboard(o.live, 'sim-api-0005', () => stopped, (ms) => new Promise((r) => setTimeout(r, ms)));
   return () => {
     stopped = true;
   };

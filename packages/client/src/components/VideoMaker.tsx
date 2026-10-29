@@ -155,7 +155,7 @@ function Maker({ sessionId, debriefId }: { sessionId: string; debriefId: string 
         ) : (
           <div className="vm-body">
             <div className="vm-left">
-              <Preview slide={shown} color={color} label={`slide ${at + 1} of ${rows.length}`} />
+              <Preview slide={shown} color={color} label={`slide ${at + 1} of ${rows.length}`} media={shown?.shot && shown.n ? `/api/debriefs/${encodeURIComponent(sessionId)}/${encodeURIComponent(debriefId)}/shots/${shown.n - 1}` : undefined} />
               <div className="vm-lbl">Slides · what each says</div>
               <div className="vm-rows">
                 {rows.map((r, i) => (
@@ -274,7 +274,7 @@ function Maker({ sessionId, debriefId }: { sessionId: string; debriefId: string 
 }
 
 /** The slide, scaled to fit its box (drawn as the video draws it). */
-function Preview({ slide, color, label }: { slide: ReturnType<typeof planSlides>[number] | null; color?: string; label: string }) {
+function Preview({ slide, color, label, media }: { slide: ReturnType<typeof planSlides>[number] | null; color?: string; label: string; media?: string }) {
   const box = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(0.4);
   useEffect(() => {
@@ -287,7 +287,7 @@ function Preview({ slide, color, label }: { slide: ReturnType<typeof planSlides>
   return (
     <div className="vm-prev" ref={box} style={{ height: 1080 * scale, ...(color ? { ['--cora' as string]: color } : {}) }}>
       <div className="vm-prev-in" style={{ transform: `scale(${scale})` }}>
-        {slide ? <SlideView slide={slide} orbSlot /> : null}
+        {slide ? <SlideView slide={slide} orbSlot media={media} /> : null}
       </div>
       {/* the title's orb at its own size over its slot (a 3D canvas inside the scaled slide would shrink twice) */}
       {slide?.kind === 'title' && slide.orb !== false ? (

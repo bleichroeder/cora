@@ -19,7 +19,7 @@ const debrief: Debrief = {
   snaps: { 0: { start: 1, lines: ['a', 'b', 'c', 'd', 'e', 'f'] } },
 };
 
-function setup(o: { ffmpeg?: boolean; now?: () => number; dir?: string; moving?: boolean } = {}) {
+function setup(o: { ffmpeg?: boolean; now?: () => number; dir?: string; moving?: boolean; debrief?: Debrief } = {}) {
   const dir = o.dir ?? mkdtempSync(join(tmpdir(), 'cora-videos-'));
   const calls: string[][] = [];
   const voiced: Array<{ text: string; previousText?: string }> = [];
@@ -36,7 +36,7 @@ function setup(o: { ffmpeg?: boolean; now?: () => number; dir?: string; moving?:
   const v = new Videos({
     dir: join(dir, 'videos'),
     toolsDir: join(dir, 'tools'),
-    debrief: (sid, id) => (sid === 's1' && id === 'd1' ? debrief : null),
+    debrief: (sid, id) => (sid === 's1' && id === 'd1' ? (o.debrief ?? debrief) : null),
     settings: () => ({ ...DEFAULT_VIDEO, coraVoice: 'cora-voice' }),
     voice: async (text, x) => (voiced.push({ text, ...(x.previousText ? { previousText: x.previousText } : {}) }), new Uint8Array([1, 2, 3])),
     draw: async (slides, color) => (drawn.push({ slides, ...(color ? { color } : {}) }), slides.map((x) => (o.moving && x.record ? [1, 2, 3, 4].map((n) => new Uint8Array([n])) : new Uint8Array([0x89, 0x50])))),
@@ -128,6 +128,32 @@ describe('debrief videos', () => {
     expect(titleClip?.join(' ')).toMatch(/-i \S+00-title-m0\.mp4 .*zoompan/);
     expect(existsSync(join(dir, 'videos', j.id, '00-title-0-f0005.jpg'))).toBe(true);
     expect(existsSync(join(dir, 'videos', j.id, '00-title-0-f0006.jpg'))).toBe(false);
+  });
+
+  it('a tour: steps with pictures (a still pushed in toward its focus, a clip played once and held) laid into their frames', async () => {
+    const tour: Debrief = {
+      ...debrief,
+      steps: [
+        { title: 'The board', kind: 'concept', beats: [{ text: 'It follows the work.' }], shot: { file: 'C:/shots/board.png', focus: [0.5, 0, 0.5, 0.5] } },
+        { title: 'Live', kind: 'concept', beats: [{ text: 'It ticks.' }], shot: { file: 'C:/shots/live.webm' } },
+      ],
+      snaps: {},
+    };
+    const slides = videoSlides(tour, { code: true });
+    expect(slides[0].tour).toBe(true);
+    expect(slides.slice(1).map((s) => s.shot)).toEqual([{ file: 'C:/shots/board.png', focus: [0.5, 0, 0.5, 0.5], clip: false }, { file: 'C:/shots/live.webm', clip: true }]);
+    const { v, calls, until } = setup({ debrief: tour });
+    const j = v.make('s1', 'd1') as VideoJob;
+    await until(() => j.stage === 'ready' || j.stage === 'failed');
+    expect(j.error).toBeUndefined();
+    const still = calls.find((c) => c.some((x) => x.endsWith('01-step.mp4')))!.join(' ');
+    expect(still).toContain('-loop 1 -framerate 30 -i C:/shots/board.png');
+    expect(still).toMatch(/zoompan=z='1\+0\.5000\*/);
+    expect(still).toMatch(/\[b\]\[m\]overlay=240:118/);
+    const clip = calls.find((c) => c.some((x) => x.endsWith('02-step.mp4')))!.join(' ');
+    expect(clip).toContain(' -i C:/shots/live.webm ');
+    expect(clip).toMatch(/tpad=stop_mode=clone/);
+    expect(clip).toMatch(/zoompan=z='1\+0\.0400\*/);
   });
 
   it("no ffmpeg: it waits for your OK (nothing drawn or voiced); you'd rather not: it stops", async () => {

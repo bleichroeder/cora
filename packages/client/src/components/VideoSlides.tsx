@@ -1,5 +1,5 @@
 import { useLayoutEffect, useRef, useState } from 'react';
-import type { DebriefKind, VideoSlide } from '@cora/shared';
+import { SHOT_BOX, type DebriefKind, type VideoSlide } from '@cora/shared';
 import { CoraOrb } from './CoraOrb';
 import './videoSlides.css';
 
@@ -80,11 +80,12 @@ export function VideoSlides() {
 
 /** One slide at 1920×1080 (the video's page draws it; the Make a video modal shows it scaled down, as a preview). */
 /** `orbSlot`: the title's orb left to whoever shows it (a scaled preview draws its own over the slot). */
-export function SlideView({ slide, cut = 0, ref, orbSlot }: { slide: VideoSlide; cut?: number; ref?: React.Ref<HTMLDivElement>; orbSlot?: boolean }) {
+/** `media`: a step's picture to show in its box (a preview; the video puts it in itself, pushed in). */
+export function SlideView({ slide, cut = 0, ref, orbSlot, media }: { slide: VideoSlide; cut?: number; ref?: React.Ref<HTMLDivElement>; orbSlot?: boolean; media?: string }) {
   return (
-    <div className={`vslides${slide.caption ? ' captioned' : ''}`} ref={ref}>
+    <div className={`vslides${slide.caption ? ' captioned' : ''}${slide.shot ? ' shot' : ''}`} ref={ref}>
       <div className="vs-glow" />
-      {slide.kind === 'title' ? <Title s={slide} slot={orbSlot} /> : <Step s={slide} cut={cut} />}
+      {slide.kind === 'title' ? <Title s={slide} slot={orbSlot} /> : slide.shot ? <Shot s={slide} media={media} /> : <Step s={slide} cut={cut} />}
       {slide.caption ? <div className="vs-caption">{slide.caption}</div> : null}
     </div>
   );
@@ -97,13 +98,30 @@ function Title({ s, slot }: { s: VideoSlide; slot?: boolean }) {
         <div className="vs-orb">{slot ? null : <CoraOrb state="idle" size={300} ferro always />}</div>
       )}
       <div className="vs-tw">
-        <div className="vs-eyebrow">
-          <b>CORA</b> · Debrief
-        </div>
+        <div className="vs-eyebrow">{s.tour ? <b>CORA</b> : <><b>CORA</b> · Debrief</>}</div>
         <h1>{s.title}</h1>
         {s.sub ? <p>{s.sub}</p> : null}
       </div>
     </div>
+  );
+}
+
+/** A step with a picture: its title over a framed box the picture goes in (SHOT_BOX), where it is in the whole. */
+function Shot({ s, media }: { s: VideoSlide; media?: string }) {
+  return (
+    <>
+      <div className="vs-shead" style={{ left: SHOT_BOX.x, width: SHOT_BOX.w, height: SHOT_BOX.y }}>
+        <h2>{s.title}</h2>
+        <span className="vs-dots">
+          {Array.from({ length: s.of ?? 0 }, (_, i) => (
+            <i key={i} className={i + 1 === s.n ? 'on' : i + 1 < (s.n ?? 0) ? 'past' : ''} />
+          ))}
+        </span>
+      </div>
+      <div className="vs-sbox" style={{ left: SHOT_BOX.x, top: SHOT_BOX.y, width: SHOT_BOX.w, height: SHOT_BOX.h }}>
+        {media ? s.shot?.clip ? <video src={media} muted autoPlay playsInline /> : <img src={media} alt="" /> : null}
+      </div>
+    </>
   );
 }
 

@@ -26,32 +26,35 @@
 .ses-h:hover .ses-clear { opacity: 1; }
 .ses-clear:hover { color: var(--ink2); }
 
-/* a session: one 46px row, nothing boxed */
-.ses { position: relative; display: grid; grid-template-columns: 28px minmax(0, 1fr); align-items: center; column-gap: 10px; width: 100%; height: 46px; margin: 0; padding: 0 8px 0 6px; border: 0; border-radius: 9px; background: none; color: inherit; text-align: left; cursor: pointer; transition: background .12s; }
+/* a session: one 46px row of fixed slots, nothing boxed */
+.ses { position: relative; display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; grid-template-rows: 17px 14px; row-gap: 2px; align-content: center; column-gap: 10px; width: 100%; height: 46px; margin: 0; padding: 0 10px 0 7px; border: 0; border-radius: 9px; background: none; color: inherit; text-align: left; cursor: pointer; transition: background .12s; }
 .ses:hover { background: rgba(148, 163, 184, .05); }
 .ses.on { background: var(--raise); box-shadow: inset 0 0 0 1px var(--hair2); }
 .ses.on::before { content: ''; position: absolute; left: 0; top: 13px; bottom: 13px; width: 2px; border-radius: 0 2px 2px 0; background: var(--ink2); }
-/* its tile: the session's colour and initial; its state rides on the corner */
-.ses-tile { position: relative; display: grid; place-items: center; width: 28px; height: 28px; border-radius: 8px; background: color-mix(in srgb, var(--sc) 16%, #0b0f16); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--sc) 35%, transparent); color: color-mix(in srgb, var(--sc) 80%, white); font: 700 12px var(--ui); }
-.ses-st { position: absolute; right: -3px; bottom: -3px; display: none; width: 10px; height: 10px; border-radius: 50%; border: 2px solid var(--nav); }
-.ses.on .ses-st { border-color: var(--raise); }
-.ses.work .ses-st { display: block; background: var(--work); }
-.ses.work .ses-st::after { content: ''; position: absolute; inset: -4px; border-radius: 50%; border: 1px solid var(--work); opacity: 0; animation: ses-ping 2.4s ease-out infinite; }
-@keyframes ses-ping { 0% { transform: scale(.6); opacity: .7; } 70%, 100% { transform: scale(1.4); opacity: 0; } }
-.ses.need .ses-st { display: block; background: var(--need); box-shadow: 0 0 8px var(--need); }
-/* finished while you were elsewhere: a blue corner, and the name bright, until you open it */
-.ses.fresh .ses-st { display: block; background: var(--run); }
-.ses.fresh .ses-nm { color: var(--ink); }
-/* being read aloud: a ring that breathes in Cora's colour */
-.ses.speaking .ses-tile::after { content: ''; position: absolute; inset: -4px; border-radius: 11px; box-shadow: 0 0 0 1.5px var(--cora); animation: ses-say 1.4s ease-in-out infinite; }
-@keyframes ses-say { 50% { opacity: .35; } }
-@media (prefers-reduced-motion: reduce) { .ses.speaking .ses-tile::after { animation: none; } }
-.ses.cora .ses-tile { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--sc) 35%, transparent), 0 0 0 2px var(--nav), 0 0 0 3.5px var(--cora); }
-.ses.on.cora .ses-tile { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--sc) 35%, transparent), 0 0 0 2px var(--raise), 0 0 0 3.5px var(--cora); }
-.ses-txt { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
-.ses-nm { color: var(--ink); font: 500 13px/17px var(--ui); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.ses-l2 { display: flex; align-items: center; gap: 8px; min-width: 0; }
+/* its swatch: its colour, holding its own icon (or a plain square of its colour); dimmer while idle */
+.ses-tile { grid-column: 1; grid-row: 1 / 3; align-self: center; display: grid; place-items: center; width: 28px; height: 28px; border-radius: 8px; background: color-mix(in srgb, var(--sc) 14%, #0b0f16); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--sc) 32%, transparent); color: color-mix(in srgb, var(--sc) 88%, white); }
+.ses-core { width: 9px; height: 9px; border-radius: 3px; background: var(--sc); }
+.ses.idle .ses-tile, .ses.done .ses-tile { color: color-mix(in srgb, var(--sc) 55%, var(--ink3)); }
+/* started by Cora: a thin ring in Cora's colour around the swatch */
+.ses.cora .ses-tile { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--sc) 32%, transparent), 0 0 0 2px var(--nav), 0 0 0 3.5px var(--cora); }
+.ses.on.cora .ses-tile { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--sc) 32%, transparent), 0 0 0 2px var(--raise), 0 0 0 3.5px var(--cora); }
+.ses-nm { grid-column: 2; grid-row: 1; min-width: 0; color: var(--ink); font: 500 13px/17px var(--ui); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* its state, in a word, only when something is happening (the × takes its place on hover) */
+.ses-word { grid-column: 3; grid-row: 1; font: 600 10.5px/17px var(--code); white-space: nowrap; text-align: right; }
+.ses-word small { margin-left: 5px; color: var(--ink3); font-weight: 400; font-size: 10px; }
+.ses-word.w { color: var(--work); }
+.ses-word.n { color: var(--need); }
+.ses-word.d { color: var(--run); }
+.ses-word.s { color: var(--cora); }
+.ses:hover .ses-word { visibility: hidden; }
+.ses.dismissed:hover .ses-word { visibility: visible; }
+/* line 2: its ticket in a column of its own (keys line up), its folder, a slot for its pipeline: nothing slides */
+.ses-l2 { grid-column: 2 / 4; grid-row: 2; display: flex; align-items: center; min-width: 0; }
+.ses-tk { flex: none; width: 10ch; overflow: hidden; font: 400 10.5px/14px var(--code); white-space: nowrap; }
 .ses-dir { flex: 1; min-width: 0; color: var(--ink4); font: 400 10.5px/14px var(--code); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ses-ci { flex: none; display: grid; place-items: center; width: 12px; height: 12px; margin-left: 6px; }
+/* finished while you were elsewhere: its name bright until you open it */
+.ses.fresh .ses-nm { color: var(--ink); }
 /* needs you: colour, nothing else */
 .ses.need { background: rgba(255, 107, 107, .055); }
 .ses.need:hover { background: rgba(255, 107, 107, .085); }
@@ -65,14 +68,14 @@
 .ses.drop-above::after { top: -1px; }
 .ses.drop-below::after { bottom: -1px; }
 /* end or remove, on hover */
-.ses-x { position: absolute; top: 6px; right: 6px; display: grid; place-items: center; width: 18px; height: 18px; border-radius: 5px; color: var(--ink4); opacity: 0; transition: opacity .12s; cursor: pointer; }
+.ses-x { position: absolute; top: 7px; right: 8px; display: grid; place-items: center; width: 18px; height: 18px; border-radius: 5px; color: var(--ink4); opacity: 0; transition: opacity .12s; cursor: pointer; }
 .ses:hover .ses-x { opacity: 1; }
 .ses-x:hover { color: #fca5a5; background: var(--raise2); }
 /* the ticket's key, tinted by its status (the hover card and the click stay) */
 .rail .jchip.bare { flex: none; gap: 0; padding: 0; border: 0; border-radius: 3px; background: none; font: 500 10px/14px var(--code); letter-spacing: .02em; color: var(--ink3); }
-.rail .jchip.bare.j-progress { color: color-mix(in srgb, #8ab4f8 80%, var(--ink3)); }
-.rail .jchip.bare.j-done { color: color-mix(in srgb, var(--work) 70%, var(--ink3)); }
 .rail .jchip.bare:hover { color: var(--ink); background: none; text-decoration: underline; }
+.rail .ses-tk .gl-chip { padding: 0; border: 0; background: none; font: 400 10.5px/14px var(--code); color: var(--ink3); }
+.rail .ses-tk .jchip.bare { color: var(--ink3); }
 
 /* Tools and the footer: the same surfaces, hairlines and type; labels kept */
 .rail .rail-tools { padding: 10px 12px 12px; border-top-color: var(--hair2); }
@@ -178,3 +181,9 @@ span.rf-say { cursor: default; }
 .rf-icons { display: flex; gap: 2px; margin-left: auto; }
 .rf-ib { display: grid; place-items: center; width: 30px; height: 30px; padding: 0; border: 0; border-radius: 8px; background: none; color: var(--ink3); cursor: pointer; }
 .rf-ib:hover { background: var(--raise); color: var(--ink); }
+
+/* its right edge: drag to resize (a hairline that lights in Cora's colour), double-click for the default */
+.nav-edge { position: absolute; top: 0; right: 0; z-index: 6; width: 6px; height: 100%; cursor: col-resize; touch-action: none; }
+.nav-edge::after { content: ''; position: absolute; top: 0; right: 0; width: 2px; height: 100%; background: transparent; transition: background .15s .1s; }
+.nav-edge:hover::after, html[data-nav-drag] .nav-edge::after { background: color-mix(in srgb, var(--cora) 70%, transparent); }
+html[data-nav-drag], html[data-nav-drag] * { cursor: col-resize !important; user-select: none !important; }

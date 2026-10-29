@@ -66,14 +66,23 @@ export class Debriefs {
     // file changed through the shell is in no snapshot, but it's in the same repo as the rest of the work)
     const changed = transcript ? [...new Set(snapshots.read(transcript).flatMap((s) => [...s.files.keys()]))] : [];
     const repos = new Set([...changed, ...(cwd ? [cwd] : [])].map(repoOf).filter((r): r is string => !!r).map(normPath));
-    const steps = script.steps.map((st, i) => {
-      if (!st.path) return st;
-      const at = `step ${i + 1}`;
-      const abs = isAbsolute(st.path) ? resolve(st.path) : resolve(cwd || '.', st.path);
-      const key = normPath(abs);
+    const mineOf = (abs: string) => {
       const repo = repoOf(abs);
-      const mine = (!!cwd && key.startsWith(normPath(cwd) + '/')) || changed.includes(key) || (!!repo && repos.has(normPath(repo)));
-      if (!mine) {
+      return (!!cwd && normPath(abs).startsWith(normPath(cwd) + '/')) || changed.includes(normPath(abs)) || (!!repo && repos.has(normPath(repo)));
+    };
+    const steps = script.steps.map((raw, i) => {
+      const at = `step ${i + 1}`;
+      let st = raw;
+      // its picture: the session's, and there
+      if (st.shot) {
+        const abs = isAbsolute(st.shot.file) ? resolve(st.shot.file) : resolve(cwd || '.', st.shot.file);
+        if (!mineOf(abs)) errors.push(`${at}: ${st.shot.file} isn't in the session's folder or a repo it changed files in`);
+        else if (!existsSync(abs) || !statSync(abs).isFile()) errors.push(`${at}: there's no picture ${st.shot.file}`);
+        else st = { ...st, shot: { ...st.shot, file: abs } };
+      }
+      if (!st.path) return st;
+      const abs = isAbsolute(st.path) ? resolve(st.path) : resolve(cwd || '.', st.path);
+      if (!mineOf(abs)) {
         errors.push(`${at}: ${st.path} isn't in the session's folder, a file it changed, or a repo it changed files in`);
         return st;
       }

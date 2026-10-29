@@ -1,5 +1,6 @@
-/** Longest prompt the input route types into a terminal (a composer prompt can carry a pasted log or diff). */
-export const MAX_INPUT = 20_000;
+/** Longest prompt the input route types into a terminal: a composer prompt can carry a whole pasted log, diff or file,
+ * as Claude Code itself takes (it folds a big paste into "[Pasted text]"); well under the request limit (20 MB). */
+export const MAX_INPUT = 1_000_000;
 
 const PASTE_START = '\x1b[200~';
 const PASTE_END = '\x1b[201~';

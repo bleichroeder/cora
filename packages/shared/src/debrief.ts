@@ -1,4 +1,4 @@
-import { DEFAULT_VIDEO, type VideoSettings } from './debriefVideo';
+import { DEFAULT_VIDEO, SHOT_CLIP, SHOT_STILL, type VideoSettings } from './debriefVideo';
 /**
  * Debrief: the session that did the work walks the user through
  * it in the IDE panel, step by step, the lines it's about lit and a bubble beside them saying what changed and why;
@@ -25,7 +25,15 @@ export type DebriefStep = {
   why?: string;
   /** Teach me: where to read more */
   links?: Array<{ title: string; url: string }>;
+  /** a picture of it (a screenshot, or a short screen recording): its video shows it, pushed in toward `focus` */
+  shot?: DebriefShot;
 };
+
+/**
+ * A step's picture in its video: a screenshot (png, jpg, webp) or a short clip (mp4, webm; it plays once, then holds),
+ * absolute or in the session's folder. `focus`: the part to push in toward, [x, y, width, height] as fractions of it.
+ */
+export type DebriefShot = { file: string; focus?: [number, number, number, number] };
 
 export type DebriefQuiz = { q: string; options: string[]; answer: number; why: string };
 
@@ -93,6 +101,13 @@ export function checkScript(s: unknown): { ok: true; script: DebriefScript } | {
       if (!str(bt.text, DEBRIEF_LIMITS.beat)) e.push(`${at}, beat ${j + 1}: a sentence or two (at most ${DEBRIEF_LIMITS.beat} characters)`);
       if (bt.range !== undefined && (!range(bt.range) || st.path === undefined)) e.push(`${at}, beat ${j + 1}: range is [first, last] lines of the step's file`);
     });
+    if (st.shot !== undefined) {
+      const sh = (st.shot && typeof st.shot === 'object' ? st.shot : {}) as Record<string, unknown>;
+      if (!str(sh.file, 1000) || !(SHOT_STILL.test(String(sh.file)) || SHOT_CLIP.test(String(sh.file)))) e.push(`${at}: shot.file is a picture (png, jpg, webp) or a clip (mp4, webm, mov)`);
+      const f = sh.focus;
+      if (f !== undefined && !(Array.isArray(f) && f.length === 4 && f.every((n) => typeof n === 'number' && n >= 0 && n <= 1) && f[2] > 0.05 && f[3] > 0.05 && f[0] + f[2] <= 1.001 && f[1] + f[3] <= 1.001))
+        e.push(`${at}: shot.focus is [x, y, width, height], fractions of the picture (0 to 1)`);
+    }
     if (st.links !== undefined && (!Array.isArray(st.links) || st.links.some((l) => !l || typeof l !== 'object' || !str((l as { title?: unknown }).title, 200) || !/^https?:\/\//.test(String((l as { url?: unknown }).url ?? ''))))) e.push(`${at}: links are { title, url } (http or https)`);
   });
   const quiz = o.quiz === undefined ? [] : Array.isArray(o.quiz) ? o.quiz : null;

@@ -147,7 +147,18 @@ export type VideoSlide = {
   caption?: string;
   /** recorded moving (this many frames), not as one picture: the title's orb */
   record?: number;
+  /** a step's picture (SHOT_BOX on the slide): the file, the part to push in toward, and whether it's a clip */
+  shot?: { file: string; focus?: [number, number, number, number]; clip: boolean };
+  /** the title card of a video whose steps are all pictures (a tour: no "Debrief" on it, no step numbers) */
+  tour?: boolean;
 };
+
+/** A step's picture: a still, or a clip (debrief.ts DebriefShot). */
+export const SHOT_STILL = /\.(png|jpe?g|webp)$/i;
+export const SHOT_CLIP = /\.(mp4|webm|mov)$/i;
+
+/** Where a step's picture goes on its 1920×1080 slide (16:9): the slide draws its frame, the video puts it in. */
+export const SHOT_BOX = { x: 240, y: 118, w: 1440, h: 810 } as const;
 
 /** Code shown on a slide: at most this many lines, around what the step is about. */
 const MAX_LINES = 22;
@@ -155,12 +166,13 @@ const MAX_LINES = 22;
 /** A debrief's slides: a title card, then a slide per step; each with its narration (from the task, and the step's beats). */
 export function videoSlides(d: Pick<Debrief, 'title' | 'task' | 'steps' | 'snaps'>, o: { code: boolean }): VideoSlide[] {
   const of = d.steps.length;
-  const slides: VideoSlide[] = [{ id: '00-title', kind: 'title', title: d.title, sub: d.task, narration: forEar(`${d.title}. ${d.task}`) }];
+  const tour = d.steps.every((s) => s.shot);
+  const slides: VideoSlide[] = [{ id: '00-title', kind: 'title', title: d.title, sub: d.task, narration: forEar(`${d.title}. ${d.task}`), ...(tour ? { tour } : {}) }];
   d.steps.forEach((s, i) => {
     const snap = d.snaps?.[i];
     const lit = [s.range, ...s.beats.map((b) => b.range)].filter((r): r is [number, number] => !!r);
     let code: VideoSlide['code'];
-    if (o.code && snap?.lines.length) {
+    if (o.code && snap?.lines.length && !s.shot) {
       // the lines it's about, a little around them; at most MAX_LINES (from the first lit line when there are more)
       const end = snap.start + snap.lines.length - 1;
       const lo = lit.length ? Math.min(...lit.map((r) => r[0])) : snap.start;
@@ -174,7 +186,7 @@ export function videoSlides(d: Pick<Debrief, 'title' | 'task' | 'steps' | 'snaps
       code = { start: from, lines: snap.lines.slice(from - snap.start, to - snap.start + 1), lit };
     }
     const file = s.path ? s.path.replace(/[\\/]+$/, '').split(/[\\/]/).slice(-2).join('/') : undefined;
-    slides.push({ id: `${String(i + 1).padStart(2, '0')}-step`, kind: 'step', title: s.title, n: i + 1, of, badge: s.kind, ...(file ? { file } : {}), ...(code ? { code } : {}), narration: forEar(s.beats.map((b) => b.text).join(' ')) });
+    slides.push({ id: `${String(i + 1).padStart(2, '0')}-step`, kind: 'step', title: s.title, n: i + 1, of, badge: s.kind, ...(file ? { file } : {}), ...(code ? { code } : {}), ...(s.shot ? { shot: { file: s.shot.file, ...(s.shot.focus ? { focus: s.shot.focus } : {}), clip: SHOT_CLIP.test(s.shot.file) } } : {}), narration: forEar(s.beats.map((b) => b.text).join(' ')) });
   });
   return slides;
 }

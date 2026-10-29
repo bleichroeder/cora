@@ -1,4 +1,5 @@
 import { useLayoutEffect, useState } from 'react';
+import { navWidthNow } from '../lib/navWidth';
 import { goalLive, isAgent, setConsoleOpen, useOrch } from '../state/orchestrator';
 import { useBrain } from '../state/store';
 import { useSlack } from '../state/slack';
@@ -51,7 +52,7 @@ export function CoraFloat() {
   if (!show) return null;
   const open = () => setConsoleOpen(true);
   return (
-    <div className="cora-float" style={pos ? { left: pos.left, top: pos.top, ['--arrow' as any]: `${pos.arrow}px`, ['--arrow-on' as any]: pos.arrow >= 6 ? 1 : 0 } : { left: 262, top: 48 }}>
+    <div className="cora-float" style={pos ? { left: pos.left, top: pos.top, ['--arrow' as any]: `${pos.arrow}px`, ['--arrow-on' as any]: pos.arrow >= 6 ? 1 : 0 } : { left: navWidthNow() + 12, top: 48 }}>
       {approvals.map((a) => (a.ticket ? <JiraStartCard key={a.id} a={a} /> : <ApprovalCard key={a.id} a={a} />))}
       {asking.length ? <NeedCard icon="MessageCircleQuestion" title="Cora's terminal is asking you" detail={asking.filter((l) => l.trim()).slice(0, 2).join(' · ')} onOpen={open} /> : null}
       {prompts ? <NeedCard icon="ShieldQuestion" title="Cora wants permission for a tool" detail="Answer it in Cora's console." onOpen={open} /> : null}

@@ -8,7 +8,8 @@ import { useCoraLinks } from '../lib/coraLinks';
 import { desktop } from '../lib/desktop';
 import type { SessionInfo } from '@cora/shared';
 import { useBrain } from '../state/store';
-import { isDismissed, sessionColor, shortCwd } from '../lib/format';
+import { isDismissed, sessionColor } from '../lib/format';
+import { folderLabel, rowState } from '../lib/navRow';
 import { ticketLabel } from '../lib/ticket';
 import { SessionMenu, clearEnded, removeSession } from './SessionMenu';
 import { Icon } from './Icon';
@@ -29,6 +30,7 @@ import { InboxRow } from './Inbox';
 import { useOrch } from '../state/orchestrator';
 import { useVoice } from '../lib/voice';
 import { oops } from '../state/oops';
+import { NAV_DEFAULT, NAV_RESIZED, applyNavWidth, navWidthNow, saveNavWidth } from '../lib/navWidth';
 import './nav.css';
 
 export { sortedSessions };
@@ -45,12 +47,11 @@ function useNow(ms = 1000) {
   return now;
 }
 
-/** A session's initial, for its tile: the first letter or digit of its name. */
-const initialOf = (name: string) => (name.match(/[A-Za-z0-9]/)?.[0] ?? '·').toUpperCase();
 
 /**
- * One session: a fixed-height row. Its tile (the session's colour and initial) carries its state on the corner
- * (working, needs you) and a ring when Cora started it; then its name, and its folder with its ticket and pipeline.
+ * One session: a fixed-height row of fixed slots. Its swatch
+ * (its colour, its own icon; a ring when Cora started it), its name, a word for its state only when something is
+ * happening; under them its ticket in a column of its own, its folder, and its pipeline when it's running or failed.
  */
 function Entry({ s, onMenu, drag, setDrag }: { s: SessionInfo; onMenu(e: React.MouseEvent, s: SessionInfo): void; drag: Drag | null; setDrag(d: Drag | null): void }) {
   const focus = useBrain((st) => st.focus);
@@ -79,6 +80,11 @@ function Entry({ s, onMenu, drag, setDrag }: { s: SessionInfo; onMenu(e: React.M
   // finished while you were elsewhere (until you open it), and being read aloud now
   const fresh = useBrain((b) => !!b.unseen[s.id]) && s.state === 'idle';
   const speaking = useVoice((v) => v.reading?.sessionId === s.id);
+  // what it's up to, in a word (and for how long), only when something is happening
+  const waitingSince = useBrain((b) => b.pending.find((p) => p.sessionId === s.id)?.createdAt);
+  const now = useNow(10_000);
+  const state = rowState(s, { now, fresh, speaking, ...(waitingSince ? { waitingSince } : {}) });
+  const folder = folderLabel(s.cwd, s.wd);
   // resting on it a moment: its latest recap, beside the nav
   const [peek, setPeek] = useState(false);
   const peekTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -120,16 +126,25 @@ function Entry({ s, onMenu, drag, setDrag }: { s: SessionInfo; onMenu(e: React.M
           setDrag(null);
         }}
       >
-        <span className="ses-tile">
-          {initialOf(name)}
-          <i className="ses-st" />
-        </span>
-        <span className="ses-txt">
-          <span className="ses-nm">{name}</span>
-          <span className="ses-l2">
-            <span className="ses-dir">{shortCwd(s.cwd)}</span>
-            {s.ticket ? <JiraChip jref={{ key: s.ticket.key, ...(s.ticket.site ? { site: s.ticket.site } : {}) }} sessionId={s.id} bare /> : s.issue ? <IssueChip s={s} /> : null}
-            <CiGlyph sessionId={s.id} />
+        {/* its swatch: its colour, holding its own icon (a plain square of its colour until it has one) */}
+        <span className="ses-tile">{s.icon ? <Icon name={s.icon} size={15} /> : <i className="ses-core" />}</span>
+        <span className="ses-nm">{name}</span>
+        {state ? (
+          <span className={`ses-word ${state.cls}`}>
+            {state.word}
+            {state.time ? <small>{state.time}</small> : null}
+          </span>
+        ) : null}
+        {/* its ticket (a column of its own: keys line up), its folder, and its pipeline when it's worth a look */}
+        <span className="ses-l2">
+          {s.ticket || s.issue ? (
+            <span className="ses-tk">{s.ticket ? <JiraChip jref={{ key: s.ticket.key, ...(s.ticket.site ? { site: s.ticket.site } : {}) }} sessionId={s.id} bare /> : <IssueChip s={s} />}</span>
+          ) : null}
+          <span className="ses-dir" title={folder.title}>
+            {folder.text}
+          </span>
+          <span className="ses-ci">
+            <CiGlyph sessionId={s.id} quiet />
           </span>
         </span>
         {/* ended: off the list; live: end it (after asking how, since that depends on where it runs) */}
@@ -149,6 +164,48 @@ function Entry({ s, onMenu, drag, setDrag }: { s: SessionInfo; onMenu(e: React.M
         ) : null}
       </button>
     </>
+  );
+}
+
+/**
+ * The nav's right edge: drag it to make the nav wider or narrower (240 to 440px), double-click for 300 again. While
+ * you drag, terminals keep their size; they fit the new space once, when you let go.
+ */
+function NavEdge() {
+  const done = (w: number) => {
+    delete document.documentElement.dataset.navDrag;
+    saveNavWidth(w);
+    window.dispatchEvent(new Event(NAV_RESIZED));
+  };
+  const down = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    const el = e.currentTarget;
+    el.setPointerCapture(e.pointerId);
+    const x0 = e.clientX;
+    const w0 = navWidthNow();
+    document.documentElement.dataset.navDrag = '1';
+    const move = (ev: PointerEvent) => applyNavWidth(w0 + ev.clientX - x0);
+    const up = () => {
+      el.removeEventListener('pointermove', move);
+      el.removeEventListener('pointerup', up);
+      el.removeEventListener('pointercancel', up);
+      done(navWidthNow());
+    };
+    el.addEventListener('pointermove', move);
+    el.addEventListener('pointerup', up);
+    el.addEventListener('pointercancel', up);
+  };
+  return (
+    <div
+      className="nav-edge"
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="Resize the sidebar"
+      title="Drag to resize · double-click for the default"
+      onPointerDown={down}
+      onDoubleClick={() => (applyNavWidth(NAV_DEFAULT), done(NAV_DEFAULT))}
+    />
   );
 }
 
@@ -204,6 +261,7 @@ export function SessionRail() {
   };
   return (
     <nav className="rail">
+      {guest ? null : <NavEdge />}
       {guest && privateConsole ? <GuestCard /> : <CoraEye />}
       <BoardRow />
       {guest && privateInbox ? (

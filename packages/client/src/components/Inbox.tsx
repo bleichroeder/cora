@@ -144,6 +144,15 @@ function Detail({ i, readAt }: { i: InboxItem; readAt: number | null }) {
   const session = i.sessionId ? sessions[i.sessionId] : undefined;
   const coraOn = useOrch((st) => !!st.status?.enabled);
   const [replying, setReplying] = useState(false);
+  // a "Git sign-in needed" note: sign in from here (Git's own sign-in window, because you asked)
+  const signInHost = i.key.startsWith('git-sign-in:') && i.state === 'failed' ? i.key.slice('git-sign-in:'.length) : null;
+  const [signing, setSigning] = useState<'idle' | 'busy' | { error: string }>('idle');
+  const signIn = async () => {
+    setSigning('busy');
+    const r = await fetch('/api/git/sign-in', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ host: signInHost }) }).catch(() => null);
+    const j = r ? await r.json().catch(() => ({})) : {};
+    setSigning(r?.ok ? 'idle' : { error: j.error ?? "Couldn't reach Cora" });
+  };
   const canReply = i.source === 'slack' || (i.source === 'mail' && !!i.mailId);
   const start = () => {
     const cwd = session?.cwd;
@@ -194,7 +203,18 @@ function Detail({ i, readAt }: { i: InboxItem; readAt: number | null }) {
         </div>
       ) : null}
       {replying ? <ReplyBox key={i.id} i={i} onDone={() => setReplying(false)} /> : null}
+      {signing === 'busy' ? <div className="ib-why">Signing in: answer Git's sign-in window (it may be behind this one).</div> : null}
+      {typeof signing === 'object' ? (
+        <div className="ib-why">
+          Didn't sign in: <b>{signing.error}</b>
+        </div>
+      ) : null}
       <div className="ib-acts">
+        {signInHost ? (
+          <button className="btn allow" disabled={signing === 'busy'} title={`Run one git fetch that may ask you to sign in to ${signInHost}; then Cora fetches the rest`} onClick={() => void signIn()}>
+            <Icon name="LogIn" size={12} /> {signing === 'busy' ? 'Signing in…' : 'Sign in…'}
+          </button>
+        ) : null}
         {canReply && !replying ? (
           <button className="btn allow" onClick={() => setReplying(true)}>
             <Icon name="Reply" size={12} /> {i.source === 'mail' ? 'Reply (a draft)…' : 'Reply…'}

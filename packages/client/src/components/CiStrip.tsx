@@ -117,10 +117,12 @@ const glyphOf = (status: string) => (status === 'success' ? 'ok' : status === 'f
 const failedJob = (p: CiPipeline) => p.stages.flatMap((s) => s.jobs).find((j) => j.status === 'failed' && !j.allowFailure)?.name;
 
 /** A session's pipeline as one small glyph: spinning while it runs, green when it passed, red when it failed. */
-export function CiGlyph({ sessionId }: { sessionId: string }) {
+/** `quiet`: only when it's worth a look (running or failed); a passed one, the usual case, shows nothing. */
+export function CiGlyph({ sessionId, quiet }: { sessionId: string; quiet?: boolean }) {
   const f = useFollowed(sessionId);
   if (!f) return null;
   const p = f.p;
+  if (quiet && !['run', 'bad'].includes(glyphOf(p.status))) return null;
   return <span className={`dl-glyph ${glyphOf(p.status)}`} title={`Pipeline #${p.id} on ${ciRef(p.ref)}: ${ciLabel(p.status)}`} />;
 }
 

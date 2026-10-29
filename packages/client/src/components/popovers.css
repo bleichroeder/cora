@@ -193,3 +193,16 @@
 .jw-menu button span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .jw-menu i { color: var(--ink4); font: normal 500 10px var(--code); }
 .jw-start .sd-sent-t > span.cc-inerr { margin-top: 6px; white-space: normal; }
+
+/* the session menu: its swatch in the header, and its icon */
+.session-menu .sm-tile { flex: none; display: grid; place-items: center; width: 28px; height: 28px; border-radius: 8px; background: color-mix(in srgb, var(--sc) 14%, #0b0f16); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--sc) 32%, transparent); color: color-mix(in srgb, var(--sc) 88%, white); }
+.session-menu .ses-core { width: 9px; height: 9px; border-radius: 3px; background: var(--sc); }
+.sm-icon-now { display: flex; align-items: center; gap: 10px; }
+.sm-icon-now .ses-tile { display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 8px; background: color-mix(in srgb, var(--sc) 14%, #0b0f16); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--sc) 32%, transparent); color: color-mix(in srgb, var(--sc) 88%, white); cursor: pointer; }
+.sm-icon-now > span { flex: 1; min-width: 0; color: var(--ink3); font: 400 11px var(--code); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sm-icon-q { width: 100%; height: 28px; margin: 8px 0 6px; padding: 0 9px; box-sizing: border-box; border: 0; border-radius: 7px; outline: none; background: var(--nav); box-shadow: inset 0 0 0 1px var(--hair2); color: var(--ink); font: 400 12px var(--ui); }
+.sm-icon-q:focus { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cora) 50%, transparent); }
+.sm-icon-grid { display: grid; grid-template-columns: repeat(auto-fill, 30px); gap: 4px; max-height: 164px; overflow-y: auto; padding: 2px; }
+.sm-icon { display: grid; place-items: center; width: 30px; height: 30px; padding: 0; border: 0; border-radius: 7px; background: var(--raise2); color: var(--ink2); cursor: pointer; }
+.sm-icon:hover { color: var(--ink); background: color-mix(in srgb, var(--sc) 18%, var(--raise2)); }
+.sm-icon.on { color: color-mix(in srgb, var(--sc) 88%, white); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--sc) 60%, transparent); background: color-mix(in srgb, var(--sc) 14%, var(--raise2)); }

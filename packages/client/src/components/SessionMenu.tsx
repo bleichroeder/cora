@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { ProjectMenuRows } from './Projects';
-import type { SessionInfo } from '@cora/shared';
+import { SESSION_ICONS, type SessionInfo } from '@cora/shared';
 import { useBrain } from '../state/store';
 import { MAIN_COLORS, isDismissed, sessionColor, sessionName, shortCwd } from '../lib/format';
 import { Icon } from './Icon';
@@ -11,9 +11,49 @@ import './popovers.css';
 
 const post = (url: string, body: unknown) => fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
 
-export async function setSessionMeta(id: string, meta: { alias?: string | null; color?: string | null; ticket?: null }) {
+export async function setSessionMeta(id: string, meta: { alias?: string | null; color?: string | null; icon?: string | null; ticket?: null }) {
   const r = await post(`/api/sessions/${encodeURIComponent(id)}/meta`, meta);
   if (r.ok) useBrain.getState().upsertSession(await r.json());
+}
+
+/**
+ * Its icon: the one it picked when it was named, or yours. A
+ * searchable grid of the session icons, and None for the plain square of its colour.
+ */
+function IconPick({ s }: { s: SessionInfo }) {
+  const [q, setQ] = useState('');
+  const [open, setOpen] = useState(false);
+  const words = q.trim().toLowerCase();
+  const shown = words ? SESSION_ICONS.filter((n) => n.toLowerCase().includes(words.replace(/[^a-z0-9]/g, ''))) : SESSION_ICONS;
+  const pick = (icon: string | null) => void setSessionMeta(s.id, { icon }).then(() => setOpen(false));
+  return (
+    <div className="sm-icons" style={{ ['--sc' as any]: sessionColor(s) }}>
+      <div className="sm-icon-now">
+        <button className="ses-tile" title={open ? 'Hide the icons' : 'Choose its icon'} onClick={() => setOpen(!open)}>
+          {s.icon ? <Icon name={s.icon} size={15} /> : <i className="ses-core" />}
+        </button>
+        <span>{s.icon ?? 'None'}</span>
+        <button className="mini" onClick={() => setOpen(!open)}>
+          {open ? 'done' : 'change'}
+        </button>
+      </div>
+      {open ? (
+        <>
+          <input className="sm-icon-q" value={q} placeholder={`Search ${SESSION_ICONS.length} icons`} autoFocus onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => e.stopPropagation()} />
+          <div className="sm-icon-grid">
+            <button className={`sm-icon none${s.icon ? '' : ' on'}`} title="None: a plain square of its colour" onClick={() => pick(null)}>
+              <i className="ses-core" />
+            </button>
+            {shown.map((n) => (
+              <button key={n} className={`sm-icon${s.icon === n ? ' on' : ''}`} title={n} onClick={() => pick(n)}>
+                <Icon name={n} size={15} />
+              </button>
+            ))}
+          </div>
+        </>
+      ) : null}
+    </div>
+  );
 }
 
 /** Show a session here; one removed from the list comes back into it (focus can't stay on a removed session). */
@@ -102,7 +142,7 @@ export function SessionMenu({ s, x, y, onClose }: { s: SessionInfo; x: number; y
     <div className="session-menu" ref={box} style={{ left: x, top: Math.min(y, window.innerHeight - 380) }}>
       {/* the session, as its row */}
       <div className="sm-h" style={{ ['--sc' as any]: current }}>
-        <span className="dl-tile">{(label.match(/[A-Za-z0-9]/)?.[0] ?? '·').toUpperCase()}</span>
+        <span className="ses-tile sm-tile">{s.icon ? <Icon name={s.icon} size={15} /> : <i className="ses-core" />}</span>
         <span className="sm-t">
           <b>{label}</b>
           <span>{shortCwd(s.cwd)}</span>
@@ -140,6 +180,8 @@ export function SessionMenu({ s, x, y, onClose }: { s: SessionInfo; x: number; y
           </button>
         ) : null}
       </div>
+      <div className="sm-gl">Icon</div>
+      <IconPick s={s} />
       <ProjectMenuRows s={s} onDone={onClose} />
       <div className="sm-sep" />
       {s.state !== 'ended'

@@ -17,7 +17,7 @@ import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest }
 import cookie from '@fastify/cookie';
 import fastifyStatic from '@fastify/static';
 import websocket from '@fastify/websocket';
-import { INBOX_SOURCES, MAX_DRAFT_ASKS, ticketInPrompt, type TicketFacts, type PendingDecision, type LiveState, type LiveAsk, type ProjectWake, type ServerMsg, type SessionInfo, type SessionTicket, JIRA_EVENT_KINDS, type JiraEvent, type JiraEventKind, type JiraWatchStatus, HELLO_PREFIX, artifactUrl, debriefMarkdown, debriefSpan, gateDecision, recapText, inScope, mask, BROWSER_PROFILE_ID, CORA_RELEASES, displayName, shadesOf } from '@cora/shared';
+import { INBOX_SOURCES, MAX_DRAFT_ASKS, ticketInPrompt, type TicketFacts, type PendingDecision, type LiveState, type LiveAsk, type ProjectWake, type ServerMsg, type SessionInfo, type SessionTicket, JIRA_EVENT_KINDS, type JiraEvent, type JiraEventKind, type JiraWatchStatus, HELLO_PREFIX, artifactUrl, debriefMarkdown, debriefSpan, gateDecision, recapText, inScope, mask, BROWSER_PROFILE_ID, CORA_RELEASES, displayName, shadesOf, sessionIcon } from '@cora/shared';
 import { checkOptions, checkPrompt, launchArgs } from './launch';
 import { checkSummary, checkTicket, type Tickets } from './tickets';
 import { summarizeUsage } from './usage';
@@ -731,6 +731,14 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
     d.worktrees?.want();
     return { repos: d.worktrees?.list() ?? [] };
   });
+  // the Inbox's "Git sign-in needed" note: sign in to that host (Credential Manager's window, because you asked)
+  app.post<{ Body: { host?: unknown } }>('/api/git/sign-in', { preHandler: requireAction }, async (req, reply) => {
+    const host = req.body?.host;
+    if (!d.worktrees) return reply.code(501).send({ error: 'not supported' });
+    if (typeof host !== 'string' || !/^[\w.-]{1,200}$/.test(host)) return reply.code(400).send({ error: 'a host' });
+    const r = await d.worktrees.signInTo(host);
+    return r.ok ? { ok: true } : reply.code(409).send({ error: r.error });
+  });
   app.post<{ Body: { path?: unknown; deleteBranch?: unknown } }>('/api/worktrees/remove', { preHandler: requireAction }, async (req, reply) => {
     if (!d.worktrees || typeof req.body?.path !== 'string') return reply.code(400).send({ error: 'a worktree' });
     return d.worktrees.remove(req.body.path, { deleteBranch: req.body.deleteBranch === true });
@@ -754,6 +762,14 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
     const cwd = store.getSession(req.params.sid)?.cwd;
     const rel = (p: string) => (cwd && normPath(p).startsWith(normPath(cwd) + '/') ? p.slice(cwd.replace(/[\\/]+$/, '').length + 1).replace(/\\/g, '/') : p);
     return reply.type('text/markdown; charset=utf-8').send(debriefMarkdown(db, rel));
+  });
+  // a step's picture (the Make a video preview shows it): only the file the debrief names, and only a picture or clip
+  app.get<{ Params: { sid: string; id: string; i: string } }>('/api/debriefs/:sid/:id/shots/:i', { preHandler: requireUi }, async (req, reply) => {
+    const f = d.debriefs?.get(req.params.sid, req.params.id)?.steps[Number(req.params.i)]?.shot?.file;
+    const type = f?.match(/\.(\w+)$/)?.[1].toLowerCase();
+    const mime: Record<string, string> = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp', mp4: 'video/mp4', webm: 'video/webm', mov: 'video/quicktime' };
+    if (!f || !type || !mime[type] || !existsSync(f)) return reply.code(404).send({ error: 'no such picture' });
+    return reply.type(mime[type]).header('cache-control', 'no-store').send(createReadStream(f));
   });
   // starting work from Jira launches the way the agent's start_session does
   d.orchestrator?.setLauncher((x) => orchDeps().launch(x));
@@ -1472,11 +1488,12 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
    * A session's name, colour, ticket. `ticket`: a key (or {key, site, summary}) sets it, null clears it for good.
    * `ticketSummary`: the UI looked the ticket up; kept only while the session's ticket is still that key.
    */
-  type MetaBody = { alias?: string | null; color?: string | null; ticket?: string | { key?: unknown; site?: unknown; summary?: unknown } | null; ticketSummary?: { key?: unknown; summary?: unknown } };
+  type MetaBody = { alias?: string | null; color?: string | null; icon?: unknown; ticket?: string | { key?: unknown; site?: unknown; summary?: unknown } | null; ticketSummary?: { key?: unknown; summary?: unknown } };
   app.post<{ Params: { id: string }; Body: MetaBody }>('/api/sessions/:id/meta', { preHandler: requireAction }, async (req, reply) => {
     const s = store.getSession(req.params.id);
     if (!s) return reply.code(404).send({ error: 'unknown session' });
-    const { alias, color, ticket, ticketSummary } = req.body ?? {};
+    const { alias, color, icon, ticket, ticketSummary } = req.body ?? {};
+    if (icon !== undefined && icon !== null && !sessionIcon(icon)) return reply.code(400).send({ error: 'icon must be one of the session icons' });
     if (alias !== undefined && alias !== null && (typeof alias !== 'string' || alias.length > 60)) return reply.code(400).send({ error: 'alias must be a string of at most 60 characters' });
     if (color !== undefined && color !== null && !/^#[0-9a-f]{6}$/i.test(String(color))) return reply.code(400).send({ error: 'color must be #rrggbb' });
     let tk: SessionTicket | null | undefined;
@@ -1495,6 +1512,7 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
       id: s.id,
       ...(alias !== undefined ? { alias: alias === null || !alias.trim() ? null : alias.trim() } : {}),
       ...(color !== undefined ? { color } : {}),
+      ...(icon !== undefined ? { icon: icon === null ? null : sessionIcon(icon) } : {}),
       ...(tk !== undefined ? { ticket: tk } : {}),
     });
     hub.publishSession(next);
@@ -1960,8 +1978,9 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
     const lines = req.body?.force ? null : ptys.screenLines(t.terminalId);
     if (lines && choiceOpen(lines)) return reply.code(409).send({ error: 'Claude Code is showing a choice in the terminal: answer it there first', choice: true });
     ptys.write(t.terminalId, input.data);
-    // Enter separately, a beat later, so Claude Code sees the text (or the whole paste) and then a submit
-    if (req.body?.submit) setTimeout(() => ptys.write(t.terminalId, '\r'), input.paste ? 150 : 80);
+    // Enter separately, a beat later, so Claude Code sees the text (or the whole paste) and then a submit; a big paste
+    // takes it longer to read in
+    if (req.body?.submit) setTimeout(() => ptys.write(t.terminalId, '\r'), input.paste ? Math.min(3000, 150 + Math.round(input.data.length / 2000)) : 80);
     // your words to Cora (push-to-talk types them into its terminal): what it does now is something you asked
     if (req.body?.submit && d.orchestrator?.agentTerminal() === t.terminalId) d.orchestrator.noteUserInput();
     return { ok: true, paste: input.paste };
@@ -2245,7 +2264,19 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
     const text = typeof req.body?.text === 'string' ? req.body.text.trim() : '';
     if (!text || text.length > 500) return reply.code(400).send({ error: 'Say what you remember of it (500 characters at most).' });
     try {
-      return { sessions: await askForSession({ description: text, items: await listHistory(config.projectsDir, 300, skipSlug), dataDir: config.dataDir, ...(d.claudeRun ? { run: d.claudeRun } : {}) }) };
+      // each with what Cora knows of it (its name, where it got to), and where what you describe was said inside them
+      const byId = new Map(store.listSessions().map((s) => [s.id, s]));
+      const items = (await listHistory(config.projectsDir, 300, skipSlug)).map((h) => {
+        const s = byId.get(h.sessionId);
+        const name = s ? displayName(s) : names.get(h.sessionId);
+        const recap = (s?.recap?.text ? recapText(s.recap.text) : store.recaps({ sessionId: h.sessionId, limit: 1 })[0]?.text)?.trim();
+        return { ...h, ...(name ? { name } : {}), ...(recap ? { recap } : {}) };
+      });
+      if (!indexed) {
+        await historyIndex.refresh();
+        indexed = true;
+      } else await historyIndex.refresh();
+      return { sessions: await askForSession({ description: text, items, evidence: historyIndex.evidence(text), dataDir: config.dataDir, ...(d.claudeRun ? { run: d.claudeRun } : {}) }) };
     } catch (e) {
       return reply.code(502).send({ error: (e as Error).message });
     }

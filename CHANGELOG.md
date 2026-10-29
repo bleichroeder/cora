@@ -4,6 +4,25 @@ What changed in each release. Cora updates itself; each update's notes are on it
 
 ## Unreleased
 
+## 0.1.17
+
+- **A new left nav.** Drag its edge to make it wider or narrower (240 to 440px, 300 to start, kept per device;
+  double-click for the default). Session rows are calmer and line up: each session's colour as a swatch holding its
+  own icon, a word for its state only when something's happening (working and for how long, needs you, done,
+  speaking), its ticket in a column of its own, the repo's folder (and worktree), and its pipeline only when it's
+  running or failed.
+- **Sessions pick their own icon** when they're named, from a few hundred, and names come in Title Case. Change an
+  icon with right-click › Icon. Open sessions from before get one shortly after Cora starts.
+- **No more GitLab sign-in pop-ups.** Cora's background fetch never opens a sign-in window. When Git's saved sign-in
+  runs out you get one note in the Inbox, with a Sign in button, and it clears itself once it works.
+- **Finding a past session sees inside them.** Ask Claude gets where what you describe was said, each session's recap,
+  and Cora's own conversations by name; the search reads what came late in a long session too.
+- **Long prompts.** The composer takes up to a million characters, as Claude Code does.
+- **Debriefs in long sessions work.** A session's transcript can outgrow what one string holds; it's read a piece at a
+  time now.
+- **Debrief videos can show pictures.** A step can carry a screenshot or a short clip, pushed in toward the part it's
+  about: a tour of a feature, not just code.
+
 ## 0.1.16
 
 - **A video's Send in Slack works.** It said "Bad Request"; so did deleting a video, and deleting, leaving or wrapping

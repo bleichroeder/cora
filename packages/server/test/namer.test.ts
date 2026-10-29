@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { BrainEvent, SessionInfo } from '@cora/shared';
 import { loadConfig } from '../src/config';
 import { startServer, type Running } from '../src/server';
-import { isNamerCwd, isNamerSlug, namePrompt, Namer, namerArgs, namerDir, namerEnv, sanitizeName, wantsAutoName, type RunFn } from '../src/namer';
+import { isNamerCwd, isNamerSlug, namePrompt, Namer, namerArgs, namerDir, namerEnv, parseNamed, sanitizeName, wantsAutoName, type RunFn } from '../src/namer';
 
 describe('namer helpers', () => {
   it('builds the prompt around the message, trimmed to ~1500 characters', () => {
@@ -107,8 +107,8 @@ describe('Namer', () => {
     n.auto('s1', 'alpha task');
     n.auto('s1', 'alpha task again');
     const beta = n.suggest('s2', 'beta task');
-    expect(await beta).toBe('Beta work');
-    expect(names).toEqual({ s1: 'Alpha work', s2: 'Beta work' });
+    expect(await beta).toBe('Beta Work');
+    expect(names).toEqual({ s1: 'Alpha Work', s2: 'Beta Work' });
     expect(f.calls).toHaveLength(2);
     expect(f.max()).toBe(1);
     expect(f.calls[0].cwd).toBe(n.dir);
@@ -150,7 +150,7 @@ describe('auto-names in the server', () => {
     prompt('s1', 'and add a test', 'C:\\code\\x', 'p2');
     await settle();
     expect(f.calls).toHaveLength(1);
-    expect(srv.store.getSession('s1')?.autoName).toBe('Fix hooks sink');
+    expect(srv.store.getSession('s1')?.autoName).toBe('Fix Hooks Sink');
     expect(srv.store.getSession('s0')?.autoName).toBeUndefined();
   });
 
@@ -181,7 +181,47 @@ describe('auto-names in the server', () => {
     srv.store.upsertSession({ id: 's1', alias: 'mine' });
     const r = await srv.app.inject({ method: 'POST', url: '/api/sessions/s1/autoname', headers: ui });
     expect(r.statusCode).toBe(200);
-    expect(r.json()).toMatchObject({ id: 's1', autoName: 'Jira 2.9 prod audit', alias: null });
+    expect(r.json()).toMatchObject({ id: 's1', autoName: 'Jira 2.9 Prod Audit', alias: null });
     expect(f.calls[0].input).toContain('audit the chat 2.9 prod rollout');
+  });
+});
+
+describe('a name in Title Case, and an icon', () => {
+  it('reads "Name | Icon": Title Case, the icon checked against the list (any case or dashes), none when unknown', () => {
+    expect(parseNamed('Ship release 2.4 | Rocket')).toEqual({ name: 'Ship Release 2.4', icon: 'Rocket' });
+    expect(parseNamed('"fix the login redirect" | key-round\nbecause…')).toEqual({ name: 'Fix the Login Redirect', icon: 'KeyRound' });
+    expect(parseNamed('Load test search API | Speedometer')).toEqual({ name: 'Load Test Search API', icon: null });
+    expect(parseNamed('Add dark mode toggle')).toEqual({ name: 'Add Dark Mode Toggle', icon: null });
+    expect(parseNamed("I can't help with that | Bug")).toBeNull();
+  });
+
+  it("tells the model the icons other sessions use, and hands the icon on with the name", async () => {
+    expect(namePrompt('fix it', ['Rocket', 'Gauge', 'Rocket'])).toContain("Icons the user's other open sessions use: Rocket, Gauge");
+    expect(namePrompt('fix it')).not.toContain('Icons the user');
+    const dataDir = mkdtempSync(join(tmpdir(), 'ab-namer-'));
+    const got: Array<[string, string, string | null]> = [];
+    let input = '';
+    const run: RunFn = async (_c, o) => ((input = o.input), { code: 0, stdout: 'Wire the http sink | Webhook', timedOut: false });
+    await new Namer({ dataDir, run, claudeCmd: ['claude'], onName: (sid, name, icon) => got.push([sid, name, icon]), iconsInUse: () => ['Rocket'] }).suggest('s1', 'wire the sink');
+    expect(got).toEqual([['s1', 'Wire the Http Sink', 'Webhook']]);
+    expect(input).toContain('Rocket');
+  });
+});
+
+describe('icons for sessions named before icons', () => {
+  it('asks for just an icon: the name stays, and an unknown icon gives nothing', async () => {
+    const dataDir = mkdtempSync(join(tmpdir(), 'ab-namer-'));
+    const named: string[] = [];
+    const icons: Array<[string, string]> = [];
+    let reply = 'Ship Release 2.4 | Rocket';
+    const run: RunFn = async () => ({ code: 0, stdout: reply, timedOut: false });
+    const n = new Namer({ dataDir, run, claudeCmd: ['claude'], onName: (sid) => named.push(sid), onIcon: (sid, icon) => icons.push([sid, icon]) });
+    n.iconFor('s1', 'Ship Release 2.4\n\ncut the 2.4 release');
+    await new Promise((r) => setTimeout(r, 50));
+    reply = 'Something | NotAnIcon';
+    n.iconFor('s2', 'Something');
+    await new Promise((r) => setTimeout(r, 50));
+    expect(icons).toEqual([['s1', 'Rocket']]);
+    expect(named).toEqual([]);
   });
 });

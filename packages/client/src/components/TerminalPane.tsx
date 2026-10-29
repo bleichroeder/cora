@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { NAV_RESIZED, navDragging } from '../lib/navWidth';
 import { useLive } from '../state/live';
 import { create } from 'zustand';
 import { Terminal } from '@xterm/xterm';
@@ -125,6 +126,7 @@ export function LiveTerminal({ terminal, compact, shown = true, sized = false, o
 
     const refit = () => {
       if (!(shownRef.current || sizedRef.current) || !outer.current?.clientWidth) return; // a hidden tab: sized when it's shown
+      if (navDragging()) return; // the nav's edge being dragged: once, when it's let go (NAV_RESIZED)
       try {
         if (compactRef.current) {
           host.current!.style.height = `${COMPACT_ROWS * cellH() + 4}px`;
@@ -278,8 +280,11 @@ export function LiveTerminal({ terminal, compact, shown = true, sized = false, o
 
     const ro = new ResizeObserver(() => requestAnimationFrame(refit));
     ro.observe(outer.current!);
+    const navResized = () => requestAnimationFrame(refit);
+    window.addEventListener(NAV_RESIZED, navResized);
     return () => {
       ro.disconnect();
+      window.removeEventListener(NAV_RESIZED, navResized);
       sub.dispose();
       titleSub.dispose();
       shellBusy.delete(terminal.terminalId);

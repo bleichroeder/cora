@@ -3,7 +3,7 @@ import { appendFileSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { gitChanges, gitDiff, netChange } from '../src/changes';
+import { SnapshotReader, gitChanges, gitDiff, netChange } from '../src/changes';
 
 const T0 = Date.parse('2026-10-13T10:00:00Z');
 const T1 = Date.parse('2026-10-13T10:05:00Z');
@@ -27,6 +27,29 @@ function fixture() {
     );
   return { home, proj, hist, transcript, snap };
 }
+
+describe('SnapshotReader', () => {
+  it('reads a transcript a piece at a time: lines across pieces, lines longer than a piece, the last line still being written', () => {
+    const f = fixture();
+    const noise = (n: number) => appendFileSync(f.transcript, JSON.stringify({ type: 'assistant', text: 'é'.repeat(n) }) + '\n');
+    noise(10);
+    f.snap('m1', T0, { 'a.ts': 'a@v1' });
+    noise(500);
+    f.snap('m2', T1, { 'b.ts': null });
+    f.snap('m2', T1 + 1, { 'c.ts': 'c@v1' }, true);
+    appendFileSync(f.transcript, '{"type":"file-history-snapshot","messageId":"m3"'); // not finished yet
+    const r = new SnapshotReader(64);
+    const list = r.read(f.transcript);
+    expect(list.map((s) => [s.messageId, [...s.files.keys()].map((k) => k.split('/').pop())])).toEqual([
+      ['m1', ['a.ts']],
+      ['m2', ['b.ts', 'c.ts']],
+    ]);
+    expect(list[1].files.get([...list[1].files.keys()][0])).toEqual({ name: null });
+    // the rest of the last line arrives: only it is read
+    appendFileSync(f.transcript, `,"snapshot":{"messageId":"m3","timestamp":"${new Date(T1 + 5000).toISOString()}","trackedFileBackups":{"d.ts":{"backupFileName":"d@v1","realParentDir":${JSON.stringify(f.proj)}}}}}\n`);
+    expect(r.read(f.transcript).map((s) => s.messageId)).toEqual(['m1', 'm2', 'm3']);
+  });
+});
 
 describe('netChange', () => {
   it("diffs the file as it was at the turn's prompt against the file now", () => {

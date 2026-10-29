@@ -12,8 +12,12 @@ type Backup = { name: string | null };
 /** One prompt's file snapshot (Claude Code's rewind data): every tracked file as it was when the prompt was sent. */
 export type Snapshot = { messageId: string; ts: number; files: Map<string, Backup> };
 
+/** A transcript is read this much at a time. */
+const CHUNK = 16 << 20;
+
 /** Reads a transcript's file-history snapshots, incrementally (transcripts grow; we only parse what's new). */
-class SnapshotReader {
+export class SnapshotReader {
+  constructor(/** read this much at a time (tests make it small) */ private chunk = CHUNK) {}
   private cache = new Map<string, { offset: number; byId: Map<string, Snapshot>; list: Snapshot[] }>();
 
   read(transcript: string): Snapshot[] {
@@ -27,38 +31,47 @@ class SnapshotReader {
     }
     if (size < c.offset) c.offset = 0; // rewritten
     if (size === c.offset) return c.list;
+    // a piece at a time: a long session's transcript can be bigger than one string can hold
     const fd = openSync(transcript, 'r');
     try {
-      const buf = Buffer.alloc(size - c.offset);
-      readSync(fd, buf, 0, buf.length, c.offset);
-      const text = buf.toString('utf8');
-      const end = text.lastIndexOf('\n');
-      if (end < 0) return c.list;
-      for (const line of text.slice(0, end).split('\n')) {
-        if (!line.includes('"file-history-snapshot"')) continue;
-        let o: any;
-        try {
-          o = JSON.parse(line);
-        } catch {
+      let want = this.chunk;
+      while (c.offset < size) {
+        const buf = Buffer.alloc(Math.min(want, size - c.offset));
+        readSync(fd, buf, 0, buf.length, c.offset);
+        const end = buf.lastIndexOf(0x0a);
+        if (end < 0) {
+          // a line longer than the piece: read a bigger one, unless it's the last line still being written
+          if (c.offset + buf.length >= size) break;
+          want *= 2;
           continue;
         }
-        if (o?.type !== 'file-history-snapshot' || !o.snapshot?.trackedFileBackups) continue;
-        let s = c.byId.get(o.messageId);
-        if (!s) {
-          s = { messageId: o.messageId, ts: Date.parse(o.snapshot.timestamp) || 0, files: new Map() };
-          c.byId.set(o.messageId, s);
-          c.list.push(s);
+        want = this.chunk;
+        for (const line of buf.toString('utf8', 0, end).split('\n')) {
+          if (!line.includes('"file-history-snapshot"')) continue;
+          let o: any;
+          try {
+            o = JSON.parse(line);
+          } catch {
+            continue;
+          }
+          if (o?.type !== 'file-history-snapshot' || !o.snapshot?.trackedFileBackups) continue;
+          let s = c.byId.get(o.messageId);
+          if (!s) {
+            s = { messageId: o.messageId, ts: Date.parse(o.snapshot.timestamp) || 0, files: new Map() };
+            c.byId.set(o.messageId, s);
+            c.list.push(s);
+          }
+          // updates for the same prompt add the files first touched during its turn
+          for (const [k, v] of Object.entries<any>(o.snapshot.trackedFileBackups)) {
+            const abs = v?.realParentDir ? join(v.realParentDir, basename(k)) : k;
+            // a backup is a plain file name inside the session's file-history folder: never a path out of it
+            // (docs/audit-2026-10-20.md S9)
+            const name = typeof v?.backupFileName === 'string' && /^[^\\/]+$/.test(v.backupFileName) && v.backupFileName !== '..' ? v.backupFileName : null;
+            s.files.set(normPath(abs), { name });
+          }
         }
-        // updates for the same prompt add the files first touched during its turn
-        for (const [k, v] of Object.entries<any>(o.snapshot.trackedFileBackups)) {
-          const abs = v?.realParentDir ? join(v.realParentDir, basename(k)) : k;
-          // a backup is a plain file name inside the session's file-history folder: never a path out of it
-          // (docs/audit-2026-10-20.md S9)
-          const name = typeof v?.backupFileName === 'string' && /^[^\\/]+$/.test(v.backupFileName) && v.backupFileName !== '..' ? v.backupFileName : null;
-          s.files.set(normPath(abs), { name });
-        }
+        c.offset += end + 1;
       }
-      c.offset += Buffer.byteLength(text.slice(0, end + 1), 'utf8');
       c.list.sort((a, b) => a.ts - b.ts);
     } finally {
       closeSync(fd);

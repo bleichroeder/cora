@@ -133,3 +133,12 @@ describe('composer routes', () => {
     expect(Array.isArray(cmds.json().commands)).toBe(true);
   });
 });
+
+describe('a big prompt', () => {
+  it('takes what Claude Code takes: a long pasted log goes as one paste', () => {
+    const log = Array.from({ length: 4000 }, (_, i) => `line ${i}: ${'x'.repeat(40)}`).join('\n');
+    const r = terminalInput(log);
+    expect(r).toMatchObject({ paste: true });
+    expect(MAX_INPUT).toBeGreaterThanOrEqual(1_000_000);
+  });
+});

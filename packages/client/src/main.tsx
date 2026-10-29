@@ -1,4 +1,5 @@
 import { useSetup } from './state/setup';
+import { applyNavWidth, savedNavWidth } from './lib/navWidth';
 import { desktop } from './lib/desktop';
 import { useVoice } from './lib/voice';
 import { useWake } from './lib/wake/controller';
@@ -41,6 +42,9 @@ if (!desktop && typeof window !== 'undefined') {
     fit();
   }
 }
+
+// the left nav at the width you left it, on this device
+applyNavWidth(savedNavWidth());
 
 // quick capture's own window (Ctrl+Alt+N): just the box, no socket
 const capture = new URLSearchParams(location.search).has('capture');

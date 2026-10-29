@@ -180,6 +180,7 @@ export class Hub {
     if (this.mailOutboxSnapshot) this.send(sock, this.mailOutboxSnapshot());
     if (this.securitySnapshot) this.send(sock, this.securitySnapshot());
     if (this.orchestratorSnapshot) this.send(sock, this.orchestratorSnapshot());
+    for (const m of this.simShown.values()) this.send(sock, m);
     if (this.isGuest(sock) && this.lastView) this.send(sock, { t: 'live-view', view: this.lastView });
     if (lastSeq > 0 && current - lastSeq <= MAX_REPLAY && lastSeq <= current) {
       const events = this.store.eventsSince(lastSeq, MAX_REPLAY);
@@ -319,7 +320,18 @@ export class Hub {
     if (!this.timer) this.timer = setTimeout(() => this.flush(), this.batchMs);
   }
 
-  private broadcast(msg: ServerMsg): void {
+  /**
+   * The simulator's stand-ins for integrations (simShow.ts): sent to every dashboard, now and as it connects, and
+   * the real ones of those kinds (never connected in a simulation) kept from replacing them.
+   */
+  private simShown = new Map<string, ServerMsg>();
+  showSim(msg: ServerMsg): void {
+    this.simShown.set(msg.t, msg);
+    this.broadcast(msg, true);
+  }
+
+  private broadcast(msg: ServerMsg, sim = false): void {
+    if (!sim && this.simShown.has(msg.t)) return;
     if (!this.socks.size) return;
     const data = JSON.stringify(msg);
     for (const s of this.socks) if (s.readyState === OPEN && this.fed(s) && this.may(s, msg.t)) s.send(data);

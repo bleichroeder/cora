@@ -45,6 +45,19 @@ describe('debriefs', () => {
     expect(changed).toEqual(['sess-1']);
   });
 
+  it("a step's picture: made absolute when it's the session's and there; refused otherwise", () => {
+    writeFileSync(join(cwd, 'board.png'), 'png');
+    const s = store();
+    const r = s.make('sess-1', cwd, null, script({ path: undefined, range: undefined, beats: [{ text: 'The board.' }], shot: { file: 'board.png', focus: [0, 0, 0.5, 0.5] } }));
+    expect(r.ok).toBe(true);
+    expect((r as { debrief: import('@cora/shared').Debrief }).debrief.steps[1].shot).toEqual({ file: join(cwd, 'board.png'), focus: [0, 0, 0.5, 0.5] });
+    writeFileSync(join(root, 'out.png'), 'png');
+    expect(s.make('sess-1', cwd, null, script({ path: undefined, range: undefined, beats: [{ text: 'x' }], shot: { file: join(root, 'out.png') } }))).toMatchObject({ ok: false, errors: [expect.stringContaining("isn't in the session's folder")] });
+    expect(s.make('sess-1', cwd, null, script({ path: undefined, range: undefined, beats: [{ text: 'x' }], shot: { file: 'gone.png' } }))).toMatchObject({ ok: false, errors: ["step 2: there's no picture gone.png"] });
+    expect(s.make('sess-1', cwd, null, script({ path: undefined, range: undefined, beats: [{ text: 'x' }], shot: { file: 'notes.txt' } }))).toMatchObject({ ok: false, errors: [expect.stringContaining('shot.file is a picture')] });
+    expect(s.make('sess-1', cwd, null, script({ path: undefined, range: undefined, beats: [{ text: 'x' }], shot: { file: 'board.png', focus: [0.8, 0, 0.5, 0.5] } }))).toMatchObject({ ok: false, errors: [expect.stringContaining('shot.focus')] });
+  });
+
   it("refuses a file outside the folder, one that isn't there, and lines past the end; nothing saved", () => {
     const s = store();
     expect(s.make('sess-1', cwd, null, script({ path: join(root, 'outside.ts'), range: [1, 2] }))).toMatchObject({ ok: false, errors: [expect.stringContaining("isn't in the session's folder, a file it changed, or a repo it changed files in")] });

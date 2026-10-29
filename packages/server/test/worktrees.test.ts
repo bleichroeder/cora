@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { WorktreeRepo } from '@cora/shared';
-import { Worktrees, linksIn } from '../src/worktrees';
+import { Worktrees, linksIn, quietGitEnv } from '../src/worktrees';
 
 let dir: string;
 let repo: string;
@@ -137,5 +137,102 @@ describe('worktrees', () => {
     expect(await w.remove(path)).toEqual({ ok: true });
     expect(existsSync(path)).toBe(false);
     expect(readFileSync(join(shared, 'pkg', 'index.js'), 'utf8')).toBe('keep me\n');
+  });
+});
+
+describe('background git', () => {
+  it('never asks: no terminal prompt, no Credential Manager sign-in window, no SSH passphrase; your own SSH command kept', () => {
+    expect(quietGitEnv({ PATH: 'p' })).toEqual({ PATH: 'p', GIT_TERMINAL_PROMPT: '0', GCM_INTERACTIVE: 'never', GCM_GUI_PROMPT: 'false', GIT_OPTIONAL_LOCKS: '0', GIT_SSH_COMMAND: 'ssh -o BatchMode=yes' });
+    expect(quietGitEnv({ GIT_SSH_COMMAND: 'plink -batch' }).GIT_SSH_COMMAND).toBe('plink -batch');
+  });
+});
+
+describe('a fetch that cannot sign in', () => {
+  it('is told once per change (never a sign-in window), not when merely offline, and again when it signs in', async () => {
+    let fetch: { ok: boolean; out: string; err?: string } = { ok: false, out: '', err: "remote: HTTP Basic: Access denied\nfatal: Authentication failed for 'https://gitlab.com/acme/repo.git/'" };
+    const told: Array<[string, string[]]> = [];
+    let now = 0;
+    const real = (cwd: string, args: string[]) => {
+      try {
+        return Promise.resolve({ ok: true, out: git(cwd, ...args) });
+      } catch {
+        return Promise.resolve({ ok: false, out: '' });
+      }
+    };
+    git(repo, 'remote', 'set-url', 'origin', 'https://gitlab.com/acme/repo.git');
+    const w = new Worktrees({
+      mine: () => [repo],
+      sessions: () => [],
+      recentFolders: () => [],
+      onChange: () => {},
+      onSignIn: (host, repos) => told.push([host, repos]),
+      now: () => now,
+      git: (cwd, args) => (args[0] === 'fetch' ? Promise.resolve(fetch) : real(cwd, args)),
+    });
+    const round = async () => {
+      now += 11 * 60_000;
+      await w.refresh();
+      await new Promise((r) => setTimeout(r, 300));
+    };
+    // the first fetch after a start says how it went, even when it works (a note left from before is cleared)
+    fetch = { ok: true, out: '' };
+    await round();
+    expect(told).toEqual([['gitlab.com', []]]);
+    told.length = 0;
+    fetch = { ok: false, out: '', err: "remote: HTTP Basic: Access denied\nfatal: Authentication failed for 'https://gitlab.com/acme/repo.git/'" };
+    await round();
+    await round();
+    expect(told).toEqual([['gitlab.com', [repo]]]);
+    fetch = { ok: false, out: '', err: 'fatal: unable to access: Could not resolve host: gitlab.com' };
+    await round();
+    expect(told).toHaveLength(1);
+    fetch = { ok: true, out: '' };
+    await round();
+    expect(told).toEqual([['gitlab.com', [repo]], ['gitlab.com', []]]);
+  });
+
+  it('reads a remote host from https, scp-like and ssh URLs', async () => {
+    const { remoteHost, SIGN_IN_FAILED } = await import('../src/worktrees');
+    expect(['https://gitlab.com/a/b.git', 'https://user@GitLab.com/a/b.git', 'git@gitlab.com:a/b.git', 'ssh://git@gitlab.example.org:22/a/b.git'].map(remoteHost)).toEqual(['gitlab.com', 'gitlab.com', 'gitlab.com', 'gitlab.example.org']);
+    expect(SIGN_IN_FAILED.test("fatal: could not read Username for 'https://gitlab.com': terminal prompts disabled")).toBe(true);
+    expect(SIGN_IN_FAILED.test('fatal: unable to access: Could not resolve host: gitlab.com')).toBe(false);
+  });
+});
+
+describe('signing in from the note', () => {
+  it('one fetch allowed to ask, then the rest quietly; the note is told it can sign in again', async () => {
+    let signedIn = false;
+    const asked: string[][] = [];
+    const told: Array<[string, string[]]> = [];
+    let now = 0;
+    git(repo, 'remote', 'set-url', 'origin', 'https://gitlab.com/acme/repo.git');
+    const real = (cwd: string, args: string[]) => {
+      try {
+        return Promise.resolve({ ok: true, out: git(cwd, ...args) });
+      } catch {
+        return Promise.resolve({ ok: false, out: '' });
+      }
+    };
+    const w = new Worktrees({
+      mine: () => [repo],
+      sessions: () => [],
+      recentFolders: () => [],
+      onChange: () => {},
+      onSignIn: (host, repos) => told.push([host, repos]),
+      now: () => now,
+      git: (cwd, args, o) => {
+        if (args[0] !== 'fetch') return real(cwd, args);
+        if (o?.ask) (asked.push(args), (signedIn = true));
+        return Promise.resolve(signedIn ? { ok: true, out: '' } : { ok: false, out: '', err: "fatal: Authentication failed for 'https://gitlab.com/acme/repo.git/'" });
+      },
+    });
+    now += 11 * 60_000;
+    await w.refresh();
+    await new Promise((r) => setTimeout(r, 300));
+    expect(told).toEqual([['gitlab.com', [repo]]]);
+    expect(await w.signInTo('gitlab.com')).toEqual({ ok: true });
+    expect(asked).toHaveLength(1);
+    expect(told.at(-1)).toEqual(['gitlab.com', []]);
+    expect(await w.signInTo('example.org')).toMatchObject({ ok: false });
   });
 });

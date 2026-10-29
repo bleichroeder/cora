@@ -121,7 +121,7 @@ async function start() {
       console.error(`  couldn't update the hooks to the new name (${(e as Error).message}); the old ones keep working`);
     }
   }
-  const stopSim = sim ? startSim(running.pipeline, running.pending, { repo: opt('sim-repo'), name: running.sim.name, cora: running.sim.cora, live: running.live }) : undefined;
+  const stopSim = sim ? startSim(running.pipeline, running.pending, { repo: opt('sim-repo'), name: running.sim.name, cora: running.sim.cora, live: running.live, show: running.sim.show }) : undefined;
   if (sim) seedInbox(running.inbox);
   if (!flag('no-open')) openBrowser(url);
   const shutdown = async (endTerminals = false) => {

@@ -82,6 +82,10 @@ export type SessionInfo = {
   alias?: string | null;
   /** a short name suggested from the session's first prompt (auto-names, or "Suggest a name"); the alias wins */
   autoName?: string | null;
+  /** its own icon (sessionIcons.ts): picked with its auto-name, or by you; null: none (the plain swatch) */
+  icon?: string | null;
+  /** when its current turn began (your prompt): how long it's been working */
+  turnAt?: number | null;
   color?: string | null;
   /** where you put it in the session list (lower first); unset sessions follow, oldest first */
   order?: number | null;

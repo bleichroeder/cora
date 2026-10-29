@@ -109,3 +109,4 @@
 .app.phone .tb-sheet .tb-layout { padding: 6px 12px calc(6px + env(safe-area-inset-bottom)); gap: 6px; }
 .app.phone .tb-sheet .tb-layout .lab { display: none; }
 .app.phone .tb-sheet .tb-layout .pp-seg button, .app.phone .tb-sheet .tb-layout .pp-tg { height: 28px; font-size: 12px; }
+.app.tablet .nav-edge { display: none; }

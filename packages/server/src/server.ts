@@ -38,7 +38,7 @@ import { runWatch, type WatchRunDeps } from './mailWatchRun';
 import { Hub } from './hub';
 import { PendingManager } from './pending';
 import { createPipeline, type Pipeline } from './pipeline';
-import { Namer, wantsAutoName, type RunFn } from './namer';
+import { Namer, isNamerCwd, wantsAutoName, type RunFn } from './namer';
 import { Registry } from './registry';
 import { Store } from './store';
 import { Banners, bannerWords } from './banner';
@@ -82,7 +82,7 @@ export type Running = {
   /** live explains (the simulator keeps one, as a session would) */
   live: LiveExplains;
   /** for the simulator (--sim): name a session as you would; show a stand-in Cora (no real agent starts) */
-  sim: { name(sessionId: string, name: string): void; cora(status: OrchestratorStatus): void };
+  sim: { name(sessionId: string, name: string): void; cora(status: OrchestratorStatus): void; show(msg: import('@cora/shared').ServerMsg): void };
   /** Cora's Slack banners (the desktop app makes them) */
   banners: Banners;
   /** stop; terminals in the terminal host keep running unless `endTerminals` */
@@ -374,8 +374,15 @@ export async function startServer(config: Config, opts: { tail?: boolean; listen
   const namer = new Namer({
     dataDir: config.dataDir,
     run: opts.namerRun,
-    onName: (sid, autoName) => {
-      if (store.getSession(sid)) registry.updateSessionMeta(sid, { autoName });
+    // its name, and its icon when it has none yet (one you chose, or one picked before, is kept)
+    onName: (sid, autoName, icon) => {
+      const s = store.getSession(sid);
+      if (s) registry.updateSessionMeta(sid, { autoName, ...(icon && s.icon === undefined ? { icon } : {}) });
+    },
+    iconsInUse: () => store.listSessions().filter((s) => s.state !== 'ended' && s.icon).map((s) => s.icon!),
+    // a session named before icons were picked: its icon, unless it got one meanwhile (or you chose None)
+    onIcon: (sid, icon) => {
+      if (store.getSession(sid)?.icon === undefined) registry.updateSessionMeta(sid, { icon });
     },
   });
   // which Jira ticket each session is about (from how it was started, or its first prompt)
@@ -572,6 +579,29 @@ export async function startServer(config: Config, opts: { tail?: boolean; listen
     sessions: () => store.listSessions().filter((s) => s.state !== 'ended' && s.cwd).map((s) => ({ id: s.id, cwd: s.wd || s.cwd, live: true })),
     recentFolders: () => [...new Set(store.listSessions().filter((s) => s.cwd && s.lastTs > Date.now() - 14 * 86400_000).flatMap((s) => [s.cwd, ...(s.wd ? [s.wd] : [])]))],
     onChange: (repos) => hub.publishWorktrees({ t: 'worktrees', repos }),
+    // a background fetch that can't sign in: one line in the Inbox (never a sign-in window), gone when it can again
+    onSignIn: (host, repos) => {
+      // it can sign in: only worth saying when there's a note saying it couldn't (from before a restart, too)
+      if (!repos.length && inbox.list().find((i) => i.key === `git-sign-in:${host}`)?.state !== 'failed') return;
+      const names = repos.map((r) => basename(r));
+      inbox.add({
+        source: /gitlab/i.test(host) ? 'gitlab' : 'cora',
+        key: `git-sign-in:${host}`,
+        title: `Git sign-in needed · ${host}`,
+        why: "Cora's background fetch couldn't sign in",
+        state: repos.length ? 'failed' : 'ok',
+        replace: true,
+        // fixed: nothing to read
+        ...(repos.length ? {} : { read: true }),
+        entry: {
+          id: `${host}:${repos.length ? names.join(',') : 'ok'}:${Date.now()}`,
+          text: repos.length
+            ? `Git's saved sign-in for ${host} has run out, so Cora can't fetch ${names.join(', ')} to see merged branches. Sign in below (Git's sign-in window opens), or run git fetch in one of them.`
+            : `Signed in again: fetching from ${host} works.`,
+          at: Date.now(),
+        },
+      });
+    },
   });
   hub.worktreesSnapshot = () => ({ t: 'worktrees', repos: worktrees.list() });
   // Cora Secrets: kept sealed in its data folder; sessions use them by name (secret_run), never see a value
@@ -637,6 +667,17 @@ export async function startServer(config: Config, opts: { tail?: boolean; listen
   };
   const pruner = setInterval(prune, 3600_000);
   prune();
+  // sessions named before they picked icons (open, and active in the last two weeks): an icon each, once, a while
+  // after Cora starts (a Haiku call apiece, one at a time; when the automatic names are on)
+  const iconPass = setTimeout(() => {
+    if (!prefs.get().autoName || config.dbPath === ':memory:') return;
+    const recent = Date.now() - 14 * 86_400_000;
+    for (const s of store.listSessions().filter((x) => x.state !== 'ended' && x.icon === undefined && x.lastTs > recent && !isNamerCwd(x.cwd, namer.dir)).slice(0, 30)) {
+      const first = store.firstPrompt(s.id)?.text?.trim();
+      if (first || s.alias || s.autoName) namer.iconFor(s.id, `${displayName(s)}${first ? `\n\n${first}` : ''}`);
+    }
+  }, 45_000);
+  iconPass.unref?.();
   try {
     if (store.compact()) console.log('  compacted brain.db');
   } catch (e) {
@@ -704,6 +745,9 @@ export async function startServer(config: Config, opts: { tail?: boolean; listen
         simCora = status;
         hub?.publishOrchestrator({ t: 'orchestrator', status });
       },
+      show(msg) {
+        hub?.showSim(msg);
+      },
     },
     async close(o) {
       freeze.flush();
@@ -722,6 +766,7 @@ export async function startServer(config: Config, opts: { tail?: boolean; listen
       live.stop();
       security?.stop();
       clearInterval(pruner);
+      clearTimeout(iconPass);
       await tailer?.stop();
       videos?.close();
       await app.close();

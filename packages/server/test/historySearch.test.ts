@@ -43,3 +43,25 @@ describe('finding an old session', () => {
     await expect(askForSession({ description: 'x', items, dataDir: mkdtempSync(join(tmpdir(), 'cora-hs-d-')), run: async () => ({ code: 1, stdout: '', timedOut: false }) })).rejects.toThrow(/couldn't answer/);
   });
 });
+
+describe("a long session, like Cora's own", () => {
+  it('is found by what came late in it: the finder sees where it was said, and Cora named for what it is', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'cora-hs-long-'));
+    mkdirSync(join(dir, 'C--Users-me--cora-orchestrator'), { recursive: true });
+    const cwd = String.raw`C:\Users\me\.cora\orchestrator`;
+    const lines = [{ type: 'user', cwd, message: { role: 'user', content: '[Cora 09:00] Start: read your memory first.' } }];
+    // a day of talk, then the part they remember, far past the first 60,000 characters
+    for (let i = 0; i < 400; i++) lines.push({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: `Routine update ${i}: ${'nothing much happened here. '.repeat(10)}` }] } } as never);
+    lines.push({ type: 'user', cwd, message: { role: 'user', content: 'Draft the quarterly okr summary for the platform team' } });
+    writeFileSync(join(dir, 'C--Users-me--cora-orchestrator', 'dddddddd-4.jsonl'), lines.map((l) => JSON.stringify(l)).join('\n') + '\n');
+    const idx = new HistoryIndex({ projectsDir: dir });
+    await idx.refresh();
+    expect((await idx.search('quarterly okr')).map((s) => s.sessionId)).toEqual(['dddddddd-4']);
+    const evidence = idx.evidence('the time Cora drafted the quarterly OKR summary');
+    expect(evidence.get('dddddddd-4')).toContain('quarterly okr summary');
+    let input = '';
+    await askForSession({ description: 'the OKR summary', items: await listHistory(dir, 50), evidence, dataDir: mkdtempSync(join(tmpdir(), 'cora-hs-d-')), run: async (_c, o) => ((input = o.input), { code: 0, stdout: 'NONE', timedOut: false }) });
+    expect(input).toContain('Cora (your assistant');
+    expect(input).toContain('said: ');
+  });
+});

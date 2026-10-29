@@ -7,11 +7,37 @@ import { WORKTREE_DIR, branchFor, dirtyCount, folderFor, parseWorktreeList, stat
 const key = (p: string) => resolve(p).replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
 const inside = (p: string, dir: string) => key(p) === key(dir) || key(p).startsWith(`${key(dir)}/`);
 
-export type Git = (cwd: string, args: string[]) => Promise<{ ok: boolean; out: string }>;
-const realGit: Git = (cwd, args) =>
+/** `ask`: you asked for it (signing in), so it may ask you: Credential Manager's window, with time to answer it. */
+export type Git = (cwd: string, args: string[], o?: { ask?: boolean }) => Promise<{ ok: boolean; out: string; err?: string }>;
+/**
+ * Git as Cora runs it in the background: never asking for anything. No prompt in a terminal, no sign-in window from
+ * Git Credential Manager (a fetch whose sign-in has run out would open one every round, a burst of them for several
+ * repos), no SSH passphrase prompt;
+ * such a fetch just fails, and tries again next time.
+ */
+export const quietGitEnv = (env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv => ({
+  ...env,
+  GIT_TERMINAL_PROMPT: '0',
+  GCM_INTERACTIVE: 'never',
+  // and none of its windows at all: its GitLab sign-in (2.0.x) opens its window before it checks the line above
+  GCM_GUI_PROMPT: 'false',
+  GIT_OPTIONAL_LOCKS: '0',
+  ...(env.GIT_SSH_COMMAND ? {} : { GIT_SSH_COMMAND: 'ssh -o BatchMode=yes' }),
+});
+const realGit: Git = (cwd, args, o) =>
   new Promise((done) =>
-    execFile('git', args, { cwd, timeout: 20_000, windowsHide: true, maxBuffer: 8 * 1024 * 1024, env: { ...process.env, GIT_TERMINAL_PROMPT: '0', GIT_OPTIONAL_LOCKS: '0' } }, (e, out) => done({ ok: !e, out: String(out ?? '') })),
+    execFile(
+      'git',
+      args,
+      { cwd, timeout: o?.ask ? 180_000 : 20_000, windowsHide: true, maxBuffer: 8 * 1024 * 1024, env: o?.ask ? { ...process.env, GIT_TERMINAL_PROMPT: '0', GIT_OPTIONAL_LOCKS: '0' } : quietGitEnv() },
+      (e, out, err) => done({ ok: !e, out: String(out ?? ''), err: String(err ?? '') }),
+    ),
   );
+
+/** A fetch that failed because it couldn't sign in (not because it's offline): what git says then. */
+export const SIGN_IN_FAILED = /authentication failed|could not read (username|password)|terminal prompts disabled|access denied|permission denied \(publickey|\b40[13]\b/i;
+/** The host a remote URL points at (https://host/…, git@host:…, ssh://git@host/…). */
+export const remoteHost = (url: string): string | null => url.trim().match(/^(?:[a-z+]+:\/\/)?(?:[^@/\s]+@)?([^:/\s]+)/i)?.[1]?.toLowerCase() ?? null;
 
 /** How often a repo's remote is looked at (to see merged branches go): its branches, never its files. */
 const FETCH_EVERY = 10 * 60_000;
@@ -27,6 +53,8 @@ export class Worktrees {
   private repos = new Map<string, WorktreeRepo>();
   private rootOf = new Map<string, string | null>();
   private fetched = new Map<string, number>();
+  /** per host, the repos whose fetch couldn't sign in (since this start: a note left from before is cleared by the first that can) */
+  private signIn = new Map<string, Set<string>>();
   private wantedUntil = 0;
   private timer?: ReturnType<typeof setInterval>;
   private first?: ReturnType<typeof setTimeout>;
@@ -43,6 +71,11 @@ export class Worktrees {
       sessions(): Session[];
       recentFolders(): string[];
       onChange(repos: WorktreeRepo[]): void;
+      /**
+       * The repos whose background fetch can't sign in to a host now (empty: it can again), told when that changes, so
+       * you hear it once (and never get a sign-in window from it)
+       */
+      onSignIn?(host: string, repos: string[]): void;
       git?: Git;
       now?: () => number;
     },
@@ -151,7 +184,38 @@ export class Worktrees {
   private async fetch(root: string): Promise<void> {
     if (this.now() - (this.fetched.get(key(root)) ?? 0) < FETCH_EVERY) return;
     this.fetched.set(key(root), this.now());
-    await this.git(root, ['fetch', '--prune', '--quiet', 'origin']);
+    const r = await this.git(root, ['fetch', '--prune', '--quiet', 'origin']);
+    // couldn't sign in, or can again: said once per change (offline and the like: nothing to say)
+    const failed = !r.ok && SIGN_IN_FAILED.test(r.err ?? '');
+    if (!r.ok && !failed) return;
+    const host = remoteHost((await this.git(root, ['remote', 'get-url', 'origin'])).out);
+    if (!host) return;
+    const known = this.signIn.has(host);
+    const set = this.signIn.get(host) ?? new Set<string>();
+    if (known && failed === set.has(root)) return;
+    if (failed) set.add(root);
+    else set.delete(root);
+    this.signIn.set(host, set);
+    this.o.onSignIn?.(host, [...set]);
+  }
+
+  /**
+   * You asked to sign in (the Inbox's note): one fetch of a repo that couldn't, this time allowed to ask (Credential
+   * Manager's sign-in window opens, as you expect it to), then the rest of that host's at once; the note follows.
+   */
+  async signInTo(host: string): Promise<{ ok: true } | { ok: false; error: string }> {
+    const roots = [...(this.signIn.get(host) ?? [])];
+    // after a restart the note can outlive what this start knows: any repo of that host will do
+    if (!roots.length) for (const r of this.repos.values()) if (remoteHost((await this.git(r.root, ['remote', 'get-url', 'origin'])).out) === host) roots.push(r.root);
+    if (!roots.length) return { ok: false, error: `No repo of ${host} to sign in with` };
+    const r = await this.git(roots[0], ['fetch', '--prune', '--quiet', 'origin'], { ask: true });
+    if (!r.ok) return { ok: false, error: (r.err ?? '').trim().split('\n').filter(Boolean).pop()?.replace(/^fatal:\s*/, '') || "The sign-in didn't work" };
+    for (const root of roots) {
+      this.fetched.delete(key(root));
+      await this.fetch(root);
+      void this.refresh(root).catch(() => {});
+    }
+    return { ok: true };
   }
 
   private async readRepo(root: string, mine: boolean): Promise<WorktreeRepo> {

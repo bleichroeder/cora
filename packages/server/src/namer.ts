@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type { BrainEvent, SessionInfo, Settings } from '@cora/shared';
+import { SESSION_ICONS, titleCase, type BrainEvent, type SessionInfo, type Settings } from '@cora/shared';
 import { cleanEnv, defaultClaudeCmd } from './pty';
 
 /**
@@ -18,9 +18,13 @@ const FRESH_MS = 5 * 60_000;
 const MAX_QUEUE = 20;
 
 const SYSTEM = [
-  "You name coding sessions. Reply with only a short name (3 to 5 words) for the session that begins with the user's message:",
-  'sentence case, no quotes, no markdown, no punctuation at the end, no explanation.',
-  'Examples: Fix hooks sink; Jira 2.9 prod audit; Add dark mode toggle.',
+  "You name coding sessions and pick an icon for each. For the session that begins with the user's message, reply with one line:",
+  'a short name (3 to 5 words) in Title Case, then " | ", then one icon name from the list below, written exactly as it is there.',
+  'No quotes, no markdown, no punctuation at the end of the name, no explanation.',
+  'The icon depicts what the work is about, as specifically as you can (a rocket for a release, a gauge for a load test, a key for a login fix):',
+  "not a generic one like Code, Terminal or Bug when a more specific one fits, and not one the user's other sessions already use when another fits as well.",
+  'Examples: Fix Hooks Sink | Webhook; Jira 2.9 Prod Audit | ClipboardCheck; Add Dark Mode Toggle | Moon.',
+  `Icons: ${SESSION_ICONS.join(' ')}`,
 ].join(' ');
 
 export const namerDir = (dataDir: string) => join(dataDir, 'namer');
@@ -37,10 +41,25 @@ export const projectSlug = (cwd: string) => cwd.replace(/[^a-zA-Z0-9]/g, '-');
 export const isNamerSlug = (slug: string, dir: string) => slug.toLowerCase() === projectSlug(dir).toLowerCase();
 
 /** What the model reads: the instruction is the system prompt; this is the message (trimmed). */
-export function namePrompt(text: string): string {
+export function namePrompt(text: string, inUse: string[] = []): string {
   let t = text.trim();
   if (t.length > MAX_PROMPT) t = t.slice(0, MAX_PROMPT).trimEnd() + '…';
-  return `Name the session that begins with this message:\n\n<message>\n${t}\n</message>`;
+  const used = inUse.length ? `\n\nIcons the user's other open sessions use: ${[...new Set(inUse)].join(', ')}` : '';
+  return `Name the session that begins with this message:\n\n<message>\n${t}\n</message>${used}`;
+}
+
+const ICON_BY_KEY = new Map(SESSION_ICONS.map((n) => [n.toLowerCase(), n]));
+/**
+ * The model's reply as a name (Title Case) and an icon: "Fix Hooks Sink | Webhook". The icon is one of the list
+ * (any case, dashes or spaces: "key-round" is KeyRound), else none; no "|" at all: just a name.
+ */
+export function parseNamed(out: string): { name: string; icon: string | null } | null {
+  const line = out.split(/\r?\n/).map((l) => l.trim()).find(Boolean) ?? '';
+  const bar = line.lastIndexOf('|');
+  const name = sanitizeName(bar >= 0 ? line.slice(0, bar) : line);
+  if (!name) return null;
+  const key = bar >= 0 ? line.slice(bar + 1).replace(/[^a-z0-9]/gi, '').toLowerCase() : '';
+  return { name: titleCase(name), icon: (key && ICON_BY_KEY.get(key)) || null };
 }
 
 /** A clean name from the model's reply, or null for junk (refusals, rambling, nothing). */
@@ -130,7 +149,8 @@ export const runCommand: RunFn = (cmd, o) =>
     child.stdin.end(o.input);
   });
 
-type Job = { sessionId: string; text: string; done(name: string | null): void };
+/** `iconOnly`: a session named before icons were picked: only its icon is wanted (its name stays). */
+type Job = { sessionId: string; text: string; iconOnly?: boolean; done(name: string | null): void };
 
 /** Asks for names one at a time, off the pipeline's path. */
 export class Namer {
@@ -140,7 +160,7 @@ export class Namer {
   private tried = new Set<string>();
   private run: RunFn;
 
-  constructor(private o: { dataDir: string; onName(sessionId: string, name: string): void; run?: RunFn; claudeCmd?: string[]; timeoutMs?: number }) {
+  constructor(private o: { dataDir: string; onName(sessionId: string, name: string, icon: string | null): void; /** an icon for a session named before icons were picked */ onIcon?(sessionId: string, icon: string): void; /** icons the open sessions use (it picks another when one fits as well) */ iconsInUse?: () => string[]; run?: RunFn; claudeCmd?: string[]; timeoutMs?: number }) {
     this.dir = namerDir(o.dataDir);
     this.run = o.run ?? runCommand;
   }
@@ -150,6 +170,14 @@ export class Namer {
     if (this.tried.has(sessionId) || this.queue.length >= MAX_QUEUE) return;
     this.tried.add(sessionId);
     void this.enqueue(sessionId, text);
+  }
+
+  /** An icon for a session named before icons were picked (its name and first prompt say what it's about); never waits. */
+  iconFor(sessionId: string, text: string): void {
+    void new Promise<string | null>((done) => {
+      this.queue.push({ sessionId, text, iconOnly: true, done });
+      void this.pump();
+    });
   }
 
   /** On request ("Suggest a name"): resolves with the name, or null when none came back. */
@@ -172,8 +200,11 @@ export class Namer {
       for (let job = this.queue.shift(); job; job = this.queue.shift()) {
         let name: string | null = null;
         try {
-          name = await this.ask(job.text);
-          if (name) this.o.onName(job.sessionId, name);
+          const got = await this.ask(job.text);
+          name = got?.name ?? null;
+          if (got && job.iconOnly) {
+            if (got.icon) this.o.onIcon?.(job.sessionId, got.icon);
+          } else if (got) this.o.onName(job.sessionId, got.name, got.icon);
         } catch (e) {
           console.error('[cora] naming failed', (e as Error).message);
         }
@@ -184,13 +215,13 @@ export class Namer {
     }
   }
 
-  private async ask(text: string): Promise<string | null> {
+  private async ask(text: string): Promise<{ name: string; icon: string | null } | null> {
     mkdirSync(this.dir, { recursive: true });
     writeFileSync(join(this.dir, 'settings.json'), JSON.stringify({ disableAllHooks: true }, null, 2) + '\n');
     writeFileSync(join(this.dir, 'system-prompt.md'), SYSTEM);
     const cmd = [...(this.o.claudeCmd ?? defaultClaudeCmd()), ...namerArgs(this.dir)];
-    const r = await this.run(cmd, { cwd: this.dir, env: namerEnv(process.env), input: namePrompt(text), timeoutMs: this.o.timeoutMs ?? TIMEOUT_MS });
+    const r = await this.run(cmd, { cwd: this.dir, env: namerEnv(process.env), input: namePrompt(text, this.o.iconsInUse?.() ?? []), timeoutMs: this.o.timeoutMs ?? TIMEOUT_MS });
     if (r.timedOut || r.code !== 0) return null;
-    return sanitizeName(r.stdout);
+    return parseNamed(r.stdout);
   }
 }

@@ -68,6 +68,7 @@ export class Registry {
     }
 
     let agentState: AgentState | undefined;
+    let turnAt: number | undefined;
     const fl = this.flight(sid, e.agentId);
     switch (e.kind) {
       case 'tool':
@@ -85,6 +86,8 @@ export class Registry {
         // a message you sent while it works, as queued, says nothing of what it's doing
         if (e.kind === 'prompt' && e.queue) break;
         if (e.agentId !== 'main' && this.store.getAgent(sid, e.agentId)?.state === 'done') break;
+        // your prompt: a turn begins (the nav counts how long it's been working from here)
+        if (e.kind === 'prompt' && e.agentId === 'main') turnAt = e.ts;
         agentState = fl.size ? 'working' : 'thinking';
         break;
       case 'turn_end':
@@ -110,7 +113,7 @@ export class Registry {
         break;
     }
     if (agentState) this.setAgentState(sid, e.agentId, agentState);
-    this.refreshSession(sid, { lastTs: e.ts, startedAt: e.ts });
+    this.refreshSession(sid, { lastTs: e.ts, startedAt: e.ts, ...(turnAt ? { turnAt } : {}) });
   }
 
   /** Sessions pruned from history: what's kept of them here goes too. */
