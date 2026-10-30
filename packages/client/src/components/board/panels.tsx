@@ -17,6 +17,7 @@ import { MemePanel } from './MemePanel';
 import { JournalPanel } from './JournalPanel';
 import { IdePanel } from './IdePanel';
 import { WorktreesPanel } from './WorktreesPanel';
+import { TodayPanel } from './TodayPanel';
 import { GridOverview } from '../GridOverview';
 import './panels.css';
 
@@ -47,6 +48,7 @@ const BODIES: Partial<Record<PanelKind, React.ComponentType<Props>>> = {
   // VS Code runs on your PC, at an address only it can open: from another device (the iPad), a word instead
   ide: (p: Props) => <IdePanel {...p} />,
   worktrees: WorktreesPanel,
+  today: TodayPanel,
   constellation: ConstellationPanel,
   members: MembersPanel,
   thread: ThreadPanel,

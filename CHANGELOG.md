@@ -4,6 +4,31 @@ What changed in each release. Cora updates itself; each update's notes are on it
 
 ## Unreleased
 
+## 0.1.18
+
+- **Cora knows your day.** She reads your Google calendar (read only, through the same Google sign-in as Gmail; add
+  the calendar permission and reconnect in Settings › Gmail). A **Today** panel for Cora's board: a strip of the day,
+  the next call as one card with a countdown, Join and Prep notes, then the rest of today and tomorrow. Before each
+  call (15 minutes by default): an Inbox item with Join and Prep notes, Cora's brief (who it's with, what it's
+  about, what's connected to it; spoken or written), and a standup's notes drafted from the Standup template. All of
+  it in Settings › Calendar.
+- **Journals that point at things.** Each journal entry keeps the tickets, merge requests, issues, explains and
+  artifacts it's about, its repo and branch, and a kind (done, decision, finding, blocker). Sessions and Cora can
+  search them (`journal_search`), and standup and meeting notes are drafted from them first.
+- **Sessions can talk to Cora.** When you ask a session to tell Cora something, or it answers what she asked, it
+  can (`tell_cora`); never on its own. Cora's messages to sessions now say they're hers. A session telling Cora
+  something sends its orb to hers and back.
+- **Fewer "Git sign-in needed" notes.** Cora's background fetches run one at a time (several at once raced Git
+  Credential Manager's refresh of a GitLab sign-in) and try once more before saying anything.
+- **Closing a shell no longer takes every terminal with it.** A second kill of the same terminal could crash the
+  terminal host; a terminal is now ended once, ever. When a host does go away, its logs are kept (ptyhost.prev.log).
+- **No more console hosts left behind.** Each terminal that exited used to leave a Windows console host running
+  (about 8 MB each); terminals now use their own console, which goes with them. A session's shells close when the
+  session really ends.
+- **Slack messages from sessions look like theirs.** A session's message carries a small banner in its own colour,
+  with its orb and its icon (and never anything private); Cora's says just CORA. If the banner can't be drawn, a
+  still orb is used instead. Replies in a DM thread stay in that thread.
+
 ## 0.1.17
 
 - **A new left nav.** Drag its edge to make it wider or narrower (240 to 440px, 300 to start, kept per device;

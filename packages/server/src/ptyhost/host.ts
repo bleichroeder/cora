@@ -4,7 +4,7 @@ import { sameSecret } from '../config';
 import { PROTOCOL_VERSION, onLines, sendLine, type ClientMsg, type HostTerm, type TermMeta } from './protocol';
 import { nodePtySpawn, type PtyLike, type SpawnFn } from './spawn';
 
-type Term = { id: string; meta: TermMeta; pty: PtyLike | null; alive: boolean; exitCode?: number; buf: string; endedAt?: number };
+type Term = { id: string; meta: TermMeta; pty: PtyLike | null; alive: boolean; exitCode?: number; buf: string; endedAt?: number; /** being ended (a kill was sent) */ killing?: boolean };
 
 export type HostOptions = {
   path: string;
@@ -78,7 +78,14 @@ export async function startHost(o: HostOptions): Promise<Host> {
       if (m.cols > 1 && m.rows > 1) terms.get(m.id)?.pty?.resize(Math.floor(m.cols), Math.floor(m.rows));
       return;
     }
-    if (m.t === 'kill') return void terms.get(m.id)?.pty?.kill();
+    if (m.t === 'kill') {
+      // once: a terminal already being ended isn't ended again (a closed panel can ask for the same shell twice)
+      const t = terms.get(m.id);
+      if (!t?.pty || t.killing) return;
+      t.killing = true;
+      log(`terminal ${t.id} kill`);
+      return void t.pty.kill();
+    }
     if (m.t === 'shutdown') {
       log('shutdown requested: ending all terminals');
       void close(true);

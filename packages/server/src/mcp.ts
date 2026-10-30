@@ -1,4 +1,6 @@
-import { parseSince } from '@cora/shared';
+import { FROM_CORA, JOURNAL_TAGS, parseSince, type JournalEntry, type JournalRefs, type JournalTag } from '@cora/shared';
+import type { Journal } from './journal';
+import type { CalendarApi } from './calendar';
 import type { FastifyInstance } from 'fastify';
 import type { MailOutbox } from './mailOutbox';
 import { envLine, type Environments } from './environments';
@@ -25,7 +27,7 @@ export type McpGmail = { gmail: Gmail; watches?: MailWatches; /** emails session
 export type McpSlack = { slack: Slack; outbox: Outbox; live?: SlackLive; /** a session's folder (where its attachments may come from) */ cwdOf?: (sessionId: string) => string | undefined };
 
 /** The orchestrator's tools: only for its own session, only while the feature is on. */
-export type McpOrchestrator = { isAgent(sessionId: string): boolean; deps(): OrchToolDeps; userTurn?(): boolean };
+export type McpOrchestrator = { isAgent(sessionId: string): boolean; deps(): OrchToolDeps; userTurn?(): boolean; /** a session tells Cora something (tell_cora) */ fromSession?(sessionId: string, text: string, reason: 'user_asked' | 'reply_to_cora'): { ok: true } | { ok: false; error: string } };
 
 export { PRESENT_TOOL } from '@cora/shared';
 
@@ -65,9 +67,9 @@ export type McpProjects = {
   /** for Cora's agent: every live project, its members, and its brief's first line */
   list(): string;
 };
-export type McpJournal = { add(sessionId: string, kind: 'entry' | 'wrapup', text: string): string; /** the Board's Journal panel */ read?(sessionId: string): { file: string; text: string } | null };
+export type McpJournal = { add(sessionId: string, kind: 'entry' | 'wrapup', text: string, more?: { refs?: JournalRefs; tag?: JournalTag }): string; /** the Board's Journal panel */ read?(sessionId: string): { file: string; text: string } | null; /** Journal 2: entries that match */ query?(q: Parameters<Journal['query']>[0]): JournalEntry[] };
 
-function buildServer(settings: Settings, sessionId: string | null, s?: McpSlack, orch?: McpOrchestrator, env?: Environments, deploys?: Deploys, notes?: McpNotes, mail?: McpGmail, /** the caller proved it's Cora's agent */ proven = false, /** drives the dashboards (open_tab) */ ui?: (cmd: UiCommand) => void, live?: McpLive, memes?: Memes, journal?: McpJournal, debrief?: McpDebrief, secrets?: McpSecrets, projects?: McpProjects): McpServer {
+function buildServer(settings: Settings, sessionId: string | null, s?: McpSlack, orch?: McpOrchestrator, env?: Environments, deploys?: Deploys, notes?: McpNotes, mail?: McpGmail, /** the caller proved it's Cora's agent */ proven = false, /** drives the dashboards (open_tab) */ ui?: (cmd: UiCommand) => void, live?: McpLive, memes?: Memes, journal?: McpJournal, debrief?: McpDebrief, secrets?: McpSecrets, projects?: McpProjects, calendar?: CalendarApi): McpServer {
   // a session id alone says nothing: only Cora's own agent (with its own key) is Cora (docs/audit-2026-10-20.md S3)
   const asCora = (sid: string | null): sid is string => !!(proven && orch && sid && orch.isAgent(sid));
   const mode = settings.explains.mode;
@@ -150,6 +152,49 @@ function buildServer(settings: Settings, sessionId: string | null, s?: McpSlack,
       },
       async ({ layout }) => ({ content: [{ type: 'text', text: `Asked Cora to lay out the user's Board for ${BOARD_LAYOUT_INFO[layout].name.toLowerCase()} (a page of its own).` }] }),
     );
+  // Cora's agent: the user's calls today and tomorrow (their Google calendar, read only), a call's prep notes, its brief
+  if (calendar && asCora(sessionId)) {
+    const at = (t: number) => new Date(t).toLocaleString('en-US', { weekday: 'short', hour: 'numeric', minute: '2-digit' });
+    server.registerTool(
+      'calendar_today',
+      {
+        title: "The user's calls",
+        description: "The user's calls today and tomorrow from their Google calendar (read only): when, what, with whom, whether it has a video link, a standup, its prep note, and its id (for calendar_prep and calendar_brief).",
+        inputSchema: {},
+      },
+      async () => {
+        const m = calendar.msg();
+        if (m.status.state === 'off') return { content: [{ type: 'text', text: "The calendar isn't connected (it uses the Google sign-in in Settings › Gmail)." }] };
+        if (m.status.state === 'scope') return { content: [{ type: 'text', text: "Cora's Google sign-in doesn't have the calendar permission: the user reconnects in Settings › Gmail." }] };
+        const lines = m.events.map((e) => {
+          const who = e.attendees.filter((a) => !a.self).map((a) => a.name ?? a.email);
+          return `- ${at(e.start)}–${new Date(e.end).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })} "${e.title}"${who.length ? ` with ${who.slice(0, 8).join(', ')}${who.length > 8 ? ` and ${who.length - 8} more` : ''}` : ''}${e.link ? ' · video link' : ''}${e.standup ? ' · standup' : ''}${e.prep ? ' · has prep notes' : ''} · id ${e.id}`;
+        });
+        return { content: [{ type: 'text', text: `${m.status.error ? `(${m.status.error})\n` : ''}${lines.length ? lines.join('\n') : 'No calls today or tomorrow.'}` }] };
+      },
+    );
+    server.registerTool(
+      'calendar_prep',
+      {
+        title: 'Prep notes for a call',
+        description: "Draft prep notes for one of the user's calls (by its id), in their Notes: a standup from the Standup template (yesterday / today / blockers), any other call from the Meeting template (its context from the week's work and the journal entries about what the invite names), titled \"Prep · <title> · <date>\". Only when the user said yes to prep notes. Made once: asked again, it gives the same note.",
+        inputSchema: { id: z.string().min(1).max(1024).describe("The call's id (from calendar_today or a [Calendar] line)") },
+      },
+      async ({ id }) => {
+        const r = await calendar.prep(id);
+        return r.ok ? { content: [{ type: 'text', text: `Prep notes are in the user's Notes (note ${r.id}); the Today panel links them.` }] } : fail(r.error);
+      },
+    );
+    server.registerTool(
+      'calendar_brief',
+      {
+        title: "Keep a call's brief with it",
+        description: "After you've written a call's brief (from a [Calendar] line), keep it with the call's Inbox item, so the user can read it there. Plain text or markdown; the brief as you wrote it.",
+        inputSchema: { id: z.string().min(1).max(1024), text: z.string().min(1).max(6000) },
+      },
+      async ({ id, text }) => (calendar.brief(id, text) ? { content: [{ type: 'text', text: 'Kept with the call in the Inbox.' }] } : fail("That call isn't on the calendar today or tomorrow.")),
+    );
+  }
   // Cora's agent: the user's projects (which sessions belong together, and what for)
   if (projects && asCora(sessionId))
     server.registerTool(
@@ -187,6 +232,27 @@ function buildServer(settings: Settings, sessionId: string | null, s?: McpSlack,
       },
       async ({ kind, text, to }) => (projects!.post(sessionId!, kind, text, to) ? { content: [{ type: 'text', text: `Posted to "${proj.name}".` }] } : fail("Couldn't post (the project's coordination is off, or this session can't post)."))
     );
+  // A session tells Cora something: when the user asked it to, or to answer what Cora sent it (never on its own)
+  if (orch?.fromSession && sessionId && !asCora(sessionId) && settings.orchestrator?.enabled)
+    server.registerTool(
+      'tell_cora',
+      {
+        title: 'Tell Cora',
+        description: [
+          "Send a message to Cora, the user's assistant in Cora (she sees all their sessions, tickets, Slack and mail, and can act for them).",
+          `Only when the user asked you to tell or ask Cora something in this turn (reason user_asked), or to answer a message from Cora (it starts "${FROM_CORA}"; reason reply_to_cora) when she asked you to report back later. Never on your own.`,
+          'When Cora asked you something and is waiting, just answer in your reply: she reads it. Say it plainly, with what she needs (ids, links, what you found or did).',
+        ].join(' '),
+        inputSchema: {
+          text: z.string().min(1).max(4000).describe('The message'),
+          reason: z.enum(['user_asked', 'reply_to_cora']).describe('Why: the user asked you to, or you answer Cora'),
+        },
+      },
+      async ({ text, reason }) => {
+        const r = orch.fromSession!(sessionId, text, reason);
+        return r.ok ? { content: [{ type: 'text', text: 'Cora has it (she reads it when she is free).' }] } : fail(r.error);
+      },
+    );
   // The session's journal (when the user keeps them): a milestone, or its wrap-up, in its markdown file
   if (journal && sessionId && !asCora(sessionId) && settings.journal?.on !== false)
     server.registerTool(
@@ -197,19 +263,65 @@ function buildServer(settings: Settings, sessionId: string | null, s?: McpSlack,
           "Add to this session's journal, a markdown file Cora keeps for the user (Documents\\Cora\\Journal), so there's a history of what was done.",
           'At a milestone (a finding, a decision, something done) add a short entry: what and why, in a few lines, with links (MR, ticket, commit) when there are some.',
           "When the work is done, add a wrap-up (wrapup: true): what was done, what's left, links. Not for every step.",
+          "Cora tags each entry with this session, its repo, branch and ticket, the explains you wrote since your last entry, and the Jira keys, merge requests (!412), issues (#212) and links in your text; say what kind it is (done, decision, finding, blocker) and add any refs your text doesn't name (artifacts: links or file paths of what you made).",
         ].join(' '),
         inputSchema: {
           text: z.string().min(1).max(6000).describe('The entry, in markdown'),
           wrapup: z.boolean().optional().describe('This is the wrap-up: the work is done'),
+          kind: z.enum(JOURNAL_TAGS).optional().describe('What it is: done, decision, finding, blocker'),
+          tickets: z.array(z.string().max(40)).max(20).optional().describe("Jira keys it is about (beyond the session's own)"),
+          mrs: z.array(z.string().max(20)).max(20).optional().describe('Merge requests, like !412'),
+          issues: z.array(z.string().max(20)).max(20).optional().describe('GitLab issues, like #212'),
+          artifacts: z.array(z.string().max(500)).max(20).optional().describe('What you made: links or file paths (a report, a video, a claude.ai page)'),
         },
       },
-      async ({ text, wrapup }) => {
+      async ({ text, wrapup, kind, tickets, mrs, issues, artifacts }) => {
         try {
-          const file = journal.add(sessionId, wrapup ? 'wrapup' : 'entry', text);
+          const norm = (xs: string[] | undefined, p: string) => xs?.map((x) => x.trim()).filter(Boolean).map((x) => (p && !x.startsWith(p) ? p + x : x));
+          const refs: JournalRefs = {
+            ...(tickets?.length ? { tickets: tickets.map((t) => t.trim().toUpperCase()) } : {}),
+            ...(mrs?.length ? { mrs: norm(mrs, '!') } : {}),
+            ...(issues?.length ? { issues: norm(issues, '#') } : {}),
+            ...(artifacts?.length ? { artifacts: norm(artifacts, '') } : {}),
+          };
+          const file = journal.add(sessionId, wrapup ? 'wrapup' : 'entry', text, { refs, ...(kind ? { tag: kind } : {}) });
           return { content: [{ type: 'text', text: `Added to the journal${wrapup ? ' (wrap-up)' : ''}: ${file}` }] };
         } catch (e) {
           return fail(`Couldn't write the journal: ${(e as Error).message}`);
         }
+      },
+    );
+  // Journal 2: what sessions wrote, found by ticket, merge request, repo, time or words (Cora and sessions alike)
+  if (journal?.query && sessionId && settings.journal?.on !== false)
+    server.registerTool(
+      'journal_search',
+      {
+        title: "Search the sessions' journals",
+        description: [
+          'What sessions wrote in their journals (what was done and why, decisions, findings, blockers), newest first, each with its session, repo, time and refs (tickets, merge requests, issues, explains, artifacts).',
+          'Find by ticket (ACME-5340), merge request (!412), repo, since (e.g. 2d, 8h), kind or words. Use it for "what happened on X", "what did we decide about Y", a standup, or a call\'s brief.',
+        ].join(' '),
+        inputSchema: {
+          ticket: z.string().max(40).optional().describe('A Jira key'),
+          mr: z.string().max(20).optional().describe('A merge request, like !412'),
+          repo: z.string().max(120).optional().describe("A repo's folder name"),
+          since: z.string().max(20).optional().describe('How far back: e.g. 8h, 2d, 1w (default: all)'),
+          kind: z.enum(JOURNAL_TAGS).optional(),
+          words: z.string().max(200).optional().describe('Words that must all appear'),
+          limit: z.number().int().min(1).max(50).optional(),
+        },
+      },
+      async ({ ticket, mr, repo, since, kind, words, limit }) => {
+        const ms = since ? parseSince(since) : null;
+        if (since && ms == null) return fail('since is like 8h, 2d or 1w');
+        const hits = journal.query!({ ...(ms != null ? { since: Date.now() - ms } : {}), ...(ticket ? { ticket } : {}), ...(mr ? { mr } : {}), ...(repo ? { repos: [repo] } : {}), ...(kind ? { tag: kind } : {}), ...(words ? { words } : {}), limit: limit ?? 20 });
+        if (!hits.length) return { content: [{ type: 'text', text: 'No journal entries match.' }] };
+        const when = (t: number) => new Date(t).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+        const refs = (e: JournalEntry) => [...(e.refs.tickets ?? []), ...(e.refs.mrs ?? []), ...(e.refs.issues ?? []), ...(e.refs.explains ?? []).map((x) => `explain "${x.title}"`), ...(e.refs.artifacts ?? [])].join(', ');
+        const text = hits
+          .map((e) => `[${when(e.at)}] ${e.session} (${e.repo}${e.branch ? `@${e.branch}` : ''})${e.kind === 'wrapup' ? ' · wrap-up' : ''}${e.tag ? ` · ${e.tag}` : ''}${refs(e) ? ` · ${refs(e)}` : ''}\n${e.text.length > 1200 ? `${e.text.slice(0, 1200)}…` : e.text}`)
+          .join('\n\n');
+        return { content: [{ type: 'text', text }] };
       },
     );
   // Cora Secrets: a session uses the user's tokens by name; Cora runs the command with them and masks them in the output
@@ -893,7 +1005,7 @@ function registerSlack(server: McpServer, sessionId: string | null, { slack, out
       inputSchema: {
         to: z.string().min(1).max(200).describe('Who to: an id from slack_find (best), #channel, @handle, email or a name. Ignored when thread is a message link.'),
         text: z.string().min(1).max(8000).describe('The message'),
-        thread: z.string().max(500).optional().describe("Where to reply: a Slack message link (in a channel: its thread; in a DM: the DM itself, unless the message is in a thread), or a thread id (ts) with `to`"),
+        thread: z.string().max(500).optional().describe("A thread to reply in: a Slack message link (its thread; a link to a reply: the thread it's in), in a channel or a DM, or a thread id (ts) with `to`. Leave it out to post in the conversation itself (how people talk in a DM)"),
         files: z
           .array(z.string().min(1).max(1000))
           .max(ATTACH_MAX)
@@ -914,15 +1026,14 @@ function registerSlack(server: McpServer, sessionId: string | null, { slack, out
         const withFiles = files?.length ? ` with ${files.length === 1 ? files[0].name : `${files.length} files`}` : '';
         const link = thread ? parseSlackLink(thread) : null;
         const target = await slack.resolve(link ? link.channel : to);
-        // in a DM (or a group DM) people talk in the conversation: a message that isn't in a thread is answered there
-        const dm = !!link && !link.threadTs && (link.channel.startsWith('D') || target.kind === 'group');
-        const threadTs = dm ? undefined : link ? (link.threadTs ?? link.ts) : thread && /^\d+\.\d+$/.test(thread.trim()) ? thread.trim() : undefined;
-        if (thread && !threadTs && !dm) return fail('thread must be a Slack message link or a thread id like 1700000000.123456');
-        const where = threadTs ? ' (in the thread)' : dm ? ' (in the DM, not a thread: in a DM, reply in the conversation)' : '';
+        // a thread you name is where it goes, in a DM too (a link to a reply: its thread); none: the conversation itself
+        const threadTs = link ? (link.threadTs ?? link.ts) : thread && /^\d+\.\d+$/.test(thread.trim()) ? thread.trim() : undefined;
+        if (thread && !threadTs) return fail('thread must be a Slack message link or a thread id like 1700000000.123456');
+        const where = threadTs ? ' (in the thread)' : '';
         // to the user themselves (their own DM): nobody else reads it, so there's nothing to confirm; it goes at once
         const me = slack.status();
         if (me.connected && target.kind === 'person' && target.id === me.userId) {
-          const r = await outbox.sendNow({ to: target, text, sessionId: sessionId ?? null, ...(banner === false ? { banner: false } : {}), ...(threadTs ? { threadTs } : {}), ...(files ? { files } : {}) });
+          const r = await outbox.sendNow({ to: target, text, reviewed: true, sessionId: sessionId ?? null, ...(banner === false ? { banner: false } : {}), ...(threadTs ? { threadTs } : {}), ...(files ? { files } : {}) });
           return { content: [{ type: 'text', text: `Sent to the user's own DM${withFiles}, straight away: a message only they read needs no OK. ${r.link}` }] };
         }
         // asked for in the user's own words (Cora only): out at once, with a short undo
@@ -958,13 +1069,13 @@ function registerSlack(server: McpServer, sessionId: string | null, { slack, out
  * Streamable-HTTP MCP endpoint (stateless: a fresh server per request). The tool itself has no side effects:
  * the document travels in the tool call, which lands in the transcript, and the UI renders it from there.
  */
-export function registerMcp(app: FastifyInstance, token: string, getSettings: () => Settings, slack?: McpSlack, orch?: McpOrchestrator, env?: Environments, deploys?: Deploys, notes?: McpNotes, mail?: McpGmail, /** Cora's agent's own key (Cora passes its own; tests use the hook token) */ agentToken: string = token, /** drives the dashboards (open_tab) */ ui?: (cmd: UiCommand) => void, /** live explains */ live?: McpLive, /** the Vibes panel */ memes?: Memes, /** sessions' journals */ journal?: McpJournal, /** Cora Secrets */ secrets?: McpSecrets, /** debriefs */ debrief?: McpDebrief, /** projects */ projects?: McpProjects): void {
+export function registerMcp(app: FastifyInstance, token: string, getSettings: () => Settings, slack?: McpSlack, orch?: McpOrchestrator, env?: Environments, deploys?: Deploys, notes?: McpNotes, mail?: McpGmail, /** Cora's agent's own key (Cora passes its own; tests use the hook token) */ agentToken: string = token, /** drives the dashboards (open_tab) */ ui?: (cmd: UiCommand) => void, /** live explains */ live?: McpLive, /** the Vibes panel */ memes?: Memes, /** sessions' journals */ journal?: McpJournal, /** Cora Secrets */ secrets?: McpSecrets, /** debriefs */ debrief?: McpDebrief, /** projects */ projects?: McpProjects, /** your Google calendar (Cora's agent) */ calendar?: CalendarApi): void {
   app.post('/mcp', async (req, reply) => {
     if (!sameSecret(hookToken(req), token)) return reply.code(401).send({ error: 'bad token' });
     // sessions launched here say who they are (older ones don't: their drafts are matched to them by their events)
     const sid = req.headers[SESSION_HEADER];
     const proven = !!agentToken && sameSecret(req.headers[AGENT_HEADER], agentToken);
-    const server = buildServer(getSettings(), typeof sid === 'string' && /^[\w-]{8,80}$/.test(sid) ? sid : null, slack, orch, env, deploys, notes, mail, proven, ui, live, memes, journal, debrief, secrets, projects);
+    const server = buildServer(getSettings(), typeof sid === 'string' && /^[\w-]{8,80}$/.test(sid) ? sid : null, slack, orch, env, deploys, notes, mail, proven, ui, live, memes, journal, debrief, secrets, projects, calendar);
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
     reply.hijack();
     reply.raw.on('close', () => {

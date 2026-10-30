@@ -39,6 +39,11 @@ export const SPOTLIGHT_TOOL = 'mcp__cora__spotlight';
 export const BOARD_TOOL = 'mcp__cora__board';
 /** a session adds to its journal (a milestone, its wrap-up) */
 export const JOURNAL_TOOL = 'mcp__cora__journal';
+export const JOURNAL_SEARCH_TOOL = 'mcp__cora__journal_search';
+/** A session telling Cora something (the user asked it to, or it answers Cora). */
+export const TELL_CORA_TOOL = 'mcp__cora__tell_cora';
+/** What Cora's messages to a session start with, so the session knows they're Cora's (and can answer with tell_cora). */
+export const FROM_CORA = '(Cora, for the user:)';
 /** a session walks the user through its work (Debrief): the script, checked and kept by Cora */
 export const DEBRIEF_TOOL = 'mcp__cora__debrief';
 /** Cora Secrets: the names a session may use, and running a command with them (values never shown to it) */

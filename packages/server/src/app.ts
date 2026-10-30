@@ -33,6 +33,7 @@ import { resolveTicketStart } from './ticketStart';
 import { setGitlabHost } from './gitlabHost';
 import type { Registry } from './registry';
 import { listDirs, listHistory } from './history';
+import type { CalendarApi } from './calendar';
 import { registerMcp, type McpSlack , type McpJournal, type McpSecrets, type McpProjects } from './mcp';
 import type { Debriefs } from './debriefs';
 import { deviceName, type Devices } from './devices';
@@ -171,6 +172,8 @@ export type AppDeps = {
   bot?: CoraBot;
   /** notes Cora drafts from templates */
   drafts?: Drafts;
+  /** your Google calendar (read only) */
+  calendar?: CalendarApi;
   /** is what Cora runs on still getting security fixes */
   security?: SecurityWatch;
   /** the Cora Orchestrator */
@@ -588,8 +591,17 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
         );
         // the agent's tool call can't wait that long (Claude Code gives up on it after a minute): it hears later
         const first = await Promise.race([job, new Promise<null>((r) => setTimeout(() => r(null), LAUNCH_ANSWER_MS))]);
-        if (first) return { terminal, ...first };
+        // started by Cora: its Slack banner says so
+        const byCora = () => {
+          const s = store.getSession(terminal.sessionId);
+          if (s && s.startedBy !== 'cora') hub.publishSession(store.upsertSession({ id: s.id, startedBy: 'cora' }));
+        };
+        if (first) {
+          if (first.sent) byCora();
+          return { terminal, ...first };
+        }
         void job.then((late) => {
+          if (late.sent) byCora();
           const s = store.getSession(terminal.sessionId);
           const name = s ? nameOf(s) : terminal.sessionId.slice(0, 8);
           o.feed.note(late.sent ? `"${name}" (${terminal.sessionId}) is ready and got its first prompt.` : `"${name}" (${terminal.sessionId}) never got its first prompt: ${late.why}.`);
@@ -691,7 +703,7 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
       return { ok: true, code: r.code, out: r.out, timedOut: r.timedOut };
     },
   });
-  registerMcp(app, config.hookToken, () => prefs.get(), d.slack, d.orchestrator ? { isAgent: (sid) => d.orchestrator!.isAgent(sid), deps: orchDeps, userTurn: () => d.orchestrator!.userTurn() } : undefined, d.environments, d.deploys, d.notes ? { notes: d.notes, nameOf: (sid) => { const s = store.getSession(sid); return s ? nameOf(s) : 'a session'; } } : undefined, d.gmail ? { gmail: d.gmail, ...(d.mailWatches ? { watches: d.mailWatches } : {}), ...(d.mailOutbox ? { outbox: d.mailOutbox } : {}), nameOf: (sid) => { const s = store.getSession(sid); return s ? nameOf(s) : 'a session'; } } : undefined, config.agentToken, (cmd) => hub.publishUi({ t: 'ui', cmd }), d.live, d.memes, d.journal, d.vault ? secretsFor(d.vault) : undefined, d.debriefs ? { make: (sid, script) => {
+  registerMcp(app, config.hookToken, () => prefs.get(), d.slack, d.orchestrator ? { isAgent: (sid) => d.orchestrator!.isAgent(sid), deps: orchDeps, userTurn: () => d.orchestrator!.userTurn(), fromSession: (sid, text, reason) => d.orchestrator!.fromSession(sid, text, reason) } : undefined, d.environments, d.deploys, d.notes ? { notes: d.notes, nameOf: (sid) => { const s = store.getSession(sid); return s ? nameOf(s) : 'a session'; } } : undefined, d.gmail ? { gmail: d.gmail, ...(d.mailWatches ? { watches: d.mailWatches } : {}), ...(d.mailOutbox ? { outbox: d.mailOutbox } : {}), nameOf: (sid) => { const s = store.getSession(sid); return s ? nameOf(s) : 'a session'; } } : undefined, config.agentToken, (cmd) => hub.publishUi({ t: 'ui', cmd }), d.live, d.memes, d.journal, d.vault ? secretsFor(d.vault) : undefined, d.debriefs ? { make: (sid, script) => {
     const s = store.getSession(sid);
     if (!s) return { ok: false, errors: ["Cora doesn't know this session yet"] };
     // the work it covers: the turns that changed its files (their prompts and changes), and what else changed then
@@ -707,7 +719,7 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
     });
     const r = d.debriefs!.make(sid, s.cwd, s.transcriptPath, script, span ? { from: span.from, covers: { changed: span.changed, missed: span.missed } } : {});
     return r.ok ? { ok: true, id: r.debrief.id, title: r.debrief.title, steps: r.debrief.steps.length, ...(span?.missed.length ? { missed: span.missed } : {}) } : r;
-  } } : undefined, d.projects ? mcpProjects(d.projects) : undefined);
+  } } : undefined, d.projects ? mcpProjects(d.projects) : undefined, d.calendar);
   // --- Cora Secrets: names and notes to the dashboard; a value only when you reveal one ---
   app.get('/api/secrets', { preHandler: requireUi }, async () => ({ list: d.vault?.list() ?? [] }));
   app.post<{ Body: { name?: unknown; value?: unknown; note?: unknown; scope?: unknown } }>('/api/secrets', { preHandler: requireAction }, async (req, reply) => {
@@ -1243,6 +1255,22 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
   const noGmail = { client: false, connected: false, watch: false };
   const gmailFail = (reply: FastifyReply, e: unknown) => reply.code(e instanceof GmailError && ['bad_client', 'no_client', 'bad_state'].includes(e.code) ? 400 : 502).send({ error: (e as Error).message });
   app.get('/api/gmail', { preHandler: requireUi }, async () => d.gmail?.status() ?? noGmail);
+  // your Google calendar: today's and tomorrow's calls; read again; a call marked as a standup (or not); its prep note
+  app.get('/api/calendar', { preHandler: requireUi }, async () => d.calendar?.msg() ?? { t: 'calendar', status: { state: 'off' }, events: [] });
+  app.post('/api/calendar/refresh', { preHandler: requireAction }, async (_req, reply) => (d.calendar ? (await d.calendar.refresh(), d.calendar.msg()) : reply.code(501).send({ error: 'not supported' })));
+  app.post<{ Body: { id?: unknown; on?: unknown } }>('/api/calendar/standup', { preHandler: requireAction }, async (req, reply) => {
+    if (!d.calendar) return reply.code(501).send({ error: 'not supported' });
+    const id = str(req.body?.id, 1024);
+    if (!id || typeof req.body?.on !== 'boolean') return reply.code(400).send({ error: 'id and on, please' });
+    return d.calendar.markStandup(id, req.body.on) ?? reply.code(404).send({ error: "That call isn't on your calendar today or tomorrow." });
+  });
+  app.post<{ Body: { id?: unknown } }>('/api/calendar/prep', { preHandler: requireAction }, async (req, reply) => {
+    if (!d.calendar) return reply.code(501).send({ error: 'not supported' });
+    const id = str(req.body?.id, 1024);
+    if (!id) return reply.code(400).send({ error: 'id, please' });
+    const r = await d.calendar.prep(id);
+    return r.ok ? { id: r.id } : reply.code(409).send({ error: r.error });
+  });
   app.post<{ Body: { json?: unknown } }>('/api/gmail/client', { preHandler: requireAction }, async (req, reply) => {
     if (!d.gmail) return reply.code(501).send({ error: 'not supported' });
     try {

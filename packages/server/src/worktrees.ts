@@ -62,6 +62,8 @@ export class Worktrees {
   /** sessions told to move into a worktree: its folder, and since when */
   private moving = new Map<string, { path: string; at: number }>();
   private git: Git;
+  /** fetches go one at a time: several at once race Credential Manager's refresh of a run-out GitLab sign-in */
+  private fetching: Promise<unknown> = Promise.resolve();
 
   constructor(
     private o: {
@@ -78,6 +80,8 @@ export class Worktrees {
       onSignIn?(host: string, repos: string[]): void;
       git?: Git;
       now?: () => number;
+      /** how long before a fetch that couldn't sign in tries once more (the sign-in may have been mid-refresh) */
+      retryMs?: number;
     },
   ) {
     this.git = o.git ?? realGit;
@@ -184,7 +188,14 @@ export class Worktrees {
   private async fetch(root: string): Promise<void> {
     if (this.now() - (this.fetched.get(key(root)) ?? 0) < FETCH_EVERY) return;
     this.fetched.set(key(root), this.now());
-    const r = await this.git(root, ['fetch', '--prune', '--quiet', 'origin']);
+    const once = () => this.queued(() => this.git(root, ['fetch', '--prune', '--quiet', 'origin']));
+    let r = await once();
+    // couldn't sign in: most often another git (a session's) was refreshing the same sign-in at that moment, and it
+    // works a few seconds later (as it did when you clicked Sign in): try once more before saying so
+    if (!r.ok && SIGN_IN_FAILED.test(r.err ?? '')) {
+      await new Promise((ok) => setTimeout(ok, this.o.retryMs ?? 5000));
+      r = await once();
+    }
     // couldn't sign in, or can again: said once per change (offline and the like: nothing to say)
     const failed = !r.ok && SIGN_IN_FAILED.test(r.err ?? '');
     if (!r.ok && !failed) return;
@@ -197,6 +208,13 @@ export class Worktrees {
     else set.delete(root);
     this.signIn.set(host, set);
     this.o.onSignIn?.(host, [...set]);
+  }
+
+  /** One fetch after another (whatever the one before did). */
+  private queued<T>(run: () => Promise<T>): Promise<T> {
+    const p = this.fetching.then(run, run);
+    this.fetching = p.catch(() => {});
+    return p;
   }
 
   /**

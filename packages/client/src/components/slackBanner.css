@@ -1,4 +1,4 @@
-/* Cora's Slack banner (SlackBanner.tsx): 480×120, recorded pixel for pixel into a GIF */
+/* Cora's Slack banner (SlackBanner.tsx): laid out at 480×120; recorded at 420×105 (the zoom below), pixel for pixel into a GIF */
 html.banner-page,
 html.banner-page body,
 html.banner-page #root {
@@ -61,4 +61,52 @@ html.banner-page #root {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* a session's: its icon as a large faint watermark at the
+   right edge, half off it (Cora's own has nothing there); its words keep clear of it */
+.slack-banner .sb-mark {
+  position: absolute;
+  right: -18px;
+  top: 50%;
+  transform: translateY(-50%) rotate(-8deg);
+  color: color-mix(in srgb, var(--cora) 34%, transparent);
+  pointer-events: none;
+  line-height: 0;
+}
+.slack-banner.session .sb-words {
+  padding-right: 64px;
+}
+.slack-banner.session .sb-who b {
+  letter-spacing: 0.2em;
+}
+/* the draft card's look at the banner that will go: drawn at its size, scaled to the card */
+.sd-preview {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 4 / 1;
+  margin: 6px 0 2px;
+  border-radius: 8px;
+  overflow: hidden;
+}
+.sd-preview .slack-banner {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform-origin: 0 0;
+  transform: scale(var(--k, 1));
+}
+
+/* recorded a little smaller than it's laid out (the desktop app captures 420×105): the same banner, at 7/8 */
+html.banner-page .slack-banner {
+  zoom: 0.875;
+}
+
+/* the still orb (no 3D to draw with): its colour, lit from the top left, with a glow */
+.slack-banner .sb-still {
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--cora) 35%, white), var(--cora) 52%, color-mix(in srgb, var(--cora) 45%, black));
+  box-shadow: 0 0 22px color-mix(in srgb, var(--cora) 55%, transparent);
 }

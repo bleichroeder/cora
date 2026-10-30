@@ -503,14 +503,17 @@ describe('Cora carrying on a conversation', () => {
     return { ...f, slack, outbox, turn, call, file };
   }
 
-  it('answers a DM message in the DM itself, and a message in a thread in its thread', async () => {
+  it('in a DM: a named thread is where it goes (a link to a reply: its thread); no thread: the conversation itself', async () => {
     const { call, posted } = await setup();
-    const r = await call('slack_send', { to: 'x', text: 'sure', thread: 'https://acme.slack.com/archives/D0DANA001/p1700000050000100' });
-    expect(r.content[0].text).toMatch(/in the DM, not a thread/);
-    expect(posted[0]).toMatchObject({ channel: 'D0DANA001', text: 'sure' });
-    expect(posted[0].thread_ts).toBeUndefined();
+    const r = await call('slack_send', { to: 'x', text: 'on that', thread: 'https://acme.slack.com/archives/D0DANA001/p1700000050000100' });
+    expect(r.content[0].text).toMatch(/in the thread/);
+    expect(posted[0]).toMatchObject({ channel: 'D0DANA001', text: 'on that', thread_ts: '1700000050.000100' });
     await call('slack_send', { to: 'x', text: 'in it', thread: 'https://acme.slack.com/archives/D0DANA001/p1700000060000100?thread_ts=1700000000.000100&cid=D0DANA001' });
     expect(posted[1]).toMatchObject({ channel: 'D0DANA001', thread_ts: '1700000000.000100' });
+    const plain = await call('slack_send', { to: '@dana', text: 'sure' });
+    expect(plain.content[0].text).not.toMatch(/thread/);
+    expect(posted[2]).toMatchObject({ channel: 'D-U1', text: 'sure' });
+    expect(posted[2].thread_ts).toBeUndefined();
   });
 
   it('sends without asking in a conversation you let it carry on, until you stop it', async () => {

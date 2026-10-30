@@ -167,6 +167,7 @@ describe('a fetch that cannot sign in', () => {
       onChange: () => {},
       onSignIn: (host, repos) => told.push([host, repos]),
       now: () => now,
+      retryMs: 0,
       git: (cwd, args) => (args[0] === 'fetch' ? Promise.resolve(fetch) : real(cwd, args)),
     });
     const round = async () => {
@@ -189,6 +190,43 @@ describe('a fetch that cannot sign in', () => {
     fetch = { ok: true, out: '' };
     await round();
     expect(told).toEqual([['gitlab.com', [repo]], ['gitlab.com', []]]);
+  });
+
+  it("tries once more before saying so (a sign-in being refreshed at that moment), and fetches one repo at a time", async () => {
+    const told: Array<[string, string[]]> = [];
+    let n = 0;
+    let open = 0;
+    let most = 0;
+    git(repo, 'remote', 'set-url', 'origin', 'https://gitlab.com/acme/repo.git');
+    const real = (cwd: string, args: string[]) => {
+      try {
+        return Promise.resolve({ ok: true, out: git(cwd, ...args) });
+      } catch {
+        return Promise.resolve({ ok: false, out: '' });
+      }
+    };
+    const w = new Worktrees({
+      mine: () => [repo],
+      sessions: () => [],
+      recentFolders: () => [],
+      onChange: () => {},
+      onSignIn: (host, repos) => told.push([host, repos]),
+      retryMs: 0,
+      git: async (cwd, args) => {
+        if (args[0] !== 'fetch') return real(cwd, args);
+        open++;
+        most = Math.max(most, open);
+        await new Promise((r) => setTimeout(r, 5));
+        open--;
+        // the first try races another git's refresh; the second works
+        return n++ === 0 ? { ok: false, out: '', err: "fatal: could not read Username for 'https://gitlab.com': terminal prompts disabled" } : { ok: true, out: '' };
+      },
+    });
+    await w.refresh();
+    await new Promise((r) => setTimeout(r, 300));
+    expect(n).toBe(2);
+    expect(told).toEqual([['gitlab.com', []]]);
+    expect(most).toBe(1);
   });
 
   it('reads a remote host from https, scp-like and ssh URLs', async () => {
@@ -220,6 +258,7 @@ describe('signing in from the note', () => {
       onChange: () => {},
       onSignIn: (host, repos) => told.push([host, repos]),
       now: () => now,
+      retryMs: 0,
       git: (cwd, args, o) => {
         if (args[0] !== 'fetch') return real(cwd, args);
         if (o?.ask) (asked.push(args), (signedIn = true));

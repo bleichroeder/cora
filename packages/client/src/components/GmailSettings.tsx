@@ -13,7 +13,7 @@ import { Icon } from './Icon';
 
 const openOut = (url: string) => (desktop?.openExternal ? desktop.openExternal(url) : void window.open(url, '_blank', 'noopener'));
 const CONSOLE = 'https://console.cloud.google.com';
-const SCOPES = 'https://www.googleapis.com/auth/gmail.readonly\nhttps://www.googleapis.com/auth/gmail.compose';
+const SCOPES = 'https://www.googleapis.com/auth/gmail.readonly\nhttps://www.googleapis.com/auth/gmail.compose\nhttps://www.googleapis.com/auth/calendar.readonly';
 
 async function call(method: string, url: string, body?: unknown): Promise<{ ok: true; v: any } | { ok: false; error: string }> {
   const r = await fetch(url, { method, headers: body ? { 'content-type': 'application/json' } : {}, ...(body ? { body: JSON.stringify(body) } : {}) }).catch(() => null);
@@ -116,9 +116,12 @@ export function GmailSection() {
               <Icon name="ExternalLink" size={12} /> New project
             </button>
           </Row>
-          <Row label="2. Turn on the Gmail API" hint="In that project.">
+          <Row label="2. Turn on the Gmail and Calendar APIs" hint="In that project (the calendar is for Cora's Today and her briefs before calls).">
             <button className="btn" onClick={() => openOut(`${CONSOLE}/apis/library/gmail.googleapis.com`)}>
               <Icon name="ExternalLink" size={12} /> Gmail API
+            </button>
+            <button className="btn ghost" onClick={() => openOut(`${CONSOLE}/apis/library/calendar-json.googleapis.com`)}>
+              <Icon name="ExternalLink" size={12} /> Calendar API
             </button>
           </Row>
           <Row
@@ -133,7 +136,7 @@ export function GmailSection() {
               <Icon name="ExternalLink" size={12} /> Sign-in screen
             </button>
           </Row>
-          <Row label="4. What Cora may do" hint="Data Access → Add or remove scopes → paste these two in the manual box (read mail; write drafts) → Update → Save.">
+          <Row label="4. What Cora may do" hint="Data Access → Add or remove scopes → paste these three in the manual box (read mail; write drafts; read your calendar) → Update → Save.">
             <button className="btn" onClick={copyScopes}>
               <Icon name={copied ? 'Check' : 'Copy'} size={12} /> {copied ? 'Copied' : 'Copy the two'}
             </button>

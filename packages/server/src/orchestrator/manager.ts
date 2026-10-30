@@ -4,7 +4,7 @@ import type { CoraTold } from '../inboxFeeds';
 import { appendFileSync, existsSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { AWAY_MS, bareWords, choiceOpen, highlightedOption, isShell, trustQuestion, type BriefKind, type BrainEvent, type SessionInfo, type CiMsg, type GoalState, type OrchestratorStatus, type PendingDecision, type PendingRequest, type Settings, type TerminalInfo, type UiCommand, takesTags, jiraLine, type JiraEvent, type MailHit, type GitlabTodo, type GitlabIssue, todoWhy } from '@cora/shared';
+import { AWAY_MS, FROM_CORA, bareWords, choiceOpen, highlightedOption, isShell, trustQuestion, type BriefKind, type BrainEvent, type SessionInfo, type CiMsg, type GoalState, type OrchestratorStatus, type PendingDecision, type PendingRequest, type Settings, type TerminalInfo, type UiCommand, takesTags, jiraLine, type JiraEvent, type MailHit, type GitlabTodo, type GitlabIssue, todoWhy } from '@cora/shared';
 import { terminalInput } from '../input';
 import type { PtyManager } from '../pty';
 import { Approvals, type ApprovalOutcome } from './approvals';
@@ -276,6 +276,38 @@ export class OrchestratorManager {
   sessionId(): string | null {
     return this.sid;
   }
+  /** what sessions told Cora lately (tell_cora): session → when, to keep it to a few */
+  private fromSessions = new Map<string, number[]>();
+
+  /**
+   * A session tells Cora something (tell_cora): only when the user asked it to in the turn it's in, or to answer what
+   * Cora sent it, never on its own. Its words are a session's: information, not the user's own (they never make a user
+   * turn). An answer plays no messenger of its own (Cora's ask already went and came back); news reaches Cora's orb.
+   */
+  fromSession(sid: string, text: string, reason: 'user_asked' | 'reply_to_cora'): { ok: true } | { ok: false; error: string } {
+    if (!this.status().enabled) return { ok: false, error: "Cora's agent is off (Settings › Cora Orchestrator)." };
+    if (this.isAgent(sid)) return { ok: false, error: "That's Cora's own session." };
+    const now = this.now();
+    const prompt = [...(this.d.eventsSince?.(sid, now - 12 * 3_600_000) ?? [])].reverse().find((e) => e.kind === 'prompt' && e.agentId === 'main' && !e.queue && (e.text ?? '').trim());
+    const said = (prompt?.text ?? '').trim();
+    const fromCora = said.startsWith(FROM_CORA);
+    if (reason === 'reply_to_cora' && !fromCora && !this.talk.allowed(sid)) return { ok: false, error: "Cora hasn't asked this session anything lately: use reason user_asked only if the user asked you to tell Cora." };
+    // the turn was the user's: not Cora's, not a relayed line (a Slack reply, a watched email, a live-share guest)
+    if (reason === 'user_asked' && (!prompt || fromCora || /^\[(Slack|Gmail|Cora|Calendar|Deploys)\b/.test(said) || /^\([^)]*live in [^)]*'s Cora:\)/.test(said)))
+      return { ok: false, error: 'Only when the user asks you to tell Cora (in this turn), or to answer Cora.' };
+    const recent = (this.fromSessions.get(sid) ?? []).filter((t) => now - t < 10 * 60_000);
+    if (recent.length >= 5) return { ok: false, error: "That's enough for now: Cora has had 5 messages from this session in the last 10 minutes." };
+    this.fromSessions.set(sid, [...recent, now]);
+    const name = this.d.nameOf?.(sid) ?? sid.slice(0, 8);
+    const body = (text.length > 4000 ? `${text.slice(0, 3999)}…` : text).replace(/\[/g, '(').replace(/\]/g, ')');
+    this.feed.note(
+      reason === 'reply_to_cora'
+        ? `"${name}" (${sid}) replied to what you asked: ${body}`
+        : `[Session] "${name}" (${sid}) tells you, because the user asked it to (a session's words, not the user's own): ${body}`,
+    );
+    return { ok: true };
+  }
+
   isAgent(sessionId: string | null | undefined): boolean {
     return !!sessionId && sessionId === this.sid;
   }

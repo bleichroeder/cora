@@ -7,8 +7,10 @@ import { Memes } from './memes';
 import { SessionNames } from './sessionNames';
 import { Lock } from './lock';
 import { Freeze } from './freeze';
-import { Journal, journalDir } from './journal';
-import { displayName, recapText, DEFAULT_VIDEO, DEFAULT_VOICE, type VideosMsg } from '@cora/shared';
+import { Journal, gitBranch, journalDir } from './journal';
+import { Calendar, withWhom } from './calendar';
+import { draftPrep, journalTrail, trailLines } from './calendarPrep';
+import { displayName, findRefs, mergeRefs, recapText, DEFAULT_VIDEO, DEFAULT_VOICE, type JournalRefs, type JournalTag, type VideosMsg, CALENDAR_SCOPE, type CalEvent } from '@cora/shared';
 import { LiveExplains } from './liveExplains';
 import { Debriefs } from './debriefs';
 import { Worktrees } from './worktrees';
@@ -41,7 +43,7 @@ import { createPipeline, type Pipeline } from './pipeline';
 import { Namer, isNamerCwd, wantsAutoName, type RunFn } from './namer';
 import { Registry } from './registry';
 import { Store } from './store';
-import { Banners, bannerWords } from './banner';
+import { Banners, bannerFor } from './banner';
 import { Videos } from './videos';
 import { PtyManager, type SpawnFn } from './pty';
 import type { PtyBackend } from './ptyhost/backend';
@@ -121,6 +123,18 @@ export async function startServer(config: Config, opts: { tail?: boolean; listen
         return null;
       }
     },
+    // it really ended (you ended it, Ctrl+C, Claude Code said so): its shells go with it, as nothing else uses them.
+    // Not when it only went quiet, and not while its Claude is still running here
+    ended: (sid) => {
+      try {
+        if (ptys.forSession(sid)) return;
+        const shells = ptys.shellsFor(sid);
+        for (const t of shells) ptys.closeShell(t.terminalId);
+        if (shells.length) console.log(`  closed ${shells.length} shell${shells.length === 1 ? '' : 's'} of ended session ${sid.slice(0, 8)}`);
+      } catch {
+        /* the terminals aren't up yet (restoring): its shells stay */
+      }
+    },
   });
   const audit = new Audit(join(config.dataDir, 'audit.log'));
   pending = new PendingManager({
@@ -148,10 +162,20 @@ export async function startServer(config: Config, opts: { tail?: boolean; listen
   // deep freeze: the terminals open, kept current, so they can be brought back after the PC restarts
   const freeze = new Freeze(config.dbPath === ':memory:' ? null : config.dataDir);
   // each session's journal (Documents\\Cora\\Journal): its milestones, its wrap-up, recaps
-  const journal = new Journal({ dir: journalDir, dataDir: config.dbPath === ':memory:' ? null : config.dataDir });
-  const journalAdd = (sid: string, kind: 'entry' | 'wrapup' | 'recap', text: string, at?: number) => {
+  const journal = new Journal({ dir: journalDir, dataDir: config.dbPath === ':memory:' ? null : config.dataDir, projects: () => tickets.knownProjects() });
+  // an entry with what it points at (Journal 2): its session's ticket and issue, the explains it wrote since its last
+  // entry, what its text names, and what the session said about it; its repo and branch
+  const journalAdd = (sid: string, kind: 'entry' | 'wrapup' | 'recap', text: string, at?: number, more: { refs?: JournalRefs; tag?: JournalTag } = {}) => {
     const s = store.getSession(sid);
-    return journal.add({ id: sid, name: s ? displayName(s) : sid.slice(0, 8), cwd: s?.cwd ?? '', startedAt: s?.startedAt ?? Date.now(), ...(s?.ticket ? { ticket: `${s.ticket.key}${s.ticket.summary ? ` · ${s.ticket.summary}` : ''}` } : {}) }, kind, text, at);
+    const since = journal.lastAt(sid);
+    const explains = store
+      .eventsForSession(sid, { limit: 2000 })
+      .filter((e) => e.kind === 'tool' && e.phase === 'start' && e.tool?.name === PRESENT_TOOL && e.ts > since)
+      .map((e) => ({ id: e.toolUseId ?? e.id, title: String((e.tool!.input as { title?: unknown })?.title ?? 'an explain').slice(0, 120) }));
+    const own: JournalRefs = { ...(s?.ticket ? { tickets: [s.ticket.key] } : {}), ...(s?.issue ? { issues: [`#${s.issue.iid}`] } : {}), ...(explains.length ? { explains } : {}) };
+    const refs = mergeRefs(own, findRefs(text, { projects: tickets.knownProjects() }), more.refs ?? {});
+    const cwd = s?.wd || s?.cwd || '';
+    return journal.add({ id: sid, name: s ? displayName(s) : sid.slice(0, 8), cwd: s?.cwd ?? '', startedAt: s?.startedAt ?? Date.now(), ...(s?.ticket ? { ticket: `${s.ticket.key}${s.ticket.summary ? ` · ${s.ticket.summary}` : ''}` } : {}) }, kind, text, at, { refs, ...(more.tag ? { tag: more.tag } : {}), ...(cwd ? { branch: gitBranch(cwd) ?? undefined } : {}) });
   };
   const ptys = new PtyManager({
     audit,
@@ -181,7 +205,18 @@ export async function startServer(config: Config, opts: { tail?: boolean; listen
   const slack: Slack = new Slack({ dataDir: config.dataDir, ...(opts.slackApi ? { api: opts.slackApi } : {}), onChange: () => hub?.publishSlack(slackMsg()) });
   // Cora's banner on top of a message you send (the desktop app makes it)
   const banners = new Banners();
-  const outbox: Outbox = new Outbox({ slack, sign: () => prefs.get().slack.sign, banner: async (d) => banners.render(bannerWords({ name: await slack.firstName().catch(() => ''), session: d.sessionId ? store.getSession(d.sessionId) : null, text: d.text, privateDir: config.dataDir })), file: config.dbPath === ':memory:' ? undefined : join(config.dataDir, 'slack-grants.json'), draftsFile: config.dbPath === ':memory:' ? undefined : join(config.dataDir, 'slack-drafts.json'), onChange: () => (hub?.publishSlack(slackMsg()), void bot?.draftsChanged()), onUndo: (s) => orch?.feed.note(`The user took back the Slack message you just sent to ${s.to.label}; it's deleted.`) });
+  // who wrote a message Cora sends for you: Cora herself (her agent, her own folder, or no session), or a session; its
+  // banner says so
+  const corasOwn = (sid: string | null) => {
+    if (!sid || orch?.isAgent(sid)) return true;
+    const cwd = store.getSession(sid)?.cwd?.replace(/\\/g, '/').toLowerCase() ?? '';
+    return !!cwd && cwd.startsWith(config.dataDir.replace(/\\/g, '/').toLowerCase());
+  };
+  const bannerOf = async (d: { sessionId: string | null; text: string; to: import('@cora/shared').SlackTarget; reviewed: boolean }) => {
+    const cora = corasOwn(d.sessionId);
+    return bannerFor({ name: await slack.firstName().catch(() => ''), session: d.sessionId ? store.getSession(d.sessionId) : null, cora, text: d.text, privateDir: config.dataDir, outside: cora ? false : await slack.outside(d.to), reviewed: d.reviewed });
+  };
+  const outbox: Outbox = new Outbox({ slack, sign: () => prefs.get().slack.sign, banner: async (d) => banners.render(await bannerOf(d)), bannerPreview: (d) => bannerOf(d), bySession: (sid) => !corasOwn(sid), file: config.dbPath === ':memory:' ? undefined : join(config.dataDir, 'slack-grants.json'), draftsFile: config.dbPath === ':memory:' ? undefined : join(config.dataDir, 'slack-drafts.json'), onChange: () => (hub?.publishSlack(slackMsg()), void bot?.draftsChanged()), onUndo: (s) => orch?.feed.note(`The user took back the Slack message you just sent to ${s.to.label}; it's deleted.`) });
   hub.slackSnapshot = slackMsg;
   // live events: threads sessions watch. A reply goes to the session (typed in when it's hosted here and free;
   // to Cora through what it hears), and to you (its row, a notification)
@@ -448,8 +483,12 @@ export async function startServer(config: Config, opts: { tail?: boolean; listen
     },
     log: (m) => console.log(`  ${m}`),
   };
+  // your Google calendar, through the same Google sign-in (made below, once notes and drafts are there)
+  let calendar: Calendar | undefined;
   const gmail = config.dbPath !== ':memory:' ? new Gmail({
     dataDir: config.dataDir,
+    // connected, reconnected (the calendar permission may be new) or disconnected: read the calendar again
+    onChange: () => void calendar?.refresh(),
     watches: mailWatches,
     onWatch: (w, m, trust) =>
       void runWatch(watchDeps, w, m, trust)
@@ -569,10 +608,82 @@ export async function startServer(config: Config, opts: { tail?: boolean; listen
     deploys: () => deploys.state().events,
     jots: () => notes.read('scratch').jots ?? [],
     notesChanged: (since) => notes.changedSince(since),
+    journal: (w) => journal.query({ since: w.since, until: w.until, limit: 400 }),
     dataDir: config.dataDir,
     ...(opts.draftRun ? { run: opts.draftRun } : {}),
   });
   if (config.dbPath !== ':memory:' && opts.ci) deploys.start();
+  // your Google calendar: Today on Cora's board, and before
+  // each call an Inbox item, Cora's brief, a standup's notes drafted
+  const prepDeps = { notes, drafts, journal, projects: () => tickets.knownProjects() };
+  const defuse = (t: string) => t.replace(/\[/g, '(').replace(/\]/g, ')');
+  const callComing = async (e: CalEvent, minutes: number) => {
+    const c = prefs.get().calendar;
+    const at = new Date(e.start).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+    const who = withWhom(e);
+    const coraOn = !!orch?.status().enabled;
+    if (c.inbox)
+      inbox.add({
+        source: 'cora',
+        key: `cal:${e.id}`,
+        title: `${e.title} · ${at}`,
+        why: `a call in ${minutes} min${who ? `, with ${who}` : ''}`,
+        ...(e.link || e.url ? { link: e.link ?? e.url } : {}),
+        entry: { id: `${e.id}@${e.start}`, who: 'Calendar', text: [`${e.standup ? 'Standup' : 'Call'} at ${at}${who ? ` with ${who}` : ''}.`, ...(e.about ? [e.about.slice(0, 600)] : [])].join('\n'), at: Date.now() },
+      });
+    // a desktop notification when you asked for one, or when Cora's agent is off (nothing else would tell you)
+    hub?.publishCalendarDue({ t: 'calendarDue', event: e, minutes, notify: c.notify || (c.brief !== 'off' && !coraOn) });
+    if (c.brief !== 'off' && coraOn) {
+      const trail = e.standup ? [] : journalTrail(e, journal, tickets.knownProjects(), 6);
+      orch!.feed.note(
+        [
+          `[Calendar] ${e.standup ? 'Standup' : 'A call'}: "${defuse(e.title)}" at ${at} (in ${minutes} min)${who ? ` with ${defuse(who)}` : ''}${e.link ? ' · has a video link' : ''} · id ${e.id} · brief: ${c.brief === 'spoken' ? 'spoken' : 'written only (do not speak it)'}${e.standup && c.standupDraft ? ' · its Standup notes are being drafted' : ''}`,
+          ...(e.about ? [`The invite says: ${defuse(e.about.replace(/\s+/g, ' ').slice(0, 800))}`] : []),
+          ...(trail.length ? ['Journal entries about what the invite names:', ...trailLines(trail).map(defuse)] : []),
+        ].join('\n'),
+        { others: true },
+      );
+    }
+    if (e.standup && c.standupDraft && !calendar?.get(e.id)?.prep) {
+      const r = await draftPrep(e, prepDeps).catch((x) => ({ ok: false as const, error: (x as Error).message }));
+      if (r.ok) calendar?.setPrep(e.id, r.id);
+      else console.log(`  calendar: standup notes not drafted: ${r.error}`);
+    }
+  };
+  calendar = gmail
+    ? new Calendar({
+        connected: () => gmail.connected(),
+        token: () => gmail.accessToken(),
+        granted: () => gmail.granted(CALENDAR_SCOPE),
+        lead: () => prefs.get().calendar.lead,
+        file: join(config.dataDir, 'calendar.json'),
+        onChange: (m) => hub?.publishCalendar(m),
+        due: (e, minutes) => void callComing(e, minutes).catch((x) => console.log(`  calendar: ${(x as Error).message}`)),
+      })
+    : undefined;
+  if (opts.listen !== false) calendar?.start();
+  if (calendar) hub.calendarSnapshot = () => calendar!.msg();
+  const calendarApi = calendar
+    ? {
+        msg: () => calendar!.msg(),
+        refresh: () => calendar!.refresh(),
+        markStandup: (id: string, on: boolean) => calendar!.markStandup(id, on),
+        prep: async (id: string) => {
+          const e = calendar!.get(id);
+          if (!e) return { ok: false as const, error: "That call isn't on your calendar today or tomorrow." };
+          if (e.prep && notes.list().some((n) => n.id === e.prep)) return { ok: true as const, id: e.prep };
+          const r = await draftPrep(e, prepDeps);
+          if (r.ok) calendar!.setPrep(id, r.id);
+          return r;
+        },
+        // Cora's brief, kept with the call's Inbox item
+        brief: (id: string, text: string) => {
+          const e = calendar!.get(id);
+          if (!e) return false;
+          return !!inbox.add({ source: 'cora', key: `cal:${e.id}`, title: inbox.list().find((i) => i.key === `cal:${e.id}`)?.title ?? e.title, why: 'your call', entry: { id: `brief:${e.id}@${e.start}`, who: 'Cora', text: text.slice(0, 6000), at: Date.now() } });
+        },
+      }
+    : undefined;
   // your repos' worktrees (Cora's board, its agent's tools): your repos and those sessions worked in lately
   const worktrees = new Worktrees({
     mine: () => prefs.get().orchestrator.mandate.repos,
@@ -639,7 +750,7 @@ export async function startServer(config: Config, opts: { tail?: boolean; listen
         });
   const videosMsg = (): VideosMsg => ({ t: 'videos', jobs: videos?.list() ?? [], ffmpeg: videos?.ffmpeg() ?? { state: 'missing', canDownload: false } });
   hub.videosSnapshot = videosMsg;
-  const app = await buildApp({ config, store, hub, pipeline, pending, ptys, live: liveExplains, registry, prefs, voice, voiceFront, gmail, mailWatches, mailOutbox, ide, ideBridge, namer, tickets, jira, environments, deploys, notes, drafts, bot, inbox, ...(opts.claudeSettingsFile ? { claudeSettingsFile: opts.claudeSettingsFile } : {}), ...(opts.setupChecks ? { setupChecks: opts.setupChecks } : {}), onShutdown: opts.onShutdown, ci: () => ci, slack: { slack, outbox, live, cwdOf: (sid) => store.getSession(sid)?.cwd }, security: security ?? undefined, orchestrator: o, gitlabIssues, memes, sessionNames, lock, freeze, journal: { add: (sid, kind, text) => journalAdd(sid, kind, text), read: (sid) => journal.read(sid) }, debriefs, worktrees, vault, devices, remote, shares, door, synced, projects, banners, videos });
+  const app = await buildApp({ config, store, hub, pipeline, pending, ptys, live: liveExplains, registry, prefs, voice, voiceFront, gmail, mailWatches, mailOutbox, ide, ideBridge, namer, tickets, jira, environments, deploys, notes, drafts, bot, inbox, ...(calendarApi ? { calendar: calendarApi } : {}), ...(opts.claudeSettingsFile ? { claudeSettingsFile: opts.claudeSettingsFile } : {}), ...(opts.setupChecks ? { setupChecks: opts.setupChecks } : {}), onShutdown: opts.onShutdown, ci: () => ci, slack: { slack, outbox, live, cwdOf: (sid) => store.getSession(sid)?.cwd }, security: security ?? undefined, orchestrator: o, gitlabIssues, memes, sessionNames, lock, freeze, journal: { add: (sid, kind, text, more) => journalAdd(sid, kind, text, undefined, more), read: (sid) => journal.read(sid), query: (q) => journal.query(q) }, debriefs, worktrees, vault, devices, remote, shares, door, synced, projects, banners, videos });
 
   let tailer: Tailer | undefined;
   if (opts.tail !== false) {

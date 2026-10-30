@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
-import { MAX_MAIL_RULES, addressAllowed, type GmailStatus, type MailHit, type MailRule, type MailWatch } from '@cora/shared';
+import { CALENDAR_SCOPE, MAX_MAIL_RULES, addressAllowed, type GmailStatus, type MailHit, type MailRule, type MailWatch } from '@cora/shared';
 import { authentic, type MailWatches } from './mailWatches';
 import { writeFileAtomic } from './fsx';
 import { readSecret, writeSecret } from './secrets';
@@ -28,7 +28,7 @@ const NOT_FOR_YOU = ['CATEGORY_PROMOTIONS', 'CATEGORY_SOCIAL', 'CATEGORY_UPDATES
 const MAX_BODY = 12_000;
 
 export type GoogleClient = { clientId: string; clientSecret: string; projectId?: string; authUri: string; tokenUri: string };
-type Stored = { refresh: string; email: string; historyId?: string; watch?: boolean; rules?: MailRule[]; important?: boolean; drafts?: boolean; draftTo?: string[]; send?: boolean };
+type Stored = { refresh: string; email: string; historyId?: string; watch?: boolean; rules?: MailRule[]; important?: boolean; drafts?: boolean; draftTo?: string[]; send?: boolean; /** what Google granted (space-separated), when known */ scopes?: string };
 /** What the user set: what Cora watches for, and who its drafts may go to. */
 export type MailConfig = { rules?: MailRule[]; important?: boolean; drafts?: boolean; draftTo?: string[]; send?: boolean };
 
@@ -261,7 +261,8 @@ export class Gmail {
       client_id: c.clientId,
       redirect_uri: redirect,
       response_type: 'code',
-      scope: GMAIL_SCOPES.join(' '),
+      // the calendar too (read only), for Cora's Today and her briefs before calls (an unticked box is fine)
+      scope: [...GMAIL_SCOPES, CALENDAR_SCOPE].join(' '),
       access_type: 'offline',
       prompt: 'consent',
       state,
@@ -291,7 +292,7 @@ export class Gmail {
     if (granted && !granted.includes('gmail.readonly')) throw new GmailError('scope', 'Cora needs permission to read your mail: tick it on the sign-in page.');
     const prof: any = await this.apiWith(j.access_token, '/profile');
     const keep = this.stored ?? this.kept;
-    this.stored = { refresh: j.refresh_token, email: String(prof.emailAddress ?? ''), historyId: String(prof.historyId ?? ''), watch: keep?.watch, rules: keep?.rules, important: keep?.important, drafts: keep?.drafts, draftTo: keep?.draftTo, send: keep?.send };
+    this.stored = { refresh: j.refresh_token, email: String(prof.emailAddress ?? ''), historyId: String(prof.historyId ?? ''), watch: keep?.watch, rules: keep?.rules, important: keep?.important, drafts: keep?.drafts, draftTo: keep?.draftTo, send: keep?.send, ...(granted ? { scopes: granted } : {}) };
     this.save();
     this.lastError = undefined;
     this.o.onChange?.();
@@ -355,7 +356,21 @@ export class Gmail {
       throw new GmailError(j.error === 'invalid_grant' ? 'signed_out' : 'token', why);
     }
     this.access = { token: j.access_token, until: this.now() + (Number(j.expires_in) || 3600) * 1000 - 60_000 };
+    if (j.scope && j.scope !== this.stored.scopes) {
+      this.stored.scopes = String(j.scope);
+      this.save();
+    }
     return j.access_token;
+  }
+
+  /** A Google access token for another of Google's APIs (the calendar), from the same sign-in. */
+  accessToken(): Promise<string> {
+    return this.token();
+  }
+  /** Did Google grant this permission? undefined: not known yet (a sign-in from before Cora kept track). */
+  granted(scope: string): boolean | undefined {
+    const s = this.stored?.scopes;
+    return s == null ? undefined : s.split(/\s+/).includes(scope);
   }
 
   private async apiWith(token: string, path: string, init?: { method?: string; body?: unknown }): Promise<any> {

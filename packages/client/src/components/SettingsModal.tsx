@@ -29,6 +29,8 @@ import { useSlack } from '../state/slack';
 import './settings.css';
 import { JiraSection } from './JiraSettings';
 import { GmailSection } from './GmailSettings';
+import { CalendarSection } from './CalendarSettings';
+import { useCalendar } from '../state/calendar';
 import { OnePasswordSection } from './OnePasswordSettings';
 import { loadGmail, useGmail } from '../state/gmail';
 
@@ -46,6 +48,7 @@ export const SETTINGS_SECTIONS: Array<{ id: string; label: string; icon: string;
   { id: 'gitlab', label: 'GitLab', icon: 'GitBranch', group: 'Connected', brand: 'gitlab' },
   { id: 'slack', label: 'Slack', icon: 'MessageSquare', group: 'Connected', brand: 'slack' },
   { id: 'gmail', label: 'Gmail', icon: 'Mail', group: 'Connected', brand: 'mail' },
+  { id: 'calendar', label: 'Calendar', icon: 'CalendarClock', group: 'Connected' },
   { id: 'onepassword', label: '1Password', icon: 'KeyRound', group: 'Connected', desktop: true },
   { id: 'tools', label: 'Tools', icon: 'Wrench', group: 'Connected' },
   { id: 'devices', label: 'Devices', icon: 'Tablet', group: 'This machine' },
@@ -131,6 +134,7 @@ export function SettingsModal() {
   const jiraAuth = useJira((j) => j.auth);
   const slackOn = useSlack((s) => s.status.connected);
   const gmail = useGmail((g) => g.status);
+  const calendar = useCalendar((c) => c.status);
   useEffect(() => void loadGmail(), []);
   const [server, setServer] = useState<Settings | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -193,6 +197,7 @@ export function SettingsModal() {
     if (id === 'jira') return jiraAuth === 'ok' ? ['connected', true] : jiraAuth === 'signed-out' ? ['not connected', false] : null;
     if (id === 'slack') return slackOn ? ['connected', true] : ['not connected', false];
     if (id === 'gitlab') return gitlabSt ? (gitlabSt.state === 'connected' ? ['connected', true] : ['not connected', false]) : null;
+    if (id === 'calendar') return calendar ? (calendar.state === 'connected' && !calendar.error ? ['connected', true] : ['not connected', false]) : null;
     if (id === 'gmail') return gmail ? (gmail.connected && !gmail.error ? ['connected', true] : ['not connected', false]) : null;
     return null;
   };
@@ -414,6 +419,9 @@ export function SettingsModal() {
               </Boundary>
               <Boundary name="Gmail settings">
                 <GmailSection />
+              </Boundary>
+              <Boundary name="Calendar settings">
+                <CalendarSection server={server} save={(p) => save(p)} />
               </Boundary>
               {desktop?.opFill ? (
                 <Boundary name="1Password settings">

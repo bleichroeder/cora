@@ -54,6 +54,7 @@ export class Hub {
   inboxSnapshot?: () => InboxMsg;
   /** emails sessions asked to send, waiting for you */
   mailOutboxSnapshot?: () => import('@cora/shared').MailOutboxMsg;
+  calendarSnapshot?: () => import('@cora/shared').CalendarMsg;
   /** the security check's last report */
   securitySnapshot?: () => SecurityMsg;
   /** the Cora Orchestrator: on or off, running, its approvals */
@@ -178,6 +179,7 @@ export class Hub {
     if (this.jiraSnapshot) this.send(sock, this.jiraSnapshot());
     if (this.inboxSnapshot) this.send(sock, this.inboxSnapshot());
     if (this.mailOutboxSnapshot) this.send(sock, this.mailOutboxSnapshot());
+    if (this.calendarSnapshot) this.send(sock, this.calendarSnapshot());
     if (this.securitySnapshot) this.send(sock, this.securitySnapshot());
     if (this.orchestratorSnapshot) this.send(sock, this.orchestratorSnapshot());
     for (const m of this.simShown.values()) this.send(sock, m);
@@ -232,6 +234,12 @@ export class Hub {
   }
 
   publishMailOutbox(m: import('@cora/shared').MailOutboxMsg): void {
+    this.broadcast(m);
+  }
+  publishCalendar(m: import('@cora/shared').CalendarMsg): void {
+    this.broadcast(m);
+  }
+  publishCalendarDue(m: import('@cora/shared').CalendarDueMsg): void {
     this.broadcast(m);
   }
 

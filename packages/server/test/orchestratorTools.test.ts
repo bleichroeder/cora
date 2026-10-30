@@ -1,6 +1,6 @@
 import Fastify from 'fastify';
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_SETTINGS, type BrainEvent, type SessionInfo, type TerminalInfo, type UiCommand } from '@cora/shared';
+import { DEFAULT_SETTINGS, FROM_CORA, type BrainEvent, type SessionInfo, type TerminalInfo, type UiCommand } from '@cora/shared';
 import { registerMcp } from '../src/mcp';
 import { Approvals } from '../src/orchestrator/approvals';
 import { deliverWhenReady, promptReady } from '../src/orchestrator/deliver';
@@ -151,7 +151,7 @@ describe("the orchestrator's tools", () => {
     expect(typed).toEqual([]);
     await approvals.decide(card.id, { ok: true, text: 'run the e2e tests, then stop' });
     expect((await p).content[0].text).toMatch(/^Sent to ACME-5223 fix\. \(The user changed it/);
-    expect(typed).toEqual([['tm1', 'run the e2e tests, then stop']]);
+    expect(typed).toEqual([['tm1', `${FROM_CORA} run the e2e tests, then stop`]]);
     // not hosted: it has to be resumed first
     expect((await call('send_to_session', { id: 'docs', text: 'x' })).content[0].text).toMatch(/isn't running in Cora/);
   });
@@ -184,7 +184,7 @@ describe("the orchestrator's tools", () => {
     expect(started.content[0].text).toMatch(/Started a session .* the user asked for it/);
     expect(launched).toHaveLength(1);
     expect((await call('send_to_session', { id: 'fix-api', text: 'rebase on main' })).content[0].text).toMatch(/^Sent to ACME-5223 fix/);
-    expect(typed).toEqual([['tm1', 'rebase on main']]);
+    expect(typed).toEqual([['tm1', `${FROM_CORA} rebase on main`]]);
     expect((await call('end_session', { id: 'docs' })).content[0].text).toMatch(/^Ending docs/);
     expect(approvals.list()).toEqual([]);
     // not your words (an event, autopilot): a card as before
@@ -252,7 +252,7 @@ describe('the agent on autopilot', () => {
     const { call, approvals, setGoal, typed } = setup();
     setGoal(liveGoal(['fix-api']));
     expect((await call('send_to_session', { id: 'fix-api', text: 'run the tests' })).content[0].text).toBe('Sent to ACME-5223 fix.');
-    expect(typed).toEqual([['tm1', 'run the tests']]);
+    expect(typed).toEqual([['tm1', `${FROM_CORA} run the tests`]]);
     expect(approvals.list()).toEqual([]);
   });
 
@@ -297,7 +297,7 @@ describe('talking with sessions', () => {
     expect(approvals.list()[0]).toMatchObject({ kind: 'send', title: 'Ask "api-svc"', detail: expect.stringMatching(/carry on talking with it for 10 minutes/) });
     await approvals.decide(approvals.list()[0].id, { ok: true });
     await tick();
-    expect(typed).toEqual([['tm4', 'Which endpoint returns the 500?']]);
+    expect(typed).toEqual([['tm4', `${FROM_CORA} Which endpoint returns the 500?`]]);
     const long = 'POST /v1/orders: the handler reads `req.body.items` before validation. '.repeat(20).trim();
     reply(events, talk, 'api-svc', long, ['Grep', 'Read', 'Read']);
     const r = (await p).content[0].text;

@@ -246,6 +246,8 @@ export class PtyManager {
   closeShell(terminalId: string): boolean {
     const t = this.terms.get(terminalId);
     if (!t || !isShell(t)) return false;
+    // already being closed: its exit is on its way
+    if (this.closing.has(terminalId)) return true;
     if (!t.alive) {
       this.terms.delete(terminalId);
       this.changed();

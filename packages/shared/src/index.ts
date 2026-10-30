@@ -35,3 +35,6 @@ export * from './secrets';
 export * from './gif';
 export * from './debriefVideo';
 export * from './sessionIcons';
+export * from './sessionColor';
+export * from './calendar';
+export * from './journal';

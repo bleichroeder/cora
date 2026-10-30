@@ -1,7 +1,7 @@
 {
   "name": "@cora/desktop",
   "productName": "Cora",
-  "version": "0.1.17",
+  "version": "0.1.18",
   "license": "MIT",
   "private": true,
   "main": "dist/main.cjs",

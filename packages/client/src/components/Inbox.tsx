@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { INBOX_SOURCES, askCoraText, isUnread, newCount, sessionBrief, unreadCounts, type InboxItem, type InboxSource } from '@cora/shared';
 import { dayGroups, markRead, openFromInbox, openItem, setFilter, setInboxOpen, setUnreadOnly, shownItems, useInbox } from '../state/inbox';
 import { askCora, useOrch } from '../state/orchestrator';
+import { joinCall, prepNotes } from '../state/calendar';
 import { openNewSession } from './Launchers';
 import { useBrain } from '../state/store';
 import { seenTicket } from '../state/jiraWatch';
@@ -154,6 +155,16 @@ function Detail({ i, readAt }: { i: InboxItem; readAt: number | null }) {
     setSigning(r?.ok ? 'idle' : { error: j.error ?? "Couldn't reach Cora" });
   };
   const canReply = i.source === 'slack' || (i.source === 'mail' && !!i.mailId);
+  // a call coming up (your calendar): Join and its prep notes, instead of Open
+  const call = i.key.startsWith('cal:') ? i.key.slice('cal:'.length) : null;
+  const [prepping, setPrepping] = useState<'idle' | 'busy' | { error: string }>('idle');
+  const prep = async () => {
+    if (!call) return;
+    setPrepping('busy');
+    const err = await prepNotes(call);
+    setPrepping(err ? { error: err } : 'idle');
+    if (!err) setInboxOpen(false);
+  };
   const start = () => {
     const cwd = session?.cwd;
     if (i.source === 'jira') return openNewSession(cwd, 'jira', { ticket: { key: i.key.replace(/^jira:/, '') } });
@@ -203,6 +214,12 @@ function Detail({ i, readAt }: { i: InboxItem; readAt: number | null }) {
         </div>
       ) : null}
       {replying ? <ReplyBox key={i.id} i={i} onDone={() => setReplying(false)} /> : null}
+      {prepping === 'busy' ? <div className="ib-why">Drafting its prep notes (a minute or so)…</div> : null}
+      {typeof prepping === 'object' ? (
+        <div className="ib-why">
+          No prep notes: <b>{prepping.error}</b>
+        </div>
+      ) : null}
       {signing === 'busy' ? <div className="ib-why">Signing in: answer Git's sign-in window (it may be behind this one).</div> : null}
       {typeof signing === 'object' ? (
         <div className="ib-why">
@@ -213,6 +230,24 @@ function Detail({ i, readAt }: { i: InboxItem; readAt: number | null }) {
         {signInHost ? (
           <button className="btn allow" disabled={signing === 'busy'} title={`Run one git fetch that may ask you to sign in to ${signInHost}; then Cora fetches the rest`} onClick={() => void signIn()}>
             <Icon name="LogIn" size={12} /> {signing === 'busy' ? 'Signing in…' : 'Sign in…'}
+          </button>
+        ) : null}
+        {call && i.link ? (
+          <button className="btn allow" onClick={() => joinCall(i.link!)}>
+            {/calendar\.google\.com/.test(i.link) ? (
+              <>
+                <Icon name="ExternalLink" size={12} /> Open in Calendar
+              </>
+            ) : (
+              <>
+                <Icon name="Video" size={12} /> Join
+              </>
+            )}
+          </button>
+        ) : null}
+        {call ? (
+          <button className="btn" disabled={prepping === 'busy'} onClick={() => void prep()}>
+            <Icon name="NotebookText" size={12} /> Prep notes
           </button>
         ) : null}
         {canReply && !replying ? (
@@ -228,7 +263,7 @@ function Detail({ i, readAt }: { i: InboxItem; readAt: number | null }) {
             <Icon name="Plus" size={12} /> Start a session
           </button>
         ) : null}
-        {i.link ? (
+        {i.link && !call ? (
           <button className="btn" onClick={open}>
             <Icon name="ExternalLink" size={12} /> Open in {i.source === 'mail' ? 'Gmail' : SOURCE_LABEL[i.source]}
           </button>

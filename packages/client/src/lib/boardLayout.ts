@@ -39,6 +39,7 @@ export type PanelKind =
   | 'journal'
   | 'wall'
   | 'worktrees'
+  | 'today'
   | 'constellation'
   | 'members'
   | 'thread'
@@ -92,7 +93,7 @@ export const PANEL_ICON: Record<Exclude<PanelKind, 'explain'>, string> = {
   pipeline: 'GitPullRequest', deploys: 'Rocket', ticket: 'Ticket',
   needs: 'Hand', mentions: 'AtSign', notes: 'NotebookPen', usage: 'ChartPie', sessions: 'LayoutList',
   terminal: 'SquareTerminal', browser: 'Globe', ide: 'Code',
-  wall: 'LayoutGrid', worktrees: 'GitFork',
+  wall: 'LayoutGrid', worktrees: 'GitFork', today: 'CalendarClock',
   constellation: 'Orbit', members: 'Users', thread: 'MessagesSquare', brief: 'NotebookText', repos: 'FolderGit2', activity: 'History', project: 'FolderKanban',
 };
 
@@ -130,6 +131,7 @@ export const PANELS: Record<Exclude<PanelKind, 'explain'>, { name: string; hint:
   ide: { name: 'IDE', hint: "Your VS Code (extensions, debugger, git, its terminal), opened at the session's folder", group: 'Tools', size: [16, 18] },
   wall: { name: 'Sessions', hint: "Every live session as a card: what it's doing, its agents, what it said last", group: 'Cora', size: [14, 24] },
   worktrees: { name: 'Worktrees', hint: 'Every worktree of your repos: who works in it, how far it has got, what can go', group: 'Cora', size: [10, 15] },
+  today: { name: 'Today', hint: 'Your calls today (your Google calendar): when, with whom, Join, their prep notes', group: 'Cora', size: [10, 12] },
   constellation: { name: 'Constellation', hint: "The project's sessions as their orbs, together: what each is doing, and the thread's posts between them", group: 'Project', size: [12, 12] },
   members: { name: 'Members', hint: 'Each session in the project, what it needs, and what it hears of the others', group: 'Project', size: [10, 12] },
   thread: { name: 'Thread', hint: "The project's conversation: the sessions' posts and yours", group: 'Project', size: [10, 14] },
@@ -147,7 +149,7 @@ export const PANEL_SCOPE: Record<Exclude<PanelKind, 'explain'>, PanelScope> = {
   spotlight: 'session', videos: 'session', agents: 'session', touching: 'session', tasks: 'session', explains: 'session', goal: 'session', memes: 'session', journal: 'session', recap: 'session', context: 'session',
   changes: 'session', git: 'session', tests: 'session', background: 'session', pipeline: 'session', deploys: 'session', ticket: 'session', mentions: 'session', terminal: 'session', ide: 'session',
   needs: 'both', notes: 'both', usage: 'both', sessions: 'both', browser: 'both',
-  wall: 'cora', worktrees: 'cora',
+  wall: 'cora', worktrees: 'cora', today: 'cora',
   constellation: 'project', members: 'project', thread: 'project', brief: 'project', repos: 'project', activity: 'project', project: 'session',
 };
 /** Does this panel fit this board (a session's, or Cora's)? An explain is a session's. */

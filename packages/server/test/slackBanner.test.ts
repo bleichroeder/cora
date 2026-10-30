@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { SessionInfo } from '@cora/shared';
 import { Outbox, Slack, SlackError, quoted, richBlocks } from '../src/slack';
-import { Banners, bannerWords, headline } from '../src/banner';
+import { Banners, bannerFor, bannerWords, headline } from '../src/banner';
 
 const GIF = new Uint8Array([...Buffer.from('GIF89a'), 1, 0, 1, 0, 0, 0, 0, 0x3b]);
 const dir = () => mkdtempSync(join(tmpdir(), 'cora-banner-'));
@@ -193,5 +193,105 @@ describe('structured messages in Slack blocks', () => {
     expect(posts()[1].blocks[0].type).toBe('image');
     await outbox.sendNow({ to, text: 'plain now', banner: false });
     expect(posts()[2].blocks.map((x: any) => x.type)).toEqual(['section', 'context']);
+  });
+});
+
+describe("a session's banner (who wrote it)", () => {
+  const s = (x: Partial<SessionInfo>) => ({ id: 'abcdef123456', cwd: 'C:\code\ingest-workers', color: '#38bdf8', icon: 'Gauge', autoName: 'Ingest Lag on Node 3', ticket: { key: 'ACME-5340', site: null, summary: 'Internal codename Falcon lag' }, startedBy: 'cora', ...x }) as SessionInfo;
+  const base = { name: 'David', cora: false, text: 'Found it', privateDir: 'C:/Users/D/.cora' };
+
+  it('its colour, icon, name and a small line; never a folder, a path or the ticket summary', () => {
+    const q = bannerFor({ ...base, session: s({}), outside: false, reviewed: true });
+    expect(q).toEqual({ kind: 'session', color: '#38bdf8', name: 'David', icon: 'Gauge', line: 'Ingest Lag on Node 3', sub: 'started by Cora · ACME-5340' });
+    expect(JSON.stringify(q)).not.toMatch(/ingest-workers|Falcon|code/);
+    expect(bannerFor({ ...base, session: s({ ticket: null, issue: { project: 'acme/internal/secret', iid: 7, url: 'x', title: 'T' }, startedBy: null }), outside: false, reviewed: true }).sub).toBe('#7');
+  });
+
+  it('a name made from its prompts only when you see it before it goes; your own name for it always', () => {
+    expect(bannerFor({ ...base, session: s({}), outside: false, reviewed: false }).line).toBeUndefined();
+    expect(bannerFor({ ...base, session: s({ alias: 'Radar follow-up' }), outside: false, reviewed: false }).line).toBe('Radar follow-up');
+  });
+
+  it('outside your company: no name, no ticket, just who it works for', () => {
+    expect(bannerFor({ ...base, session: s({ alias: 'Radar follow-up' }), outside: true, reviewed: true })).toEqual({ kind: 'session', color: '#38bdf8', name: 'David', icon: 'Gauge', sub: 'working for David' });
+  });
+
+  it("Cora's own messages keep her look", () => {
+    expect(bannerFor({ ...base, session: null, outside: true, reviewed: false })).toEqual({ name: 'David', line: 'Found it' });
+    expect(bannerFor({ ...base, cora: true, session: s({}), outside: false, reviewed: true }).kind).toBeUndefined();
+  });
+
+  it('the draft shows the banner it will send, signs as a session, and makes a new one when it goes to someone else', async () => {
+    const f = fakeSlack();
+    const slack = new Slack({ dataDir: dir(), api: f.api, fetchFn: f.fetchFn } as never);
+    await slack.connect('xoxp-good');
+    const asked: Array<{ to: string; reviewed: boolean }> = [];
+    const outbox = new Outbox({
+      slack,
+      onChange: () => {},
+      sign: () => ':cora:',
+      bySession: (sid) => sid === 's1',
+      banner: async (d) => (asked.push({ to: d.to.id, reviewed: d.reviewed }), GIF),
+      bannerPreview: async () => ({ kind: 'session', line: 'Ingest Lag on Node 3' }),
+    });
+    const sent = outbox.request({ sessionId: 's1', to: { kind: 'channel', id: 'C1', label: '#deploys' }, text: 'Found it' });
+    await new Promise((r) => setTimeout(r, 20));
+    const d = outbox.list()[0];
+    expect(d.bannerQ).toEqual({ kind: 'session', line: 'Ingest Lag on Node 3' });
+    expect(asked).toEqual([{ to: 'C1', reviewed: true }]);
+    await outbox.decide(d.id, { action: 'send', to: { kind: 'person', id: 'U9', label: 'Radar' } });
+    expect(asked).toEqual([{ to: 'C1', reviewed: true }, { to: 'U9', reviewed: true }]);
+    expect((await sent).sent).toBe(true);
+    const post = f.calls.find((c) => c.method === 'chat.postMessage')!;
+    expect(JSON.stringify(post.p)).toContain('Sent from a Cora session on David');
+  });
+});
+
+describe('beyond your company', () => {
+  it('a shared channel, a guest, someone from another workspace, or not knowing: outside; your own team: inside', async () => {
+    const info: Record<string, any> = {
+      C1: { id: 'C1' },
+      C2: { id: 'C2', is_ext_shared: true },
+      D1: { id: 'D1', is_im: true, user: 'U1' },
+    };
+    const users: Record<string, any> = { U1: { id: 'U1', team_id: 'T1' }, U2: { id: 'U2', team_id: 'T1', is_restricted: true }, U3: { id: 'U3', team_id: 'T9' } };
+    const api = (token: string) => async (method: string, p: Record<string, any> = {}) => {
+      if (method === 'auth.test') return { ok: true, team: 'Acme', team_id: 'T1', user: 'david', user_id: 'U0', url: 'https://acme.slack.com/' };
+      if (method === 'conversations.info') return { ok: true, channel: info[p.channel] };
+      if (method === 'users.info') return { ok: true, user: users[p.user] };
+      return { ok: true };
+    };
+    const slack = new Slack({ dataDir: dir(), api } as never);
+    await slack.connect('xoxp-good');
+    const t = (kind: 'channel' | 'person', id: string) => slack.outside({ kind, id, label: id });
+    expect(await t('channel', 'C1')).toBe(false);
+    expect(await t('channel', 'C2')).toBe(true);
+    expect(await t('person', 'D1')).toBe(false);
+    expect(await t('person', 'U2')).toBe(true);
+    expect(await t('person', 'U3')).toBe(true);
+    expect(await t('channel', 'C404')).toBe(true);
+  });
+});
+
+describe('a banner that fails', () => {
+  it('is tried once more when the desktop app failed to draw it, and every one dropped is logged with why', async () => {
+    const handlers: Record<string, (...a: any[]) => void> = {};
+    const sent: any[] = [];
+    const log: string[] = [];
+    const sock = { readyState: 1, send: (d: string) => sent.push(JSON.parse(d)), close: () => {}, on: (ev: string, fn: (...a: any[]) => void) => void (handlers[ev] = fn) };
+    const b = new Banners(50, (l) => log.push(l));
+    b.attachDesktop(sock);
+    const one = b.render({ line: 'x' });
+    handlers.message(JSON.stringify({ t: 'gif', id: sent[0].id, error: 'nothing drew in 15 s (graphics unavailable?)' }));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(sent).toHaveLength(2);
+    handlers.message(JSON.stringify({ t: 'gif', id: sent[1].id, data: Buffer.from(GIF).toString('base64') }));
+    expect([...((await one) ?? [])]).toEqual([...GIF]);
+    expect(log).toEqual(["Slack banner failed (the desktop app couldn't draw it (nothing drew in 15 s (graphics unavailable?))): trying once more"]);
+    expect(await b.render({})).toBeNull();
+    expect(log.at(-1)).toBe('Slack banner dropped: no banner from the desktop app in 0 s (after a retry)');
+    const none = new Banners(50, (l) => log.push(l));
+    expect(await none.render({})).toBeNull();
+    expect(log.at(-1)).toMatch(/^Slack banner dropped: Cora's desktop app isn't connected/);
   });
 });

@@ -52,6 +52,8 @@ export type SlackDraft = {
   id: string;
   /** false: asked for without Cora's banner (the card's box starts unticked) */
   banner?: boolean;
+  /** what its banner will say (SlackBanner's words), for the card to show before it goes */
+  bannerQ?: Record<string, string>;
   /** files that go with it */
   files?: SlackAttachment[];
   /** the session that asked (null when it can't be told: a session started before Cora knew to say) */

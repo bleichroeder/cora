@@ -26,7 +26,7 @@ export class Registry {
    * `hosted`: when the session's live Claude terminal in Cora started, null when it has none (its process exiting ends
    * the session, so silence doesn't)
    */
-  constructor(private store: Store, private onChange: (c: RegistryChange) => void, private o: { hosted?: (sessionId: string) => number | null } = {}) {
+  constructor(private store: Store, private onChange: (c: RegistryChange) => void, private o: { hosted?: (sessionId: string) => number | null; /** it really ended (Claude Code said so, or its process exited): not by silence */ ended?: (sessionId: string) => void } = {}) {
     // what had ended before Cora (re)started stays ended while it catches up on the transcripts: from the sessions'
     // saved state, or a session_end with nothing after it (which a restart could have hidden). It ended when Claude
     // Code said so, if that's the last word (a resume from Cora since, with nothing said yet, moved its last activity)
@@ -47,8 +47,10 @@ export class Registry {
     const sid = e.sessionId;
     this.ensureAgent(sid, e.agentId, e.ts, e);
     if (e.kind === 'session_end') {
+      const was = this.ended.has(sid);
       this.ended.set(sid, e.ts);
       this.silent.delete(sid);
+      if (!was) this.o.ended?.(sid);
     }
     // new activity revives an ended session; catching up on its transcript (older than its end) doesn't
     else if (e.kind !== 'turn_end' && e.ts > (this.ended.get(sid) ?? Infinity)) {
@@ -162,11 +164,14 @@ export class Registry {
   /** A hosted session's process exited: it is over now, not after 30 minutes of silence. */
   sessionExited(sessionId: string, ts: number): void {
     // gone, or already over (a terminal found dead when Cora starts): nothing changes, its last activity included
-    if (!this.store.getSession(sessionId) || this.ended.has(sessionId)) return;
+    if (!this.store.getSession(sessionId)) return;
+    // already over (it said so a moment before its process went): what goes with its end goes now (its shells)
+    if (this.ended.has(sessionId)) return void this.o.ended?.(sessionId);
     for (const [k, m] of this.inflight) if (k.startsWith(sessionId + '/')) m.clear();
     for (const a of this.store.listAgents(sessionId)) if (a.state !== 'done') this.setAgentState(sessionId, a.agentId, 'idle');
     this.ended.set(sessionId, ts);
     this.refreshSession(sessionId, { lastTs: ts, exitReason: 'exited' });
+    this.o.ended?.(sessionId);
   }
 
   agentStopped(sessionId: string, agentId: string, ts: number): void {

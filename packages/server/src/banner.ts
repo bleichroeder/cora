@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import type { SessionInfo } from '@cora/shared';
+import { sessionColorOf, type SessionInfo } from '@cora/shared';
 
 /**
  * Cora's Slack banner: the GIF on top of a message Cora sends
@@ -13,10 +13,10 @@ const MAX_BYTES = 8 * 1024 * 1024;
 
 export class Banners {
   private desktop: Sock | null = null;
-  private waiting = new Map<string, (gif: Uint8Array | null) => void>();
+  private waiting = new Map<string, (gif: Uint8Array | null, why?: string) => void>();
   /** slides being drawn (a debrief video's): each picture as it comes, then done or why not */
   private drawing = new Map<string, { pics: Array<Uint8Array | Uint8Array[]>; done(e?: string): void }>();
-  constructor(private waitMs = WAIT_MS) {}
+  constructor(private waitMs = WAIT_MS, private log: (line: string) => void = (l) => console.error(`[cora] ${l}`)) {}
 
   get available(): boolean {
     return !!this.desktop && this.desktop.readyState === 1;
@@ -42,7 +42,9 @@ export class Banners {
         const done = this.waiting.get(m.id);
         if (!done) return;
         const gif = typeof m.data === 'string' ? Buffer.from(m.data, 'base64') : null;
-        done(gif && gif.length > 6 && gif.length <= MAX_BYTES && gif.subarray(0, 6).toString('latin1') === 'GIF89a' ? new Uint8Array(gif) : null);
+        if (!gif) return done(null, `the desktop app couldn't draw it${typeof m.error === 'string' ? ` (${m.error.slice(0, 120)})` : ''}`);
+        const ok = gif.length > 6 && gif.length <= MAX_BYTES && gif.subarray(0, 6).toString('latin1') === 'GIF89a';
+        done(ok ? new Uint8Array(gif) : null, ok ? undefined : 'what came back was not a GIF');
       } catch {
         /* not one of ours */
       }
@@ -50,7 +52,7 @@ export class Banners {
     sock.on('close', () => {
       if (this.desktop !== sock) return;
       this.desktop = null;
-      for (const done of [...this.waiting.values()]) done(null);
+      for (const done of [...this.waiting.values()]) done(null, 'the desktop app went away');
       for (const d of [...this.drawing.values()]) d.done('the desktop app went away');
     });
   }
@@ -79,22 +81,39 @@ export class Banners {
     });
   }
 
-  /** A banner saying these words (see bannerWords), or null. */
-  render(q: Record<string, string>): Promise<Uint8Array | null> {
-    if (!this.available) return Promise.resolve(null);
+  /**
+   * A banner saying these words (see bannerWords), or null: the message then goes without it. A banner not made is
+   * said in the log, with why; one the desktop app failed to draw (not one it was never asked for) is tried once more.
+   */
+  async render(q: Record<string, string>): Promise<Uint8Array | null> {
+    const first = await this.once(q);
+    if (first.gif) return first.gif;
+    if (!this.available) {
+      this.log(`Slack banner dropped: ${first.why}`);
+      return null;
+    }
+    this.log(`Slack banner failed (${first.why}): trying once more`);
+    const again = await this.once(q);
+    if (!again.gif) this.log(`Slack banner dropped: ${again.why} (after a retry)`);
+    return again.gif;
+  }
+
+  private once(q: Record<string, string>): Promise<{ gif: Uint8Array | null; why?: string }> {
+    if (!this.available) return Promise.resolve({ gif: null, why: "Cora's desktop app isn't connected (it draws banners)" });
     const id = randomBytes(6).toString('hex');
     return new Promise((resolve) => {
-      const timer = setTimeout(() => done(null), this.waitMs);
-      const done = (gif: Uint8Array | null) => {
+      const timer = setTimeout(() => done(null, `no banner from the desktop app in ${Math.round(this.waitMs / 1000)} s`), this.waitMs);
+      const done = (gif: Uint8Array | null, why?: string) => {
         clearTimeout(timer);
         this.waiting.delete(id);
-        resolve(gif);
+        resolve({ gif, ...(why ? { why } : {}) });
       };
       this.waiting.set(id, done);
       this.desktop!.send(JSON.stringify({ t: 'render', id, q }));
     });
   }
 }
+
 
 /**
  * What the banner says, and only what its readers should see (it goes to whoever the message goes to): whose
@@ -115,6 +134,31 @@ export function bannerWords(o: { name: string; session: SessionInfo | null | und
   const folder = !mine && s.cwd ? (s.cwd.replace(/[\\/]+$/, '').split(/[\\/]/).pop() ?? '') : '';
   const from = [mine ? '' : alias, folder].filter(Boolean).join(' · ');
   if (from) q.from = from;
+  return q;
+}
+
+/**
+ * A message's banner, by who wrote it. Cora's own (her
+ * agent, or no session): her look, as bannerWords says. A session's: its colour and orb, "Cora Session", its icon as a
+ * watermark, its name and a small line ("started by Cora", its ticket's key). Never folders, paths, ticket summaries or
+ * anything from your prompts. `outside`: it goes beyond your company (a shared channel, another workspace, a guest):
+ * no name, no ticket, just who it works for. `reviewed`: you see it on a draft before it goes, so a name it was given
+ * from its first prompt may show; otherwise only a name you gave it.
+ */
+export function bannerFor(o: { name: string; session: SessionInfo | null | undefined; cora: boolean; text?: string; privateDir?: string; outside: boolean; reviewed: boolean }): Record<string, string> {
+  const s = o.session;
+  if (o.cora || !s) return bannerWords({ name: o.name, session: s, text: o.text, privateDir: o.privateDir });
+  const q: Record<string, string> = { kind: 'session', color: sessionColorOf(s) };
+  if (o.name) q.name = o.name;
+  if (s.icon) q.icon = s.icon;
+  if (o.outside) {
+    q.sub = `working for ${o.name || 'you'}`;
+    return q;
+  }
+  const title = s.alias?.trim() || (o.reviewed ? s.autoName?.trim() : '') || '';
+  if (title) q.line = title.slice(0, 80);
+  const sub = [s.startedBy === 'cora' ? 'started by Cora' : '', s.ticket?.key ?? (s.issue ? `#${s.issue.iid}` : '')].filter(Boolean).join(' · ');
+  if (sub) q.sub = sub;
   return q;
 }
 

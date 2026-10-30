@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { MAX_DRAFT_ASKS, type BrainEvent, type DeployEvent, type JiraEvent, type Jot, type SessionInfo } from '@cora/shared';
+import { MAX_DRAFT_ASKS, type BrainEvent, type DeployEvent, type JiraEvent, type JournalEntry, type Jot, type SessionInfo, refsLine } from '@cora/shared';
 import { namerEnv, runCommand, type RunFn } from './namer';
 import { defaultClaudeCmd } from './pty';
 
@@ -24,6 +24,8 @@ export type DraftDeps = {
   deploys?(): DeployEvent[];
   jots?(): Jot[];
   notesChanged?(since: number): string[];
+  /** what sessions wrote in their journals over a window (Journal 2): read first, raw activity only for the rest */
+  journal?(w: DraftWindow): JournalEntry[];
   /** a folder's repo (its git remote's name), cached */
   repoOf?(cwd: string): Promise<string>;
   run?: RunFn;
@@ -94,14 +96,21 @@ export class Drafts {
     const mrs = new Set<string>();
     const byRepo = new Map<string, string[]>();
     let sessions = 0;
+    const written = new Map<string, JournalEntry[]>();
+    for (const e of this.d.journal?.(w) ?? []) written.set(e.sessionId, [...(written.get(e.sessionId) ?? []), e]);
     for (const s of this.inWindow(w).sort((a, b) => a.startedAt - b.startedAt)) {
       const repo = await this.repoOf(s.cwd);
       if (!want.has(repo)) continue;
       const ev = this.d.events(s.id).filter((e) => e.ts >= w.since && e.ts <= w.until && e.agentId === 'main');
       const prompts = ev.filter((e) => e.kind === 'prompt' && !e.queue && (e.text ?? '').trim()).map((e) => clip(e.text, 280));
-      if (!prompts.length && !ev.some((e) => e.kind === 'tool')) continue;
+      const entries = (written.get(s.id) ?? []).sort((a, b) => a.at - b.at);
+      if (!entries.length && !prompts.length && !ev.some((e) => e.kind === 'tool')) continue;
       sessions++;
       if (s.ticket) tickets.add(s.ticket.key);
+      for (const e of entries) {
+        for (const t of e.refs.tickets ?? []) tickets.add(t);
+        for (const m of e.refs.mrs ?? []) mrs.add(m);
+      }
       const said = ev.filter((e) => e.kind === 'say' && (e.said || e.text)).map((e) => clip(e.said || e.text, e.said ? 260 : 420));
       const cmds = ev
         .filter((e) => e.kind === 'tool' && e.phase === 'start' && e.tool && /bash|powershell|shell/i.test(e.tool.name))
@@ -115,8 +124,10 @@ export class Drafts {
       const name = s.alias || s.autoName || s.title || s.project;
       const lines = [
         `### ${name}${s.ticket ? ` (ticket ${s.ticket.key}${s.ticket.summary ? `: ${clip(s.ticket.summary, 120)}` : ''})` : ''} · ${hm(Math.max(w.since, s.startedAt))}–${hm(Math.min(w.until, s.lastTs))}${s.state === 'ended' ? '' : ` · still ${s.state}`}`,
-        ...prompts.slice(0, 6).map((p) => `- user asked: ${p}`),
-        ...said.slice(-6).map((p) => `- claude: ${p}`),
+        // its journal says what was done and why, better than its raw prompts and replies
+        ...(entries.length
+          ? entries.map((e) => `- journal${e.kind === 'wrapup' ? ' (wrap-up)' : e.tag ? ` (${e.tag})` : ''}, ${hm(e.at)}: ${clip(e.text, 900)}${refsLine(e.refs) ? ` [${refsLine(e.refs)}]` : ''}`)
+          : [...prompts.slice(0, 6).map((p) => `- user asked: ${p}`), ...said.slice(-6).map((p) => `- claude: ${p}`)]),
         ...(cmds.length ? [`- commands: ${[...new Set(cmds)].slice(-10).join(' | ')}`] : []),
         ...(edited.size ? [`- edited ${edited.size} file${edited.size === 1 ? '' : 's'}`] : []),
         ...(failed ? [`- ${failed} command${failed === 1 ? '' : 's'} failed`] : []),

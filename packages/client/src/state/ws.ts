@@ -4,6 +4,7 @@ import { addToProject, useProjects } from './projects';
 import { useVideos } from './videos';
 import { useDebrief } from './debrief';
 import { useWorktrees } from './worktrees';
+import { calendarDue, useCalendar } from './calendar';
 import { useSecrets } from './secrets';
 import { useSeat } from '../components/SeatCover';
 import { stopSpeaking } from '../lib/voice';
@@ -125,6 +126,12 @@ function open() {
         break;
       case 'worktrees':
         useWorktrees.getState().apply(msg);
+        break;
+      case 'calendar':
+        useCalendar.getState().apply(msg);
+        break;
+      case 'calendarDue':
+        calendarDue(msg);
         break;
       case 'debriefs':
         useDebrief.getState().apply(msg);

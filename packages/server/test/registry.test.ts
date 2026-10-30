@@ -237,3 +237,21 @@ describe('Registry states', () => {
     expect(changes.some((c) => c.agent?.agentId === 'main')).toBe(true);
   });
 });
+
+describe('what goes with a session when it really ends', () => {
+  it('told when Claude Code says it ended, or its process exits (both, in that order, as on Ctrl+C); never for going quiet', () => {
+    const store = new Store(':memory:');
+    const ended: string[] = [];
+    const reg = new Registry(store, () => {}, { ended: (sid) => ended.push(sid) });
+    reg.ingest(E({ id: 'p', kind: 'prompt', ts: 1000 }));
+    reg.ingest(E({ id: 'end', kind: 'session_end', ts: 2000 }));
+    expect(ended).toEqual(['s1']);
+    reg.sessionExited('s1', 2100);
+    expect(ended).toEqual(['s1', 's1']);
+    // another session, outside Cora: half an hour of silence ends it in the list, but nothing is told
+    reg.ingest(E({ id: 'q', kind: 'prompt', ts: 1000, sessionId: 's2' }));
+    reg.tick(1000 + 31 * 60_000);
+    expect(store.getSession('s2')?.state).toBe('ended');
+    expect(ended).toEqual(['s1', 's1']);
+  });
+});

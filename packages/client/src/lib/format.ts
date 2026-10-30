@@ -2,15 +2,9 @@ import type { AgentInfo, BrainEvent, SessionInfo } from '@cora/shared';
 import { useBrain } from '../state/store';
 
 export const AGENT_COLORS = ['#818cf8', '#c084fc', '#34d399', '#f472b6', '#fb923c', '#22d3ee'];
-export const MAIN_COLOR = '#38bdf8';
-/** Main-agent colours: one per session, picked by the user or derived from the session id. */
-export const MAIN_COLORS = ['#38bdf8', '#2dd4bf', '#a3e635', '#fb7185', '#a78bfa', '#60a5fa', '#f0abfc', '#fdba74'];
-
-export function hashColor(id: string): string {
-  let h = 0;
-  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) | 0;
-  return MAIN_COLORS[Math.abs(h) % MAIN_COLORS.length];
-}
+// the session colours live in shared (a session's Slack banner is coloured by the server the same way)
+export { MAIN_COLOR, MAIN_COLORS, hashColor } from '@cora/shared';
+import { MAIN_COLOR, hashColor } from '@cora/shared';
 
 export const sessionColor = (s?: Pick<SessionInfo, 'id' | 'color'> | null) => s?.color || (s ? hashColor(s.id) : MAIN_COLOR);
 

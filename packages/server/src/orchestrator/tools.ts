@@ -2,7 +2,7 @@ import { existsSync, statSync } from 'node:fs';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import type { BrainEvent, CiMsg, Goal, GoalState, PendingRequest, SecurityReport, SessionInfo, TerminalInfo, UiCommand, Recap, Worktree } from '@cora/shared';
-import { isShell, JIRA_EVENT_KINDS, jiraLine, parseSince, type JiraEvent, type JiraEventKind } from '@cora/shared';
+import { FROM_CORA, isShell, JIRA_EVENT_KINDS, jiraLine, parseSince, type JiraEvent, type JiraEventKind } from '@cora/shared';
 import type { Approvals, ApprovalOutcome } from './approvals';
 import type { MandateRequest, Verdict } from './mandate';
 import type { CopyAnswer } from './copy';
@@ -181,7 +181,7 @@ export function registerOrchestratorTools(server: McpServer, d: OrchToolDeps): v
       const term = hostedTerm(id);
       if (!term) throw new Error(`${name} isn't running in Cora any more`);
       since = now();
-      d.input(term.terminalId, (t ?? msg).trim() || msg);
+      d.input(term.terminalId, `${FROM_CORA} ${(t ?? msg).trim() || msg}`);
       d.talk.grant(id);
       if (late && asking) d.talk.expect(id, since);
       return `Sent to ${name}.`;

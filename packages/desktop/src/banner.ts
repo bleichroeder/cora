@@ -11,8 +11,9 @@ import { encodeGif, type GifFrame } from '@cora/shared';
  */
 type Cmd = { t: 'render'; id: string; q: Record<string, string> } | { t: 'slides'; id: string; slides: unknown[]; color?: string };
 
-const W = 480;
-const H = 120;
+/** the banner as Slack shows it: its page drawn at 480×120, scaled to this (banner-page zoom in slackBanner.css) */
+const W = 420;
+const H = 105;
 /** pixel for pixel: Slack shows a picture at its size in pixels (up to a width), whatever the screen */
 const SCALE = 1;
 const FRAMES = 26;
@@ -45,15 +46,16 @@ export function startBanner(o: { base: string; tokenFile: string; /** Cora's col
     const frames: GifFrame[] = [];
     let size = { width: 0, height: 0 };
     let over = false;
-    const finish = (data: string | null) => {
+    // what it made, or why not (the server's log says it)
+    const finish = (data: string | null, why = 'it failed') => {
       if (over) return;
       over = true;
       clearInterval(timer);
       clearTimeout(giveUp);
       if (!win.isDestroyed()) win.destroy();
-      send(data ? { t: 'gif', id: c.id, data } : { t: 'gif', id: c.id, error: true });
+      send(data ? { t: 'gif', id: c.id, data } : { t: 'gif', id: c.id, error: why });
     };
-    const giveUp = setTimeout(() => finish(null), GIVE_UP_MS);
+    const giveUp = setTimeout(() => finish(null, last ? `its page never said it was drawn in ${GIVE_UP_MS / 1000} s` : `nothing drew in ${GIVE_UP_MS / 1000} s (graphics unavailable?)`), GIVE_UP_MS);
     wc.setFrameRate(30);
     wc.on('paint', (_e, _dirty, image) => void (last = image));
     wc.on('page-title-updated', (_e, title) => {
@@ -71,17 +73,17 @@ export function startBanner(o: { base: string; tokenFile: string; /** Cora's col
           const all = [...frames, ...frames.slice(1, -1).reverse()];
           const gif = encodeGif(all, { width: size.width, height: size.height, delayCs: EVERY_MS / 10 });
           finish(Buffer.from(gif).toString('base64'));
-        } catch {
-          finish(null);
+        } catch (e) {
+          finish(null, `making the GIF failed: ${(e as Error).message}`);
         }
       }, EVERY_MS);
     });
-    wc.on('render-process-gone', () => finish(null));
+    wc.on('render-process-gone', (_e, d) => finish(null, `its page crashed (${d.reason})`));
     const u = new URL(o.base);
     u.searchParams.set('banner', '1');
     u.searchParams.set('color', o.color());
     for (const [k, v] of Object.entries(c.q ?? {})) if (typeof v === 'string') u.searchParams.set(k, v);
-    void win.loadURL(u.toString()).catch(() => finish(null));
+    void win.loadURL(u.toString()).catch((e: Error) => finish(null, `its page didn't load: ${e.message}`));
   };
 
   /**

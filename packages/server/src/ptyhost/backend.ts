@@ -1,6 +1,6 @@
 import { spawn as spawnChild } from 'node:child_process';
 import { connect, type Socket } from 'node:net';
-import { openSync } from 'node:fs';
+import { copyFileSync, existsSync, openSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { PROTOCOL_VERSION, legacySocketPath, onLines, sendLine, socketPath, type HostMsg, type HostTerm, type TermMeta } from './protocol';
 import { nodePtySpawn, type PtyLike, type SpawnFn } from './spawn';
@@ -285,6 +285,14 @@ export async function connectOrStartHost(o: { dataDir: string; legacyDataDirs?: 
  */
 export function spawnHost(node: string, script: string, dataDir: string, logFile: string): void {
   rollLog(logFile);
+  // the host before this one: its logs kept (Start-Process starts a new log over the old), so a host that went away
+  // can be looked into
+  for (const f of [logFile, logFile.replace(/\.log$/, '') + '.err.log'])
+    try {
+      if (existsSync(f) && statSync(f).size) copyFileSync(f, f.replace(/\.log$/, '.prev.log'));
+    } catch {
+      /* not kept */
+    }
   if (process.platform === 'win32') {
     // PowerShell's Start-Process: hidden (a console app started from a detached shell would get a visible console
     // window of its own), output to the log, and PowerShell exits at once, leaving the host parentless.

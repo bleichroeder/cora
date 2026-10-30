@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { SlackBannerView } from './SlackBanner';
 import { type SlackDraft, type SlackSent, type SlackTarget, type SlackAttachment } from '@cora/shared';
 import { useBrain } from '../state/store';
 import { decideDraft, findSlack, undoSent, useSlack, stopGrant } from '../state/slack';
@@ -164,6 +165,7 @@ function DraftCard({ d }: { d: SlackDraft }) {
           </span>
         ) : null}
       </div>
+      {banner && d.bannerQ && !d.files?.length ? <BannerPreview q={d.bannerQ} /> : null}
       <textarea
         ref={ta}
         className="sd-text"
@@ -282,5 +284,23 @@ function Attachments({ files, kind, id, small = false }: { files: SlackAttachmen
         ),
       )}
     </span>
+  );
+}
+
+/** The banner that will go on top of it, as it will look (so what it says is checked with the words): scaled to the card. */
+function BannerPreview({ q }: { q: Record<string, string> }) {
+  const box = useRef<HTMLDivElement>(null);
+  const [k, setK] = useState(0.8);
+  useEffect(() => {
+    const el = box.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setK(el.clientWidth / 480));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  return (
+    <div className="sd-preview" ref={box} style={{ ['--k' as string]: k } as React.CSSProperties} title="The banner it sends: untick Cora banner to send without it">
+      <SlackBannerView q={q} />
+    </div>
   );
 }

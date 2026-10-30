@@ -370,6 +370,37 @@ export class Slack {
     return ((me?.real || me?.name || this.auth.user || '').trim().split(/\s+/)[0] ?? '').slice(0, 40);
   }
 
+  private outsideKnown = new Map<string, { v: boolean; at: number }>();
+  /**
+   * Does a message here go beyond your company? A channel
+   * shared with another organisation, a person from another workspace, a guest. Not knowing counts as yes. Kept an hour.
+   */
+  async outside(to: SlackTarget): Promise<boolean> {
+    const hit = this.outsideKnown.get(to.id);
+    if (hit && Date.now() - hit.at < 3_600_000) return hit.v;
+    let v = true;
+    try {
+      const api = this.call();
+      let user = to.kind === 'person' && !to.id.startsWith('D') ? to.id : null;
+      if (!user) {
+        const c = (await api('conversations.info', { channel: to.id })).channel;
+        if (!c) throw new Error('no such conversation');
+        // a DM: whoever it's with
+        if (c.is_im && c.user) user = String(c.user);
+        else v = !!(c.is_ext_shared || c.is_pending_ext_shared || (c.is_shared && !c.is_org_shared));
+      }
+      if (user) {
+        const u = (await api('users.info', { user })).user;
+        if (!u) throw new Error('no such person');
+        v = !!(u.is_restricted || u.is_ultra_restricted || u.is_stranger || (u.team_id && this.auth?.teamId && u.team_id !== this.auth.teamId));
+      }
+    } catch {
+      v = true;
+    }
+    this.outsideKnown.set(to.id, { v, at: Date.now() });
+    return v;
+  }
+
   /** Can the app search (for what's waiting in briefs)? One tiny search tells. */
   async checkSearch(): Promise<boolean | undefined> {
     if (!this.auth) return undefined;
@@ -965,7 +996,7 @@ export class Outbox {
   /** each waiting draft's banner, made as it arrives (so Send doesn't wait for it) */
   private banners = new Map<string, Promise<Uint8Array | null>>();
 
-  constructor(private o: { slack: Slack; onChange: () => void; waitMs?: number; onUndo?: (s: SlackSent) => void; /** where grants are kept */ file?: string; /** where drafts waiting for you are kept (across a restart) */ draftsFile?: string; /** the sign-off on messages Cora sends for you ('' : none) */ sign?: () => string; /** Cora's banner for a message it sends for you (a GIF; which session wrote it), or none */ banner?: (d: { sessionId: string | null; text: string }) => Promise<Uint8Array | null> }) {
+  constructor(private o: { slack: Slack; onChange: () => void; waitMs?: number; onUndo?: (s: SlackSent) => void; /** where grants are kept */ file?: string; /** where drafts waiting for you are kept (across a restart) */ draftsFile?: string; /** the sign-off on messages Cora sends for you ('' : none) */ sign?: () => string; /** Cora's banner for a message it sends for you (a GIF; which session wrote it), or none. `reviewed`: you see it before it goes (a draft, your own DM) */ banner?: (d: { sessionId: string | null; text: string; to: SlackTarget; reviewed: boolean }) => Promise<Uint8Array | null>; /** what that banner will say, for the draft card to show before it goes */ bannerPreview?: (d: { sessionId: string | null; text: string; to: SlackTarget; reviewed: boolean }) => Promise<Record<string, string> | null>; /** a session wrote it, not Cora herself (its sign-off says so) */ bySession?: (sessionId: string | null) => boolean }) {
     try {
       if (o.file && existsSync(o.file)) this.grantList = (JSON.parse(readFileSync(o.file, 'utf8')) as SlackGrant[]).filter((g) => g.until > Date.now());
     } catch {
@@ -1038,11 +1069,12 @@ export class Outbox {
    * The line under a message Cora sends for you: your sign-off (the user's setting, e.g. :cora:) and who it's for.
    * None when the sign-off is turned off.
    */
-  private async footer(): Promise<string | undefined> {
+  private async footer(sessionId: string | null = null): Promise<string | undefined> {
     const sign = this.o.sign?.().trim();
     if (!sign) return undefined;
     const name = await this.o.slack.firstName().catch(() => '');
-    return `${sign}  Sent from Cora${name ? ` on ${name}'s behalf` : ''}`;
+    // a session's: it says so
+    return `${sign}  Sent from ${this.o.bySession?.(sessionId) ? 'a Cora session' : 'Cora'}${name ? ` on ${name}'s behalf` : ''}`;
   }
 
   /** A message with files, signed at its end (their message takes no line under it): once. */
@@ -1055,10 +1087,10 @@ export class Outbox {
    * Send now (you asked Cora for it in your own words): posted at once, and it can be undone for a few seconds.
    * `typed`: you wrote it yourself (the Inbox's reply), so it isn't signed as Cora's.
    */
-  async sendNow(d: { to: SlackTarget; text: string; threadTs?: string; own?: boolean; typed?: boolean; files?: SlackAttachment[]; /** the session that wrote it (its banner says so) */ sessionId?: string | null; /** false: without Cora's banner */ banner?: boolean }): Promise<{ id: string; link: string }> {
-    const footer = d.typed ? undefined : await this.footer();
+  async sendNow(d: { to: SlackTarget; text: string; threadTs?: string; own?: boolean; typed?: boolean; files?: SlackAttachment[]; /** the session that wrote it (its banner says so) */ sessionId?: string | null; /** false: without Cora's banner */ banner?: boolean; /** only you read it (your own DM): its banner may say more */ reviewed?: boolean }): Promise<{ id: string; link: string }> {
+    const footer = d.typed ? undefined : await this.footer(d.sessionId ?? null);
     // Cora's banner on top of what Cora writes (not what you typed; not with files)
-    const banner = !d.typed && !d.files?.length && d.banner !== false && this.o.banner ? await this.o.banner({ sessionId: d.sessionId ?? null, text: d.text }).catch(() => null) : null;
+    const banner = !d.typed && !d.files?.length && d.banner !== false && this.o.banner ? await this.o.banner({ sessionId: d.sessionId ?? null, text: d.text, to: d.to, reviewed: !!d.reviewed }).catch(() => null) : null;
     const r = d.files?.length ? await this.o.slack.postFiles(d.to, d.typed ? d.text : this.signed(d.text), d.files, d.threadTs) : await this.o.slack.post(d.to, d.text, d.threadTs, { footer, banner, rich: !d.typed });
     const at = Date.now();
     const id = randomUUID();
@@ -1111,7 +1143,16 @@ export class Outbox {
     return new Promise((resolve) => {
       const h: Held = { draft, answered: false, answer: (o) => !h.answered && ((h.answered = true), resolve(o)) };
       this.held.set(draft.id, h);
-      if (!draft.files?.length && draft.banner !== false && this.o.banner) this.banners.set(draft.id, this.o.banner(draft).catch(() => null));
+      if (!draft.files?.length && draft.banner !== false && this.o.banner) {
+        const b = { sessionId: draft.sessionId, text: draft.text, to: draft.to, reviewed: true };
+        this.banners.set(draft.id, this.o.banner(b).catch(() => null));
+        // the draft card shows what the banner will say, so you check it with the words
+        void this.o.bannerPreview?.(b).then((q) => {
+          if (!q || !this.held.has(draft.id)) return;
+          h.draft = { ...h.draft, bannerQ: q };
+          this.changed();
+        }).catch(() => {});
+      }
       setTimeout(() => {
         if (h.answered || !this.held.has(draft.id)) return;
         h.draft = { ...h.draft, waiting: false };
@@ -1141,8 +1182,8 @@ export class Outbox {
     try {
       // Cora's banner on top, unless you unticked it (a message with files has none: Slack shows them its own way); made
       // as the draft came, again if you changed its words (it may show its first line)
-      const banner = !h.draft.files?.length && (a.banner ?? h.draft.banner) !== false && this.o.banner ? await ((text === h.draft.text.trim() && this.banners.get(id)) || this.o.banner({ ...h.draft, text })).catch(() => null) : null;
-      const r = h.draft.files?.length ? await this.o.slack.postFiles(to, this.signed(text), h.draft.files, h.draft.threadTs) : await this.o.slack.post(to, text, h.draft.threadTs, { footer: await this.footer(), banner });
+      const banner = !h.draft.files?.length && (a.banner ?? h.draft.banner) !== false && this.o.banner ? await ((text === h.draft.text.trim() && to.id === h.draft.to.id && this.banners.get(id)) || this.o.banner({ sessionId: h.draft.sessionId, text, to, reviewed: true })).catch(() => null) : null;
+      const r = h.draft.files?.length ? await this.o.slack.postFiles(to, this.signed(text), h.draft.files, h.draft.threadTs) : await this.o.slack.post(to, text, h.draft.threadTs, { footer: await this.footer(h.draft.sessionId), banner });
       this.held.delete(id);
       this.banners.delete(id);
       h.answer({ sent: true, link: r.link, text, to, edited: text !== h.draft.text.trim() || to.id !== h.draft.to.id });

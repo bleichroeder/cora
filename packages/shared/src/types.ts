@@ -1,6 +1,7 @@
 import { DEFAULT_JIRA_WATCH } from './jiraWatch';
 import { DEFAULT_TICKET_START } from './jira';
 import { DEFAULT_SLACK_BOT } from './slackBot';
+import { DEFAULT_CALENDAR } from './calendar';
 export type Family = 'look' | 'change' | 'run' | 'web' | 'delegate' | 'mcp' | 'plan' | 'human' | 'mind';
 
 export type IconRef = { name: string; family: Family };
@@ -84,6 +85,8 @@ export type SessionInfo = {
   autoName?: string | null;
   /** its own icon (sessionIcons.ts): picked with its auto-name, or by you; null: none (the plain swatch) */
   icon?: string | null;
+  /** Cora started it (a session she launched, a Jira ticket she picked up): its Slack banner says so */
+  startedBy?: 'cora' | null;
   /** when its current turn began (your prompt): how long it's been working */
   turnAt?: number | null;
   color?: string | null;
@@ -304,6 +307,8 @@ export type Settings = {
   slackBot: import('./slackBot').SlackBotSettings;
   /** Slack in Cora's Inbox: the channels you follow (only what touches you there) */
   slack: { follow: import('./slack').SlackFollow[]; /** the sign-off on messages Cora sends for you (`:cora:`; empty: none) */ sign: string };
+  /** your Google calendar: how long before a call Cora tells you (calendar.ts) */
+  calendar: import('./calendar').CalendarSettings;
   /**
    * Cora's browser: suggest from (and show) your Chrome / Edge bookmarks and history. `profiles`: the ones you brought
    * in, each with its own sign-ins (Cora's Browser switches between them); none: one profile with all of them.
@@ -329,6 +334,7 @@ export const DEFAULT_SETTINGS: Settings = {
   gitlab: { host: 'gitlab.com', todos: true, start: 'offer' },
   slackBot: DEFAULT_SLACK_BOT,
   slack: { follow: [], sign: ':cora:' },
+  calendar: { ...DEFAULT_CALENDAR },
   browser: { chrome: true },
   onepassword: { on: true, otp: true, tools: true, suggest: true },
   setup: { skipped: [], seen: false },
@@ -499,6 +505,8 @@ export type ServerMsg =
   /** your Cora's look (a screen's own settings that follow you across devices) changed on one of your screens */
   | { t: 'synced'; key: string; value: string | null }
   | import('./gmail').MailOutboxMsg
+  | import('./calendar').CalendarMsg
+  | import('./calendar').CalendarDueMsg
   | import('./deploys').DeploysMsg
   | import('./notes').NotesMsg
   | import('./slack').SlackMsg
