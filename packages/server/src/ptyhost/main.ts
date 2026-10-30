@@ -1,5 +1,6 @@
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { socketPath } from './protocol';
 import { startHost } from './host';
 
@@ -27,7 +28,15 @@ try {
 } catch {
   /* stays where it was started */
 }
-startHost({ path: socketPath(dataDir), token, log, onClose: () => process.exit(0) }).catch((e) => {
+// the folder it runs from: said in its hello, and its pid kept there (an installed Cora's runtime folder), so a newer
+// Cora never removes a folder a host still runs from
+const hostDir = dirname(fileURLToPath(import.meta.url));
+try {
+  if (existsSync(join(hostDir, 'ready'))) writeFileSync(join(hostDir, 'host.pid'), String(process.pid));
+} catch {
+  /* not kept: a newer Cora asks Windows instead */
+}
+startHost({ path: socketPath(dataDir), token, log, dir: hostDir, onClose: () => process.exit(0) }).catch((e) => {
   // most likely another host is already listening on the pipe
   log(`could not start: ${(e as Error).message}`);
   process.exit(1);

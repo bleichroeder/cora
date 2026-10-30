@@ -17,7 +17,7 @@ import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest }
 import cookie from '@fastify/cookie';
 import fastifyStatic from '@fastify/static';
 import websocket from '@fastify/websocket';
-import { INBOX_SOURCES, MAX_DRAFT_ASKS, ticketInPrompt, type TicketFacts, type PendingDecision, type LiveState, type LiveAsk, type ProjectWake, type ServerMsg, type SessionInfo, type SessionTicket, JIRA_EVENT_KINDS, type JiraEvent, type JiraEventKind, type JiraWatchStatus, HELLO_PREFIX, artifactUrl, debriefMarkdown, debriefSpan, gateDecision, recapText, inScope, mask, BROWSER_PROFILE_ID, CORA_RELEASES, displayName, shadesOf, sessionIcon } from '@cora/shared';
+import { INBOX_SOURCES, MAX_DRAFT_ASKS, parseSlackLink, ticketInPrompt, type TicketFacts, type PendingDecision, type LiveState, type LiveAsk, type ProjectWake, type ServerMsg, type SessionInfo, type SessionTicket, JIRA_EVENT_KINDS, type JiraEvent, type JiraEventKind, type JiraWatchStatus, HELLO_PREFIX, artifactUrl, debriefMarkdown, debriefSpan, gateDecision, recapText, inScope, mask, BROWSER_PROFILE_ID, CORA_RELEASES, displayName, shadesOf, sessionIcon } from '@cora/shared';
 import { checkOptions, checkPrompt, launchArgs } from './launch';
 import { checkSummary, checkTicket, type Tickets } from './tickets';
 import { summarizeUsage } from './usage';
@@ -381,6 +381,27 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
   })());
 
   /** A session's project, for its tools: when coordination is on and it's a member. */
+  /** Cora's hold on projects: one by its name or id (the live ones), and a session into one (or out of its own). */
+  function projectsForCora(projects: import('./projects').Projects): NonNullable<OrchToolDeps['projects']> {
+    return {
+      find: (ref) => {
+        const live = projects.list().filter((p) => !p.archivedAt);
+        const r = ref.trim().toLowerCase();
+        const hit = live.find((p) => p.id === ref.trim()) ?? live.find((p) => p.name.toLowerCase() === r) ?? (() => {
+          const some = live.filter((p) => p.name.toLowerCase().includes(r));
+          return some.length === 1 ? some[0] : undefined;
+        })();
+        if (hit) return { id: hit.id, name: hit.name };
+        return { error: `No project "${ref}"${live.length ? `: the projects are ${live.map((p) => `"${p.name}"`).join(', ')}` : ' (there are none yet)'}.` };
+      },
+      move: (sid, pid) => {
+        if (pid) return projects.add(pid, sid) ? (projects.get(pid)?.name ?? null) : null;
+        const cur = projects.projectOf(sid);
+        return cur && projects.leave(cur.id, sid) ? cur.name : null;
+      },
+    };
+  }
+
   function mcpProjects(projects: import('./projects').Projects): McpProjects {
     const mine = (sid: string) => {
       const p = projects.projectOf(sid);
@@ -562,6 +583,24 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
       othersTurn: () => o.othersTurn(),
       userTurn: () => o.userTurn(),
       coraDm: (t) => (d.bot ? d.bot.dm(t) : Promise.resolve({ ok: false, error: "Cora's own Slack bot isn't set up (Settings → Slack)." })),
+      ...(d.slack
+        ? {
+            slackPost: async (to, text, threadLink) => {
+              const sl = d.slack!.slack;
+              const link = threadLink ? parseSlackLink(threadLink) : null;
+              if (threadLink && !link) throw new Error('thread: a Slack message link');
+              const target = await sl.resolve(link ? link.channel : to);
+              if (target.kind === 'person') throw new Error('a channel, please (a message to the user is cora_dm)');
+              const r = await sl.post(target, text, link ? (link.threadTs ?? link.ts) : undefined, { asBot: true, inChannel: true });
+              return { link: r.link, where: target.label };
+            },
+            slackPin: async (url) => {
+              const link = parseSlackLink(url);
+              if (!link) throw new Error('a Slack message link, please');
+              return d.slack!.slack.pin(link.channel, link.ts);
+            },
+          }
+        : {}),
       isAgent: (sid) => o.isAgent(sid),
       ui: (cmd) => o.ui(cmd),
       remember: (note) => o.remember(note),
@@ -629,6 +668,8 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
       decidePending: (id, allow, rule, message) => pending.resolve(id, allow ? { decision: 'allow' } : { decision: 'deny', ...(message ? { message } : {}) }, { via: 'orchestrator', rule }).ok,
       answerPending: (id, answers, rule) => pending.resolve(id, { decision: 'allow', answers }, { via: 'orchestrator', rule }),
       talk: o.talk,
+      followUps: o.followUps,
+      ...(d.projects ? { projects: projectsForCora(d.projects) } : {}),
       askCopy: (p) => o.copies.ask(p),
     };
   };
@@ -638,10 +679,11 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
     const o = d.orchestrator!;
     const deps = orchDeps();
     const hosted = (sid: string) => (ptys?.list() ?? []).find((t) => t.sessionId === sid && t.alive);
-    const start = async (cwd: string, model?: string) => {
+    const start = async (cwd: string, model?: string, project?: string) => {
       if (!existsSync(cwd)) throw new Error(`${cwd} isn't there any more`);
       const res = await deps.launch({ cwd, prompt: text ?? '', trust: true, ...(model ? { model } : {}) });
-      return `Started a session in ${cwd} (id ${res.terminal.sessionId}).`;
+      const into = project ? deps.projects?.move(res.terminal.sessionId, project) : null;
+      return `Started a session in ${cwd} (id ${res.terminal.sessionId})${into ? ` in the project "${into}"` : ''}.`;
     };
     const send = (sid: string) => {
       const t = hosted(sid);
@@ -651,7 +693,11 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
     };
     switch (r.do) {
       case 'start':
-        return start(chosen ?? r.cwd, r.model);
+        return start(chosen ?? r.cwd, r.model, r.project);
+      case 'project': {
+        const moved = deps.projects?.move(r.sessionId, r.projectId);
+        return moved ? (r.projectId ? `It's in the project "${moved}" now.` : `It's out of the project "${moved}".`) : 'Nothing to move.';
+      }
       case 'send':
         return send(r.sessionId);
       case 'end':
@@ -1160,6 +1206,14 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
     const sid = String(req.body?.sessionId ?? '');
     if (!sid) return reply.code(400).send({ error: 'which session?' });
     orch.talk.end(sid);
+    return orch.status();
+  });
+  // a follow-up of Cora's you cancel (Cora's console)
+  app.post<{ Body: { id?: string } }>('/api/orchestrator/follow-ups/cancel', { preHandler: requireAction }, async (req, reply) => {
+    if (!orch) return noOrch(reply);
+    const id = String(req.body?.id ?? '');
+    if (!orch.followUps.cancel(id)) return reply.code(404).send({ error: 'no such follow-up' });
+    orch.feed.note(`The user cancelled your follow-up ${id}: don't check back on it.`, { always: true });
     return orch.status();
   });
   app.post('/api/orchestrator/stand-down', { preHandler: requireAction }, async (_req, reply) => (orch ? (orch.standDown(), orch.status()) : noOrch(reply)));

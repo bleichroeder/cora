@@ -34,6 +34,30 @@ const realGit: Git = (cwd, args, o) =>
     ),
   );
 
+/** glab's path, when it's signed in to a host (asked again every 10 minutes per host); null: not installed or not signed in there. */
+export function glabSignedIn(): (host: string) => Promise<string | null> {
+  let exe: Promise<string | null> | undefined;
+  const known = new Map<string, { ok: boolean; at: number }>();
+  const find = () =>
+    new Promise<string | null>((done) =>
+      execFile(process.platform === 'win32' ? 'where' : 'which', ['glab'], { windowsHide: true, timeout: 5000 }, (e, out) => {
+        const hit = e ? null : String(out ?? '').split(/\r?\n/).map((l) => l.trim()).find(Boolean) ?? null;
+        const local = process.env.LOCALAPPDATA ? join(process.env.LOCALAPPDATA, 'Programs', 'glab', 'glab.exe') : null;
+        done(hit ?? (local && existsSync(local) ? local : null));
+      }),
+    );
+  return async (host) => {
+    const path = await (exe ??= find());
+    if (!path) return null;
+    const k = known.get(host);
+    if (!k || Date.now() - k.at > 10 * 60_000) {
+      const ok = await new Promise<boolean>((done) => execFile(path, ['auth', 'status', '--hostname', host], { windowsHide: true, timeout: 15_000 }, (e) => done(!e)));
+      known.set(host, { ok, at: Date.now() });
+    }
+    return known.get(host)!.ok ? path : null;
+  };
+}
+
 /** A fetch that failed because it couldn't sign in (not because it's offline): what git says then. */
 export const SIGN_IN_FAILED = /authentication failed|could not read (username|password)|terminal prompts disabled|access denied|permission denied \(publickey|\b40[13]\b/i;
 /** The host a remote URL points at (https://host/…, git@host:…, ssh://git@host/…). */
@@ -62,6 +86,7 @@ export class Worktrees {
   /** sessions told to move into a worktree: its folder, and since when */
   private moving = new Map<string, { path: string; at: number }>();
   private git: Git;
+  private glab: (host: string) => Promise<string | null>;
   /** fetches go one at a time: several at once race Credential Manager's refresh of a run-out GitLab sign-in */
   private fetching: Promise<unknown> = Promise.resolve();
 
@@ -82,9 +107,13 @@ export class Worktrees {
       now?: () => number;
       /** how long before a fetch that couldn't sign in tries once more (the sign-in may have been mid-refresh) */
       retryMs?: number;
+      /** glab, when it's signed in to a host: its path (git then signs in with glab's sign-in there) */
+      glab?: (host: string) => Promise<string | null>;
     },
   ) {
     this.git = o.git ?? realGit;
+    // tests that fake git don't ask the real glab
+    this.glab = o.glab ?? (o.git ? async () => null : glabSignedIn());
   }
 
   private now(): number {
@@ -188,7 +217,9 @@ export class Worktrees {
   private async fetch(root: string): Promise<void> {
     if (this.now() - (this.fetched.get(key(root)) ?? 0) < FETCH_EVERY) return;
     this.fetched.set(key(root), this.now());
-    const once = () => this.queued(() => this.git(root, ['fetch', '--prune', '--quiet', 'origin']));
+    const url = (await this.git(root, ['remote', 'get-url', 'origin'])).out.trim();
+    const auth = await this.signInArgs(url);
+    const once = () => this.queued(() => this.git(root, [...auth, 'fetch', '--prune', '--quiet', 'origin']));
     let r = await once();
     // couldn't sign in: most often another git (a session's) was refreshing the same sign-in at that moment, and it
     // works a few seconds later (as it did when you clicked Sign in): try once more before saying so
@@ -199,7 +230,7 @@ export class Worktrees {
     // couldn't sign in, or can again: said once per change (offline and the like: nothing to say)
     const failed = !r.ok && SIGN_IN_FAILED.test(r.err ?? '');
     if (!r.ok && !failed) return;
-    const host = remoteHost((await this.git(root, ['remote', 'get-url', 'origin'])).out);
+    const host = remoteHost(url);
     if (!host) return;
     const known = this.signIn.has(host);
     const set = this.signIn.get(host) ?? new Set<string>();
@@ -208,6 +239,18 @@ export class Worktrees {
     else set.delete(root);
     this.signIn.set(host, set);
     this.o.onSignIn?.(host, [...set]);
+  }
+
+  /**
+   * How git signs in for a remote: an https GitLab remote whose host glab is signed in to uses glab's own sign-in
+   * (`glab auth git-credential`), for this command only, instead of Git Credential Manager, whose GitLab sign-in runs
+   * out every couple of hours and whose browser sign-in can fail to open. Anything else: as git is set up.
+   */
+  private async signInArgs(url: string): Promise<string[]> {
+    const host = /^https:\/\//i.test(url) ? remoteHost(url) : null;
+    if (!host) return [];
+    const exe = await this.glab(host).catch(() => null);
+    return exe ? ['-c', 'credential.helper=', '-c', `credential.https://${host}.helper=!'${exe.replace(/\\/g, '/')}' auth git-credential`] : [];
   }
 
   /** One fetch after another (whatever the one before did). */
@@ -226,7 +269,8 @@ export class Worktrees {
     // after a restart the note can outlive what this start knows: any repo of that host will do
     if (!roots.length) for (const r of this.repos.values()) if (remoteHost((await this.git(r.root, ['remote', 'get-url', 'origin'])).out) === host) roots.push(r.root);
     if (!roots.length) return { ok: false, error: `No repo of ${host} to sign in with` };
-    const r = await this.git(roots[0], ['fetch', '--prune', '--quiet', 'origin'], { ask: true });
+    const auth = await this.signInArgs((await this.git(roots[0], ['remote', 'get-url', 'origin'])).out.trim());
+    const r = await this.git(roots[0], [...auth, 'fetch', '--prune', '--quiet', 'origin'], { ask: true });
     if (!r.ok) return { ok: false, error: (r.err ?? '').trim().split('\n').filter(Boolean).pop()?.replace(/^fatal:\s*/, '') || "The sign-in didn't work" };
     for (const root of roots) {
       this.fetched.delete(key(root));

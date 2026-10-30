@@ -56,6 +56,8 @@ export function CalendarSection({ server, save }: { server: Settings | null; sav
           </Row>
           <Toggle label="An Inbox item" hint="The call, with Join, Prep notes and Ask Cora; Cora's brief joins it once she's written it." checked={c.inbox} onChange={(v) => set({ inbox: v })} />
           <Toggle label="A desktop notification" hint="Google usually sends one already. Without Cora's agent, you get one anyway." checked={c.notify} onChange={(v) => set({ notify: v })} />
+          <Toggle label="An alert when it starts" hint="A notification when the call starts (click it to join), Cora's one line, and your phone when you're away: the heads-up comes minutes before, and minutes are easy to lose." checked={c.startAlert} onChange={(v) => set({ startAlert: v })} />
+          <Toggle label="Slack status during calls" hint={`Your Slack status says "In a call" while you're in one, and Slack clears it when the call ends. Nothing about the call itself; a status you set yourself is left alone.`} checked={c.slackStatus} onChange={(v) => set({ slackStatus: v })} />
           <Toggle label="Draft standup notes" hint="Before a standup, its notes from the Standup template (yesterday, today, blockers), from your work since the last one." checked={c.standupDraft} onChange={(v) => set({ standupDraft: v })} />
         </Group>
       ) : null}

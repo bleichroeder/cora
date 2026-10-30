@@ -164,6 +164,11 @@ function DraftCard({ d }: { d: SlackDraft }) {
             ) : null}
           </span>
         ) : null}
+        {d.at ? (
+          <span className="sd-thread" title="Slack holds it and sends it then">
+            <Icon name="Clock" size={12} /> sends {new Date(d.at).toLocaleString('en-US', { weekday: 'short', hour: 'numeric', minute: '2-digit' })}
+          </span>
+        ) : null}
       </div>
       {banner && d.bannerQ && !d.files?.length ? <BannerPreview q={d.bannerQ} /> : null}
       <textarea
@@ -199,7 +204,7 @@ function DraftCard({ d }: { d: SlackDraft }) {
           <Icon name="ExternalLink" size={12} /> Open in Slack
         </button>
         <button className="btn allow" disabled={!!busy || !text.trim()} onClick={() => void act('send')} title="Send it as you (Ctrl+Enter)">
-          <Icon name={busy === 'send' ? 'LoaderCircle' : 'Send'} size={12} /> {busy === 'send' ? 'Sending…' : 'Send'}
+          <Icon name={busy === 'send' ? 'LoaderCircle' : 'Send'} size={12} /> {busy === 'send' ? 'Sending…' : d.at ? 'Schedule' : 'Send'}
         </button>
       </div>
     </div>

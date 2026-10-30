@@ -2,8 +2,8 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_SETTINGS, findRefs, looksLikeStandup, mergeRefs, refsLine, type BrainEvent, type CalEvent, type CalendarMsg, type SessionInfo } from '@cora/shared';
-import { Calendar, dueNow, mapEvent, plainText, withWhom } from '../src/calendar';
+import { DEFAULT_SETTINGS, findRefs, headline, looksLikeStandup, mergeRefs, refsLine, type BrainEvent, type CalEvent, type CalendarMsg, type SessionInfo } from '@cora/shared';
+import { Calendar, dueNow, mapEvent, plainText, startingNow, withWhom } from '../src/calendar';
 import { draftPrep, journalTrail } from '../src/calendarPrep';
 import { Drafts } from '../src/drafts';
 import { Journal, parseStamp, repoName } from '../src/journal';
@@ -19,6 +19,12 @@ describe('Journal 2: refs', () => {
     expect(r).toEqual({ tickets: ['ACME-5340'], mrs: ['!412', '!413'], issues: ['#212'], artifacts: ['https://claude.ai/code/artifact/abc-123'], links: ['https://gitlab.example.com/g/p/-/merge_requests/413'] });
     // no projects known: any key; a "#1" or "a!1" isn't an issue or a merge request
     expect(findRefs('UTF-8 #1 a!2')).toEqual({ tickets: ['UTF-8'] });
+  });
+  it("gives an entry's headline: its first line, markdown off, short", () => {
+    expect(headline('**#421 overnight check 1/3 (06:17Z): OK**\n- Prod rollover `000728` → `000729`')).toBe('#421 overnight check 1/3 (06:17Z): OK');
+    expect(headline('\n## Found it\nmore')).toBe('Found it');
+    expect(headline('- `npm test` green')).toBe('npm test green');
+    expect(headline('x'.repeat(300))).toHaveLength(160);
   });
   it('merges refs in order without repeats, and writes the line under an entry', () => {
     const r = mergeRefs({ tickets: ['ACME-1'], explains: [{ id: 'e1', title: 'Plan' }] }, { tickets: ['ACME-1', 'ACME-2'], mrs: ['!4'], explains: [{ id: 'e1', title: 'Plan' }] });
@@ -139,10 +145,35 @@ describe('calendar: reading it', () => {
   });
 });
 
+describe('calendar: a call starting', () => {
+  it('is said once, as it starts (not again after a restart); the heads-up still comes before it', async () => {
+    const data = tmp('cora-cal-start-');
+    let now = T;
+    const due: string[] = [];
+    const starting: string[] = [];
+    const mk = () => new Calendar({ connected: () => true, token: async () => 't', granted: () => true, lead: () => 15, file: join(data, 'calendar.json'), now: () => now, fetch: fakeFetch(200, { items: RAW }), due: (e) => due.push(e.id), starting: (e) => starting.push(e.id) });
+    const c = mk();
+    await c.refresh();
+    expect(due).toEqual(['a']);
+    expect(starting).toEqual([]);
+    // 2:00 PM: the call starts
+    now = new Date(2026, 9, 29, 14, 0, 20).getTime();
+    c.check();
+    c.check();
+    expect(starting).toEqual(['a']);
+    // Cora restarted a moment later: not again
+    const again = mk();
+    await again.refresh();
+    expect(starting).toEqual(['a']);
+    // minutes later (Cora was off at 2:00): too late to say it's starting
+    expect(startingNow([mapEvent(RAW[0])!], new Date(2026, 9, 29, 14, 5).getTime(), {})).toEqual([]);
+  });
+});
+
 describe('calendar: settings', () => {
   it('has its defaults and refuses what makes no sense', () => {
     const p = new Prefs(join(tmp('cora-cal-prefs-'), 'prefs.json'));
-    expect(p.get().calendar).toEqual({ lead: 15, brief: 'spoken', inbox: true, notify: false, standupDraft: true });
+    expect(p.get().calendar).toEqual({ lead: 15, brief: 'spoken', inbox: true, notify: false, standupDraft: true, startAlert: true, slackStatus: true });
     expect(DEFAULT_SETTINGS.calendar.lead).toBe(15);
     expect(p.update({ calendar: { lead: 30, brief: 'written', notify: true } } as never).calendar).toMatchObject({ lead: 30, brief: 'written', notify: true, inbox: true });
     expect(p.update({ calendar: { lead: 0 } } as never).calendar.lead).toBe(0);

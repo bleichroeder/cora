@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import Fastify from 'fastify';
 import { afterEach, describe, expect, it } from 'vitest';
 import { DEFAULT_SETTINGS, parseSlackLink, rankByName, slackWebUrl, toMrkdwn } from '@cora/shared';
-import { registerMcp } from '../src/mcp';
+import { registerMcp, type McpSlack } from '../src/mcp';
 import { Outbox, Slack, SlackError, sections, slackApi } from '../src/slack';
 import { applyPatch } from '../src/prefs';
 import { readSecret } from '../src/secrets';
@@ -281,14 +281,14 @@ describe('the outbox', () => {
 describe('the Slack tools', () => {
   const rpc = (method: string, params: object = {}, id = 1) => ({ jsonrpc: '2.0', id, method, params });
   const H = { 'x-cora-token': 'tok', accept: 'application/json, text/event-stream', 'content-type': 'application/json' };
-  async function setup(connect = true, cora?: { turn: () => boolean }) {
+  async function setup(connect = true, cora?: { turn: () => boolean }, toYou?: McpSlack['toYou']) {
     const f = fakeSlack();
     const slack = new Slack({ dataDir: dir(), api: f.api });
     if (connect) await slack.connect('xoxp-good');
     const outbox = new Outbox({ slack, onChange: () => {} });
     const app = Fastify();
     // Cora's own agent is the session "cora"
-    registerMcp(app, 'tok', () => DEFAULT_SETTINGS, { slack, outbox }, cora ? { isAgent: (sid) => sid === 'cora-agent-1', deps: () => ({}) as never, userTurn: cora.turn } : undefined);
+    registerMcp(app, 'tok', () => DEFAULT_SETTINGS, { slack, outbox, ...(toYou ? { toYou } : {}) }, cora ? { isAgent: (sid) => sid === 'cora-agent-1', deps: () => ({}) as never, userTurn: cora.turn } : undefined);
     const call = async (name: string, args: object, headers: Record<string, string> = H) => {
       const r = await app.inject({ method: 'POST', url: '/mcp', headers, payload: rpc('tools/call', { name, arguments: args }) });
       return JSON.parse(r.body).result as { isError?: boolean; content: Array<{ text: string }> };
@@ -339,6 +339,30 @@ describe('the Slack tools', () => {
     expect(outbox.list()).toEqual([]);
     expect(posted.at(-1)).toMatchObject({ channel: 'D-U0' });
     expect(posted.at(-1).text).toMatch(/^Done: the README is on GitHub/);
+  });
+
+  it("a message to you goes through Cora's bot when it's set up (it pings you; your own DM doesn't), else to your own DM saying so", async () => {
+    const sent: Array<{ sessionId: string | null; text: string }> = [];
+    const bot = await setup(true, undefined, async (d) => (sent.push(d), { ok: true, link: 'https://acme.slack.com/archives/D-BOT/p1' }));
+    const r = await bot.call('slack_send', { to: 'U0', text: '#421 check 1/3: OK' }, { ...H, 'x-cora-session': 'race-1234' });
+    expect(r.content[0].text).toMatch(/^Sent to the user through Cora's bot .*pings their phone.* https:\/\/acme\.slack\.com\/archives\/D-BOT\/p1$/);
+    expect(sent).toEqual([{ sessionId: 'race-1234', text: '#421 check 1/3: OK' }]);
+    expect(bot.posted).toEqual([]);
+    // no bot: your own DM, and the session is told it won't ping you
+    const none = await setup(true, undefined, async () => null);
+    const r2 = await none.call('slack_send', { to: 'U0', text: 'check 2/3: OK' });
+    expect(r2.content[0].text).toMatch(/own DM.*doesn't ping them/);
+    expect(none.posted.at(-1)).toMatchObject({ channel: 'D-U0' });
+  });
+
+  it('a message for later: the draft carries its time (Slack holds it once you OK it); not to yourself, not with files', async () => {
+    const { call, outbox } = await setup();
+    void call('slack_send', { to: '#deploys', text: '2.10.4 is on prod', at: 'in 2h' });
+    await new Promise((r) => setTimeout(r, 50));
+    const d = outbox.list()[0];
+    expect(d.at).toBeGreaterThan(Date.now() + 119 * 60_000);
+    expect((await call('slack_send', { to: 'U0', text: 'later', at: 'in 2h' })).content[0].text).toMatch(/can't be scheduled/);
+    expect((await call('slack_send', { to: '#deploys', text: 'x', at: 'whenever' })).content[0].text).toMatch(/at: a time like/);
   });
 
   it('asks for an id when a name is ambiguous, without making a draft', async () => {

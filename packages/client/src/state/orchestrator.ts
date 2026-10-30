@@ -132,6 +132,7 @@ export function watchPresence(): () => void {
 
 /** End Cora's conversation with a session: its next message to it needs your OK again. */
 export const endTalk = (sessionId: string) => post('/api/orchestrator/talk/end', { sessionId });
+export const cancelFollowUp = (id: string) => post('/api/orchestrator/follow-ups/cancel', { id });
 /** Cora is in charge of something (a goal, or your sessions' prompts): the window says so. */
 export const useInControl = () => useOrch((s) => !!s.status?.enabled && (!!s.status.control || goalLive(s.status)));
 

@@ -1,8 +1,8 @@
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import type { Approval, BrainEvent, Goal } from '@cora/shared';
+import type { Approval, BrainEvent, FollowUp, Goal } from '@cora/shared';
 import { sessionEvents, useBrain } from '../state/store';
 import { composerInbox } from '../state/composer';
-import { briefMe, newCora, coraKey, decideApproval, endTalk, goalLive, restartCora, sayToCora, setCommandOpen, setConsoleOpen, setControl, standDown, startGoal, stopGoal, useCoraState, useOrch } from '../state/orchestrator';
+import { briefMe, newCora, coraKey, decideApproval, endTalk, cancelFollowUp, goalLive, restartCora, sayToCora, setCommandOpen, setConsoleOpen, setControl, standDown, startGoal, stopGoal, useCoraState, useOrch } from '../state/orchestrator';
 import { useBrain as useBrainStore } from '../state/store';
 import { speak, startListening, stopListening, useVoice } from '../lib/voice';
 import { voiceCues } from '../lib/voiceAuto';
@@ -274,6 +274,7 @@ export function CoraConsole() {
       <GoalLine goal={status.goal} onOpen={() => setGoalOpen(true)} />
       {goalOpen ? <GoalPop goal={status.goal} onClose={() => setGoalOpen(false)} /> : null}
       <Talks talks={status.talks ?? []} />
+      <FollowUpsRow items={status.followUps ?? []} />
       <div className="cc-body" ref={body}>
         {!lines.length ? (
           <div className="cc-empty">
@@ -617,6 +618,36 @@ export function GoalBar({ goal, compose = false, onClose }: { goal: Goal | null;
 }
 
 /** The sessions Cora is talking with (you OKed a conversation): it messages them without asking until the time runs out. */
+/** What Cora will check back on (you asked her to): each with when, and × to cancel it. */
+export function FollowUpsRow({ items }: { items: FollowUp[] }) {
+  const sessions = useBrainStore((s) => s.sessions);
+  if (!items.length) return null;
+  const when = (f: FollowUp) => {
+    if (f.on === 'turn') return 'when its turn ends';
+    const t = new Date(f.next ?? 0).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+    return f.everyMs ? `${t}, then every ${Math.round(f.everyMs / 60_000)}m` : `at ${t}`;
+  };
+  return (
+    <div className="cc-talks" title="Cora checks back on these because you asked her to; × cancels one">
+      <Icon name="BellRing" size={12} />
+      <span className="dim">Following up</span>
+      {items.map((f) => {
+        const s = f.sessionId ? sessions[f.sessionId] : undefined;
+        const name = s ? s.alias || s.autoName || s.project : null;
+        return (
+          <span key={f.id} className="cc-talk" title={f.about}>
+            <span className="ct-name">{name ?? f.about.slice(0, 40)}</span>
+            <span className="ct-left">{when(f)}</span>
+            <button className="ct-end" title="Cancel: Cora won't check back on this" onClick={() => void cancelFollowUp(f.id)}>
+              <Icon name="X" size={10} />
+            </button>
+          </span>
+        );
+      })}
+    </div>
+  );
+}
+
 export function Talks({ talks }: { talks: Array<{ sessionId: string; until: number }> }) {
   const sessions = useBrainStore((s) => s.sessions);
   const setFocus = useBrainStore((s) => s.setFocus);

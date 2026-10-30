@@ -4,6 +4,30 @@ What changed in each release. Cora updates itself; each update's notes are on it
 
 ## Unreleased
 
+## 0.1.19
+
+- **Updates no longer break a running terminal host.** An update removed the folder of the terminal host still
+  running from an older version, and Cora reconnected to it: every new terminal then exited at once, and Cora's agent
+  kept stopping. An old host's folder now goes only once nothing runs from it; a host from an older version is
+  replaced when it has no terminals, else kept, its folder mended if it lost its files.
+- **Sessions can message you, and it pings you.** A session's message to you goes through Cora's own bot, in your
+  Cora DM, under the session's name and banner (it used to land, silent, in your own DM). Reply in its thread and the
+  reply goes back to the session. (The banner needs the bot's files:write scope.)
+- **The away digest says what happened.** One line per session, saying what it did (its journal since you left, or
+  its last reply), instead of a line per turn; each turn now counts once.
+- **Cora checks back when you ask her to** ("let me know what it finds"): when a session's turn ends, at a time, or
+  every so often, a few times at most. Shown, and cancellable, in her console.
+- **Cora puts sessions in projects:** start a session in a project, or move one in or out.
+- **Slack:** "Start a session on this" and "Ask Cora about this" in any message's menu (your clicks only); messages
+  for later (Slack holds them until the time you give); Cora posts in a channel as herself and pins a message, only on
+  your word or your OK; your status says "In a call" during calls (nothing about the call). Paste the app's updated
+  manifest (Settings › Slack) into Slack to get the new scopes and shortcuts.
+- **Calls:** an alert as a call starts too (a notification that joins it, Cora's one line, your phone when you're
+  away).
+- **No more GitLab sign-in popups from Cora:** its background fetches use glab's sign-in when glab is signed in, one
+  at a time, retrying once before saying anything.
+- A session you removed from the list is off its project's rows in the nav too.
+
 ## 0.1.18
 
 - **Cora knows your day.** She reads your Google calendar (read only, through the same Google sign-in as Gmail; add

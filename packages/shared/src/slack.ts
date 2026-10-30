@@ -63,6 +63,8 @@ export type SlackDraft = {
   /** a reply in a thread: the thread's first message, and a link to it */
   threadTs?: string;
   threadLink?: string;
+  /** sent at this time (Slack holds it until then), not as soon as you OK it */
+  at?: number;
   createdAt: number;
   /** the session is still waiting for the answer (after a while it's told the draft is waiting here) */
   waiting: boolean;

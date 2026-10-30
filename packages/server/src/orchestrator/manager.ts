@@ -4,6 +4,7 @@ import type { CoraTold } from '../inboxFeeds';
 import { appendFileSync, existsSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { FollowUps } from './followUps';
 import { AWAY_MS, FROM_CORA, bareWords, choiceOpen, highlightedOption, isShell, trustQuestion, type BriefKind, type BrainEvent, type SessionInfo, type CiMsg, type GoalState, type OrchestratorStatus, type PendingDecision, type PendingRequest, type Settings, type TerminalInfo, type UiCommand, takesTags, jiraLine, type JiraEvent, type MailHit, type GitlabTodo, type GitlabIssue, todoWhy } from '@cora/shared';
 import { terminalInput } from '../input';
 import type { PtyManager } from '../pty';
@@ -115,6 +116,9 @@ export class OrchestratorManager {
   private lastSeenSaved = 0;
   /** its conversations with sessions */
   readonly talk: Talk;
+  /** checking back when the user asked her to (a session's turn ending, a time, every so often) */
+  readonly followUps: FollowUps;
+  private followTimer: NodeJS.Timeout | null = null;
   /** side questions to copies of sessions */
   readonly copies: Copies;
   /** starting work on tickets assigned to you */
@@ -155,6 +159,17 @@ export class OrchestratorManager {
       name: (sid) => this.d.nameOf?.(sid) ?? sid.slice(0, 8),
       now: () => this.now(),
     });
+    this.followUps = new FollowUps({
+      file: join(this.dir, 'follow-ups.json'),
+      events: (sid, since) => this.d.eventsSince?.(sid, since) ?? [],
+      nameOf: (sid) => this.d.nameOf?.(sid) ?? sid.slice(0, 8),
+      // a follow-up the user asked for comes whatever the feed's set to
+      tell: (line) => this.feed.note(line, { always: true }),
+      onChange: () => this.changed(),
+      now: () => this.now(),
+    });
+    this.followTimer = setInterval(() => this.status().enabled && this.followUps.tick(), 15_000);
+    this.followTimer.unref?.();
     this.talk = new Talk({
       events: (sid, since) => this.d.eventsSince?.(sid, since) ?? [],
       heldOn: (sid) => {
@@ -331,6 +346,7 @@ export class OrchestratorManager {
       control: s.enabled && this.control,
       goal: s.enabled ? this.goals.current() : null,
       talks: s.enabled ? this.talk.list() : [],
+      followUps: s.enabled ? this.followUps.list() : [],
       ...(s.enabled ? { jiraStarted: this.jiraStarts.started() } : {}),
     };
   }
@@ -886,6 +902,8 @@ export class OrchestratorManager {
     }
   }
   dispose(): void {
+    if (this.followTimer) clearInterval(this.followTimer);
+    this.followTimer = null;
     if (this.dueTimer) clearInterval(this.dueTimer);
     this.dueTimer = null;
     this.tickEvery(false);

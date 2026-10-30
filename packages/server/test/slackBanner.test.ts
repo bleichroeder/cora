@@ -2,7 +2,7 @@ import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import type { SessionInfo } from '@cora/shared';
+import { colorEmoji, type SessionInfo } from '@cora/shared';
 import { Outbox, Slack, SlackError, quoted, richBlocks } from '../src/slack';
 import { Banners, bannerFor, bannerWords, headline } from '../src/banner';
 
@@ -31,6 +31,8 @@ function fakeSlack(refuse = 0) {
         if (p.blocks?.some((b: any) => b.type === 'image') && refuse-- > 0) throw new SlackError('invalid_blocks');
         if (p.blocks?.some((b: any) => b.type === 'header' && b.text.text === 'refuse me')) throw new SlackError('invalid_blocks');
         return { ok: true, ts: '1792170000.000200' };
+      case 'chat.scheduleMessage':
+        return { ok: true, scheduled_message_id: 'Q1', post_at: p.post_at };
       case 'chat.getPermalink':
         return { ok: true, permalink: 'https://acme.slack.com/archives/C1/p1792170000000200' };
       default:
@@ -293,5 +295,113 @@ describe('a banner that fails', () => {
     const none = new Banners(50, (l) => log.push(l));
     expect(await none.render({})).toBeNull();
     expect(log.at(-1)).toMatch(/^Slack banner dropped: Cora's desktop app isn't connected/);
+  });
+});
+
+describe("a session's message to you, through Cora's bot", () => {
+  async function botWorld(scopes: string[]) {
+    const calls: Array<{ token: string; method: string; p: any }> = [];
+    const api = (token: string) => async (method: string, p: Record<string, any> = {}) => {
+      calls.push({ token, method, p });
+      if (method === 'auth.test') return token === 'xoxb-bot' ? { ok: true, team_id: 'T1', user: 'cora', user_id: 'UB' } : { ok: true, team: 'Acme', team_id: 'T1', user: 'david', user_id: 'U0', url: 'https://acme.slack.com/' };
+      if (method === 'conversations.open') return { ok: true, channel: { id: 'D-BOT' } };
+      if (method === 'files.getUploadURLExternal') {
+        if (token === 'xoxb-bot' && !scopes.includes('files:write')) throw new SlackError('missing_scope');
+        return { ok: true, upload_url: 'https://files.slack.com/upload/v1/F9', file_id: 'F9' };
+      }
+      if (method === 'chat.postMessage') return { ok: true, ts: '1792170000.000300' };
+      if (method === 'chat.getPermalink') return { ok: true, permalink: 'https://acme.slack.com/archives/D-BOT/p1' };
+      return { ok: true };
+    };
+    const logs: string[] = [];
+    const slack = new Slack({ dataDir: dir(), api, fetch: (async () => new Response('OK', { status: 200 })) as typeof fetch, shareWaitMs: 1, log: (m) => logs.push(m) });
+    await slack.connect('xoxp-good');
+    await slack.setBotToken('xoxb-bot');
+    const send = () => slack.post({ kind: 'person', id: '', label: 'you' }, 'check 1/3: OK', undefined, { asBot: true, banner: GIF, byline: '*race* · a session in Cora' });
+    const post = () => calls.filter((c) => c.method === 'chat.postMessage').at(-1)!;
+    return { send, post, logs, calls };
+  }
+
+  it("shows its banner when the bot can upload (files:write), posted by the bot in its DM with you", async () => {
+    const w = await botWorld(['files:write']);
+    await w.send();
+    expect(w.post()).toMatchObject({ token: 'xoxb-bot', p: { channel: 'D-BOT' } });
+    expect(w.post().p.blocks[0]).toEqual({ type: 'image', slack_file: { id: 'F9' }, alt_text: 'Cora' });
+    expect(w.calls.find((c) => c.method === 'files.getUploadURLExternal')!.token).toBe('xoxb-bot');
+  });
+
+  it("without files:write: still sent, its name on top instead, and the log says what the bot needs", async () => {
+    const w = await botWorld([]);
+    await w.send();
+    expect(w.post().p.blocks[0]).toEqual({ type: 'context', elements: [{ type: 'mrkdwn', text: '*race* · a session in Cora' }] });
+    expect(w.logs.join('\n')).toMatch(/banner not shown \(missing_scope\): Cora's bot needs the files:write scope/);
+  });
+});
+
+describe('Slack, more of it', () => {
+  async function world(o: { userPins?: boolean } = {}) {
+    const calls: Array<{ token: string; method: string; p: any }> = [];
+    const api = (token: string) => async (method: string, p: Record<string, any> = {}) => {
+      calls.push({ token, method, p });
+      if (method === 'auth.test') return token === 'xoxb-bot' ? { ok: true, team_id: 'T1', user: 'cora', user_id: 'UB' } : { ok: true, team: 'Acme', team_id: 'T1', user: 'david', user_id: 'U0', url: 'https://acme.slack.com/' };
+      if (method === 'conversations.open') return { ok: true, channel: { id: 'D-BOT' } };
+      if (method === 'conversations.list') return { ok: true, channels: [{ id: 'C9', name: 'releases' }] };
+      if (method === 'users.list') return { ok: true, members: [{ id: 'U0', name: 'david' }] };
+      if (method === 'pins.add' && token === 'xoxp-good' && !o.userPins) throw new SlackError('missing_scope');
+      if (method === 'users.info') return { ok: true, user: { profile: { status_text: 'Lunch', status_emoji: ':sandwich:', status_expiration: 0 } } };
+      if (method === 'chat.postMessage') return { ok: true, ts: '1792170000.000400' };
+      if (method === 'chat.getPermalink') return { ok: true, permalink: 'https://acme.slack.com/archives/C9/p1' };
+      return { ok: true };
+    };
+    const slack = new Slack({ dataDir: dir(), api, fetch: (async () => new Response('OK', { status: 200 })) as typeof fetch, shareWaitMs: 1 });
+    await slack.connect('xoxp-good');
+    await slack.setBotToken('xoxb-bot');
+    return { slack, calls, last: (m: string) => calls.filter((c) => c.method === m).at(-1)! };
+  }
+
+  it("a session's message to you comes under its own name and colour", async () => {
+    const w = await world();
+    await w.slack.post({ kind: 'person', id: '', label: 'you' }, 'check 1/3: OK', undefined, { asBot: true, sender: { name: 'Report Race Condition', emoji: ':large_purple_circle:' } });
+    expect(w.last('chat.postMessage')).toMatchObject({ token: 'xoxb-bot', p: { channel: 'D-BOT', username: 'Report Race Condition', icon_emoji: ':large_purple_circle:' } });
+    expect(colorEmoji('#a78bfa')).toBe(':large_purple_circle:');
+    expect(colorEmoji('#fb7185')).toBe(':red_circle:');
+    expect(colorEmoji('#a3e635')).toBe(':large_green_circle:');
+    expect(colorEmoji('#38bdf8')).toBe(':large_blue_circle:');
+    expect(colorEmoji('#fdba74')).toBe(':large_orange_circle:');
+  });
+
+  it('Cora posts in a channel as her bot; pins as you, else as her bot; your status read and set', async () => {
+    const w = await world();
+    await w.slack.post({ kind: 'channel', id: 'C9', label: '#releases' }, 'Release 2.10.4 is out', undefined, { asBot: true, inChannel: true });
+    expect(w.last('chat.postMessage')).toMatchObject({ token: 'xoxb-bot', p: { channel: 'C9', text: 'Release 2.10.4 is out' } });
+    expect(w.last('chat.postMessage').p.username).toBeUndefined();
+    expect(await w.slack.pin('C9', '1792170000.000400')).toBe('cora');
+    expect((await world({ userPins: true })).slack.pin('C9', '1.2')).resolves.toBe('you');
+    expect(await w.slack.myStatus()).toEqual({ text: 'Lunch', emoji: ':sandwich:', expiration: 0 });
+    await w.slack.setStatus('In a call', ':spiral_calendar_pad:', 1792173600);
+    expect(w.last('users.profile.set').p.profile).toEqual({ status_text: 'In a call', status_emoji: ':spiral_calendar_pad:', status_expiration: 1792173600 });
+  });
+});
+
+describe('scheduled messages', () => {
+  it('Slack holds it until then; a draft carries its time to the send; Undo takes a scheduled one back', async () => {
+    const f = fakeSlack();
+    const slack = new Slack({ dataDir: dir(), api: f.api, fetch: f.fetchFn, shareWaitMs: 1 });
+    await slack.connect('xoxp-good');
+    const outbox = new Outbox({ slack, onChange: () => {} });
+    const to = { kind: 'channel' as const, id: 'C1', label: '#deploys' };
+    const at = Date.parse('2026-10-31T13:00:00Z');
+    const pending = outbox.request({ sessionId: 's1', to, text: '2.10.4 is on prod', at });
+    expect(outbox.list()[0].at).toBe(at);
+    expect((await outbox.decide(outbox.list()[0].id, { action: 'send' })).ok).toBe(true);
+    expect(await pending).toMatchObject({ sent: true, at });
+    const sched = f.calls.filter((c) => c.method === 'chat.scheduleMessage');
+    expect(sched).toHaveLength(1);
+    expect(sched[0].p).toMatchObject({ channel: 'C1', post_at: at / 1000 });
+    expect(f.calls.some((c) => c.method === 'chat.postMessage')).toBe(false);
+    // sent at once (on your word), then undone: unscheduled
+    const r = await outbox.sendNow({ to, text: 'later', postAt: at });
+    expect((await outbox.undo(r.id)).ok).toBe(true);
+    expect(f.calls.find((c) => c.method === 'chat.deleteScheduledMessage')?.p).toMatchObject({ channel: 'C1' });
   });
 });

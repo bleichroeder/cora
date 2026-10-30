@@ -72,7 +72,7 @@ async function start() {
     try {
       const dist = dirname(fileURLToPath(import.meta.url));
       // installed Cora: the host runs on the bundled Node, from a copy in ~/.cora/runtime (never the install folder)
-      const installed = process.env.CORA_HOST_NODE ? hostRuntime({ dataDir: config.dataDir, node: process.env.CORA_HOST_NODE, distDir: dist, modulesDir: join(dist, '..', '..', '..', 'node_modules') }) : null;
+      const installed = process.env.CORA_HOST_NODE ? hostRuntime({ dataDir: config.dataDir, node: process.env.CORA_HOST_NODE, distDir: dist, modulesDir: join(dist, '..', '..', '..', 'node_modules'), log: (m) => console.log(`  ${m}`) }) : null;
       const hostOpts = { dataDir: config.dataDir, legacyDataDirs: legacyDataDirs(config.dataDir), token: config.hostToken, olderTokens: [config.hookToken], hostScript: installed?.script ?? join(dist, 'ptyhost.js'), ...(installed ? { hostNode: installed.node } : {}), log: (m: string) => console.log(`  ${m}`) };
       // kept: if the host goes away while Cora runs, a new one is started (what's launched then still runs)
       ptyBackend = new HealingHostBackend(await connectOrStartHost(hostOpts), () => connectOrStartHost(hostOpts), (m) => console.log(`  ${m}`));

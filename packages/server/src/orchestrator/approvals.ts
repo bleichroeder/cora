@@ -23,13 +23,14 @@ export type ApprovalRun = (text: string | undefined, late: boolean, cwd?: string
  * card from before still works (docs/audit-2026-10-20.md U3). A card without one can't be kept.
  */
 export type Redo =
-  | { do: 'start'; cwd: string; model?: string }
+  | { do: 'start'; cwd: string; model?: string; /** the project it goes in (its id) */ project?: string }
   | { do: 'send'; sessionId: string }
   | { do: 'end'; sessionId: string }
   | { do: 'ask'; question: string }
   | { do: 'jira'; event: JiraEvent; cwd: string }
   | { do: 'issue'; project: string; iid: number; title: string; who: string; url: string; cwd: string }
-  | { do: 'mail'; sessionId?: string; cwd?: string };
+  | { do: 'mail'; sessionId?: string; cwd?: string }
+  | { do: 'project'; sessionId: string; projectId: string | null };
 export type RedoRun = (r: Redo, text: string | undefined, cwd: string | undefined) => Promise<string>;
 
 type Held = { a: Approval; run: ApprovalRun; answer: (o: ApprovalOutcome) => void; answered: boolean; redo?: Redo };

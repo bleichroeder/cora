@@ -103,8 +103,8 @@ export class EventFeed {
   }
 
   /** Something to tell it in so many words (a budget reached, the user stood it down, …). */
-  note(line: string, o: { others?: boolean } = {}): void {
-    if (this.d.mode() === 'off') return;
+  note(line: string, o: { others?: boolean; /** comes even with the feed off (a follow-up the user asked for) */ always?: boolean } = {}): void {
+    if (this.d.mode() === 'off' && !o.always) return;
     this.push(line);
     if (o.others) this.qOthers = true;
   }

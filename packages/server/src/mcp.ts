@@ -1,6 +1,7 @@
 import { FROM_CORA, JOURNAL_TAGS, parseSince, type JournalEntry, type JournalRefs, type JournalTag } from '@cora/shared';
 import type { Journal } from './journal';
 import type { CalendarApi } from './calendar';
+import { parseWhen } from './orchestrator/followUps';
 import type { FastifyInstance } from 'fastify';
 import type { MailOutbox } from './mailOutbox';
 import { envLine, type Environments } from './environments';
@@ -24,7 +25,7 @@ import { UNTRUSTED_MAIL, UNTRUSTED_SLACK, quoteOthers } from './untrusted';
 export type McpGmail = { gmail: Gmail; watches?: MailWatches; /** emails sessions asked to send, waiting for the user */ outbox?: MailOutbox; nameOf(sessionId: string): string };
 
 /** Slack for the tools: your connection and the outbox where sessions' messages wait for you. */
-export type McpSlack = { slack: Slack; outbox: Outbox; live?: SlackLive; /** a session's folder (where its attachments may come from) */ cwdOf?: (sessionId: string) => string | undefined };
+export type McpSlack = { slack: Slack; outbox: Outbox; live?: SlackLive; /** a session's folder (where its attachments may come from) */ cwdOf?: (sessionId: string) => string | undefined; /** a message to the user through Cora's own bot (it pings them; null: the bot isn't set up) */ toYou?: (d: { sessionId: string | null; text: string }) => Promise<{ ok: true; link: string } | { ok: false; error: string } | null> };
 
 /** The orchestrator's tools: only for its own session, only while the feature is on. */
 export type McpOrchestrator = { isAgent(sessionId: string): boolean; deps(): OrchToolDeps; userTurn?(): boolean; /** a session tells Cora something (tell_cora) */ fromSession?(sessionId: string, text: string, reason: 'user_asked' | 'reply_to_cora'): { ok: true } | { ok: false; error: string } };
@@ -821,7 +822,7 @@ function registerMailWatches(server: McpServer, { watches, nameOf }: McpGmail, s
 }
 
 /** slack_find, slack_read, slack_send: look up, read, and send (only once the user confirms it in Cora). */
-function registerSlack(server: McpServer, sessionId: string | null, { slack, outbox, live, cwdOf }: McpSlack, direct?: () => boolean): void {
+function registerSlack(server: McpServer, sessionId: string | null, { slack, outbox, live, cwdOf, toYou }: McpSlack, direct?: () => boolean): void {
   server.registerTool(
     'slack_search',
     {
@@ -1000,12 +1001,13 @@ function registerSlack(server: McpServer, sessionId: string | null, { slack, out
         "For a genuinely structured message (a status report, a rundown of several items, release notes: never a quick reply or a question) you can lay it out, and Slack shows it in its own blocks: a line `# Title` is a header, `---` a divider, two or more `**Label:** value` lines in a row a two-column grid of short facts, and `-# note` small grey text (e.g. when it was checked). Keep everything else plain.",
         "It opens with Cora's banner (an animated picture: the user's orb, the ticket or the message's first line) unless banner is false: leave it out when the user asks for a plain message (their sign-off line stays either way).",
         "Only send when the user asked for a message (or agreed to one). If a name is ambiguous you'll get the candidates: ask, or use slack_find.",
-        "A message to the user themselves (their own DM, e.g. to follow up with them while they're away) goes at once, with no draft.",
+        "A message to the user themselves (e.g. updates they asked for while they're away) goes at once, with no draft, through Cora's own bot in their Cora DM, which pings their phone; their reply in its thread comes back to you.",
       ].join(' '),
       inputSchema: {
         to: z.string().min(1).max(200).describe('Who to: an id from slack_find (best), #channel, @handle, email or a name. Ignored when thread is a message link.'),
         text: z.string().min(1).max(8000).describe('The message'),
         thread: z.string().max(500).optional().describe("A thread to reply in: a Slack message link (its thread; a link to a reply: the thread it's in), in a channel or a DM, or a thread id (ts) with `to`. Leave it out to post in the conversation itself (how people talk in a DM)"),
+        at: z.string().max(40).optional().describe('Send it later: a time like 9:00, 9 AM or in 2h (Slack holds it until then; a draft is still OKed now). Not for messages to the user themselves'),
         files: z
           .array(z.string().min(1).max(1000))
           .max(ATTACH_MAX)
@@ -1014,9 +1016,16 @@ function registerSlack(server: McpServer, sessionId: string | null, { slack, out
         banner: z.boolean().optional().describe("Cora's banner on top (default true); false for a plain message (the user asked for one)"),
       },
     },
-    async ({ to, text, thread, files: paths, banner }) => {
+    async ({ to, text, thread, files: paths, banner, at }) => {
       try {
         if (!slack.status().connected) return fail(NOT_CONNECTED);
+        // later: Slack holds it (up to 120 days); no files that way
+        const postAt = at ? parseWhen(at, Date.now()) : null;
+        if (at && !postAt) return fail('at: a time like 9:00, 9 AM or in 2h');
+        if (postAt && postAt > Date.now() + 120 * 86_400_000) return fail('at: Slack holds a message for 120 days at most');
+        if (postAt && paths?.length) return fail("A message with files can't be scheduled: send it then instead.");
+        const later = postAt ? { postAt } : {};
+        const when = postAt ? new Date(postAt).toLocaleString('en-US', { weekday: 'short', hour: 'numeric', minute: '2-digit' }) : '';
         let files: SlackAttachment[] | undefined;
         try {
           files = paths?.length ? checkAttachments(paths, attachmentRoots(sessionId ? cwdOf?.(sessionId) : undefined)) : undefined;
@@ -1033,20 +1042,30 @@ function registerSlack(server: McpServer, sessionId: string | null, { slack, out
         // to the user themselves (their own DM): nobody else reads it, so there's nothing to confirm; it goes at once
         const me = slack.status();
         if (me.connected && target.kind === 'person' && target.id === me.userId) {
+          if (postAt) return fail("A message to the user themselves can't be scheduled: send it then (a follow-up, or when the work is done).");
+          // through Cora's own bot when it's set up: Slack never pings you for a message from yourself (it would sit
+          // unseen in your own DM); a thread you named, or files, still go to your own DM
+          const viaBot = !threadTs && !files?.length && toYou ? await toYou({ sessionId: sessionId ?? null, text }) : null;
+          if (viaBot?.ok) return { content: [{ type: 'text', text: `Sent to the user through Cora's bot (their Cora DM: it pings their phone), straight away: a message only they read needs no OK. If they reply in its thread, the reply comes to you here. ${viaBot.link}` }] };
           const r = await outbox.sendNow({ to: target, text, reviewed: true, sessionId: sessionId ?? null, ...(banner === false ? { banner: false } : {}), ...(threadTs ? { threadTs } : {}), ...(files ? { files } : {}) });
-          return { content: [{ type: 'text', text: `Sent to the user's own DM${withFiles}, straight away: a message only they read needs no OK. ${r.link}` }] };
+          const quiet = viaBot ? ` Cora's bot couldn't send it (${viaBot.error}), so it went to their own DM, which doesn't ping them: tell them it's there.` : !toYou || threadTs || files?.length ? '' : " It's in their own DM, which doesn't ping them (Cora's bot isn't set up): tell them it's there.";
+          return { content: [{ type: 'text', text: `Sent to the user's own DM${withFiles}, straight away: a message only they read needs no OK.${quiet} ${r.link}` }] };
         }
         // asked for in the user's own words (Cora only): out at once, with a short undo
         if (direct?.()) {
-          const r = await outbox.sendNow({ to: target, text, sessionId: sessionId ?? null, ...(banner === false ? { banner: false } : {}), ...(threadTs ? { threadTs } : {}), ...(files ? { files } : {}) });
+          const r = await outbox.sendNow({ to: target, text, sessionId: sessionId ?? null, ...(banner === false ? { banner: false } : {}), ...(threadTs ? { threadTs } : {}), ...(files ? { files } : {}), ...later });
+          if (postAt) return { content: [{ type: 'text', text: `Scheduled for ${when} to ${target.label}${where}, since the user asked for it; they can undo it for a few seconds.` }] };
           return { content: [{ type: 'text', text: `Sent to ${target.label}${where}${withFiles}, straight away since the user asked for it; they can undo it for a few seconds. ${r.link}` }] };
         }
         // a conversation the user let Cora carry on by itself: out at once too (they can undo it, and stop it)
         if (direct && outbox.allowed(await slack.conversation(target))) {
-          const r = await outbox.sendNow({ to: target, text, sessionId: sessionId ?? null, ...(banner === false ? { banner: false } : {}), own: true, ...(threadTs ? { threadTs } : {}), ...(files ? { files } : {}) });
+          const r = await outbox.sendNow({ to: target, text, sessionId: sessionId ?? null, ...(banner === false ? { banner: false } : {}), own: true, ...(threadTs ? { threadTs } : {}), ...(files ? { files } : {}), ...later });
+          if (postAt) return { content: [{ type: 'text', text: `Scheduled for ${when} to ${target.label}${where}, on your own: the user let you carry on this conversation.` }] };
           return { content: [{ type: 'text', text: `Sent to ${target.label}${where}${withFiles}, on your own: the user let you carry on this conversation. ${r.link}` }] };
         }
-        const out = await outbox.request({ sessionId, to: target, text, ...(banner === false ? { banner: false } : {}), ...(threadTs ? { threadTs } : {}), ...(link ? { threadLink: thread } : {}), ...(files ? { files } : {}) });
+        const out = await outbox.request({ sessionId, to: target, text, ...(banner === false ? { banner: false } : {}), ...(threadTs ? { threadTs } : {}), ...(link ? { threadLink: thread } : {}), ...(files ? { files } : {}), ...(postAt ? { at: postAt } : {}) });
+        if (out.sent && out.at) return { content: [{ type: 'text', text: `The user OKed it: scheduled for ${new Date(out.at).toLocaleString('en-US', { weekday: 'short', hour: 'numeric', minute: '2-digit' })} to ${out.to.label}${where}.${out.edited ? ` They changed it; what goes:
+${out.text}` : ''}` }] };
         if (out.sent) {
           const changed = out.edited ? ` The user changed it before sending; what went to ${out.to.label}:\n${out.text}` : '';
           return { content: [{ type: 'text', text: `Sent to ${out.to.label}${where}${withFiles}. ${out.link}${changed}` }] };

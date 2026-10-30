@@ -385,3 +385,94 @@ describe('jira_inbox', () => {
     expect((await t.call('jira_inbox', {})).content[0].text).toMatch(/Settings → Jira/);
   });
 });
+
+describe("Cora's projects and follow-ups", () => {
+  const projectsFake = () => {
+    const list = [
+      { id: 'p-atlas', name: 'Atlas' },
+      { id: 'p-cora', name: 'Cora' },
+    ];
+    const member = new Map<string, string>();
+    return {
+      member,
+      find: (ref: string) => list.find((p) => p.id === ref || p.name.toLowerCase() === ref.toLowerCase()) ?? { error: `No project "${ref}".` },
+      move: (sid: string, pid: string | null) => {
+        if (pid) return member.set(sid, pid), list.find((p) => p.id === pid)!.name;
+        const cur = member.get(sid);
+        member.delete(sid);
+        return cur ? list.find((p) => p.id === cur)!.name : null;
+      },
+    };
+  };
+
+  it('starts a session in a project, and puts one in (or out of) a project: at once on your word, else a card', async () => {
+    const t = setup();
+    const p = projectsFake();
+    t.deps.projects = p;
+    let mine = true;
+    t.deps.userTurn = () => mine;
+    const r = await t.call('start_session', { cwd: process.cwd(), prompt: 'investigate the import timeout', project: 'atlas' });
+    expect(r.content[0].text).toMatch(/in the project "Atlas"/);
+    expect(p.member.get('new-sess')).toBe('p-atlas');
+    expect((await t.call('start_session', { cwd: process.cwd(), prompt: 'x', project: 'Nope' })).content[0].text).toMatch(/No project "Nope"/);
+    expect((await t.call('project_move', { id: 'docs', project: 'Cora' })).content[0].text).toBe('docs is in the project "Cora" now.');
+    expect((await t.call('project_move', { id: 'docs' })).content[0].text).toBe('docs is out of the project "Cora".');
+    // not on your word: a card, and nothing moves until you OK it
+    mine = false;
+    const pending = t.call('project_move', { id: 'docs', project: 'Atlas' });
+    await new Promise((r) => setTimeout(r, 20));
+    const card = t.approvals.list().at(-1)!;
+    expect(card.title).toBe('Put "docs" in "Atlas"');
+    expect(p.member.get('docs')).toBeUndefined();
+    await t.approvals.decide(card.id, { ok: true });
+    await pending;
+    expect(p.member.get('docs')).toBe('p-atlas');
+  });
+
+  it('follow-ups: only when you asked; set, listed, cancelled', async () => {
+    const t = setup();
+    const { FollowUps } = await import('../src/orchestrator/followUps');
+    const f = new FollowUps({ events: () => [], nameOf: (id) => id, tell: () => {} });
+    t.deps.followUps = f;
+    let mine = false;
+    t.deps.userTurn = () => mine;
+    expect((await t.call('follow_up', { about: 'what it finds', session: 'fix-api', when: 'turn_end' })).content[0].text).toMatch(/Only when the user asks/);
+    mine = true;
+    const r = await t.call('follow_up', { about: 'what it finds', session: 'fix-api', when: 'turn_end' });
+    expect(r.content[0].text).toMatch(/when ACME-5223 fix's turn ends.*Id (\w+)/);
+    expect(f.list()).toMatchObject([{ about: 'what it finds', sessionId: 'fix-api', on: 'turn', left: 1 }]);
+    expect((await t.call('follow_up', { about: 'the queue', when: 'every', every: '2m' })).content[0].text).toMatch(/5 minutes at least/);
+    expect((await t.call('follow_up', { about: 'the queue', when: 'every', every: '15m', times: 4 })).isError).toBeFalsy();
+    expect((await t.call('follow_up', { about: 'x', when: 'turn_end' })).content[0].text).toMatch(/turn_end needs the session/);
+    const listed = (await t.call('follow_ups', {})).content[0].text;
+    expect(listed).toMatch(/what it finds · ACME-5223 fix · when its turn ends · 1 more/);
+    expect(listed).toMatch(/the queue · next at .*, every 15m · 4 more/);
+    const id = f.list()[0].id;
+    expect((await t.call('follow_up_cancel', { id })).content[0].text).toBe('Cancelled.');
+    expect(f.list().map((x) => x.about)).toEqual(['the queue']);
+  });
+});
+
+describe('Slack as Cora herself', () => {
+  it('posts in a channel and pins: at once on your word, else a card', async () => {
+    const t = setup();
+    const posted: Array<[string, string, string | undefined]> = [];
+    const pinned: string[] = [];
+    t.deps.slackPost = async (to, text, thread) => (posted.push([to, text, thread]), { link: 'https://x.slack.com/archives/C9/p1', where: '#releases' });
+    t.deps.slackPin = async (link) => (pinned.push(link), 'you');
+    let mine = true;
+    t.deps.userTurn = () => mine;
+    expect((await t.call('cora_post', { to: '#releases', text: 'Release 2.10.4 is out' })).content[0].text).toBe('Posted in #releases as Cora. https://x.slack.com/archives/C9/p1');
+    expect((await t.call('slack_pin', { link: 'https://x.slack.com/archives/C9/p1' })).content[0].text).toBe('Pinned.');
+    expect(pinned).toEqual(['https://x.slack.com/archives/C9/p1']);
+    mine = false;
+    const pending = t.call('cora_post', { to: '#releases', text: 'Heads up' });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(posted).toHaveLength(1);
+    const card = t.approvals.list().at(-1)!;
+    expect(card).toMatchObject({ title: 'Post in #releases as Cora', text: 'Heads up' });
+    await t.approvals.decide(card.id, { ok: true });
+    await pending;
+    expect(posted.at(-1)).toEqual(['#releases', 'Heads up', undefined]);
+  });
+});

@@ -86,6 +86,28 @@ describe('Registry states', () => {
     expect(store.getSession('s1')).toMatchObject({ state: 'idle', lastTs: 1003 });
   });
 
+  it("finishes a turn once: the Stop hook ends it, and its transcript read a moment later (the last reply, its turn_end) doesn't make it busy again", () => {
+    const { store, reg, changes } = setup();
+    const states = () => changes.filter((c) => c.session).map((c) => c.session.state).filter((s, i, a) => s !== a[i - 1]);
+    reg.ingest(E({ id: 'p', kind: 'prompt', ts: 1000, source: 'hook' }));
+    reg.ingest(E({ id: 'tool:t:start', kind: 'tool', phase: 'start', toolUseId: 't', ts: 1001 }));
+    reg.ingest(E({ id: 'tool:t:end', kind: 'tool', phase: 'end', toolUseId: 't', ts: 1002 }));
+    // the hook, in real time
+    reg.turnEnded('s1', 1010);
+    expect(store.getSession('s1')?.state).toBe('idle');
+    // the transcript catching up: the turn's last reply (written before the hook came), then its end
+    reg.ingest(E({ id: 'say', kind: 'say', ts: 1008, text: 'Overnight check 1 of 3 passed.' }));
+    reg.ingest(E({ id: 'tool:u:start', kind: 'tool', phase: 'start', toolUseId: 'u', ts: 1007 }));
+    reg.ingest(E({ id: 'te', kind: 'turn_end', ts: 1009 }));
+    expect(store.getSession('s1')?.state).toBe('idle');
+    expect(states()).toEqual(['thinking', 'working', 'thinking', 'idle']);
+    // the next turn works as ever
+    reg.ingest(E({ id: 'p2', kind: 'prompt', ts: 2000 }));
+    expect(store.getSession('s1')?.state).toBe('thinking');
+    reg.ingest(E({ id: 'tool:v:start', kind: 'tool', phase: 'start', toolUseId: 'v', ts: 2001 }));
+    expect(store.getSession('s1')?.state).toBe('working');
+  });
+
   it('a running subagent keeps the session working after main turn ends', () => {
     const { store, reg } = setup();
     reg.ingest(E({ id: 'tool:k:start', kind: 'tool', phase: 'start', agentId: 'a1', toolUseId: 'k' }));

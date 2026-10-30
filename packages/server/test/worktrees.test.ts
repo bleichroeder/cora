@@ -237,6 +237,41 @@ describe('a fetch that cannot sign in', () => {
   });
 });
 
+describe("GitLab, with glab's sign-in", () => {
+  it("fetches sign in with glab's own sign-in when glab is signed in to that host (not Credential Manager), and only there", async () => {
+    git(repo, 'remote', 'set-url', 'origin', 'https://gitlab.com/acme/repo.git');
+    const fetches: string[][] = [];
+    const real = (cwd: string, args: string[]) => {
+      try {
+        return Promise.resolve({ ok: true, out: git(cwd, ...args) });
+      } catch {
+        return Promise.resolve({ ok: false, out: '' });
+      }
+    };
+    const w = new Worktrees({
+      mine: () => [repo],
+      sessions: () => [],
+      recentFolders: () => [],
+      onChange: () => {},
+      retryMs: 0,
+      glab: async (host) => (host === 'gitlab.com' ? 'C:\\Programs\\glab\\glab.exe' : null),
+      git: (cwd, args, o) => (args.includes('fetch') ? (fetches.push([...args, ...(o?.ask ? ['(ask)'] : [])]), Promise.resolve({ ok: true, out: '' })) : real(cwd, args)),
+    });
+    await w.refresh();
+    await new Promise((r) => setTimeout(r, 300));
+    expect(fetches[0]).toEqual(['-c', 'credential.helper=', '-c', "credential.https://gitlab.com.helper=!'C:/Programs/glab/glab.exe' auth git-credential", 'fetch', '--prune', '--quiet', 'origin']);
+    // signing in from the note: the same
+    expect(await w.signInTo('gitlab.com')).toEqual({ ok: true });
+    expect(fetches.find((f) => f.includes('(ask)'))!.slice(0, 4)).toEqual(fetches[0].slice(0, 4));
+    // another host (or ssh): as git is set up
+    git(repo, 'remote', 'set-url', 'origin', 'git@gitlab.com:acme/repo.git');
+    fetches.length = 0;
+    await w.signInTo('gitlab.com');
+    expect(fetches[0][0]).toBe('fetch');
+    git(repo, 'remote', 'set-url', 'origin', 'https://gitlab.com/acme/repo.git');
+  });
+});
+
 describe('signing in from the note', () => {
   it('one fetch allowed to ask, then the rest quietly; the note is told it can sign in again', async () => {
     let signedIn = false;

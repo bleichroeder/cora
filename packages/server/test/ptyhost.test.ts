@@ -1,10 +1,11 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { mkdtempSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { startHost, type Host } from '../src/ptyhost/host';
-import { HealingHostBackend, HostBackend, connectOrStartHost } from '../src/ptyhost/backend';
+import { HealingHostBackend, HostBackend, connectOrStartHost, vetHost } from '../src/ptyhost/backend';
+import { hostRuntime, hostRunningFrom } from '../src/ptyhost/runtime';
 import { socketPath } from '../src/ptyhost/protocol';
 import type { PtyLike, SpawnFn } from '../src/ptyhost/spawn';
 import { PtyManager } from '../src/pty';
@@ -250,4 +251,69 @@ describe('the terminal host, kept', () => {
     await until(() => exits.some(([id]) => id === 't3'), 15_000);
     expect(said.join('')).toMatch(/terminal host isn't running, so claude couldn't start/);
   }, 20_000);
+});
+
+describe("an older Cora's terminal host (an update came while it ran)", () => {
+  const files = (dir: string) => {
+    mkdirSync(join(dir, 'node_modules', '@lydell', 'node-pty'), { recursive: true });
+    writeFileSync(join(dir, 'node.exe'), 'node');
+    writeFileSync(join(dir, 'node_modules', '@lydell', 'node-pty', 'index.js'), 'pty');
+  };
+
+  it('keeps its terminals; its folder, if it lost its files, is mended from this build so new terminals start', async () => {
+    const path = pipe();
+    const old = mkdtempSync(join(tmpdir(), 'host-old-'));
+    const ours = mkdtempSync(join(tmpdir(), 'host-new-'));
+    files(ours);
+    hosts.push(await startHost({ path, token: TOKEN, spawn: () => new FakePty(), dir: old }));
+    const first = await HostBackend.connect(path, TOKEN);
+    first.spawn('t1', 'claude', [], opts, meta);
+    await tick(50);
+    await first.close(false);
+    const b = await HostBackend.connect(path, TOKEN);
+    expect(b.hostDir).toBe(old);
+    const said: string[] = [];
+    expect(await vetHost(b, ours, (m) => said.push(m), async () => true)).toBe(true);
+    expect(readFileSync(join(old, 'node.exe'), 'utf8')).toBe('node');
+    expect(existsSync(join(old, 'node_modules', '@lydell', 'node-pty', 'index.js'))).toBe(true);
+    expect(said.join('\n')).toMatch(/mended an older Cora's terminal host/);
+    // this build's own host: nothing to do
+    expect(await vetHost(b, old, () => {}, async () => true)).toBe(true);
+    await b.close(false);
+  });
+
+  it('with no terminals, it makes way: shut down, so this build starts its own', async () => {
+    const path = pipe();
+    let closed = false;
+    hosts.push(await startHost({ path, token: TOKEN, spawn: () => new FakePty(), dir: mkdtempSync(join(tmpdir(), 'host-old-')), onClose: () => (closed = true) }));
+    const b = await HostBackend.connect(path, TOKEN);
+    const ours = mkdtempSync(join(tmpdir(), 'host-new-'));
+    const said: string[] = [];
+    expect(await vetHost(b, ours, (m) => said.push(m), () => HostBackend.connect(path, TOKEN, 300).then((x) => (void x.close(false), true), () => false))).toBe(false);
+    await until(() => closed);
+    expect(said[0]).toMatch(/older Cora's, with no terminals/);
+  });
+
+  it("an update's cleanup leaves the folder a host still runs from, and removes the rest (saying when it can't)", () => {
+    const dataDir = mkdtempSync(join(tmpdir(), 'cora-rt-'));
+    const dist = mkdtempSync(join(tmpdir(), 'cora-dist-'));
+    writeFileSync(join(dist, 'ptyhost.js'), 'host v2');
+    const modules = mkdtempSync(join(tmpdir(), 'cora-mods-'));
+    mkdirSync(join(modules, '@lydell', 'node-pty'), { recursive: true });
+    const node = join(dist, 'node.exe');
+    writeFileSync(node, 'node');
+    const rt = join(dataDir, 'runtime');
+    for (const d of ['host-aaaaaaaaaaaa', 'host-bbbbbbbbbbbb', 'host-cccccccccccc.gone']) mkdirSync(join(rt, d), { recursive: true });
+    const r = hostRuntime({ dataDir, node, distDir: dist, modulesDir: modules, running: (dir) => dir.endsWith('host-aaaaaaaaaaaa') });
+    const left = readdirSync(rt).sort();
+    expect(left).toContain('host-aaaaaaaaaaaa');
+    expect(left).not.toContain('host-bbbbbbbbbbbb');
+    expect(left).not.toContain('host-cccccccccccc.gone');
+    expect(existsSync(r.script)).toBe(true);
+    // its pid kept in its folder: running while that process lives
+    writeFileSync(join(rt, 'host-aaaaaaaaaaaa', 'host.pid'), String(process.pid));
+    expect(hostRunningFrom(join(rt, 'host-aaaaaaaaaaaa'))).toBe(true);
+    writeFileSync(join(rt, 'host-aaaaaaaaaaaa', 'host.pid'), '4294967');
+    expect(hostRunningFrom(join(rt, 'host-aaaaaaaaaaaa'))).toBe(false);
+  });
 });

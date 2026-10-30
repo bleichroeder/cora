@@ -16,6 +16,8 @@ export type HostOptions = {
   idleMs?: number;
   /** how long an exited terminal is still reported (so a server that was down learns it ended) */
   keepExitedMs?: number;
+  /** the folder it runs from (said in its hello: Cora checks it's still whole) */
+  dir?: string;
   log?: (msg: string) => void;
   onClose?: () => void;
 };
@@ -130,7 +132,7 @@ export async function startHost(o: HostOptions): Promise<Host> {
         authed = true;
         clients.add(sock);
         checkIdle();
-        sendLine(sock, { t: 'hello', v: PROTOCOL_VERSION, pid: process.pid, terms: snapshot() });
+        sendLine(sock, { t: 'hello', v: PROTOCOL_VERSION, pid: process.pid, terms: snapshot(), ...(o.dir ? { dir: o.dir } : {}) });
         return;
       }
       handle(sock, m);

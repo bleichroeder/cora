@@ -37,4 +37,5 @@ export * from './debriefVideo';
 export * from './sessionIcons';
 export * from './sessionColor';
 export * from './calendar';
+export * from './followUps';
 export * from './journal';

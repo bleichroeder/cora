@@ -3,7 +3,7 @@ import type { Project, SessionInfo } from '@cora/shared';
 import { useBrain } from '../state/store';
 import { PROJECT_COLORS } from '@cora/shared';
 import { addToProject, archiveProject, createProject, deleteProject, leaveProject, reorderProjects, shadesOf, updateProject, useProjects } from '../state/projects';
-import { MAIN_COLORS, sessionName } from '../lib/format';
+import { MAIN_COLORS, isDismissed, sessionName } from '../lib/format';
 import { Icon } from './Icon';
 import './projects.css';
 
@@ -79,7 +79,8 @@ type Moving = { id: string; over?: { id: string; below: boolean } } | null;
 function ProjectRow({ p, folded, onFold, entry, dragging, onDropped, moving, setMoving, onMove, onMenu }: { p: Project; folded: boolean; onFold(): void; entry(s: SessionInfo): React.ReactNode; dragging: string | null; onDropped(): void; moving: Moving; setMoving(m: Moving): void; onMove(): void; onMenu(e: React.MouseEvent): void }) {
   const sessions = useBrain((s) => s.sessions);
   const open = useBrain((s) => s.projectOpen === p.id);
-  const members = p.sessions.map((id) => sessions[id]).filter((s): s is SessionInfo => !!s);
+  // a session you removed from the list is off it here too (it's still the project's: its page keeps it)
+  const members = p.sessions.map((id) => sessions[id]).filter((s): s is SessionInfo => !!s && !isDismissed(s));
   const needs = members.filter((s) => s.state === 'needs-you').length;
   const [over, setOver] = useState(false);
   return (

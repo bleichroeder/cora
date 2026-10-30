@@ -32,7 +32,7 @@ export function browserProfiles(raw: unknown, cur: BrowserProfile[] | undefined,
   return out;
 }
 
-type Patch = { explains?: Partial<Settings['explains']>; retentionDays?: number; presets?: unknown; voice?: Partial<VoiceSettings>; autoName?: boolean; memes?: { mode?: unknown }; board?: { pages?: unknown }; journal?: { on?: unknown }; debrief?: { offer?: unknown; depth?: unknown; speak?: unknown; video?: Partial<VideoSettings> }; worktrees?: { move?: unknown }; orchestrator?: Partial<Omit<OrchestratorSettings, 'mandate'>> & { mandate?: Partial<OrchestratorSettings['mandate']> }; jira?: { watch?: Partial<Omit<JiraWatchSettings, 'kinds'>> & { kinds?: Partial<JiraWatchSettings['kinds']> }; ticket?: Partial<TicketStart> }; gitlab?: { host?: string; todos?: unknown; start?: unknown }; slackBot?: Partial<Omit<SlackBotSettings, 'ping' | 'quiet'>> & { ping?: Partial<SlackBotSettings['ping']>; quiet?: Partial<SlackBotSettings['quiet']> }; slack?: { follow?: unknown; sign?: unknown }; calendar?: { lead?: unknown; brief?: unknown; inbox?: unknown; notify?: unknown; standupDraft?: unknown }; browser?: { chrome?: unknown; profiles?: unknown; sessions?: unknown; home?: unknown; mail?: unknown; webChanges?: unknown }; onepassword?: { on?: unknown; otp?: unknown; tools?: unknown; suggest?: unknown }; setup?: { skipped?: unknown; seen?: unknown } };
+type Patch = { explains?: Partial<Settings['explains']>; retentionDays?: number; presets?: unknown; voice?: Partial<VoiceSettings>; autoName?: boolean; memes?: { mode?: unknown }; board?: { pages?: unknown }; journal?: { on?: unknown }; debrief?: { offer?: unknown; depth?: unknown; speak?: unknown; video?: Partial<VideoSettings> }; worktrees?: { move?: unknown }; orchestrator?: Partial<Omit<OrchestratorSettings, 'mandate'>> & { mandate?: Partial<OrchestratorSettings['mandate']> }; jira?: { watch?: Partial<Omit<JiraWatchSettings, 'kinds'>> & { kinds?: Partial<JiraWatchSettings['kinds']> }; ticket?: Partial<TicketStart> }; gitlab?: { host?: string; todos?: unknown; start?: unknown }; slackBot?: Partial<Omit<SlackBotSettings, 'ping' | 'quiet'>> & { ping?: Partial<SlackBotSettings['ping']>; quiet?: Partial<SlackBotSettings['quiet']> }; slack?: { follow?: unknown; sign?: unknown }; calendar?: { lead?: unknown; brief?: unknown; inbox?: unknown; notify?: unknown; standupDraft?: unknown; startAlert?: unknown; slackStatus?: unknown }; browser?: { chrome?: unknown; profiles?: unknown; sessions?: unknown; home?: unknown; mail?: unknown; webChanges?: unknown }; onepassword?: { on?: unknown; otp?: unknown; tools?: unknown; suggest?: unknown }; setup?: { skipped?: unknown; seen?: unknown } };
 
 const num = (v: unknown, name: string, lo: number, hi: number) => {
   const n = Number(v);
@@ -377,7 +377,7 @@ export function applyPatch(cur: Settings, patch: Patch): Settings {
     if (!CALENDAR_BRIEFS.includes(patch.calendar.brief as CalendarBrief)) throw new Error('calendar.brief must be spoken, written or off');
     next.calendar = { ...next.calendar, brief: patch.calendar.brief as CalendarBrief };
   }
-  for (const k of ['inbox', 'notify', 'standupDraft'] as const) {
+  for (const k of ['inbox', 'notify', 'standupDraft', 'startAlert', 'slackStatus'] as const) {
     const v = patch.calendar?.[k];
     if (v === undefined) continue;
     if (typeof v !== 'boolean') throw new Error(`calendar.${k} must be true or false`);

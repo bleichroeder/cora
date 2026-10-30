@@ -15,7 +15,7 @@ export const useCalendar = create<{ status: CalendarStatus | null; events: CalEv
 export function calendarDue(m: CalendarDueMsg): void {
   if (!m.notify) return;
   const when = new Date(m.event.start).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
-  desktop?.notify(m.event.title, `${m.event.standup ? 'Standup' : 'Call'} at ${when} (in ${m.minutes} min)`, '', m.event.link);
+  desktop?.notify(m.event.title, m.minutes <= 0 ? `${m.event.standup ? 'Standup' : 'Call'} starting now${m.event.link ? ': click to join' : ''}` : `${m.event.standup ? 'Standup' : 'Call'} at ${when} (in ${m.minutes} min)`, '', m.event.link);
 }
 
 const post = async (url: string, body: unknown): Promise<{ ok: true; j: any } | { ok: false; error: string }> => {

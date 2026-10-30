@@ -29,7 +29,7 @@ export type CalEvent = {
 export type CalendarStatus = { state: 'connected' | 'scope' | 'off'; error?: string; lastCheck?: number };
 export type CalendarMsg = { t: 'calendar'; status: CalendarStatus; events: CalEvent[] };
 /** A call is coming (the lead time before it): a desktop notification when you asked for one. */
-export type CalendarDueMsg = { t: 'calendarDue'; event: CalEvent; minutes: number; notify: boolean };
+export type CalendarDueMsg = { t: 'calendarDue'; event: CalEvent; /** 0: it's starting now */ minutes: number; notify: boolean };
 
 export const CALENDAR_SCOPE = 'https://www.googleapis.com/auth/calendar.readonly';
 export type CalendarBrief = 'spoken' | 'written' | 'off';
@@ -45,8 +45,14 @@ export type CalendarSettings = {
   notify: boolean;
   /** a standup's notes drafted (the Standup template) before it */
   standupDraft: boolean;
+  /** an alert when a call starts, too (a notification, Cora's one line, your phone when you're away) */
+  startAlert: boolean;
+  /** your Slack status says "In a call" during one (cleared by Slack when it ends; your own status is left alone) */
+  slackStatus: boolean;
 };
-export const DEFAULT_CALENDAR: CalendarSettings = { lead: 15, brief: 'spoken', inbox: true, notify: false, standupDraft: true };
+export const DEFAULT_CALENDAR: CalendarSettings = { lead: 15, brief: 'spoken', inbox: true, notify: false, standupDraft: true, startAlert: true, slackStatus: true };
+/** What your Slack status says during a call (nothing about the call itself: everyone can see it). */
+export const CALL_STATUS = 'In a call';
 /** Cora's agent's calendar tools. */
 export const CALENDAR_TOOLS = ['calendar_today', 'calendar_prep', 'calendar_brief'] as const;
 

@@ -37,7 +37,7 @@ export function coraLinks(events: BrainEvent[], sessionIds: string[], now: numbe
       if (!/^\s*\[Cora \d/.test(e.text)) continue;
       // (a reply to what Cora asked it isn't it reaching out: Cora went and got that)
       for (const line of e.text.split('\n')) {
-        if (/replied to what you asked/.test(line)) continue;
+        if (/replied to what you asked|\[Follow-up\]/.test(line)) continue;
         for (const m of line.matchAll(/\(([0-9a-f]{8}-[0-9a-f-]{27,})\)/g)) {
           const sid = resolve(m[1]);
           if (sid) reach.push([sid, -1]);

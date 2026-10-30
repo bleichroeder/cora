@@ -3,7 +3,7 @@ import type { BrainEvent, PendingRequest, SessionInfo } from '@cora/shared';
 import { sessionEvents, useBrain } from '../state/store';
 import { briefMe, goalLive, isAgent, sayToCora, setCommandOpen, setControl, standDown, useCoraState, useOrch } from '../state/orchestrator';
 import { startListening, stopListening, useVoice } from '../lib/voice';
-import { ApprovalCard, GoalBar, Talks } from './CoraConsole';
+import { ApprovalCard, FollowUpsRow, GoalBar, Talks } from './CoraConsole';
 import { CoraSentInline } from './SlackOutbox';
 import { JiraAlertsInline, JiraStartCard } from './JiraAlerts';
 import { DeployCards } from './Deploys';
@@ -189,6 +189,7 @@ export function CoraCommand() {
           <h3>Autopilot</h3>
           <GoalBar goal={status.goal} />
           <Talks talks={status.talks ?? []} />
+          <FollowUpsRow items={status.followUps ?? []} />
           <h3>
             Sessions <span>{others.length || ''}</span>
           </h3>

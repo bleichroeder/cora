@@ -12,7 +12,7 @@ import type { Slack } from './slack';
  * already waiting when you left comes here then. Handing Cora control (Away in its console) counts as away.
  */
 
-export type BotAlert = { kind: 'failure' | 'ticket' | 'finished' | 'mail'; text: string; /** sent once (a pipeline, a ticket) */ key?: string };
+export type BotAlert = { kind: 'failure' | 'ticket' | 'finished' | 'mail'; text: string; /** sent once (a pipeline, a ticket) */ key?: string; /** a finished turn's session: its turns make one line of the digest */ sessionId?: string };
 
 export type CoraBotDeps = {
   slack: Slack;
@@ -29,6 +29,10 @@ export type CoraBotDeps = {
   draft?(id: string, send: boolean): Promise<{ ok: boolean; error?: string; link?: string }>;
   /** you handed Cora control (Away in its console): you're away, whatever the PC says */
   handedOff?(): boolean;
+  /** what a session did since a time, for the digest: its journal entries' headlines, else its last reply's first sentence */
+  didWhat?(sessionId: string, since: number): { text: string; journal: boolean } | null;
+  /** your reply in the thread of a session's message here: typed into that session (false: it isn't running in Cora) */
+  toSession?(sessionId: string, text: string): boolean;
   /** your words to Cora's agent (null: Cora's agent is off) */
   say?(text: string): { ok: boolean; error?: string } | null;
   onChange?(): void;
@@ -58,7 +62,8 @@ export class CoraBot {
   private awaySince: number | null = null;
   private pings: string[] = [];
   private pingTimer: NodeJS.Timeout | null = null;
-  private digest: string[] = [];
+  /** what finished while you're away: one per session (its turns counted), or a line of its own */
+  private digest = new Map<string, { sid?: string; text: string; turns: number; first: number }>();
   private digestTimer: NodeJS.Timeout | null = null;
   private sent = { day: '', n: 0 };
   private keys = new Set<string>();
@@ -73,6 +78,10 @@ export class CoraBot {
   private seenPending = new Set<string>();
   private wasAway = false;
   private heard = new Set<string>();
+  /** sessions' messages sent here (their ts → the session): your reply in one's thread goes to that session */
+  private sessionMsgs = new Map<string, string>();
+  /** when each session last messaged you here (it told you itself: the digest needn't) */
+  private lastFrom = new Map<string, number>();
   private awaiting: Awaiting | null = null;
   private error: string | undefined;
 
@@ -106,7 +115,7 @@ export class CoraBot {
       void this.catchUp();
     } else {
       this.awaySince = null;
-      this.digest = [];
+      this.digest.clear();
       if (this.digestTimer) clearTimeout(this.digestTimer);
       this.digestTimer = null;
     }
@@ -164,7 +173,10 @@ export class CoraBot {
     if (!ping && !digest) return;
     if (a.key) this.keys.add(a.key);
     if (digest) {
-      this.digest.push(a.text);
+      const k = a.sessionId ? `s:${a.sessionId}` : `t:${a.text}`;
+      const cur = this.digest.get(k);
+      if (cur) cur.turns++;
+      else this.digest.set(k, { ...(a.sessionId ? { sid: a.sessionId } : {}), text: a.text, turns: 1, first: this.now() });
       this.digestTimer ??= setTimeout(() => void this.flushDigest(), DIGEST_MS);
       return;
     }
@@ -177,11 +189,29 @@ export class CoraBot {
     if (!lines.length || !this.mayAlert()) return;
     await this.post(lines.length === 1 ? lines[0] : `While you're away:\n${lines.map((l) => `• ${l}`).join('\n')}`);
   }
+  /**
+   * What finished while you're away: one line per session saying what it did (its journal since you left, else its
+   * last reply), with how many turns only when there's no journal to say it.
+   */
   async flushDigest(): Promise<void> {
     this.digestTimer = null;
-    const lines = this.digest.splice(0);
-    if (!lines.length || !this.mayAlert()) return;
-    await this.post(`Finished while you're away:\n${lines.map((l) => `• ${l}`).join('\n')}`);
+    const all = [...this.digest.values()];
+    this.digest.clear();
+    const since = this.awaySince ?? Math.min(...all.map((i) => i.first));
+    // a session that messaged you here itself while you were away has told you already
+    const items = all.filter((i) => !i.sid || (this.lastFrom.get(i.sid) ?? 0) < since);
+    if (!items.length || !this.mayAlert()) return;
+    const lines = items.map((i) => {
+      if (!i.sid) return { name: i.text, what: '', turns: '' };
+      const did = this.d.didWhat?.(i.sid, since) ?? null;
+      return { name: this.d.nameOf(i.sid), what: did?.text ?? 'finished', turns: i.turns > 1 && !did?.journal ? `${i.turns} turns` : '' };
+    });
+    const text = `Finished while you're away:\n${lines.map((l) => `• ${l.name}${l.what ? `: ${l.what}` : ''}${l.turns ? ` (${l.turns})` : ''}`).join('\n')}`;
+    const blocks = [
+      section("*Finished while you're away*"),
+      ...lines.slice(0, 40).map((l) => section(`*${slackEsc(l.name)}*${l.what ? `\n${toMrkdwn(slackEsc(l.what))}` : ''}${l.turns ? `\n_${l.turns}_` : ''}`)),
+    ];
+    await this.post(text.slice(0, 2900), blocks);
   }
 
   // ---------------------------------------------------------------- prompts, with buttons
@@ -273,6 +303,7 @@ export class CoraBot {
 
   /** A button in one of Cora's messages (Socket Mode's interactive envelope). Only your clicks count. */
   async interactive(payload: any): Promise<void> {
+    if (payload?.type === 'message_action') return this.shortcut(payload);
     if (payload?.type !== 'block_actions') return;
     const me = this.d.slack.status();
     if (!me.connected || payload.user?.id !== me.userId) return;
@@ -294,6 +325,37 @@ export class CoraBot {
     if (m) m.answered = true;
     const note = r.ok ? (allow ? '✅ Allowed from Slack' : '⛔ Denied from Slack') : '_That prompt is gone: answered elsewhere, or the session moved on._';
     if (channel && ts) await this.d.slack.updateAsCora(channel, ts, `${head}: ${r.ok ? (allow ? 'allowed' : 'denied') : 'gone'}`, [section(`${head}\n${note}`)]).catch(() => {});
+  }
+
+  /**
+   * A message's ⋯ menu (only your clicks): Start a session on this, or Ask Cora about this. Cora gets it as your words,
+   * with the message's link; her answer comes here, in your Cora DM.
+   */
+  private async shortcut(payload: any): Promise<void> {
+    const me = this.d.slack.status();
+    if (!me.connected || payload.user?.id !== me.userId) return;
+    const kind = payload.callback_id === 'cora_session' ? 'session' : payload.callback_id === 'cora_ask' ? 'ask' : null;
+    if (!kind) return;
+    const channel = String(payload.channel?.id ?? '');
+    const ts = String(payload.message?.ts ?? '');
+    if (!channel || !ts) return;
+    const thread = payload.message?.thread_ts && payload.message.thread_ts !== ts ? String(payload.message.thread_ts) : null;
+    const link = `${me.url.replace(/\/?$/, '/')}archives/${channel}/p${ts.replace('.', '')}${thread ? `?thread_ts=${thread}&cid=${channel}` : ''}`;
+    const where = payload.channel?.name ? `#${payload.channel.name}` : 'a conversation';
+    const ask =
+      kind === 'session'
+        ? `Start a session on this Slack message in ${where} (read it, and its thread, with slack_read first): ${link}. Pick the repo from what it's about; if it isn't clear, ask me which. Put it in a project if one clearly fits. Tell me when it's going.`
+        : `Read this Slack message in ${where}, and its thread (slack_read): ${link}. Tell me what it's about and what, if anything, is needed from me.`;
+    if (!this.cfg().instructions) return void (await this.post("Taking instructions here is off (Cora's Settings → Slack → Cora's own bot)."));
+    const r = this.d.say?.(`${SLACK_DM_MARK} on their phone, from a message's menu in Slack: reply briefly; your reply is sent back there] ${ask}`);
+    if (!r) return void (await this.post("Cora's agent is off, so I can't act on that. (Settings → Cora Orchestrator.)"));
+    if (!r.ok) return void (await this.post(`I couldn't pass that on: ${r.error ?? 'Cora is busy'}`));
+    // where her answer goes: under a line saying what you asked
+    const head = await this.post(`${kind === 'session' ? 'Starting a session on' : 'Looking at'} a message in ${where}`, [section(`${kind === 'session' ? '▶️ Starting a session on' : '🔎 Looking at'} <${link}|a message in ${slackEsc(where)}>`)]);
+    if (!head) return;
+    if (this.awaiting) this.drop(this.awaiting);
+    this.awaiting = { since: this.now(), parts: [], channel: head.channel, ts: head.ts };
+    void this.react(head.channel, head.ts, 'eyes');
   }
 
   /** Your Yes or No (or the option you picked) to one of Cora's cards: runs as on its card; the message says what happened. */
@@ -343,6 +405,12 @@ export class CoraBot {
     if (this.heard.size > 200) this.heard.delete(this.heard.values().next().value!);
     const text = String(ev.text ?? '').trim();
     if (!text) return;
+    // a reply in the thread of a session's message: to that session (your own words, from your phone)
+    const toSid = ev.thread_ts ? this.sessionMsgs.get(String(ev.thread_ts)) : undefined;
+    if (toSid && this.d.toSession) {
+      if (!this.d.toSession(toSid, text)) return void (await this.post(`${this.d.nameOf(toSid)} isn't running in Cora any more, so it can't get that.`));
+      return void this.react(String(ev.channel), ts, 'white_check_mark');
+    }
     if (!this.cfg().instructions) return void (await this.post("Taking instructions here is off (Cora's Settings → Slack → Cora's own bot)."));
     const r = this.d.say?.(`${SLACK_DM_MARK} on their phone: open with one short sentence saying what you'll do, then do it; reply briefly; your reply is sent back there] ${text}`);
     if (!r) return void (await this.post("Cora's agent is off, so I can't act on that. (Settings → Cora Orchestrator.)"));
@@ -399,6 +467,34 @@ export class CoraBot {
     await this.d.slack.reactAsCora(channel, ts, name, remove).catch((e) => this.d.log?.(`cora bot: reaction ${name}: ${(e as { code?: string }).code ?? (e as Error).message}`));
   }
 
+  /**
+   * A session's message to you (slack_send to you): here, as Cora's bot, so it pings you, under the session's banner
+   * (its name on top when the bot can't upload one). Away or not, quiet hours or not: you asked for it. Your reply in
+   * its thread goes back to the session.
+   */
+  async fromSession(sessionId: string | null, text: string, banner: Uint8Array | null): Promise<{ ok: true; link: string } | { ok: false; error: string }> {
+    if (!this.connected()) return { ok: false, error: "Cora's own Slack bot isn't set up (Settings → Slack → Cora's own bot)." };
+    if (this.today() >= this.cfg().dailyCap) return { ok: false, error: "today's cap of Cora DMs is reached" };
+    const name = sessionId ? this.d.nameOf(sessionId) : null;
+    try {
+      // under the session's name, with Cora's own icon (its banner shows the session's colour and icon)
+      const sender = name ? { name } : undefined;
+      const r = await this.d.slack.post({ kind: 'person', id: '', label: 'you' }, text, undefined, { asBot: true, banner, byline: name ? `*${slackEsc(name)}* · a session in Cora` : '*CORA*', ...(sender ? { sender } : {}) });
+      this.today();
+      this.sent.n++;
+      if (sessionId) this.lastFrom.set(sessionId, this.now());
+      if (sessionId && r.ts) {
+        this.sessionMsgs.set(r.ts, sessionId);
+        if (this.sessionMsgs.size > 200) this.sessionMsgs.delete(this.sessionMsgs.keys().next().value!);
+      }
+      return { ok: true, link: r.link };
+    } catch (e) {
+      const why = (e as { code?: string }).code ?? (e as Error).message;
+      this.d.log?.(`cora bot: a session's message: ${why}`);
+      return { ok: false, error: why };
+    }
+  }
+
   /** Cora's tool: a DM from Cora (you asked to be told something on your phone). Goes out whether you're away or not. */
   async dm(text: string): Promise<{ ok: boolean; error?: string }> {
     if (!this.connected()) return { ok: false, error: "Cora's own Slack bot isn't set up (Settings → Slack → Cora's own bot)." };
@@ -419,6 +515,8 @@ export class CoraBot {
   }
 }
 
+/** Slack's three special characters, as text. */
+const slackEsc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 const section = (text: string) => ({ type: 'section', text: { type: 'mrkdwn', text: text.slice(0, 2990) } });
 const btn = (text: string, action: string, value: string, style?: 'primary' | 'danger') => ({ type: 'button', action_id: action, ...(style ? { style } : {}), text: { type: 'plain_text', text }, value });
 

@@ -79,3 +79,16 @@ export function refsLine(r: JournalRefs, tag?: JournalTag): string {
   const parts = [...(tag ? [tag] : []), ...(r.tickets ?? []), ...(r.mrs ?? []), ...(r.issues ?? []), ...(r.explains ?? []).map((e) => `explain "${e.title}"`), ...(r.artifacts ?? []).map((a) => `[artifact](${a})`)];
   return parts.length ? `Refs: ${parts.join(' · ')}` : '';
 }
+
+/** An entry's headline: its first line, its markdown taken off (`**#421 check 1/3: OK**` → `#421 check 1/3: OK`), short. */
+export function headline(text: string, max = 160): string {
+  const line = text.split('\n').map((l) => l.trim()).find(Boolean) ?? '';
+  const plain = line
+    .replace(/^#{1,6}\s+/, '')
+    .replace(/^[-*+]\s+/, '')
+    .replace(/\*\*(.+?)\*\*/g, '$1')
+    .replace(/__(.+?)__/g, '$1')
+    .replace(/`([^`]+)`/g, '$1')
+    .trim();
+  return plain.length > max ? `${plain.slice(0, max - 1)}…` : plain;
+}

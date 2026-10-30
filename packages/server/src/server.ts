@@ -10,7 +10,7 @@ import { Freeze } from './freeze';
 import { Journal, gitBranch, journalDir } from './journal';
 import { Calendar, withWhom } from './calendar';
 import { draftPrep, journalTrail, trailLines } from './calendarPrep';
-import { displayName, findRefs, mergeRefs, recapText, DEFAULT_VIDEO, DEFAULT_VOICE, type JournalRefs, type JournalTag, type VideosMsg, CALENDAR_SCOPE, type CalEvent } from '@cora/shared';
+import { displayName, findRefs, mergeRefs, recapText, DEFAULT_VIDEO, DEFAULT_VOICE, type JournalRefs, type JournalTag, type VideosMsg, CALENDAR_SCOPE, type CalEvent, headline, firstSentence, CALL_STATUS } from '@cora/shared';
 import { LiveExplains } from './liveExplains';
 import { Debriefs } from './debriefs';
 import { Worktrees } from './worktrees';
@@ -109,7 +109,7 @@ export async function startServer(config: Config, opts: { tail?: boolean; listen
       const s = c.session;
       const was = lastState.get(s.id);
       lastState.set(s.id, s.state);
-      if ((was === 'working' || was === 'thinking') && s.state === 'idle' && !orch?.isAgent(s.id)) bot?.alert({ kind: 'finished', text: `${nameOf(s)} finished` });
+      if ((was === 'working' || was === 'thinking') && s.state === 'idle' && !orch?.isAgent(s.id)) bot?.alert({ kind: 'finished', text: `${nameOf(s)} finished`, sessionId: s.id });
     }
     if (c.agent) hub?.publishAgent(c.agent);
   }, {
@@ -202,7 +202,7 @@ export async function startServer(config: Config, opts: { tail?: boolean; listen
     return st.connected ? { ...st, ...live.state() } : st;
   };
   const slackMsg = () => ({ t: 'slack' as const, status: slackStatus(), drafts: outbox.list(), sent: outbox.sent(), grants: outbox.grants(), ...(bot ? { bot: bot.status() } : {}) });
-  const slack: Slack = new Slack({ dataDir: config.dataDir, ...(opts.slackApi ? { api: opts.slackApi } : {}), onChange: () => hub?.publishSlack(slackMsg()) });
+  const slack: Slack = new Slack({ dataDir: config.dataDir, ...(opts.slackApi ? { api: opts.slackApi } : {}), onChange: () => hub?.publishSlack(slackMsg()), log: (m) => console.log(`  ${m}`) });
   // Cora's banner on top of a message you send (the desktop app makes it)
   const banners = new Banners();
   // who wrote a message Cora sends for you: Cora herself (her agent, her own folder, or no session), or a session; its
@@ -328,6 +328,16 @@ export async function startServer(config: Config, opts: { tail?: boolean; listen
       return s ? nameOf(s) : sid.slice(0, 8);
     },
     say: (text) => (orch?.status().enabled ? orch.sayFromUser(text) : null),
+    // your reply in the thread of a session's message in the Cora DM: typed into that session, as your words
+    toSession: (sid, text) => typeIntoSession(sid, `(The user, replying in Slack to your message:) ${text}`) != null,
+    // the digest's line for a session: what its journal says since you left (each entry's headline), else its last reply
+    didWhat: (sid, since) => {
+      const entries = journal.query({ sessionId: sid, since, limit: 4 }).reverse();
+      if (entries.length) return { journal: true, text: entries.map((e) => headline(e.text)).filter(Boolean).join('; ') };
+      const said = store.eventsForSession(sid, { limit: 600 }).filter((e) => e.agentId === 'main' && e.kind === 'say' && e.ts >= since && (e.said || e.text)).at(-1);
+      const first = said ? firstSentence(said.said || said.text || '') : '';
+      return first ? { journal: false, text: first.length > 200 ? `${first.slice(0, 199)}…` : first } : null;
+    },
     onChange: () => hub?.publishSlack(slackMsg()),
     log: (m) => console.log(`  ${m}`),
   });
@@ -650,6 +660,21 @@ export async function startServer(config: Config, opts: { tail?: boolean; listen
       else console.log(`  calendar: standup notes not drafted: ${r.error}`);
     }
   };
+  // a call starting now (the heads-up came minutes ago, and minutes are easy to lose): a notification that joins it,
+  // Cora's one line, the Inbox item, and your phone when you're away
+  const callStarting = (e: CalEvent) => {
+    const c = prefs.get().calendar;
+    if (!c.startAlert) return;
+    const who = withWhom(e);
+    hub?.publishCalendarDue({ t: 'calendarDue', event: e, minutes: 0, notify: true });
+    if (c.inbox) {
+      const at = new Date(e.start).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+      inbox.add({ source: 'cora', key: `cal:${e.id}`, title: `${e.title} · ${at}`, why: `starting now${who ? `, with ${who}` : ''}`, ...(e.link || e.url ? { link: e.link ?? e.url } : {}), entry: { id: `start:${e.id}@${e.start}`, who: 'Calendar', text: 'Starting now.', at: Date.now() } });
+    }
+    if (c.brief !== 'off' && orch?.status().enabled)
+      orch.feed.note(`[Calendar] Starting now: "${defuse(e.title)}"${who ? ` with ${defuse(who)}` : ''}${e.link ? ' · has a video link' : ''} · ${c.brief === 'spoken' ? 'say one short line that it is starting now (no brief)' : 'written only: one short line in your console, not spoken'}`, { others: true });
+    if (bot?.away()) void bot.dm(`📞 *${e.title}* is starting now${e.link ? `: <${e.link}|join it>` : ''}`);
+  };
   calendar = gmail
     ? new Calendar({
         connected: () => gmail.connected(),
@@ -659,9 +684,24 @@ export async function startServer(config: Config, opts: { tail?: boolean; listen
         file: join(config.dataDir, 'calendar.json'),
         onChange: (m) => hub?.publishCalendar(m),
         due: (e, minutes) => void callComing(e, minutes).catch((x) => console.log(`  calendar: ${(x as Error).message}`)),
+        starting: (e) => callStarting(e),
       })
     : undefined;
   if (opts.listen !== false) calendar?.start();
+  // your Slack status during a call (one with others or a video link): "In a call" until it ends (Slack clears it), only
+  // when you haven't a status of your own
+  const statusFor = new Set<string>();
+  const callStatus = async () => {
+    if (!calendar || !prefs.get().calendar.slackStatus || !slack.status().connected) return;
+    const now = Date.now();
+    const live = calendar.msg().events.find((e) => e.start <= now && e.end > now && (e.link || e.attendees.some((a) => !a.self)));
+    if (!live || statusFor.has(`${live.id}@${live.start}`)) return;
+    statusFor.add(`${live.id}@${live.start}`);
+    const cur = await slack.myStatus().catch(() => null);
+    if (!cur || (cur.text && cur.text !== CALL_STATUS)) return;
+    await slack.setStatus(CALL_STATUS, ':spiral_calendar_pad:', Math.round(live.end / 1000)).catch((e) => console.log(`  calendar: Slack status not set: ${(e as Error).message}`));
+  };
+  if (opts.listen !== false && calendar) setInterval(() => void callStatus(), 60_000).unref();
   if (calendar) hub.calendarSnapshot = () => calendar!.msg();
   const calendarApi = calendar
     ? {
@@ -750,7 +790,19 @@ export async function startServer(config: Config, opts: { tail?: boolean; listen
         });
   const videosMsg = (): VideosMsg => ({ t: 'videos', jobs: videos?.list() ?? [], ffmpeg: videos?.ffmpeg() ?? { state: 'missing', canDownload: false } });
   hub.videosSnapshot = videosMsg;
-  const app = await buildApp({ config, store, hub, pipeline, pending, ptys, live: liveExplains, registry, prefs, voice, voiceFront, gmail, mailWatches, mailOutbox, ide, ideBridge, namer, tickets, jira, environments, deploys, notes, drafts, bot, inbox, ...(calendarApi ? { calendar: calendarApi } : {}), ...(opts.claudeSettingsFile ? { claudeSettingsFile: opts.claudeSettingsFile } : {}), ...(opts.setupChecks ? { setupChecks: opts.setupChecks } : {}), onShutdown: opts.onShutdown, ci: () => ci, slack: { slack, outbox, live, cwdOf: (sid) => store.getSession(sid)?.cwd }, security: security ?? undefined, orchestrator: o, gitlabIssues, memes, sessionNames, lock, freeze, journal: { add: (sid, kind, text, more) => journalAdd(sid, kind, text, undefined, more), read: (sid) => journal.read(sid), query: (q) => journal.query(q) }, debriefs, worktrees, vault, devices, remote, shares, door, synced, projects, banners, videos });
+  const app = await buildApp({ config, store, hub, pipeline, pending, ptys, live: liveExplains, registry, prefs, voice, voiceFront, gmail, mailWatches, mailOutbox, ide, ideBridge, namer, tickets, jira, environments, deploys, notes, drafts, bot, inbox, ...(calendarApi ? { calendar: calendarApi } : {}), ...(opts.claudeSettingsFile ? { claudeSettingsFile: opts.claudeSettingsFile } : {}), ...(opts.setupChecks ? { setupChecks: opts.setupChecks } : {}), onShutdown: opts.onShutdown, ci: () => ci, slack: {
+      slack,
+      outbox,
+      live,
+      cwdOf: (sid) => store.getSession(sid)?.cwd,
+      // a session's (or Cora's) message to you: through Cora's own bot, under its banner, so it pings you
+      toYou: async (d) => {
+        if (!bot?.connected()) return null;
+        const me = slack.status();
+        const banner = await banners.render(await bannerOf({ sessionId: d.sessionId, text: d.text, to: { kind: 'person', id: me.connected ? me.userId : '', label: 'you' }, reviewed: true })).catch(() => null);
+        return bot.fromSession(d.sessionId, d.text, banner);
+      },
+    }, security: security ?? undefined, orchestrator: o, gitlabIssues, memes, sessionNames, lock, freeze, journal: { add: (sid, kind, text, more) => journalAdd(sid, kind, text, undefined, more), read: (sid) => journal.read(sid), query: (q) => journal.query(q) }, debriefs, worktrees, vault, devices, remote, shares, door, synced, projects, banners, videos });
 
   let tailer: Tailer | undefined;
   if (opts.tail !== false) {

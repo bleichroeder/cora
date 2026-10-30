@@ -25,7 +25,7 @@ export type ClientMsg =
   | { t: 'shutdown' };
 
 export type HostMsg =
-  | { t: 'hello'; v: number; pid: number; terms: HostTerm[] }
+  | { t: 'hello'; v: number; pid: number; terms: HostTerm[]; /** the folder it runs from (an installed Cora's: ~/.cora/runtime/host-<hash>) */ dir?: string }
   | { t: 'data'; id: string; d: string }
   | { t: 'exit'; id: string; code: number }
   | { t: 'error'; msg: string };

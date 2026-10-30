@@ -15,6 +15,8 @@ const key = (sid: string, aid: string) => `${sid}/${aid}`;
 /** Owns the agent tree and the session/agent state machines. */
 export class Registry {
   private spawns = new Map<string, Spawn[]>(); // by session
+  /** when each session's last turn ended (the Stop hook, or its transcript's turn_end): older events don't revive it */
+  private turnOver = new Map<string, number>();
   private inflight = new Map<string, Map<string, number>>(); // sid/aid → toolUseId → start ts
   private pending = new Map<string, number>();
   /** sessions that are over, and when they ended: only activity after that brings one back */
@@ -72,14 +74,18 @@ export class Registry {
     let agentState: AgentState | undefined;
     let turnAt: number | undefined;
     const fl = this.flight(sid, e.agentId);
+    // from a turn that already ended (Claude Code's Stop hook comes first; its transcript, read a moment later, still
+    // has the turn's last reply): it doesn't make the session busy again (it would "finish" twice)
+    const over = e.agentId === 'main' && e.kind !== 'turn_end' && e.ts <= (this.turnOver.get(sid) ?? -Infinity);
     switch (e.kind) {
       case 'tool':
         // a command you ran yourself (`!`): Claude isn't doing anything (it shows once it's over, both lines at once)
         if (e.tool?.byYou || e.toolUseId?.startsWith('bang:')) break;
         if (e.toolUseId) {
-          if (e.phase === 'start') fl.set(e.toolUseId, e.ts);
+          if (e.phase === 'start' && !over) fl.set(e.toolUseId, e.ts);
           else fl.delete(e.toolUseId);
         }
+        if (over) break;
         agentState = fl.size ? 'working' : 'thinking';
         break;
       case 'prompt':
@@ -88,12 +94,14 @@ export class Registry {
         // a message you sent while it works, as queued, says nothing of what it's doing
         if (e.kind === 'prompt' && e.queue) break;
         if (e.agentId !== 'main' && this.store.getAgent(sid, e.agentId)?.state === 'done') break;
+        if (over) break;
         // your prompt: a turn begins (the nav counts how long it's been working from here)
         if (e.kind === 'prompt' && e.agentId === 'main') turnAt = e.ts;
         agentState = fl.size ? 'working' : 'thinking';
         break;
       case 'turn_end':
         if (e.agentId === 'main') {
+          this.turnOver.set(sid, Math.max(e.ts, this.turnOver.get(sid) ?? 0));
           fl.clear();
           agentState = 'idle';
         }
@@ -122,6 +130,7 @@ export class Registry {
   forget(ids: string[]): void {
     for (const sid of ids) {
       this.spawns.delete(sid);
+      this.turnOver.delete(sid);
       this.pending.delete(sid);
       this.ended.delete(sid);
       this.silent.delete(sid);
@@ -181,6 +190,7 @@ export class Registry {
   }
 
   turnEnded(sessionId: string, ts: number): void {
+    this.turnOver.set(sessionId, Math.max(ts, this.turnOver.get(sessionId) ?? 0));
     this.flight(sessionId, 'main').clear();
     this.ensureAgent(sessionId, 'main', ts);
     this.setAgentState(sessionId, 'main', 'idle');

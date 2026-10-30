@@ -128,6 +128,8 @@ export type OrchestratorStatus = {
   goal: Goal | null;
   /** the sessions it's talking with (you OKed a conversation): until when it may without asking again */
   talks?: Array<{ sessionId: string; until: number }>;
+  /** what Cora will check back on (the user asked her to) */
+  followUps?: import('./followUps').FollowUp[];
   /** sessions it started on Jira tickets (the last 14 days, newest first) */
   jiraStarted?: JiraStarted[];
 };
@@ -163,6 +165,12 @@ export const ORCH_TOOLS = [
   'explains',
   'security',
   'start_session',
+  'project_move',
+  'follow_up',
+  'follow_ups',
+  'follow_up_cancel',
+  'cora_post',
+  'slack_pin',
   'resume_session',
   'send_to_session',
   'ask_session',

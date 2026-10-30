@@ -32,6 +32,8 @@ export type CalendarDeps = {
   onChange?(m: CalendarMsg): void;
   /** a call is coming up (once per call and start time) */
   due?(e: CalEvent, minutes: number): void;
+  /** a call is starting now (once per call and start time) */
+  starting?(e: CalEvent): void;
 };
 
 type Kept = { standup: Record<string, boolean>; told: Record<string, number>; prep: Record<string, string> };
@@ -90,6 +92,13 @@ export function mapEvent(raw: any, marks: Record<string, boolean> = {}): CalEven
 export function dueNow(events: CalEvent[], now: number, lead: number, told: Record<string, number>): CalEvent[] {
   if (!lead) return [];
   return events.filter((e) => e.start > now && e.start - now <= lead * 60_000 && !told[`${e.id}@${e.start}`]);
+}
+
+/** How long after its start a call still counts as "starting now" (Cora checks every 30 s; a restart in between). */
+export const STARTING_MS = 2 * 60_000;
+/** The calls starting now: begun within the last couple of minutes, not said yet at this start time. */
+export function startingNow(events: CalEvent[], now: number, told: Record<string, number>): CalEvent[] {
+  return events.filter((e) => e.start <= now && now - e.start < STARTING_MS && e.end > now && !told[`start:${e.id}@${e.start}`]);
 }
 
 /** The people on a call (not you): names, else addresses. */
@@ -195,11 +204,14 @@ export class Calendar {
     const now = this.now();
     const lead = this.d.lead();
     const due = dueNow(this.list(), now, lead, this.kept.told);
-    if (!due.length) return;
+    const starting = this.d.starting ? startingNow(this.list(), now, this.kept.told) : [];
+    if (!due.length && !starting.length) return;
     for (const e of due) this.kept.told[`${e.id}@${e.start}`] = now;
+    for (const e of starting) this.kept.told[`start:${e.id}@${e.start}`] = now;
     for (const [k, at] of Object.entries(this.kept.told)) if (now - at > TOLD_KEEP_MS) delete this.kept.told[k];
     this.save();
     for (const e of due) this.d.due?.(e, Math.max(1, Math.round((e.start - now) / 60_000)));
+    for (const e of starting) this.d.starting?.(e);
   }
 
   /** Mark a call (its whole series) as a standup, or not. */

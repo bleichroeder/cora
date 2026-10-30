@@ -1,7 +1,7 @@
-import { spawn as spawnChild } from 'node:child_process';
+import { execFileSync, spawn as spawnChild } from 'node:child_process';
 import { connect, type Socket } from 'node:net';
-import { copyFileSync, existsSync, openSync, statSync } from 'node:fs';
-import { join } from 'node:path';
+import { copyFileSync, cpSync, existsSync, mkdirSync, openSync, statSync } from 'node:fs';
+import { dirname, join, resolve as resolvePath } from 'node:path';
 import { PROTOCOL_VERSION, legacySocketPath, onLines, sendLine, socketPath, type HostMsg, type HostTerm, type TermMeta } from './protocol';
 import { nodePtySpawn, type PtyLike, type SpawnFn } from './spawn';
 import { rollLog } from '../fsx';
@@ -86,7 +86,7 @@ export class HostBackend extends Emitter implements PtyBackend {
   lost = false;
   /** told when the host goes away (not when this server closes it) */
   onLost?: () => void;
-  private constructor(private sock: Socket, readonly restored: HostTerm[], readonly hostPid: number) {
+  private constructor(private sock: Socket, readonly restored: HostTerm[], readonly hostPid: number, /** the folder it runs from (hosts from before said nothing) */ readonly hostDir?: string) {
     super();
     for (const t of restored) if (t.alive) this.live.add(t.id);
     // The host going away takes its terminals with it.
@@ -127,7 +127,7 @@ export class HostBackend extends Emitter implements PtyBackend {
         sock.off('error', fail);
         if (m.t !== 'hello') return fail(new Error(m.t === 'error' ? `terminal host: ${m.msg}` : 'unexpected handshake'));
         sock.on('error', () => {});
-        backend = new HostBackend(sock, m.terms, m.pid);
+        backend = new HostBackend(sock, m.terms, m.pid, m.dir);
         resolve(backend);
       });
     });
@@ -250,16 +250,21 @@ export class HealingHostBackend extends Emitter implements PtyBackend {
  * Connect to the running terminal host, or start one (detached, so it outlives this server) and connect.
  * `hostScript` is the built ptyhost.js next to cli.js.
  */
-export async function connectOrStartHost(o: { dataDir: string; legacyDataDirs?: string[]; /** its key, then older ones a host still running may have (the hook token, before hosts had their own) */ token: string; olderTokens?: string[]; hostScript: string; /** the Node it runs on (default: this one) */ hostNode?: string; log?: (m: string) => void; timeoutMs?: number }): Promise<HostBackend> {
+export async function connectOrStartHost(o: { /** where a host runs from, by its pid (hosts from before didn't say; tests fake it) */ whereIs?: (pid: number) => string | null; dataDir: string; legacyDataDirs?: string[]; /** its key, then older ones a host still running may have (the hook token, before hosts had their own) */ token: string; olderTokens?: string[]; hostScript: string; /** the Node it runs on (default: this one) */ hostNode?: string; log?: (m: string) => void; timeoutMs?: number }): Promise<HostBackend> {
   const path = socketPath(o.dataDir);
   // a host started before the rename listens at the old address, with the same token (the data was copied over)
   for (const p of [path, ...(o.legacyDataDirs ?? []).map(legacySocketPath)]) {
     for (const t of [o.token, ...(o.olderTokens ?? [])]) {
+      let b: HostBackend;
       try {
-        return await HostBackend.connect(p, t);
+        b = await HostBackend.connect(p, t);
       } catch {
-        /* not there, or not its key */
+        continue; /* not there, or not its key */
       }
+      // an older build's host (Cora was updated while it ran): whole, or mended, it keeps its terminals; with none, it
+      // makes way for this build's
+      const stillThere = () => HostBackend.connect(p, t, 300).then((x) => (void x.close(false), true), () => false);
+      if (!o.hostNode || (await vetHost(b, dirname(o.hostNode), o.log ?? (() => {}), stillThere, o.whereIs))) return b;
     }
   }
   spawnHost(o.hostNode ?? process.execPath, o.hostScript, o.dataDir, join(o.dataDir, 'ptyhost.log'));
@@ -275,6 +280,47 @@ export async function connectOrStartHost(o: { dataDir: string; legacyDataDirs?: 
     }
   }
   throw new Error(`terminal host did not start: ${(last as Error)?.message ?? 'timeout'}`);
+}
+
+/**
+ * A host Cora found running: is it this build's? If not (an update came while it ran) and it has no live terminal, it's
+ * shut down so this build's starts (false). If it has some, it stays for them; if its folder lost its files (an older
+ * Cora removed it while it ran: no new terminal could start), they're put back from this build's (Node and the terminal
+ * library: what it loads when it starts or ends a terminal).
+ */
+export async function vetHost(b: HostBackend, ours: string, log: (m: string) => void, stillThere: () => Promise<boolean>, whereIs: (pid: number) => string | null = hostFolderOf): Promise<boolean> {
+  const dir = b.hostDir ?? whereIs(b.hostPid);
+  if (!dir || resolvePath(dir).toLowerCase() === resolvePath(ours).toLowerCase()) return true;
+  if (!b.restored.some((t) => t.alive)) {
+    log("the terminal host is an older Cora's, with no terminals: starting this one's");
+    await b.close(true).catch(() => {});
+    // its pipe goes with it
+    for (let i = 0; i < 20 && (await stillThere()); i++) await new Promise((r) => setTimeout(r, 150));
+    return false;
+  }
+  const missing = ['node.exe', join('node_modules', '@lydell')].filter((f) => !existsSync(join(dir, f)));
+  if (missing.length) {
+    try {
+      mkdirSync(dir, { recursive: true });
+      if (missing.includes('node.exe')) cpSync(join(ours, 'node.exe'), join(dir, 'node.exe'));
+      cpSync(join(ours, 'node_modules'), join(dir, 'node_modules'), { recursive: true });
+      log(`mended an older Cora's terminal host (its folder had lost ${missing.join(' and ')}): its terminals carry on, new ones start`);
+    } catch (e) {
+      log(`couldn't mend an older Cora's terminal host's folder (${dir}): ${(e as Error).message}`);
+    }
+  }
+  return true;
+}
+
+/** The folder a process runs from (Windows; elsewhere, null). */
+function hostFolderOf(pid: number): string | null {
+  if (process.platform !== 'win32' || !pid) return null;
+  try {
+    const out = execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', `(Get-CimInstance Win32_Process -Filter "ProcessId=${Number(pid)}").ExecutablePath`], { encoding: 'utf8', windowsHide: true, timeout: 15_000 }).trim();
+    return out ? dirname(out) : null;
+  } catch {
+    return null;
+  }
 }
 
 /**

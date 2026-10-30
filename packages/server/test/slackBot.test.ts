@@ -28,9 +28,14 @@ function world(o: Partial<SlackBotSettings> = {}) {
     status: () => ({ connected: true, userId: ME, team: 't', teamId: 'T', user: 'david', url: 'https://x.slack.com/' }),
     botDm: async () => 'D_CORA',
     postAsCora: async (text: string, blocks?: any[]) => (posts.push({ text, blocks }), { channel: 'D_CORA', ts: `${posts.length}.0` }),
+    // a session's message to you: posted as the bot, with its banner or its byline
+    post: async (_to: unknown, text: string, _t: unknown, opt: any) => (posts.push({ text, blocks: [opt] }), { channel: 'D_CORA', ts: `${posts.length}.0`, link: `https://x.slack.com/archives/D_CORA/p${posts.length}` }),
     updateAsCora: async (_c: string, ts: string, text: string) => void updates.push({ ts, text }),
     reactAsCora: async (_c: string, ts: string, name: string, remove?: boolean) => void reactions.push(`${remove ? '-' : '+'}${name}@${ts}`),
   };
+  const did: Record<string, { text: string; journal: boolean }> = {};
+  const asked: Array<[string, number]> = [];
+  const typed: Array<[string, string]> = [];
   const bot = new CoraBot({
     slack: slack as any,
     settings: () => settings,
@@ -46,10 +51,13 @@ function world(o: Partial<SlackBotSettings> = {}) {
     drafts: () => drafts,
     draft: async (id, send) => (drafted.push([id, send]), drafts.some((d) => d.id === id) ? ((drafts = drafts.filter((d) => d.id !== id)), { ok: true, ...(send ? { link: 'https://x.slack.com/archives/D1/p1' } : {}) }) : { ok: false, error: 'not found (already answered)' }),
     handedOff: () => handed,
+    toSession: (sid, text) => (typed.push([sid, text]), sid !== 'gone'),
+    didWhat: (sid, since) => (did[sid] ? (asked.push([sid, since]), did[sid]) : null),
     now: () => now,
   });
   return {
     bot, posts, updates, reactions, said, resolved, extended, approved, picked, drafted,
+    did, asked, typed,
     setCards: (l: Approval[]) => (cards = l),
     setDrafts: (l: SlackDraft[]) => (drafts = l),
     handOff: (on: boolean) => ((handed = on), bot.refresh()),
@@ -92,6 +100,55 @@ describe("Cora's bot: away, alerts", () => {
     w.back();
     await w.bot.flushDigest();
     expect(w.posts).toHaveLength(2);
+    w.bot.stop();
+  });
+
+  it("the digest: one line per session saying what it did (its journal since you left), turns counted only without one", async () => {
+    const w = world();
+    w.away();
+    const left = (w.bot.status() as { awaySince?: number }).awaySince;
+    w.did['race'] = { journal: true, text: '#421 overnight check 1/3 (06:17Z): OK; #421 overnight check 2/3 (06:47Z): OK' };
+    w.did['tv'] = { journal: false, text: 'Found 3 stations with frozen frames <2 min>.' };
+    for (let i = 0; i < 4; i++) w.bot.alert({ kind: 'finished', text: 'Report Race Condition finished', sessionId: 'race' });
+    for (let i = 0; i < 3; i++) w.bot.alert({ kind: 'finished', text: 'TV stations finished', sessionId: 'tv' });
+    w.bot.alert({ kind: 'finished', text: 'quiet finished', sessionId: 'quiet' });
+    await w.bot.flushDigest();
+    expect(w.posts).toHaveLength(1);
+    expect(w.posts[0].text).toBe(
+      "Finished while you're away:\n• race: #421 overnight check 1/3 (06:17Z): OK; #421 overnight check 2/3 (06:47Z): OK\n• tv: Found 3 stations with frozen frames <2 min>. (3 turns)\n• quiet: finished",
+    );
+    // since you left
+    expect(w.asked.every(([, since]) => since === left)).toBe(true);
+    // on a phone: a block per session, its name bold, Slack's characters kept as text
+    const blocks = w.posts[0].blocks!.map((b: any) => b.text.text);
+    expect(blocks[0]).toBe("*Finished while you're away*");
+    expect(blocks[1]).toBe('*race*\n#421 overnight check 1/3 (06:17Z): OK; #421 overnight check 2/3 (06:47Z): OK');
+    expect(blocks[2]).toBe('*tv*\nFound 3 stations with frozen frames &lt;2 min&gt;.\n_3 turns_');
+    w.bot.stop();
+  });
+
+  it("a session's message to you: as the bot (it pings you), at the PC or away; your reply in its thread goes to that session; the digest leaves it out", async () => {
+    const w = world();
+    // at your PC, and with a banner: it still goes (you asked for it)
+    const r = await w.bot.fromSession('race', '#421 check 1/3: OK', new Uint8Array([1, 2, 3]));
+    expect(r).toEqual({ ok: true, link: 'https://x.slack.com/archives/D_CORA/p1' });
+    expect(w.posts[0]).toMatchObject({ text: '#421 check 1/3: OK', blocks: [{ asBot: true, byline: '*race* · a session in Cora', sender: { name: 'race' } }] });
+    // Cora's own icon beside its name (its banner shows the session's look)
+    expect(w.posts[0].blocks![0].sender.emoji).toBeUndefined();
+    expect(w.posts[0].blocks![0].banner).toEqual(new Uint8Array([1, 2, 3]));
+    // your reply in its thread: to the session, ticked; anything else still goes to Cora
+    await w.bot.incoming({ type: 'message', channel: 'D_CORA', channel_type: 'im', user: ME, text: 'great, carry on', ts: '9.1', thread_ts: '1.0' });
+    expect(w.typed).toEqual([['race', 'great, carry on']]);
+    expect(w.said).toEqual([]);
+    expect(w.reactions).toContain('+white_check_mark@9.1');
+    // away: the session that messaged you itself isn't in the digest; one that didn't is
+    w.away();
+    w.tick(60_000);
+    await w.bot.fromSession('race', '#421 check 2/3: OK', null);
+    w.bot.alert({ kind: 'finished', text: 'race finished', sessionId: 'race' });
+    w.bot.alert({ kind: 'finished', text: 'tv finished', sessionId: 'tv' });
+    await w.bot.flushDigest();
+    expect(w.posts.at(-1)!.text).toBe("Finished while you're away:\n• tv: finished");
     w.bot.stop();
   });
 
@@ -289,10 +346,30 @@ describe("Cora's bot: its questions (an email watch's \"start on it?\")", () => 
   });
 });
 
+describe("a message's menu in Slack", () => {
+  it("Start a session on this / Ask Cora about this: your click goes to Cora with its link, her answer comes to your DM; nobody else's click counts", async () => {
+    const w = world();
+    const click = (callback_id: string, user = ME, message: object = { ts: '1700000000.000100', text: 'import job timed out' }) => w.bot.interactive({ type: 'message_action', callback_id, user: { id: user }, channel: { id: 'C9', name: 'support' }, message });
+    await click('cora_session');
+    expect(w.said).toHaveLength(1);
+    expect(w.said[0]).toMatch(/Start a session on this Slack message in #support .*https:\/\/x\.slack\.com\/archives\/C9\/p1700000000000100\./);
+    expect(w.posts.at(-1)!.text).toBe('Starting a session on a message in #support');
+    expect(w.reactions.at(-1)).toMatch(/^\+eyes@/);
+    // a reply in a thread: its thread in the link
+    await click('cora_ask', ME, { ts: '1700000000.000200', thread_ts: '1700000000.000100', text: 'still failing' });
+    expect(w.said[1]).toMatch(/Read this Slack message .*p1700000000000200\?thread_ts=1700000000\.000100&cid=C9/);
+    // someone else's click: nothing
+    await click('cora_session', 'U_SOMEONE');
+    expect(w.said).toHaveLength(2);
+    const m = slackManifest() as any;
+    expect(m.features.shortcuts.map((s: any) => s.callback_id)).toEqual(['cora_session', 'cora_ask']);
+  });
+});
+
 describe("Cora's bot: setup", () => {
   it('the manifest has the bot, its DM event and interactivity; settings validate; old hooks are rewritten', () => {
     const m = slackManifest() as any;
-    expect(m.oauth_config.scopes.bot).toEqual(['chat:write', 'im:history', 'im:read', 'im:write', 'reactions:write']);
+    expect(m.oauth_config.scopes.bot).toEqual(['chat:write', 'im:history', 'im:read', 'im:write', 'reactions:write', 'files:write', 'chat:write.customize', 'chat:write.public', 'commands']);
     expect(m.settings.event_subscriptions.bot_events).toEqual(['message.im']);
     expect(m.settings.interactivity.is_enabled).toBe(true);
     expect(applyPatch(DEFAULT_SETTINGS, { slackBot: { awayMinutes: 15, ping: { tickets: false }, quiet: { on: true, from: '21:30' } } }).slackBot).toMatchObject({ awayMinutes: 15, ping: { prompts: true, tickets: false }, quiet: { on: true, from: '21:30', to: '07:00' } });

@@ -14,6 +14,9 @@ import { readSecret, writeSecret } from './secrets';
 /** The user scopes Cora's Slack app asks for (see slackManifest). */
 export const SLACK_SCOPES = [
   'chat:write',
+  // your status during calls ("In a call", cleared when it ends); pinning a message (a release announcement)
+  'users.profile:write',
+  'pins:write',
   'users:read',
   'users:read.email',
   'channels:read',
@@ -37,7 +40,16 @@ export const SLACK_SCOPES = [
 export const SLACK_USER_EVENTS = ['message.channels', 'message.groups', 'message.im', 'message.mpim'];
 
 /** Cora's own bot: it DMs you as itself (its messages ping, its buttons answer prompts) and hears what you write it. */
-export const SLACK_BOT_SCOPES = ['chat:write', 'im:history', 'im:read', 'im:write', 'reactions:write'];
+// files:write: the banner on a session's message to you (without it, the message names its session in words)
+// chat:write.customize: a session's message to you comes under its own name and colour; chat:write.public: Cora posts in
+// a public channel you told her to (without joining it)
+// commands: the shortcuts in a message's menu (Start a session on this, Ask Cora about this)
+export const SLACK_BOT_SCOPES = ['chat:write', 'im:history', 'im:read', 'im:write', 'reactions:write', 'files:write', 'chat:write.customize', 'chat:write.public', 'commands'];
+/** A message's ⋯ menu: hand it to Cora (yours alone: only your clicks count). */
+export const SLACK_SHORTCUTS = [
+  { name: 'Start a session on this', type: 'message', callback_id: 'cora_session', description: 'Cora starts a Claude Code session on this message or thread' },
+  { name: 'Ask Cora about this', type: 'message', callback_id: 'cora_ask', description: 'Cora reads it and tells you, in your Cora DM' },
+];
 export const SLACK_BOT_EVENTS = ['message.im'];
 
 /**
@@ -48,7 +60,7 @@ export const SLACK_BOT_EVENTS = ['message.im'];
 export function slackManifest(): object {
   return {
     display_information: { name: 'Cora', description: 'Lets Cora (your Claude Code dashboard) work with Slack as you (messages it drafts are sent when you confirm), and as itself: it DMs you while you are away, with buttons to answer prompts, and takes instructions in that DM.' },
-    features: { bot_user: { display_name: 'Cora', always_online: true }, app_home: { messages_tab_enabled: true, messages_tab_read_only_enabled: false } },
+    features: { bot_user: { display_name: 'Cora', always_online: true }, app_home: { messages_tab_enabled: true, messages_tab_read_only_enabled: false }, shortcuts: SLACK_SHORTCUTS },
     oauth_config: { scopes: { user: SLACK_SCOPES, bot: SLACK_BOT_SCOPES } },
     settings: { event_subscriptions: { user_events: SLACK_USER_EVENTS, bot_events: SLACK_BOT_EVENTS }, interactivity: { is_enabled: true }, org_deploy_enabled: false, socket_mode_enabled: true, token_rotation_enabled: false },
   };
@@ -261,7 +273,7 @@ export class Slack {
   private searchOk: boolean | undefined;
 
   constructor(
-    private o: { dataDir: string; api?: (token: string) => SlackApi; onChange?: () => void; /** for files (a fake in tests) */ fetch?: typeof fetch; /** between looks for a sent file's message */ shareWaitMs?: number },
+    private o: { dataDir: string; api?: (token: string) => SlackApi; onChange?: () => void; /** for files (a fake in tests) */ fetch?: typeof fetch; /** between looks for a sent file's message */ shareWaitMs?: number; log?: (m: string) => void },
   ) {
     const f = this.file();
     if (existsSync(f)) {
@@ -619,17 +631,27 @@ export class Slack {
    * Post as you. Returns the message's link. `footer`: a small grey line under it (Slack's context block), so whoever
    * reads it knows Cora sent it for you; the message's own text stays as it is (notifications, search).
    */
-  async post(to: SlackTarget, text: string, threadTs?: string, o: { footer?: string; banner?: Uint8Array | null; /** lay a structured message out in blocks (richBlocks; default on): off for what you typed */ rich?: boolean } = {}): Promise<{ channel: string; ts: string; link: string; /** the banner's file (Undo deletes it too) */ fileIds?: string[] }> {
+  async post(to: SlackTarget, text: string, threadTs?: string, o: { footer?: string; banner?: Uint8Array | null; /** lay a structured message out in blocks (richBlocks; default on): off for what you typed */ rich?: boolean; /** as Cora's own bot, in its DM with you (it pings you; `to` ignored), or in `to` (inChannel) */ asBot?: boolean; inChannel?: boolean; /** the bot posting under another name (a session's), and an emoji as its icon (else the app's own) */ sender?: { name: string; emoji?: string }; /** Slack holds it and sends it then (ms) */ postAt?: number; /** a line on top when there's no banner (who it's from) */ byline?: string } = {}): Promise<{ channel: string; ts: string; link: string; /** the banner's file (Undo deletes it too) */ fileIds?: string[]; /** scheduled: its id (to take it back) */ scheduledId?: string }> {
     try {
       const { footer, banner } = o;
-      const channel = await this.conversation(to);
+      const bot = o.asBot ? this.readBot() : null;
+      if (o.asBot && !bot) throw new SlackError('no_bot');
+      const api: SlackApi = bot ? (this.o.api ?? slackApi)(bot.token) : this.call();
+      const channel = bot ? (o.inChannel ? await this.conversation(to) : await this.botDm()) : await this.conversation(to);
       const raw = await this.mentions(text);
       const body = toMrkdwn(raw);
       // a structured message in Slack's blocks (headers, dividers, a grid of facts); else sections, as ever
       let rich = o.rich !== false ? richBlocks(raw) : null;
       // Cora's banner on top: uploaded privately, then shown
       // by its file (Slack plays it as a GIF; whoever reads the message sees it)
-      const file = banner?.length ? await this.uploadImage(banner, 'cora.gif').catch(() => null) : null;
+      // a banner that can't be uploaded: the message goes without it, and the log says why (the bot without files:write)
+      const file = banner?.length
+        ? await this.uploadImage(banner, 'cora.gif', api).catch((e) => {
+            const code = e instanceof SlackError ? e.code : (e as Error).message;
+            this.o.log?.(`slack: banner not shown (${code})${bot && /missing_scope|not_allowed_token_type/.test(code) ? ": Cora's bot needs the files:write scope (api.slack.com/apps, OAuth & Permissions, then Reinstall)" : ''}`);
+            return null;
+          })
+        : null;
       const images: object[] = file ? [{ type: 'image', slack_file: { id: file }, alt_text: 'Cora' }] : [];
       let k = 0;
       const postIt = () => {
@@ -637,8 +659,9 @@ export class Slack {
         // under the banner a plain message is quoted: the banner's bar and the quote's run down as one column (a laid
         // out one isn't: its headers and grids can't be)
         const content = rich ?? sections(img ? quoted(body) : body);
-        const blocks = footer || img || rich ? [...(img ? [img] : []), ...content, ...(footer ? [{ type: 'context', elements: [{ type: 'mrkdwn', text: footer }] }] : [])] : undefined;
-        return this.call()('chat.postMessage', { channel, text: body, ...(blocks ? { blocks } : {}), ...(threadTs ? { thread_ts: threadTs } : {}) });
+        const by = !img && o.byline ? [{ type: 'context', elements: [{ type: 'mrkdwn', text: o.byline }] }] : [];
+        const blocks = footer || img || rich || by.length ? [...(img ? [img] : []), ...by, ...content, ...(footer ? [{ type: 'context', elements: [{ type: 'mrkdwn', text: footer }] }] : [])] : undefined;
+        return api(o.postAt ? 'chat.scheduleMessage' : 'chat.postMessage', { channel, text: body, ...(o.postAt ? { post_at: Math.floor(o.postAt / 1000) } : {}), ...(bot && o.sender ? { username: o.sender.name.slice(0, 80), ...(o.sender.emoji ? { icon_emoji: o.sender.emoji } : {}) } : {}), ...(blocks ? { blocks } : {}), ...(threadTs ? { thread_ts: threadTs } : {}) });
       };
       let j: any;
       for (let i = 0; ; i++) {
@@ -658,8 +681,10 @@ export class Slack {
           rich = null;
         }
       }
+      // scheduled: nothing in the conversation yet (no link): its id takes it back
+      if (o.postAt) return { channel, ts: '', link: '', scheduledId: String(j.scheduled_message_id ?? ''), ...(file ? { fileIds: [file] } : {}) };
       const ts = String(j.ts);
-      const p = await this.call()('chat.getPermalink', { channel, message_ts: ts }).catch(() => null);
+      const p = await api('chat.getPermalink', { channel, message_ts: ts }).catch(() => null);
       return { channel, ts, link: p?.permalink ? String(p.permalink) : '', ...(file ? { fileIds: [file] } : {}) };
     } catch (e) {
       return this.check(e);
@@ -699,13 +724,46 @@ export class Slack {
     }
   }
 
+  /** Your Slack status now: its words, emoji, and when it ends (0: never). */
+  async myStatus(): Promise<{ text: string; emoji: string; expiration: number }> {
+    const a = this.auth;
+    if (!a) throw new SlackError('not_connected');
+    try {
+      const j = await this.call()('users.info', { user: a.userId });
+      const p = j.user?.profile ?? {};
+      return { text: String(p.status_text ?? ''), emoji: String(p.status_emoji ?? ''), expiration: Number(p.status_expiration ?? 0) };
+    } catch (e) {
+      return this.check(e);
+    }
+  }
+  /** Set your Slack status, cleared by Slack itself at `until` (seconds; 0: stays). */
+  async setStatus(text: string, emoji: string, until: number): Promise<void> {
+    try {
+      await this.call()('users.profile.set', { profile: { status_text: text.slice(0, 100), status_emoji: emoji, status_expiration: until } });
+    } catch (e) {
+      this.check(e);
+    }
+  }
+  /** Pin a message in its conversation: as you, else (your token can't) as Cora's bot. Who pinned it. */
+  async pin(channel: string, ts: string): Promise<'you' | 'cora'> {
+    try {
+      await this.call()('pins.add', { channel, timestamp: ts });
+      return 'you';
+    } catch (e) {
+      const bot = this.readBot();
+      if (!(e instanceof SlackError) || !/missing_scope|not_allowed_token_type/.test(e.code) || !bot) return this.check(e);
+      await (this.o.api ?? slackApi)(bot.token)('pins.add', { channel, timestamp: ts });
+      return 'cora';
+    }
+  }
+
   /** An image uploaded to Slack without sharing it anywhere (yours alone until a message shows it): its file id. */
-  private async uploadImage(bytes: Uint8Array, filename: string): Promise<string> {
-    const u = await this.call()('files.getUploadURLExternal', { filename, length: bytes.length });
+  private async uploadImage(bytes: Uint8Array, filename: string, api: SlackApi = this.call()): Promise<string> {
+    const u = await api('files.getUploadURLExternal', { filename, length: bytes.length });
     const r = await (this.o.fetch ?? fetch)(String(u.upload_url), { method: 'POST', headers: { 'content-type': 'application/octet-stream' }, body: bytes });
     if (!r.ok) throw new SlackError(`uploading ${filename} failed (${r.status})`);
     const id = String(u.file_id);
-    await this.call()('files.completeUploadExternal', { files: JSON.stringify([{ id, title: 'Cora' }]) });
+    await api('files.completeUploadExternal', { files: JSON.stringify([{ id, title: 'Cora' }]) });
     return id;
   }
 
@@ -715,6 +773,14 @@ export class Slack {
   }
 
   /** Where to open a conversation (or a thread in it) in Slack's web app. */
+  /** Take back a scheduled message before it goes. */
+  async unschedule(channel: string, id: string): Promise<void> {
+    try {
+      await this.call()('chat.deleteScheduledMessage', { channel, scheduled_message_id: id });
+    } catch (e) {
+      this.check(e);
+    }
+  }
   /** Take back a message you just sent (Undo). */
   async remove(channel: string, ts: string): Promise<void> {
     try {
@@ -970,7 +1036,7 @@ export class Slack {
 }
 
 export type DraftOutcome =
-  | { sent: true; link: string; text: string; to: SlackTarget; edited: boolean }
+  | { sent: true; link: string; text: string; to: SlackTarget; edited: boolean; /** scheduled: it goes then */ at?: number }
   | { sent: false; why: 'discarded' | 'opened' | 'waiting' | 'error'; error?: string; text?: string; to?: SlackTarget };
 
 type Held = { draft: SlackDraft; answer: (o: DraftOutcome) => void; answered: boolean };
@@ -988,7 +1054,7 @@ export class Outbox {
   private seen: Array<{ sessionId: string; text: string; ts: number }> = [];
 
   /** messages Cora sent straight away because you asked, while they can still be undone */
-  private sentNow = new Map<string, SlackSent & { channel: string; ts?: string; fileIds?: string[] }>();
+  private sentNow = new Map<string, SlackSent & { channel: string; ts?: string; fileIds?: string[]; scheduledId?: string }>();
 
   /** conversations you let Cora carry on by itself, until when */
   private grantList: SlackGrant[] = [];
@@ -1087,14 +1153,14 @@ export class Outbox {
    * Send now (you asked Cora for it in your own words): posted at once, and it can be undone for a few seconds.
    * `typed`: you wrote it yourself (the Inbox's reply), so it isn't signed as Cora's.
    */
-  async sendNow(d: { to: SlackTarget; text: string; threadTs?: string; own?: boolean; typed?: boolean; files?: SlackAttachment[]; /** the session that wrote it (its banner says so) */ sessionId?: string | null; /** false: without Cora's banner */ banner?: boolean; /** only you read it (your own DM): its banner may say more */ reviewed?: boolean }): Promise<{ id: string; link: string }> {
+  async sendNow(d: { to: SlackTarget; text: string; threadTs?: string; own?: boolean; typed?: boolean; files?: SlackAttachment[]; /** the session that wrote it (its banner says so) */ sessionId?: string | null; /** false: without Cora's banner */ banner?: boolean; /** only you read it (your own DM): its banner may say more */ reviewed?: boolean; /** Slack holds it and sends it then (ms) */ postAt?: number }): Promise<{ id: string; link: string }> {
     const footer = d.typed ? undefined : await this.footer(d.sessionId ?? null);
     // Cora's banner on top of what Cora writes (not what you typed; not with files)
     const banner = !d.typed && !d.files?.length && d.banner !== false && this.o.banner ? await this.o.banner({ sessionId: d.sessionId ?? null, text: d.text, to: d.to, reviewed: !!d.reviewed }).catch(() => null) : null;
-    const r = d.files?.length ? await this.o.slack.postFiles(d.to, d.typed ? d.text : this.signed(d.text), d.files, d.threadTs) : await this.o.slack.post(d.to, d.text, d.threadTs, { footer, banner, rich: !d.typed });
+    const r = d.files?.length ? await this.o.slack.postFiles(d.to, d.typed ? d.text : this.signed(d.text), d.files, d.threadTs) : await this.o.slack.post(d.to, d.text, d.threadTs, { footer, banner, rich: !d.typed, ...(d.postAt ? { postAt: d.postAt } : {}) });
     const at = Date.now();
     const id = randomUUID();
-    this.sentNow.set(id, { id, to: d.to, text: d.text, link: r.link, at, until: at + UNDO_MS, channel: r.channel, ...(r.ts ? { ts: r.ts } : {}), ...(r.fileIds ? { fileIds: r.fileIds, ...(d.files ? { files: d.files } : {}) } : {}), ...(d.own ? { own: r.channel } : {}) });
+    this.sentNow.set(id, { id, to: d.to, text: d.text, link: r.link, at, until: at + UNDO_MS, channel: r.channel, ...(r.ts ? { ts: r.ts } : {}), ...('scheduledId' in r && r.scheduledId ? { scheduledId: r.scheduledId } : {}), ...(r.fileIds ? { fileIds: r.fileIds, ...(d.files ? { files: d.files } : {}) } : {}), ...(d.own ? { own: r.channel } : {}) });
     setTimeout(() => this.sentNow.delete(id) && this.changed(), UNDO_MS + 500).unref?.();
     this.changed();
     return { id, link: r.link };
@@ -1106,13 +1172,14 @@ export class Outbox {
     if (!s || Date.now() > s.until + 2000) return { ok: false, error: 'too late to undo: delete it in Slack' };
     try {
       // the message, then its files (a message Slack hadn't placed yet: just the files)
+      if (s.scheduledId) await this.o.slack.unschedule(s.channel, s.scheduledId);
       if (s.ts) await this.o.slack.remove(s.channel, s.ts);
       if (s.fileIds?.length) await this.o.slack.removeFiles(s.fileIds);
     } catch (e) {
       return { ok: false, error: e instanceof SlackError ? e.code : (e as Error).message };
     }
     this.sentNow.delete(id);
-    const { channel: _c, ts: _t, fileIds: _f, ...rest } = s;
+    const { channel: _c, ts: _t, fileIds: _f, scheduledId: _s, ...rest } = s;
     this.o.onUndo?.(rest);
     this.changed();
     return { ok: true };
@@ -1137,9 +1204,9 @@ export class Outbox {
   }
 
   /** Hold a draft for you; resolves with what you did (or, after a while, that it's waiting). */
-  request(d: { sessionId: string | null; to: SlackTarget; text: string; threadTs?: string; threadLink?: string; files?: SlackAttachment[]; /** false: without Cora's banner */ banner?: boolean }): Promise<DraftOutcome> {
+  request(d: { sessionId: string | null; to: SlackTarget; text: string; threadTs?: string; threadLink?: string; files?: SlackAttachment[]; /** false: without Cora's banner */ banner?: boolean; /** sent then, not at once */ at?: number }): Promise<DraftOutcome> {
     const sessionId = d.sessionId ?? this.seen.filter((s) => s.text === d.text).pop()?.sessionId ?? null;
-    const draft: SlackDraft = { id: randomUUID(), sessionId, to: d.to, text: d.text, ...(d.threadTs ? { threadTs: d.threadTs } : {}), ...(d.threadLink ? { threadLink: d.threadLink } : {}), ...(d.files?.length ? { files: d.files } : {}), ...(d.banner === false ? { banner: false } : {}), createdAt: Date.now(), waiting: true };
+    const draft: SlackDraft = { id: randomUUID(), sessionId, to: d.to, text: d.text, ...(d.threadTs ? { threadTs: d.threadTs } : {}), ...(d.threadLink ? { threadLink: d.threadLink } : {}), ...(d.files?.length ? { files: d.files } : {}), ...(d.banner === false ? { banner: false } : {}), ...(d.at ? { at: d.at } : {}), createdAt: Date.now(), waiting: true };
     return new Promise((resolve) => {
       const h: Held = { draft, answered: false, answer: (o) => !h.answered && ((h.answered = true), resolve(o)) };
       this.held.set(draft.id, h);
@@ -1183,10 +1250,10 @@ export class Outbox {
       // Cora's banner on top, unless you unticked it (a message with files has none: Slack shows them its own way); made
       // as the draft came, again if you changed its words (it may show its first line)
       const banner = !h.draft.files?.length && (a.banner ?? h.draft.banner) !== false && this.o.banner ? await ((text === h.draft.text.trim() && to.id === h.draft.to.id && this.banners.get(id)) || this.o.banner({ sessionId: h.draft.sessionId, text, to, reviewed: true })).catch(() => null) : null;
-      const r = h.draft.files?.length ? await this.o.slack.postFiles(to, this.signed(text), h.draft.files, h.draft.threadTs) : await this.o.slack.post(to, text, h.draft.threadTs, { footer: await this.footer(h.draft.sessionId), banner });
+      const r = h.draft.files?.length ? await this.o.slack.postFiles(to, this.signed(text), h.draft.files, h.draft.threadTs) : await this.o.slack.post(to, text, h.draft.threadTs, { footer: await this.footer(h.draft.sessionId), banner, ...(h.draft.at ? { postAt: h.draft.at } : {}) });
       this.held.delete(id);
       this.banners.delete(id);
-      h.answer({ sent: true, link: r.link, text, to, edited: text !== h.draft.text.trim() || to.id !== h.draft.to.id });
+      h.answer({ sent: true, link: r.link, text, to, edited: text !== h.draft.text.trim() || to.id !== h.draft.to.id, ...(h.draft.at ? { at: h.draft.at } : {}) });
       this.changed();
       return { ok: true, link: r.link };
     } catch (e) {
