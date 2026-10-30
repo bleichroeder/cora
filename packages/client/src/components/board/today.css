@@ -32,7 +32,7 @@
 .td-faces { display: flex; flex: none; }
 .td-face { width: 20px; height: 20px; display: grid; place-items: center; border-radius: 50%; color: #0b0e14; font: 600 9px var(--ui); box-shadow: 0 0 0 2px var(--raise2); }
 .td-face + .td-face { margin-left: -5px; }
-.td-face.more { background: var(--ink3); color: var(--ink); }
+.td-face.td-more { background: var(--ink3); color: var(--ink); }
 .td-acts { display: flex; align-items: center; gap: 8px; margin-top: 12px; }
 .td-btn { height: 28px; padding: 0 11px; display: inline-flex; align-items: center; gap: 6px; border: 0; border-radius: 8px; background: var(--raise); box-shadow: inset 0 0 0 1px var(--hair2); color: var(--ink2); font: 500 12px var(--ui); }
 .td-btn:hover:not(:disabled) { color: var(--ink); background: var(--raise2); }

@@ -133,7 +133,7 @@ export function TodayPanel() {
                       {initials(nameOf(a))}
                     </span>
                   ))}
-                {others(focus).length > 3 ? <span className="td-face more">+{others(focus).length - 3}</span> : null}
+                {others(focus).length > 3 ? <span className="td-face td-more">+{others(focus).length - 3}</span> : null}
               </span>
               <span>{who(focus)}</span>
             </div>
