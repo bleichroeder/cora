@@ -146,3 +146,80 @@
 .pj-wake button { height: 26px; padding: 0 11px; border: 0; border-radius: 6px; font: 600 11.5px var(--ui); cursor: pointer; }
 .pj-wake .no { background: var(--raise2); color: var(--ink2); }
 .pj-wake .yes { background: color-mix(in srgb, var(--cora) 18%, var(--raise)); color: var(--ink); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cora) 45%, transparent); }
+
+/* ---- Projects that coordinate ---- */
+/* Constellation: what waits, and a badge per orb */
+.pp-sky .wait { fill: none; stroke-width: 1.6; stroke-dasharray: 4 6; opacity: .85; animation: pp-march 1.1s linear infinite; }
+@keyframes pp-march { to { stroke-dashoffset: -20; } }
+.pp-star .orbw { position: relative; display: grid; place-items: center; }
+.pp-badge { position: absolute; top: -2px; right: -4px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--work); color: #06110c; font: 700 10px/18px var(--code); text-align: center; box-shadow: 0 0 0 2px var(--raise); }
+.pp-legend { position: absolute; left: 12px; bottom: 10px; display: flex; gap: 12px; color: var(--ink4); font: 400 10px var(--code); pointer-events: none; }
+.pp-legend span::before { content: ''; display: inline-block; width: 14px; height: 0; margin-right: 6px; vertical-align: 3px; border-top: 1.5px dashed var(--lc); }
+
+/* Who is on what: rows */
+.pp-who { display: flex; flex-direction: column; padding: 4px 10px 10px; }
+.pp-w { display: grid; grid-template-columns: 10px minmax(0, 1fr) auto 24px; align-items: center; column-gap: 10px; row-gap: 2px; padding: 9px 4px; border-bottom: 1px solid var(--hair); }
+.pp-w:last-child { border-bottom: 0; }
+.pp-w.ended { opacity: .5; }
+.pp-w .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--sc); justify-self: center; }
+.pp-w .n { min-width: 0; overflow: hidden; padding: 0; border: 0; background: none; color: var(--ink); font: 600 12.5px var(--ui); text-align: left; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+.pp-w .n:hover { text-decoration: underline; text-decoration-color: var(--hair2); }
+.pp-w .st { color: var(--ink4); font: 500 10px var(--code); }
+.pp-w .st.busy { color: var(--work); }
+.pp-w .st.need { color: var(--need); }
+.pp-w .more { opacity: 0; transition: opacity .15s; }
+.pp-w:hover .more { opacity: 1; }
+.pp-w .on { grid-column: 2 / 5; overflow: hidden; color: var(--ink2); font: 400 12px/1.4 var(--ui); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.pp-w .on em { color: var(--ink4); font-style: normal; }
+.pp-w .meta { grid-column: 2 / 5; display: flex; flex-wrap: wrap; gap: 10px; color: var(--ink4); font: 400 10.5px var(--code); }
+.pp-w .meta .w { color: var(--work); }
+.pp-w .pp-set { grid-column: 2 / 5; }
+
+/* Open loops: the project's to-do list */
+.pp-loops { display: flex; flex-direction: column; padding: 4px 10px 10px; overflow-y: auto; height: 100%; box-sizing: border-box; }
+.pp-loop { display: grid; grid-template-columns: 20px minmax(0, 1fr); column-gap: 10px; row-gap: 6px; padding: 10px 4px; border-bottom: 1px solid var(--hair); }
+.pp-loop:last-child { border-bottom: 0; }
+.pp-loop .k { display: grid; place-items: center; width: 20px; height: 20px; border-radius: 6px; background: color-mix(in srgb, var(--kc) 16%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--kc) 40%, transparent); color: var(--kc); font: 700 11px var(--code); }
+.pp-loop .t { color: var(--ink2); font: 400 12.5px/1.45 var(--ui); overflow-wrap: anywhere; }
+.pp-loop .t b { color: var(--ink); font-weight: 600; }
+.pp-loop .t em { color: var(--ink4); font-style: normal; }
+.pp-loop.mine .t b { color: #f9a8d4; }
+.pp-loop .acts, .pp-loop .ans { grid-column: 2; display: flex; gap: 6px; }
+.pp-loop .ans input { flex: 1; min-width: 0; height: 28px; padding: 0 9px; border: 0; border-radius: 7px; outline: none; background: var(--nav); box-shadow: inset 0 0 0 1px var(--hair2); color: var(--ink); font: 400 12px var(--ui); }
+.pp-loop .ans input:focus { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cora) 45%, transparent); }
+.pp-btn { height: 28px; padding: 0 10px; border: 0; border-radius: 7px; background: var(--raise2); box-shadow: inset 0 0 0 1px var(--hair2); color: var(--ink2); font: 500 11.5px var(--ui); cursor: pointer; white-space: nowrap; }
+.pp-btn:hover:not(:disabled) { color: var(--ink); }
+.pp-btn:disabled { opacity: .45; cursor: default; }
+.pp-btn.go { background: color-mix(in srgb, var(--work) 16%, var(--raise2)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--work) 40%, transparent); color: var(--ink); font-weight: 600; }
+
+/* Shared notes: a pinboard */
+.pp-notes { display: flex; flex-direction: column; gap: 10px; height: 100%; min-height: 0; padding: 10px 12px; box-sizing: border-box; overflow-y: auto; }
+.pp-search { flex: none; height: 28px; padding: 0 10px; border: 0; border-radius: 8px; outline: none; background: var(--nav); box-shadow: inset 0 0 0 1px var(--hair2); color: var(--ink); font: 400 12px var(--ui); }
+.pp-search:focus { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cora) 45%, transparent); }
+.pp-board { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 8px; align-content: start; }
+.pp-note { position: relative; padding: 10px; border-radius: 10px; background: var(--raise2); box-shadow: inset 0 0 0 1px var(--hair), inset 0 2px 0 var(--sc); }
+.pp-note.pinned { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--sc) 40%, transparent), inset 0 2px 0 var(--sc); }
+.pp-note .by { display: flex; align-items: baseline; gap: 6px; padding-right: 18px; color: var(--ink3); font: 600 9.5px var(--code); letter-spacing: .14em; text-transform: uppercase; }
+.pp-note .by time { margin-left: auto; color: var(--ink4); font-weight: 400; letter-spacing: 0; text-transform: none; }
+.pp-note p { margin: 6px 0 0; color: var(--ink2); font: 400 12px/1.45 var(--ui); white-space: pre-wrap; overflow-wrap: anywhere; }
+.pp-note .pin { position: absolute; top: 6px; right: 6px; display: grid; place-items: center; width: 22px; height: 22px; padding: 0; border: 0; border-radius: 6px; background: none; color: var(--ink4); cursor: pointer; opacity: 0; transition: opacity .15s; }
+.pp-note.pinned .pin { opacity: 1; color: var(--sc); }
+.pp-note:hover .pin { opacity: 1; }
+.pp-note .pin:hover { background: var(--raise); color: var(--ink); }
+
+/* Conversation: kind chips, states, answers, posts to you */
+.pp-chips { flex: none; display: flex; flex-wrap: wrap; gap: 5px; padding: 8px 12px 0; }
+.pp-chip { display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 8px; border: 0; border-radius: 7px; background: none; box-shadow: inset 0 0 0 1px var(--hair2); color: var(--ink3); font: 500 10.5px var(--code); cursor: pointer; }
+.pp-chip i { width: 7px; height: 7px; border-radius: 50%; background: var(--kc); }
+.pp-chip b { color: var(--ink); font-weight: 600; }
+.pp-chip.on { background: var(--raise2); color: var(--ink); }
+.pp-post .who .to { color: var(--ink4); font: 400 10px var(--code); }
+.pp-post .who .state { color: var(--ink4); font: 500 9.5px var(--code); }
+.pp-post .who .state.open { color: #fbbf24; }
+.pp-post .who .state.wait { color: var(--work); }
+.pp-post .who .pinned { color: var(--ink3); }
+.pp-post .who .reply { margin-left: 4px; padding: 0 6px; border: 0; border-radius: 5px; background: none; box-shadow: inset 0 0 0 1px var(--hair2); color: var(--ink3); font: 500 10px/18px var(--ui); cursor: pointer; opacity: 0; transition: opacity .15s; }
+.pp-post:hover .who .reply { opacity: 1; }
+.pp-post.you { margin: 0 -6px; padding: 6px; border-radius: 9px; background: color-mix(in srgb, #f472b6 6%, transparent); box-shadow: inset 2px 0 0 #f472b6; }
+.pp-post.re { margin-top: 8px; padding: 8px 9px; border-radius: 8px; background: var(--raise2); box-shadow: inset 0 0 0 1px var(--hair); }
+.pp-re { display: inline-flex; align-items: center; gap: 5px; height: 30px; padding: 0 9px; border: 0; border-radius: 8px; background: color-mix(in srgb, var(--cora) 10%, var(--raise)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cora) 35%, transparent); color: var(--ink2); font: 500 11.5px var(--ui); white-space: nowrap; cursor: pointer; }

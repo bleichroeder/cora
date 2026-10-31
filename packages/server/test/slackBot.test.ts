@@ -136,6 +136,11 @@ describe("Cora's bot: away, alerts", () => {
     // Cora's own icon beside its name (its banner shows the session's look)
     expect(w.posts[0].blocks![0].sender.emoji).toBeUndefined();
     expect(w.posts[0].blocks![0].banner).toEqual(new Uint8Array([1, 2, 3]));
+    // plain (you asked for no banner): no banner, no line on top, still under its name
+    await w.bot.fromSession('race', 'plain', null, { plain: true });
+    expect(w.posts.at(-1)!.blocks![0]).toMatchObject({ asBot: true, banner: null, sender: { name: 'race' } });
+    expect(w.posts.at(-1)!.blocks![0].byline).toBeUndefined();
+    w.posts.pop();
     // your reply in its thread: to the session, ticked; anything else still goes to Cora
     await w.bot.incoming({ type: 'message', channel: 'D_CORA', channel_type: 'im', user: ME, text: 'great, carry on', ts: '9.1', thread_ts: '1.0' });
     expect(w.typed).toEqual([['race', 'great, carry on']]);

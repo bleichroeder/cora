@@ -8,12 +8,18 @@ export type PostKind = 'note' | 'change' | 'question' | 'handoff' | 'decision';
 export const POST_KINDS: PostKind[] = ['note', 'change', 'question', 'handoff', 'decision'];
 
 /** What one session in a project hears, and may do (all off until you say). */
-export type MemberSettings = { hears: ProjectHears; canPost: boolean; wakes: boolean; /** what it has heard up to (a post's time; the brief's change) */ heardTo?: number; heardBriefAt?: number };
+export type MemberSettings = { hears: ProjectHears; canPost: boolean; wakes: boolean; /** what it has heard up to (a post's time; the brief's change) */ heardTo?: number; heardBriefAt?: number; /** the project card it last had (what's on it: brief, decisions, pins, members) */ heardCard?: string };
+/** A member of a project that doesn't coordinate (organisation only): hears nothing, can't post. */
 export const MEMBER_DEFAULTS: MemberSettings = { hears: 'nothing', canPost: false, wakes: false };
+/** A member of a project that coordinates: hears it, posts, may ask to wake another (you OK each wake). */
+export const MEMBER_ON: MemberSettings = { hears: 'everything', canPost: true, wakes: true };
 
 /** `by`: a session's id, 'you', or 'cora' */
 export type Decision = { id: string; text: string; by: string; at: number };
-export type Post = { id: string; by: string; kind: PostKind; text: string; at: number; to?: string[] };
+/** `to`: members, or 'user' (you); `re`: the post it answers; a note may be pinned (it joins every member's card); a question you closed. */
+export type Post = { id: string; by: string; kind: PostKind; text: string; at: number; to?: string[]; re?: string; pinned?: boolean; closed?: boolean };
+/** A handoff or question to a member that hasn't reached it yet (busy, or idle and not woken). */
+export type Waiting = { post: string; to: string; since: number };
 
 export type Project = {
   id: string;
@@ -35,12 +41,17 @@ export type Project = {
   members: Record<string, MemberSettings>;
   /** its sessions wear shades of its colour, kept as sessions join and leave and as its colour changes */
   shade?: boolean;
+  /** handoffs and questions to members not delivered yet */
+  waiting?: Waiting[];
 };
 
-/** A session asking to wake another (a handoff or a question to an idle member that wakes): yours to allow. */
-export type ProjectWake = { id: string; project: string; from: string; to: string; text: string; at: number };
+/** A question is open until a post answers it (`re`) or you close it. */
+export const isOpenQuestion = (p: Project, x: Post) => x.kind === 'question' && !x.closed && !p.thread.some((y) => y.re === x.id);
 
-export type ProjectsMsg = { t: 'projects'; projects: Project[]; wakes: ProjectWake[] };
+/** A session asking to wake another (a handoff or a question to an idle member that wakes): yours to allow. */
+export type ProjectWake = { id: string; project: string; from: string; to: string; text: string; at: number; /** the post it carries */ post?: string };
+
+export type ProjectsMsg = { t: 'projects'; projects: Project[]; wakes: ProjectWake[]; /** what each member is on now (its latest journal headline, else its last reply's first sentence) */ doing?: Record<string, string> };
 
 export const PROJECT_COLORS = ['#60a5fa', '#3ddc97', '#a78bfa', '#fbbf24', '#f472b6', '#2dd4bf', '#fb923c', '#f87171'];
 export const MAX_POSTS = 500;

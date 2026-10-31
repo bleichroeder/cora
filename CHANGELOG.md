@@ -4,6 +4,22 @@ What changed in each release. Cora updates itself; each update's notes are on it
 
 ## Unreleased
 
+## 0.1.20
+
+- **Projects that coordinate.** A project's sessions mostly do their own work, and now know they're in one: each gets
+  the project's card (its brief, decisions and pinned notes, who else is in it and what each is on, and when to post)
+  on its first prompt and when it changes, then only what's new: what's addressed to it in full, other notes as a
+  count. They post changes, questions (to another session or to you), handoffs, notes and decisions, and answer a
+  question in place. A handoff to a busy session waits, and becomes a "deliver it?" card when its turn ends (waking a
+  session always asks you). New projects coordinate by default; turn it on for older ones in their header.
+- **The project board:** the Constellation shows what's waiting (a marching line, a badge per orb); **Who's on what**;
+  **Open loops** (deliver a handoff, answer your questions, close one, changes some haven't heard); **Shared notes**
+  (a pinboard: pinned notes join every session's card); the **Conversation** (filter by kind, answers under their
+  question, write to the project or one session).
+- **Cora keeps you posted on projects:** questions and handoffs for you reach her, and your Cora DM when you're away;
+  she posts your answers back when you tell her to.
+- **A plain message on request:** ask Cora (or a session) for no banner, and a message comes without one, to you too.
+
 ## 0.1.19
 
 - **Updates no longer break a running terminal host.** An update removed the folder of the terminal host still

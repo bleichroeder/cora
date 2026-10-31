@@ -799,8 +799,8 @@ export async function startServer(config: Config, opts: { tail?: boolean; listen
       toYou: async (d) => {
         if (!bot?.connected()) return null;
         const me = slack.status();
-        const banner = await banners.render(await bannerOf({ sessionId: d.sessionId, text: d.text, to: { kind: 'person', id: me.connected ? me.userId : '', label: 'you' }, reviewed: true })).catch(() => null);
-        return bot.fromSession(d.sessionId, d.text, banner);
+        const banner = d.banner === false ? null : await banners.render(await bannerOf({ sessionId: d.sessionId, text: d.text, to: { kind: 'person', id: me.connected ? me.userId : '', label: 'you' }, reviewed: true })).catch(() => null);
+        return bot.fromSession(d.sessionId, d.text, banner, { plain: d.banner === false });
       },
     }, security: security ?? undefined, orchestrator: o, gitlabIssues, memes, sessionNames, lock, freeze, journal: { add: (sid, kind, text, more) => journalAdd(sid, kind, text, undefined, more), read: (sid) => journal.read(sid), query: (q) => journal.query(q) }, debriefs, worktrees, vault, devices, remote, shares, door, synced, projects, banners, videos });
 

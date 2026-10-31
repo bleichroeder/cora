@@ -347,6 +347,9 @@ describe('the Slack tools', () => {
     const r = await bot.call('slack_send', { to: 'U0', text: '#421 check 1/3: OK' }, { ...H, 'x-cora-session': 'race-1234' });
     expect(r.content[0].text).toMatch(/^Sent to the user through Cora's bot .*pings their phone.* https:\/\/acme\.slack\.com\/archives\/D-BOT\/p1$/);
     expect(sent).toEqual([{ sessionId: 'race-1234', text: '#421 check 1/3: OK' }]);
+    // a plain one, when the user asked for no banner
+    await bot.call('slack_send', { to: 'U0', text: 'plain please', banner: false }, { ...H, 'x-cora-session': 'race-1234' });
+    expect(sent.at(-1)).toEqual({ sessionId: 'race-1234', text: 'plain please', banner: false });
     expect(bot.posted).toEqual([]);
     // no bot: your own DM, and the session is told it won't ping you
     const none = await setup(true, undefined, async () => null);

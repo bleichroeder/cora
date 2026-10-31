@@ -3,11 +3,12 @@ import { useBrain } from './store';
 import type { MemberSettings, PostKind, Project, ProjectWake, ProjectsMsg } from '@cora/shared';
 
 /** Your projects, as the server keeps them. */
-export const useProjects = create<{ projects: Project[]; wakes: ProjectWake[]; /** a new session being started from a project's header: it joins that project */ joining: string | null; apply(m: ProjectsMsg): void }>((set) => ({
+export const useProjects = create<{ projects: Project[]; wakes: ProjectWake[]; /** what each member is on now */ doing: Record<string, string>; /** a new session being started from a project's header: it joins that project */ joining: string | null; apply(m: ProjectsMsg): void }>((set) => ({
   projects: [],
   wakes: [],
+  doing: {},
   joining: null,
-  apply: (m) => set({ projects: m.projects, wakes: m.wakes }),
+  apply: (m) => set({ projects: m.projects, wakes: m.wakes, ...(m.doing ? { doing: m.doing } : {}) }),
 }));
 
 /** The board key of a project ('project:<id>'), and back. */
@@ -37,7 +38,9 @@ export const deleteProject = (id: string) => call('DELETE', P(id));
 export const addToProject = (id: string, sessionId: string) => call('POST', `${P(id)}/sessions`, { sessionId });
 export const leaveProject = (id: string, sessionId: string) => call('DELETE', `${P(id)}/sessions/${encodeURIComponent(sessionId)}`);
 export const setMember = (id: string, sessionId: string, patch: Partial<Pick<MemberSettings, 'hears' | 'canPost' | 'wakes'>>) => call('PATCH', `${P(id)}/members/${encodeURIComponent(sessionId)}`, patch);
-export const postToProject = (id: string, kind: PostKind, text: string) => call('POST', `${P(id)}/posts`, { kind, text });
+export const postToProject = (id: string, kind: PostKind, text: string, o: { to?: string[]; re?: string } = {}) => call('POST', `${P(id)}/posts`, { kind, text, ...(o.to?.length ? { to: o.to } : {}), ...(o.re ? { re: o.re } : {}) });
+export const pinPost = (id: string, post: string, on: boolean) => call('POST', `${P(id)}/posts/${encodeURIComponent(post)}/pin`, { on });
+export const closeQuestion = (id: string, post: string) => call('POST', `${P(id)}/posts/${encodeURIComponent(post)}/close`, {});
 export const editDecision = (id: string, did: string, text: string | null) => call('PATCH', `${P(id)}/decisions/${encodeURIComponent(did)}`, { text });
 // the New session dialog closed (started or not): nothing joins a project any more
 useBrain.subscribe((s, p) => {

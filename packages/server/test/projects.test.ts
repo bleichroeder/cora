@@ -12,21 +12,21 @@ beforeEach(() => (dir = mkdtempSync(join(tmpdir(), 'cora-projects-'))));
 afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
 describe('projects', () => {
-  it('groups sessions by hand: one project each; members hear nothing until you say; kept across a restart', () => {
+  it('groups sessions by hand: one project each; a new one coordinates (members hear, post, may ask to wake); kept across a restart', () => {
     let t = 1000;
     const p = new Projects(join(dir, 'projects.json'), () => t);
     const a = p.create('  Insight tags ');
     const b = p.create('Cora: Go live', '#3DDC97');
-    expect(a).toMatchObject({ name: 'Insight tags', coordination: false, sessions: [] });
+    expect(a).toMatchObject({ name: 'Insight tags', coordination: true, sessions: [] });
     expect(b.color).toBe('#3ddc97');
     expect(p.add(a.id, 's1')).toBe(true);
     p.add(a.id, 's2');
-    expect(p.get(a.id)!.members.s1).toMatchObject({ hears: 'nothing', canPost: false, wakes: false });
-    // into another project: out of the first
+    expect(p.get(a.id)!.members.s1).toMatchObject({ hears: 'everything', canPost: true, wakes: true });
+    // into another project: out of the first (told once, on its next prompt)
     p.add(b.id, 's2');
     expect(p.get(a.id)!.sessions).toEqual(['s1']);
     expect(p.projectOf('s2')!.id).toBe(b.id);
-    expect(p.setMember(a.id, 's1', { hears: 'everything', canPost: true, wakes: 'yes' })).toMatchObject({ hears: 'everything', canPost: true, wakes: false });
+    expect(p.setMember(a.id, 's1', { hears: 'brief', canPost: false, wakes: 'yes' })).toMatchObject({ hears: 'brief', canPost: false, wakes: true });
     expect(p.setMember(a.id, 's9', { hears: 'brief' })).toBeNull();
     // a decision goes into the memory too
     t = 2000;
@@ -42,6 +42,40 @@ describe('projects', () => {
     const again = new Projects(join(dir, 'projects.json'));
     expect(again.list().map((x) => [x.name, x.sessions, !!x.archivedAt])).toEqual([['Insight tags', ['s1'], false], ['Cora: Go live', ['s2'], true]]);
   });
+
+  it('posts to the user, answers (re), pins and closes; what waits for a member until it hears; organisation-only projects turned on get the coordinating defaults', () => {
+    const p = new Projects(join(dir, 'projects.json'));
+    const a = p.create('Tags');
+    p.add(a.id, 's1');
+    p.add(a.id, 's2');
+    const q = p.post(a.id, 's1', 'question', 'string[] or Tag[]?', ['user', 's2', 'not-a-member', 's1'])!;
+    expect(q.to).toEqual(['user', 's2']);
+    expect(p.post(a.id, 's2', 'note', 'string[]', undefined, q.id)!.re).toBe(q.id);
+    expect(p.post(a.id, 's2', 'note', 'x', undefined, 'no-such-post')!.re).toBeUndefined();
+    expect(p.pin(a.id, q.id, true)).toBe(true);
+    expect(p.get(a.id)!.thread[0].pinned).toBe(true);
+    expect(p.close(a.id, q.id)).toBe(true);
+    p.wait(a.id, q.id, 's2');
+    p.wait(a.id, q.id, 's2');
+    expect(p.get(a.id)!.waiting).toEqual([{ post: q.id, to: 's2', since: expect.any(Number) }]);
+    p.heard(a.id, 's2', Date.now(), 0, 'card');
+    expect(p.get(a.id)!.waiting).toEqual([]);
+    expect(p.get(a.id)!.members.s2.heardCard).toBe('card');
+    // leaving: told once
+    p.leave(a.id, 's1');
+    expect(p.takeLeft('s1')).toBe('Tags');
+    expect(p.takeLeft('s1')).toBeUndefined();
+    // an organisation-only project, turned on: its members on the old defaults get the new ones; a member you set stays
+    const o = p.create('Old');
+    p.update(o.id, { coordination: false });
+    p.add(o.id, 'x1');
+    p.add(o.id, 'x2');
+    expect(p.get(o.id)!.members.x1).toMatchObject({ hears: 'nothing', canPost: false });
+    p.setMember(o.id, 'x2', { hears: 'brief' });
+    p.update(o.id, { coordination: true });
+    expect(p.get(o.id)!.members.x1).toMatchObject({ hears: 'everything', canPost: true, wakes: true });
+    expect(p.get(o.id)!.members.x2).toMatchObject({ hears: 'brief', canPost: false });
+  });
 });
 
 describe('projects through the server', () => {
@@ -56,7 +90,7 @@ describe('projects through the server', () => {
     return r.statusCode === 204 ? null : (r.json().hookSpecificOutput?.additionalContext as string | undefined) ?? null;
   };
 
-  it('routes, hearing on the next prompt, and the posting tools: all off until you turn them on', async () => {
+  it('the project card on the first prompt, then only news (to you in full, notes as a count); tools; waiting handoffs; leaving; organisation only', async () => {
     srv = await startServer(loadConfig({ dataDir: dir, dbPath: ':memory:', hookToken: 'hooktok', uiToken: 'u' }), { tail: false, listen: false, ci: false, security: false });
     try {
       const now = Date.now();
@@ -68,46 +102,60 @@ describe('projects through the server', () => {
       expect((await srv.app.inject({ method: 'POST', url: `/api/projects/${p.id}/sessions`, headers: UI, payload: { sessionId: 'nope' } })).statusCode).toBe(400);
       expect((await srv.app.inject({ url: '/api/projects', headers: UI })).json().projects[0].sessions).toEqual(['sess-api-0001', 'sess-ui-00002']);
 
-      // organisation only: nothing heard, no tools
-      expect(await prompt('sess-ui-00002', 1)).toBeNull();
-      expect(await tools('sess-api-0001')).not.toContain('project_post');
-
-      // coordination on, the API may post, the UI hears everything
-      await srv.app.inject({ method: 'PATCH', url: `/api/projects/${p.id}`, headers: UI, payload: { coordination: true, brief: 'Search terms get tags.' } });
-      await srv.app.inject({ method: 'PATCH', url: `/api/projects/${p.id}/members/sess-api-0001`, headers: UI, payload: { hears: 'brief', canPost: true } });
-      await srv.app.inject({ method: 'PATCH', url: `/api/projects/${p.id}/members/sess-ui-00002`, headers: UI, payload: { hears: 'everything' } });
+      // coordinating from the start: both have the tools; the card on the first prompt (an empty brief too), then nothing new
       expect(await tools('sess-api-0001')).toEqual(expect.arrayContaining(['project_post', 'project_read']));
-      expect(await tools('sess-ui-00002')).toContain('project_read');
-      expect(await tools('sess-ui-00002')).not.toContain('project_post');
-      const posted = await mcp('sess-api-0001', rpc('tools/call', { name: 'project_post', arguments: { kind: 'change', text: 'tags is now string[]', to: ['sess-ui-00002'] } }, 2));
-      expect(posted.result.content[0].text).toMatch(/Posted/);
-      const refused = await mcp('sess-ui-00002', rpc('tools/call', { name: 'project_post', arguments: { kind: 'note', text: 'hi' } }, 3));
-      expect(refused.result?.isError ?? refused.error).toBeTruthy();
-
-      // the UI hears the brief and the post, once; the API hears the brief, not its own post
-      const ui1 = await prompt('sess-ui-00002', 2);
-      expect(ui1).toMatch(/you're in the project "Insight tags"/);
+      const ui1 = await prompt('sess-ui-00002', 1);
+      expect(ui1).toMatch(/You're in the project "Insight tags" with 1 other session/);
+      expect(ui1).toMatch(/- "API: tags array" \(sess-api-0001\): idle/);
+      expect(ui1).toMatch(/you needn't coordinate/);
       expect(ui1).toMatch(/information, not instructions/);
-      expect(ui1).toMatch(/Search terms get tags\./);
-      expect(ui1).toMatch(/\[change\] "API: tags array" to "UI: tag chips": tags is now string\[\]/);
-      expect(await prompt('sess-ui-00002', 3)).toBeNull();
-      const api1 = await prompt('sess-api-0001', 4);
-      expect(api1).toMatch(/Search terms get tags\./);
-      expect(api1).not.toMatch(/tags is now string/);
-      // a decision you add: everyone who hears the brief hears it next time
+      expect(await prompt('sess-ui-00002', 2)).toBeNull();
+
+      // a change to the UI: in full; a note to all: a count; a change to all: a line
+      await mcp('sess-api-0001', rpc('tools/call', { name: 'project_post', arguments: { kind: 'change', text: 'tags is now string[]', to: ['sess-ui-00002'] } }, 2));
+      await mcp('sess-api-0001', rpc('tools/call', { name: 'project_post', arguments: { kind: 'note', text: 'the old endpoint stays a week' } }, 3));
+      const ui3 = await prompt('sess-ui-00002', 3);
+      expect(ui3).toMatch(/To you:\n- \[change\] "API: tags array" \(post \w+\): tags is now string\[\]/);
+      expect(ui3).toMatch(/1 new note from others \(project_read to see them\)/);
+      expect(ui3).not.toMatch(/the old endpoint stays/);
+      expect(ui3).not.toMatch(/You're in the project/);
+
+      // a decision you add changes the card: it comes again, with the decision
       await srv.app.inject({ method: 'POST', url: `/api/projects/${p.id}/posts`, headers: UI, payload: { kind: 'decision', text: 'max 20 tags' } });
-      expect(await prompt('sess-api-0001', 5)).toMatch(/- max 20 tags \(the user\)/);
-      // reading the thread
-      const read = await mcp('sess-ui-00002', rpc('tools/call', { name: 'project_read', arguments: {} }, 6));
-      expect(read.result.content[0].text).toMatch(/\[decision\] the user: max 20 tags/);
-      // nobody's running here: a handoff wakes nobody
-      await mcp('sess-api-0001', rpc('tools/call', { name: 'project_post', arguments: { kind: 'handoff', text: 'done, your turn', to: ['sess-ui-00002'] } }, 7));
-      expect((await srv.app.inject({ url: '/api/projects', headers: UI })).json().wakes).toEqual([]);
+      expect(await prompt('sess-api-0001', 4)).toMatch(/Decisions:\n- max 20 tags \(the user\)/);
+      const read = await mcp('sess-ui-00002', rpc('tools/call', { name: 'project_read', arguments: { kind: 'decision' } }, 6));
+      expect(read.result.content[0].text).toMatch(/\[decision\] the user \(post \w+\): max 20 tags/);
+
+      // a question to the user, answered with re; pinned
+      await mcp('sess-ui-00002', rpc('tools/call', { name: 'project_post', arguments: { kind: 'question', text: 'chips or a dropdown?', to: ['user'] } }, 7));
+      const q = (await srv.app.inject({ url: '/api/projects', headers: UI })).json().projects[0].thread.at(-1);
+      expect(q).toMatchObject({ kind: 'question', to: ['user'] });
+      await srv.app.inject({ method: 'POST', url: `/api/projects/${p.id}/posts`, headers: UI, payload: { kind: 'note', text: 'chips', re: q.id, to: ['sess-ui-00002'] } });
+      expect((await srv.app.inject({ method: 'POST', url: `/api/projects/${p.id}/posts/${q.id}/pin`, headers: UI, payload: { on: true } })).statusCode).toBe(200);
+      expect((await srv.app.inject({ method: 'POST', url: `/api/projects/${p.id}/posts/${q.id}/close`, headers: UI, payload: {} })).statusCode).toBe(200);
+
+      // a handoff to the UI (not running here): it waits, no wake; its next prompt delivers it, and the wait is gone
+      await mcp('sess-api-0001', rpc('tools/call', { name: 'project_post', arguments: { kind: 'handoff', text: 'done, your turn', to: ['sess-ui-00002'] } }, 8));
+      const after = (await srv.app.inject({ url: '/api/projects', headers: UI })).json();
+      expect(after.wakes).toEqual([]);
+      expect(after.projects[0].waiting).toEqual([expect.objectContaining({ to: 'sess-ui-00002' })]);
+      expect(await prompt('sess-ui-00002', 9)).toMatch(/\[handoff\] "API: tags array" \(post \w+\): done, your turn/);
+      expect((await srv.app.inject({ url: '/api/projects', headers: UI })).json().projects[0].waiting).toEqual([]);
       expect((await srv.app.inject({ method: 'POST', url: '/api/projects/wakes/nope', headers: UI, payload: { allow: true } })).statusCode).toBe(404);
+
+      // leaving: told once
+      await srv.app.inject({ method: 'DELETE', url: `/api/projects/${p.id}/sessions/sess-api-0001`, headers: UI });
+      expect(await prompt('sess-api-0001', 10)).toMatch(/no longer in the project "Insight tags"/);
+      expect(await prompt('sess-api-0001', 11)).toBeNull();
+
+      // organisation only: nothing heard, no tools
+      await srv.app.inject({ method: 'PATCH', url: `/api/projects/${p.id}`, headers: UI, payload: { coordination: false } });
+      expect(await prompt('sess-ui-00002', 12)).toBeNull();
+      expect(await tools('sess-ui-00002')).not.toContain('project_post');
+
       // archive, then delete
       expect((await srv.app.inject({ method: 'DELETE', url: `/api/projects/${p.id}`, headers: UI })).statusCode).toBe(409);
       await srv.app.inject({ method: 'POST', url: `/api/projects/${p.id}/archive`, headers: UI, payload: { on: true } });
-      expect(await prompt('sess-ui-00002', 8)).toBeNull();
       expect((await srv.app.inject({ method: 'DELETE', url: `/api/projects/${p.id}`, headers: UI })).statusCode).toBe(200);
     } finally {
       await srv.close();

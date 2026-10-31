@@ -472,14 +472,14 @@ export class CoraBot {
    * (its name on top when the bot can't upload one). Away or not, quiet hours or not: you asked for it. Your reply in
    * its thread goes back to the session.
    */
-  async fromSession(sessionId: string | null, text: string, banner: Uint8Array | null): Promise<{ ok: true; link: string } | { ok: false; error: string }> {
+  async fromSession(sessionId: string | null, text: string, banner: Uint8Array | null, o: { /** no banner, no byline: a plain message (you asked) */ plain?: boolean } = {}): Promise<{ ok: true; link: string } | { ok: false; error: string }> {
     if (!this.connected()) return { ok: false, error: "Cora's own Slack bot isn't set up (Settings → Slack → Cora's own bot)." };
     if (this.today() >= this.cfg().dailyCap) return { ok: false, error: "today's cap of Cora DMs is reached" };
     const name = sessionId ? this.d.nameOf(sessionId) : null;
     try {
       // under the session's name, with Cora's own icon (its banner shows the session's colour and icon)
       const sender = name ? { name } : undefined;
-      const r = await this.d.slack.post({ kind: 'person', id: '', label: 'you' }, text, undefined, { asBot: true, banner, byline: name ? `*${slackEsc(name)}* · a session in Cora` : '*CORA*', ...(sender ? { sender } : {}) });
+      const r = await this.d.slack.post({ kind: 'person', id: '', label: 'you' }, text, undefined, { asBot: true, banner, ...(o.plain ? {} : { byline: name ? `*${slackEsc(name)}* · a session in Cora` : '*CORA*' }), ...(sender ? { sender } : {}) });
       this.today();
       this.sent.n++;
       if (sessionId) this.lastFrom.set(sessionId, this.now());

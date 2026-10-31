@@ -42,6 +42,8 @@ export type PanelKind =
   | 'today'
   | 'constellation'
   | 'members'
+  | 'loops'
+  | 'pnotes'
   | 'thread'
   | 'brief'
   | 'repos'
@@ -94,7 +96,7 @@ export const PANEL_ICON: Record<Exclude<PanelKind, 'explain'>, string> = {
   needs: 'Hand', mentions: 'AtSign', notes: 'NotebookPen', usage: 'ChartPie', sessions: 'LayoutList',
   terminal: 'SquareTerminal', browser: 'Globe', ide: 'Code',
   wall: 'LayoutGrid', worktrees: 'GitFork', today: 'CalendarClock',
-  constellation: 'Orbit', members: 'Users', thread: 'MessagesSquare', brief: 'NotebookText', repos: 'FolderGit2', activity: 'History', project: 'FolderKanban',
+  constellation: 'Orbit', members: 'Users', loops: 'CircleDot', pnotes: 'StickyNote', thread: 'MessagesSquare', brief: 'NotebookText', repos: 'FolderGit2', activity: 'History', project: 'FolderKanban',
 };
 
 /** Where a panel sits in the + Panel menu. */
@@ -133,8 +135,10 @@ export const PANELS: Record<Exclude<PanelKind, 'explain'>, { name: string; hint:
   worktrees: { name: 'Worktrees', hint: 'Every worktree of your repos: who works in it, how far it has got, what can go', group: 'Cora', size: [10, 15] },
   today: { name: 'Today', hint: 'Your calls today (your Google calendar): when, with whom, Join, their prep notes', group: 'Cora', size: [10, 12] },
   constellation: { name: 'Constellation', hint: "The project's sessions as their orbs, together: what each is doing, and the thread's posts between them", group: 'Project', size: [12, 12] },
-  members: { name: 'Members', hint: 'Each session in the project, what it needs, and what it hears of the others', group: 'Project', size: [10, 12] },
-  thread: { name: 'Thread', hint: "The project's conversation: the sessions' posts and yours", group: 'Project', size: [10, 14] },
+  members: { name: "Who's on what", hint: 'Each session: its state, what it is on, where, its ticket, what waits for it', group: 'Project', size: [10, 12] },
+  loops: { name: 'Open loops', hint: 'What is unresolved: questions (answer yours here), handoffs to deliver, changes some have not heard', group: 'Project', size: [10, 10] },
+  pnotes: { name: 'Shared notes', hint: "The sessions' and your notes as a pinboard; pinned ones join every session's project card", group: 'Project', size: [10, 10] },
+  thread: { name: 'Conversation', hint: "The project's conversation: every post by kind, answers under their questions; write to the project or one session", group: 'Project', size: [10, 14] },
   brief: { name: 'Brief & decisions', hint: "The project's goal and the decisions it keeps", group: 'Project', size: [10, 10] },
   repos: { name: 'Across repos', hint: "The members' worktrees, tickets, merge requests and pipelines in one list", group: 'Project', size: [12, 10] },
   activity: { name: 'Activity', hint: "What the project's sessions did lately, together", group: 'Project', size: [12, 10] },
@@ -150,7 +154,7 @@ export const PANEL_SCOPE: Record<Exclude<PanelKind, 'explain'>, PanelScope> = {
   changes: 'session', git: 'session', tests: 'session', background: 'session', pipeline: 'session', deploys: 'session', ticket: 'session', mentions: 'session', terminal: 'session', ide: 'session',
   needs: 'both', notes: 'both', usage: 'both', sessions: 'both', browser: 'both',
   wall: 'cora', worktrees: 'cora', today: 'cora',
-  constellation: 'project', members: 'project', thread: 'project', brief: 'project', repos: 'project', activity: 'project', project: 'session',
+  constellation: 'project', members: 'project', loops: 'project', pnotes: 'project', thread: 'project', brief: 'project', repos: 'project', activity: 'project', project: 'session',
 };
 /** Does this panel fit this board (a session's, or Cora's)? An explain is a session's. */
 export const fitsBoard = (k: PanelKind, owner: string) => {
@@ -163,13 +167,13 @@ export const fitsBoard = (k: PanelKind, owner: string) => {
 export const forMember = (k: PanelKind) => k === 'explain' || PANEL_SCOPE[k] === 'session';
 /** A session's panels that can show every member at once on a project's board. */
 export const FOR_ALL = new Set<PanelKind>(['changes', 'tests', 'pipeline', 'git']);
-/** A project's board as it starts: the orbs and members on the left, the thread on the right, brief and repos below. */
+/** A project's board as it starts: the orbs over who's on what, open loops over shared notes, the conversation down the right. */
 export const PROJECT_LAYOUT: BoardItem[] = [
-  { id: 'constellation', k: 'constellation', x: 0, y: 0, w: 13, h: 11 },
-  { id: 'members', k: 'members', x: 0, y: 11, w: 13, h: 7 },
-  { id: 'thread', k: 'thread', x: 13, y: 0, w: 11, h: 18 },
-  { id: 'brief', k: 'brief', x: 0, y: 18, w: 13, h: 6 },
-  { id: 'repos', k: 'repos', x: 13, y: 18, w: 11, h: 6 },
+  { id: 'constellation', k: 'constellation', x: 0, y: 0, w: 8, h: 12 },
+  { id: 'members', k: 'members', x: 0, y: 12, w: 8, h: 12 },
+  { id: 'loops', k: 'loops', x: 8, y: 0, w: 8, h: 12 },
+  { id: 'pnotes', k: 'pnotes', x: 8, y: 12, w: 8, h: 12 },
+  { id: 'thread', k: 'thread', x: 16, y: 0, w: 8, h: 24 },
 ];
 /** Cora's board as it starts: the sessions large, their worktrees and what needs you beside them. */
 export const CORA_LAYOUT: BoardItem[] = [

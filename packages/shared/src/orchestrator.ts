@@ -166,6 +166,8 @@ export const ORCH_TOOLS = [
   'security',
   'start_session',
   'project_move',
+  'project_read',
+  'project_post',
   'follow_up',
   'follow_ups',
   'follow_up_cancel',

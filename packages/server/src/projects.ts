@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
-import { MAX_BRIEF, MAX_DECISION, MAX_POST, MAX_POSTS, MEMBER_DEFAULTS, POST_KINDS, PROJECT_COLORS, type Decision, type MemberSettings, type Post, type PostKind, type Project, type ProjectHears } from '@cora/shared';
+import { MAX_BRIEF, MAX_DECISION, MAX_POST, MAX_POSTS, MEMBER_DEFAULTS, MEMBER_ON, POST_KINDS, PROJECT_COLORS, type Decision, type MemberSettings, type Post, type PostKind, type Project, type ProjectHears } from '@cora/shared';
 
 const id = () => randomBytes(6).toString('hex');
 const HEARS: ProjectHears[] = ['nothing', 'brief', 'everything'];
@@ -37,7 +37,7 @@ export class Projects {
 
   create(name: string, color?: string): Project {
     const t = this.now();
-    const p: Project = { id: id(), name: name.trim().slice(0, 60) || 'Project', color: validColor(color) ?? PROJECT_COLORS[this.all.length % PROJECT_COLORS.length], createdAt: t, sessions: [], coordination: false, brief: '', briefAt: t, decisions: [], thread: [], members: {} };
+    const p: Project = { id: id(), name: name.trim().slice(0, 60) || 'Project', color: validColor(color) ?? PROJECT_COLORS[this.all.length % PROJECT_COLORS.length], createdAt: t, sessions: [], coordination: true, brief: '', briefAt: t, decisions: [], thread: [], members: {} };
     this.all.push(p);
     this.changed();
     return p;
@@ -53,7 +53,12 @@ export class Projects {
       p.brief = patch.brief.slice(0, MAX_BRIEF);
       p.briefAt = this.now();
     }
-    if (typeof patch.coordination === 'boolean') p.coordination = patch.coordination;
+    if (typeof patch.coordination === 'boolean') {
+      // turned on: members still on the organisation-only defaults hear it, post, and may ask to wake (as a new project's)
+      if (patch.coordination && !p.coordination)
+        for (const [sid, m] of Object.entries(p.members)) if (m.hears === 'nothing' && !m.canPost && !m.wakes) p.members[sid] = { ...m, ...MEMBER_ON };
+      p.coordination = patch.coordination;
+    }
     if (patch.shade === true) p.shade = true;
     else if (patch.shade === false) delete p.shade;
     this.changed();
@@ -85,7 +90,7 @@ export class Projects {
     return this.all.length !== n;
   }
 
-  /** A session into a project (out of any other): it hears nothing until you say. */
+  /** A session into a project (out of any other): in a coordinating project it hears, posts and may ask to wake; else nothing. */
   add(pid: string, sid: string): boolean {
     const p = this.get(pid);
     if (!p || !sid) return false;
@@ -95,9 +100,17 @@ export class Projects {
         delete o.members[sid];
       }
     if (!p.sessions.includes(sid)) p.sessions.push(sid);
-    p.members[sid] ??= { ...MEMBER_DEFAULTS, heardTo: this.now() };
+    p.members[sid] ??= { ...(p.coordination ? MEMBER_ON : MEMBER_DEFAULTS), heardTo: this.now() };
+    this.left.delete(sid);
     this.changed();
     return true;
+  }
+  /** Sessions that left a project, to be told once (on their next prompt): session → the project's name. */
+  private left = new Map<string, string>();
+  takeLeft(sid: string): string | undefined {
+    const n = this.left.get(sid);
+    this.left.delete(sid);
+    return n;
   }
 
   leave(pid: string, sid: string): boolean {
@@ -105,6 +118,8 @@ export class Projects {
     if (!p?.sessions.includes(sid)) return false;
     p.sessions = p.sessions.filter((s) => s !== sid);
     delete p.members[sid];
+    if (p.coordination) this.left.set(sid, p.name);
+    if (p.waiting) p.waiting = p.waiting.filter((w) => w.to !== sid);
     this.changed();
     return true;
   }
@@ -121,20 +136,61 @@ export class Projects {
   }
 
   /** What a member has now heard (no change event: it's bookkeeping, not news). */
-  heard(pid: string, sid: string, to: number, briefAt: number): void {
-    const m = this.get(pid)?.members[sid];
-    if (!m) return;
+  heard(pid: string, sid: string, to: number, briefAt: number, card?: string): void {
+    const p = this.get(pid);
+    const m = p?.members[sid];
+    if (!p || !m) return;
     m.heardTo = to;
     m.heardBriefAt = briefAt;
+    if (card) m.heardCard = card;
+    // what was waiting for it, it has now
+    if (p.waiting?.some((w) => w.to === sid)) {
+      p.waiting = p.waiting.filter((w) => w.to !== sid);
+      return this.changed();
+    }
     this.save();
   }
 
+  /** A handoff or question that hasn't reached its member yet (busy, or idle and not woken). */
+  wait(pid: string, post: string, to: string): void {
+    const p = this.get(pid);
+    if (!p || p.waiting?.some((w) => w.post === post && w.to === to)) return;
+    p.waiting = [...(p.waiting ?? []), { post, to, since: this.now() }];
+    this.changed();
+  }
+  unwait(pid: string, post: string, to: string): void {
+    const p = this.get(pid);
+    if (!p?.waiting) return;
+    p.waiting = p.waiting.filter((w) => !(w.post === post && w.to === to));
+    this.changed();
+  }
+
+  /** Pin a note (it joins every member's card), or not. */
+  pin(pid: string, postId: string, on: boolean): boolean {
+    const x = this.get(pid)?.thread.find((y) => y.id === postId);
+    if (!x) return false;
+    if (on) x.pinned = true;
+    else delete x.pinned;
+    this.changed();
+    return true;
+  }
+  /** Close a question (nobody needs to answer it). */
+  close(pid: string, postId: string): boolean {
+    const x = this.get(pid)?.thread.find((y) => y.id === postId);
+    if (!x || x.kind !== 'question') return false;
+    x.closed = true;
+    this.changed();
+    return true;
+  }
+
   /** A post in the thread (`by`: a session, 'you' or 'cora'); a decision also goes into the decisions. */
-  post(pid: string, by: string, kind: PostKind, text: string, to?: string[]): Post | null {
+  post(pid: string, by: string, kind: PostKind, text: string, to?: string[], re?: string): Post | null {
     const p = this.get(pid);
     const body = text.trim().slice(0, MAX_POST);
     if (!p || !body || !POST_KINDS.includes(kind)) return null;
-    const post: Post = { id: id(), by, kind, text: body, at: this.now(), ...(to?.length ? { to: to.filter((s) => p.sessions.includes(s)) } : {}) };
+    const who = (to ?? []).filter((s) => s === 'user' || (p.sessions.includes(s) && s !== by));
+    const answers = re && p.thread.some((y) => y.id === re) ? re : undefined;
+    const post: Post = { id: id(), by, kind, text: body, at: this.now(), ...(who.length ? { to: who } : {}), ...(answers ? { re: answers } : {}) };
     p.thread.push(post);
     if (p.thread.length > MAX_POSTS) p.thread = p.thread.slice(-MAX_POSTS);
     if (kind === 'decision') {
