@@ -153,7 +153,7 @@ export class Drafts {
   async write(template: string, facts: DraftFacts, today = new Date(this.now()), asks?: string): Promise<{ ok: true; text: string } | { ok: false; error: string }> {
     const dir = join(this.d.dataDir, 'drafter');
     mkdirSync(dir, { recursive: true });
-    writeFileSync(join(dir, 'settings.json'), JSON.stringify({ disableAllHooks: true }, null, 2) + '\n');
+    writeFileSync(join(dir, 'settings.json'), JSON.stringify({ disableAllHooks: true, crossSessionInbound: 'refuse' }, null, 2) + '\n');
     writeFileSync(join(dir, 'system-prompt.md'), SYSTEM);
     const cmd = [
       ...(this.d.claudeCmd ?? defaultClaudeCmd()),

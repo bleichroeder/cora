@@ -45,7 +45,8 @@ import { Registry } from './registry';
 import { Store } from './store';
 import { Banners, bannerFor } from './banner';
 import { Videos } from './videos';
-import { PtyManager, type SpawnFn } from './pty';
+import { findClaude, PtyManager, type SpawnFn } from './pty';
+import { claudeVersion, hasMods, nativeName, writeCoraPlugin } from './coraPlugin';
 import type { PtyBackend } from './ptyhost/backend';
 import { hostedArgs } from './hosted';
 import { JiraFeed, KEEP_MS, type JiraFresh } from './jiraFeed';
@@ -177,11 +178,14 @@ export async function startServer(config: Config, opts: { tail?: boolean; listen
     const cwd = s?.wd || s?.cwd || '';
     return journal.add({ id: sid, name: s ? displayName(s) : sid.slice(0, 8), cwd: s?.cwd ?? '', startedAt: s?.startedAt ?? Date.now(), ...(s?.ticket ? { ticket: `${s.ticket.key}${s.ticket.summary ? ` · ${s.ticket.summary}` : ''}` } : {}) }, kind, text, at, { refs, ...(more.tag ? { tag: more.tag } : {}), ...(cwd ? { branch: gitBranch(cwd) ?? undefined } : {}) });
   };
+  // Claude Code with mods (2.1.287 on): the Cora plugin in every session Cora starts (not in tests, nor an older Claude)
+  const claudeVer = config.dbPath === ':memory:' || opts.spawn ? null : claudeVersion(findClaude().cmd);
+  const pluginDir = hasMods(claudeVer) ? writeCoraPlugin(config.dataDir, `http://127.0.0.1:${config.port}`, config.hookToken) : null;
   const ptys = new PtyManager({
     audit,
     spawn: opts.spawn,
     backend: opts.ptyBackend,
-    extraArgs: (sid) => hostedArgs(config, prefs.get(), sid),
+    extraArgs: (sid, cwd) => hostedArgs(config, prefs.get(), sid, pluginDir && sid ? { pluginDir, name: nativeName(cwd, sid) } : undefined),
     onChange: (list) => {
       hub?.publishTerminals(list);
       orch?.changed();

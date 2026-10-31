@@ -4,6 +4,28 @@ What changed in each release. Cora updates itself; each update's notes are on it
 
 ## Unreleased
 
+## 0.1.22
+
+- **Sessions talk to each other through Claude Code itself.** Cora now builds on Claude Code's own cross-session
+  messaging. Each session Cora starts gets a name its project's other sessions can message it by (on its project
+  card), and a small Cora plugin that shows their direct messages on the project's board. A message reaches a busy
+  session at its next step, without interrupting it. One that would wake an idle session still waits for your OK (the
+  wake card), unless the project lets its sessions wake each other. Needs Claude Code 2.1.287 or later
+  (`claude update`); with an older one, sessions work as before.
+- **No more typing into terminals:** a message from you or Cora, or a project post waiting for a session, reaches it
+  through its plugin as a turn of its own.
+- **The project board, redone:** **Crew** shows who's doing what and what each session last said, with a reply line on
+  every session (it goes in as your prompt) and its questions answered right there. **Needs you** says plainly what
+  waits on your word: wakes, questions, incidents nobody owns, known issues to approve. The **Conversation** shows who
+  wrote to whom and what happened to each message (delivered, held for you, waiting for its turn). A new project's
+  board starts with the three.
+- **In the nav:** a **+** on each project starts a session in it, and dragging a session within its project reorders
+  the project's sessions.
+- **Project tools in every session,** so a session added to a project (or whose project starts coordinating) can post
+  and claim at once, without a restart.
+- Fixes: a session you ended and resumed is no longer marked ended when Cora restarts; a claim that loses names who
+  has it; Cora's own sessions (its agent and helpers) don't take messages from other sessions.
+
 ## 0.1.21
 
 - **Incidents in a project.** One per outage, shared by its sessions: severity, owner, state, the next step, a link,

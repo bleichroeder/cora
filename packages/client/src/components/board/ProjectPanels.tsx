@@ -9,6 +9,8 @@ import { useVoice } from '../../lib/voice';
 import { CiGlyph } from '../CiStrip';
 import { Icon } from '../Icon';
 import { SEV_COLOR } from './ItemPanels';
+import { NeedsYou } from '../NeedsYou';
+import { liveTerminal, sendToSession } from '../../state/composer';
 import '../projects.css';
 
 /**
@@ -128,85 +130,177 @@ export function ConstellationPanel({ sessionId }: Props) {
   );
 }
 
-/** Who's on what: each member's state, what it's on, where, its ticket, what's waiting for it; its overrides behind ⋯. */
+/**
+ * Crew: who's doing what, and what each last said. Each member's row: its
+ * seat, its state on its tile's corner, where it works, its last words; a question it's asking you, answered here; and
+ * a reply line that goes in as your prompt (as its composer would). Its overrides behind ⋯.
+ */
 export function MembersPanel({ sessionId }: Props) {
   const p = useBoardProject(sessionId);
   const members = useMembers(p);
-  const doing = useProjects((s) => s.doing);
   const waiting = useWaiting(p);
+  const versions = useBrain((s) => s.versions);
+  const pending = useBrain((s) => s.pending);
   const [setting, setSetting] = useState<string | null>(null);
   if (!p) return null;
   if (!members.length) return <NoMembers />;
   return (
-    <div className="pp-who">
-      {members.map((s) => {
-        const m = p.members[s.id];
-        const n = waiting.get(s.id) ?? 0;
-        const busy = s.state === 'working' || s.state === 'thinking';
-        return (
-          <div key={s.id} className={`pp-w${s.state === 'needs-you' ? ' need' : ''}${s.state === 'ended' ? ' ended' : ''}`}>
-            <span className="dot" style={{ ['--sc' as any]: sessionColor(s) }} />
-            <button className="n" onClick={() => open(s.id)} title="Open it">
-              {sessionName(s)}
-              {m?.role ? <span className="role"> · {m.role}</span> : null}
-              {p.lead === s.id ? <span className="lead" title="The project's lead: opens incidents, sets severity and owner, merges duplicates"> lead</span> : null}
-            </button>
-            <span className={`st${busy ? ' busy' : s.state === 'needs-you' ? ' need' : ''}`}>{STATE_WORD[s.state] ?? s.state}</span>
-            <button className="pp-x more" title="Its settings in this project" onClick={() => setSetting(setting === s.id ? null : s.id)}>
-              <Icon name="Ellipsis" size={13} />
-            </button>
-            <span className="on">{doing[s.id] || <em>nothing said yet</em>}</span>
-            <span className="meta">
-              <span>{(s.wd || s.cwd).split(/[\\/]/).filter(Boolean).pop()}</span>
-              {s.ticket ? <span>{s.ticket.key}</span> : null}
-              {n ? <span className="w">{n} waiting for it</span> : null}
-            </span>
-            {setting === s.id ? (
-              <div className="pp-set">
-                {p.coordination && m ? (
-                  <>
-                    <span className="lab">Hears</span>
-                    <span className="pp-seg">
-                      {(['nothing', 'brief', 'everything'] as ProjectHears[]).map((h) => (
-                        <button key={h} className={m.hears === h ? 'on' : ''} onClick={() => void setMember(p.id, s.id, { hears: h })} title={h === 'nothing' ? 'Nothing of the project' : h === 'brief' ? 'Its card (brief, decisions, who is who), not the thread' : 'Its card, and what is new on each prompt'}>
-                          {h === 'brief' ? 'Card' : h === 'nothing' ? 'Nothing' : 'Everything'}
-                        </button>
-                      ))}
-                    </span>
-                    <button className={`pp-tg${m.canPost ? ' on' : ''}`} onClick={() => void setMember(p.id, s.id, { canPost: !m.canPost })} title="It may post to the project (project_post)">
-                      <Icon name="Send" size={11} /> Posts
-                    </button>
-                    <button className={`pp-tg${m.wakes ? ' on' : ''}`} onClick={() => void setMember(p.id, s.id, { wakes: !m.wakes })} title="A handoff or question to it may wake it when it's idle: each one asks you first">
-                      <Icon name="AlarmClock" size={11} /> May be woken
-                    </button>
-                    <span className="lab">Seat</span>
-                    <input
-                      key={`${s.id}${m.role ?? ''}`}
-                      className="role-in"
-                      defaultValue={m.role ?? ''}
-                      placeholder="triage, monitor…"
-                      title="Its role in the project: every member's card shows it"
-                      onBlur={(e) => e.target.value.trim() !== (m.role ?? '') && void setMember(p.id, s.id, { role: e.target.value })}
-                      onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
-                    />
-                    <button className={`pp-tg${p.lead === s.id ? ' on' : ''}`} onClick={() => void updateProject(p.id, { lead: p.lead === s.id ? null : s.id })} title="The lead opens incidents, sets their severity and owner, and merges duplicates (with no lead, an incident's opener does)">
-                      <Icon name="Crown" size={11} /> Lead
-                    </button>
-                  </>
-                ) : null}
-                <button className="pp-tg" onClick={() => void leaveProject(p.id, s.id)} title="Take it out of the project (the session carries on)">
-                  <Icon name="LogOut" size={11} /> Take out
-                </button>
-              </div>
-            ) : null}
-          </div>
-        );
-      })}
+    <div className="pc-crew">
+      {members.map((s) => (
+        <CrewRow key={s.id} p={p} s={s} waiting={waiting.get(s.id) ?? 0} asks={pending.some((x) => x.sessionId === s.id)} version={versions[s.id]} setting={setting === s.id} onSetting={() => setSetting(setting === s.id ? null : s.id)} />
+      ))}
     </div>
   );
 }
 
-/** Open loops: what's unresolved: questions to you (answer here), other open questions, what waits to be delivered, changes some haven't heard. */
+/** Its last reply's words, as plain text (no markdown marks). */
+const plain = (t: string) =>
+  t
+    .replace(/```[\s\S]*?```/g, ' ')
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+    .replace(/[*_`#>]+/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+const hhmm = (ts: number) => new Date(ts).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+
+function CrewRow({ p, s, waiting, asks, version, setting, onSetting }: { p: Project; s: SessionInfo; waiting: number; asks: boolean; version?: number; setting: boolean; onSetting(): void }) {
+  const m = p.members[s.id];
+  const said = useMemo(
+    () => sessionEvents(s.id).filter((e) => e.agentId === 'main' && e.kind === 'say' && (e.said || e.text)).at(-1),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [s.id, version],
+  );
+  const [text, setText] = useState('');
+  const [note, setNote] = useState<{ ok: boolean; t: string } | null>(null);
+  const [expanded, setExpanded] = useState(false);
+  const busy = s.state === 'working' || s.state === 'thinking';
+  const need = asks || s.state === 'needs-you';
+  const st = need ? 'need' : busy ? 'work' : s.state === 'ended' ? 'end' : 'idle';
+  const live = !!liveTerminal(s.id);
+  const hint = !live ? "It isn't running here: resume it to reply." : need ? "It's waiting on you: this answers it." : busy ? "It's working: it reads this when its turn ends." : "It's idle: this starts a turn right away.";
+  const where = [(s.wd || s.cwd).split(/[\\/]/).filter(Boolean).pop(), s.ticket?.key, waiting ? `${waiting} waiting for it` : ''].filter(Boolean).join(' · ');
+  const send = async () => {
+    const t = text.trim();
+    if (!t) return;
+    const r = await sendToSession(s.id, t);
+    if (r.ok) setText('');
+    setNote(r.ok ? { ok: true, t: `Sent to ${sessionName(s)} as you${busy ? ': it reads it when its turn ends' : ''}.` } : { ok: false, t: r.choice ? 'It is showing a choice: answer that first.' : r.error });
+  };
+  return (
+    <div className={`pc-mem s-${st}${expanded || asks || text ? ' open' : ''}`} style={{ ['--sc' as any]: sessionColor(s) }}>
+      <div className="top">
+        <button className="tile" onClick={() => open(s.id)} title="Open it">
+          {sessionName(s)[0]?.toUpperCase()}
+        </button>
+        <span className="nm">
+          <button className="n" onClick={() => open(s.id)} title="Open it">
+            {sessionName(s)}
+          </button>
+          {m?.role ? <span className="seat">{m.role}</span> : null}
+          {p.lead === s.id ? (
+            <span className="seat lead" title="The project's lead: opens incidents, sets severity and owner, merges duplicates">
+              lead
+            </span>
+          ) : null}
+        </span>
+        <span className="word">{need ? 'needs you' : (STATE_WORD[s.state] ?? s.state)}</span>
+        <button className="pp-x more" title="Its settings in this project" onClick={onSetting}>
+          <Icon name="Ellipsis" size={13} />
+        </button>
+        <span className="on">{where}</span>
+      </div>
+      {said ? (
+        <div className={`said${expanded ? ' all' : ''}`} onClick={() => setExpanded(!expanded)} title={expanded ? 'Less' : 'All of it'}>
+          <time>{hhmm(said.ts)}</time>
+          {plain(said.said || said.text || '')}
+        </div>
+      ) : (
+        <div className="said none">Nothing said yet.</div>
+      )}
+      {asks ? (
+        <div className="asks">
+          <NeedsYou sessionId={s.id} />
+        </div>
+      ) : null}
+      {live ? (
+        <div className="reply">
+          <input value={text} placeholder={`Reply to ${sessionName(s)}…`} onChange={(e) => (setText(e.target.value), setNote(null))} onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && void send()} />
+          <button className="pp-btn" disabled={!text.trim()} onClick={() => void send()}>
+            Send
+          </button>
+          <span className="hint">{hint}</span>
+        </div>
+      ) : (
+        <div className="reply off">
+          <span className="hint">{hint}</span>
+        </div>
+      )}
+      {note ? (
+        <div className={`sent${note.ok ? '' : ' bad'}`}>
+          {note.ok ? '✓ ' : ''}
+          {note.t}
+        </div>
+      ) : null}
+      {setting ? (
+        <div className="pp-set">
+          {p.coordination && m ? (
+            <>
+              <span className="lab">Hears</span>
+              <span className="pp-seg">
+                {(['nothing', 'brief', 'everything'] as ProjectHears[]).map((h) => (
+                  <button key={h} className={m.hears === h ? 'on' : ''} onClick={() => void setMember(p.id, s.id, { hears: h })} title={h === 'nothing' ? 'Nothing of the project' : h === 'brief' ? 'Its card (brief, decisions, who is who), not the thread' : 'Its card, and what is new on each prompt'}>
+                    {h === 'brief' ? 'Card' : h === 'nothing' ? 'Nothing' : 'Everything'}
+                  </button>
+                ))}
+              </span>
+              <button className={`pp-tg${m.canPost ? ' on' : ''}`} onClick={() => void setMember(p.id, s.id, { canPost: !m.canPost })} title="It may post to the project (project_post)">
+                <Icon name="Send" size={11} /> Posts
+              </button>
+              <button className={`pp-tg${m.wakes ? ' on' : ''}`} onClick={() => void setMember(p.id, s.id, { wakes: !m.wakes })} title="A handoff or question to it may wake it when it's idle: each one asks you first">
+                <Icon name="AlarmClock" size={11} /> May be woken
+              </button>
+              <span className="lab">Seat</span>
+              <input
+                key={`${s.id}${m.role ?? ''}`}
+                className="role-in"
+                defaultValue={m.role ?? ''}
+                placeholder="triage, monitor…"
+                title="Its role in the project: every member's card shows it"
+                onBlur={(e) => e.target.value.trim() !== (m.role ?? '') && void setMember(p.id, s.id, { role: e.target.value })}
+                onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
+              />
+              <button className={`pp-tg${p.lead === s.id ? ' on' : ''}`} onClick={() => void updateProject(p.id, { lead: p.lead === s.id ? null : s.id })} title="The lead opens incidents, sets their severity and owner, and merges duplicates (with no lead, an incident's opener does)">
+                <Icon name="Crown" size={11} /> Lead
+              </button>
+            </>
+          ) : null}
+          <button className="pp-tg" onClick={() => void leaveProject(p.id, s.id)} title="Take it out of the project (the session carries on)">
+            <Icon name="LogOut" size={11} /> Take out
+          </button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/** A group in Needs you: its quiet-caps label and count, then its rows (nothing when empty). */
+function Group({ label, n, children }: { label: string; n: number; children: React.ReactNode }) {
+  if (!n) return null;
+  return (
+    <>
+      <div className="pc-lab">
+        {label} <b>{n}</b>
+      </div>
+      {children}
+    </>
+  );
+}
+
+/**
+ * Needs you: what's waiting on your word, grouped and said plainly: wakes
+ * to deliver, questions to you, incidents nobody owns, known issues to approve; then what's only worth knowing (posts
+ * waiting for a busy session, others' open questions, changes some haven't heard).
+ */
 export function LoopsPanel({ sessionId }: Props) {
   const p = useBoardProject(sessionId);
   const sessions = useBrain((s) => s.sessions);
@@ -215,6 +309,8 @@ export function LoopsPanel({ sessionId }: Props) {
   if (!p) return null;
   const who = (by: string) => (by === 'you' || by === 'user' ? 'you' : by === 'cora' ? 'Cora' : sessions[by] ? sessionName(sessions[by]) : 'a session');
   const questions = p.thread.filter((x) => isOpenQuestion(p, x)).reverse();
+  const mine = questions.filter((q) => q.to?.includes('user'));
+  const others = questions.filter((q) => !q.to?.includes('user'));
   const myWakes = wakes.filter((w) => w.project === p.id);
   const waits = (p.waiting ?? []).filter((x) => !myWakes.some((w) => w.post === x.post && w.to === x.to));
   // a change (or decision) some members haven't heard yet (they hear it on their next prompt)
@@ -227,137 +323,137 @@ export function LoopsPanel({ sessionId }: Props) {
   // incidents nobody owns, and known issues waiting for your yes
   const unowned = (p.items ?? []).filter((i) => i.kind === 'incident' && itemOpen(i) && !i.owner).sort(bySeverity);
   const proposed = (p.items ?? []).filter((i) => i.kind === 'known' && i.state === 'proposed');
-  const n = questions.length + myWakes.length + waits.length + unheard.length + unowned.length + proposed.length;
-  if (!n) return <div className="pp-empty">Nothing open: no questions waiting for an answer, no handoffs waiting to be delivered, no incident without an owner.</div>;
+  const yours = myWakes.length + mine.length + unowned.length + proposed.length;
   const send = async (q: Post) => {
     const t = answer[q.id]?.trim();
     if (!t) return;
     const r = await postToProject(p.id, 'note', t, { re: q.id, to: q.by !== 'you' && q.by !== 'cora' ? [q.by] : [] });
     if (r.ok) setAnswer((a) => ({ ...a, [q.id]: '' }));
   };
+  const close = (q: Post) => (
+    <button className="pp-btn" onClick={() => void closeQuestion(p.id, q.id)} title="Nobody needs to answer it">
+      Close
+    </button>
+  );
   return (
-    <div className="pp-loops">
-      {unowned.map((i) => (
-        <div key={i.id} className="pp-loop" style={{ ['--kc' as any]: SEV_COLOR[i.severity ?? 'medium'] }}>
-          <span className="k">
-            <Icon name="Siren" size={11} />
-          </span>
-          <div className="t">
-            <b>{i.title}</b> <em>· {i.severity ?? 'medium'} · nobody owns it · {ago(i.openedAt)}</em>
-          </div>
-          <div className="acts">
-            <select className="pp-btn" value="" onChange={(e) => e.target.value && void itemOp(p.id, 'change', { item: i.id, owner: e.target.value })} title="Give it to a session (it's told)">
-              <option value="">Assign to…</option>
-              {p.sessions
-                .filter((sid) => sessions[sid])
-                .map((sid) => (
-                  <option key={sid} value={sid}>
-                    {sessionName(sessions[sid])}
-                  </option>
-                ))}
-            </select>
-          </div>
-        </div>
-      ))}
-      {proposed.map((i) => (
-        <div key={i.id} className="pp-loop" style={{ ['--kc' as any]: '#fbbf24' }}>
-          <span className="k">
-            <Icon name="BookMarked" size={11} />
-          </span>
-          <div className="t">
-            <b>{who(i.openedBy)}</b> proposes a known issue: {i.title}
-            {i.rule ? <em> · rule: {i.rule}</em> : null}
-          </div>
-          <div className="acts">
-            <button className="pp-btn go" onClick={() => void itemOp(p.id, 'change', { item: i.id, state: 'approved' })} title="It joins every member's project card">
-              Approve
-            </button>
-            <button className="pp-btn" onClick={() => void itemOp(p.id, 'change', { item: i.id, state: 'retired' })}>
-              Reject
-            </button>
-          </div>
-        </div>
-      ))}
-      {myWakes.map((w) => (
-        <div key={w.id} className="pp-loop" style={{ ['--kc' as any]: KIND_COLOR.handoff }}>
-          <span className="k">
-            <Icon name="ArrowRight" size={11} />
-          </span>
-          <div className="t">
-            <b>
-              {who(w.from)} → {who(w.to)}
-            </b>
-            : {w.text} <em>· {who(w.to)} is idle</em>
-          </div>
-          <div className="acts">
-            <button className="pp-btn go" onClick={() => void answerWake(w.id, true)}>
-              Deliver now
-            </button>
-            <button className="pp-btn" onClick={() => void answerWake(w.id, false)} title="It reaches the session on its next prompt from you">
-              Let it wait
-            </button>
-          </div>
-        </div>
-      ))}
-      {waits.map((x) => {
-        const post = p.thread.find((y) => y.id === x.post);
-        if (!post) return null;
-        return (
-          <div key={`${x.post}|${x.to}`} className="pp-loop" style={{ ['--kc' as any]: KIND_COLOR[post.kind] }}>
+    <div className="pc-needs">
+      {!yours ? <div className="pc-clear">Nothing waits on you. The crew is working on its own.</div> : null}
+      <Group label="Wakes" n={myWakes.length}>
+        {myWakes.map((w) => (
+          <div key={w.id} className="pc-need" style={{ ['--kc' as any]: '#fbbf24' }}>
             <span className="k">
-              <Icon name="Hourglass" size={11} />
+              <Icon name="ArrowUpRight" size={11} />
             </span>
             <div className="t">
-              <b>
-                {who(post.by)} → {who(x.to)}
-              </b>
-              : {post.text} <em>· waiting {ago(x.since)}: {who(x.to)} is busy; you'll be asked when its turn ends</em>
+              <b>{who(w.from)}</b> wants to wake <b>{who(w.to)}</b> (idle): <q>{w.text}</q> <em>· {ago(w.at)}</em>
+            </div>
+            <div className="acts">
+              <button className="pp-btn go" onClick={() => void answerWake(w.id, true)}>
+                Deliver now
+              </button>
+              <button className="pp-btn" onClick={() => void answerWake(w.id, false)} title="It reaches the session on its next prompt">
+                Let it wait
+              </button>
             </div>
           </div>
-        );
-      })}
-      {questions.map((q) => {
-        const mine = q.to?.includes('user');
-        return (
-          <div key={q.id} className={`pp-loop${mine ? ' mine' : ''}`} style={{ ['--kc' as any]: KIND_COLOR.question }}>
+        ))}
+      </Group>
+      <Group label="Questions to you" n={mine.length}>
+        {mine.map((q) => (
+          <div key={q.id} className="pc-need" style={{ ['--kc' as any]: 'var(--need)' }}>
             <span className="k">?</span>
             <div className="t">
-              <b>
-                {who(q.by)} → {q.to?.length ? q.to.map(who).join(', ') : 'the project'}
-              </b>
-              : {q.text} <em>· {ago(q.at)}</em>
+              <b>{who(q.by)}</b> asks: <q>{q.text}</q> <em>· {ago(q.at)}</em>
             </div>
-            {mine ? (
-              <div className="ans">
-                <input value={answer[q.id] ?? ''} placeholder="Answer as you…" onChange={(e) => setAnswer((a) => ({ ...a, [q.id]: e.target.value }))} onKeyDown={(e) => e.key === 'Enter' && void send(q)} />
-                <button className="pp-btn go" disabled={!answer[q.id]?.trim()} onClick={() => void send(q)}>
-                  Send
-                </button>
-                <button className="pp-btn" onClick={() => void closeQuestion(p.id, q.id)} title="Nobody needs to answer it">
-                  Close
-                </button>
-              </div>
-            ) : (
-              <div className="acts">
-                <button className="pp-btn" onClick={() => void closeQuestion(p.id, q.id)} title="Nobody needs to answer it">
-                  Close
-                </button>
-              </div>
-            )}
+            <div className="ans">
+              <input value={answer[q.id] ?? ''} placeholder="Answer as you…" onChange={(e) => setAnswer((a) => ({ ...a, [q.id]: e.target.value }))} onKeyDown={(e) => e.key === 'Enter' && void send(q)} />
+              <button className="pp-btn go" disabled={!answer[q.id]?.trim()} onClick={() => void send(q)}>
+                Send
+              </button>
+              {close(q)}
+            </div>
           </div>
-        );
-      })}
-      {unheard.map(({ x, not }) => (
-        <div key={x.id} className="pp-loop" style={{ ['--kc' as any]: KIND_COLOR[x.kind] }}>
-          <span className="k">!</span>
-          <div className="t">
-            <b>
-              {who(x.by)}'s {x.kind}
-            </b>
-            : {x.text.slice(0, 140)} <em>· {not.map(who).join(', ')} {not.length === 1 ? "hasn't" : "haven't"} heard it yet (on the next prompt)</em>
+        ))}
+      </Group>
+      <Group label="Incidents nobody owns" n={unowned.length}>
+        {unowned.map((i) => (
+          <div key={i.id} className="pc-need" style={{ ['--kc' as any]: SEV_COLOR[i.severity ?? 'medium'] }}>
+            <span className="k">!</span>
+            <div className="t">
+              <b>{i.title}</b>, {i.severity ?? 'medium'}. <em>· open {ago(i.openedAt)} · unowned</em>
+            </div>
+            <div className="acts">
+              <select className="pp-btn" value="" onChange={(e) => e.target.value && void itemOp(p.id, 'change', { item: i.id, owner: e.target.value })} title="Give it to a session (it's told)">
+                <option value="">Assign to…</option>
+                {p.sessions
+                  .filter((sid) => sessions[sid])
+                  .map((sid) => (
+                    <option key={sid} value={sid}>
+                      {sessionName(sessions[sid])}
+                    </option>
+                  ))}
+              </select>
+            </div>
           </div>
-        </div>
-      ))}
+        ))}
+      </Group>
+      <Group label="Proposed known issues" n={proposed.length}>
+        {proposed.map((i) => (
+          <div key={i.id} className="pc-need" style={{ ['--kc' as any]: 'var(--cora)' }}>
+            <span className="k">
+              <Icon name="BookMarked" size={11} />
+            </span>
+            <div className="t">
+              <b>{who(i.openedBy)}</b> proposes: <b>{i.title}</b>.{i.rule ? <> Rule: <q>{i.rule}</q></> : null} <em>· {ago(i.openedAt)}</em>
+            </div>
+            <div className="acts">
+              <button className="pp-btn go" onClick={() => void itemOp(p.id, 'change', { item: i.id, state: 'approved' })} title="It joins every member's project card">
+                Approve
+              </button>
+              <button className="pp-btn" onClick={() => void itemOp(p.id, 'change', { item: i.id, state: 'retired' })}>
+                Reject
+              </button>
+            </div>
+          </div>
+        ))}
+      </Group>
+      <Group label="Waiting for a busy session" n={waits.length}>
+        {waits.map((x) => {
+          const post = p.thread.find((y) => y.id === x.post);
+          if (!post) return null;
+          return (
+            <div key={`${x.post}|${x.to}`} className="pc-need quiet" style={{ ['--kc' as any]: 'var(--run)' }}>
+              <span className="k">
+                <Icon name="Hourglass" size={11} />
+              </span>
+              <div className="t">
+                <b>{who(post.by)}</b>'s {post.kind} to <b>{who(x.to)}</b>: <q>{post.text}</q> <em>· waiting {ago(x.since)}; it gets it when its turn ends</em>
+              </div>
+            </div>
+          );
+        })}
+      </Group>
+      <Group label="Open questions between them" n={others.length}>
+        {others.map((q) => (
+          <div key={q.id} className="pc-need quiet" style={{ ['--kc' as any]: KIND_COLOR.question }}>
+            <span className="k">?</span>
+            <div className="t">
+              <b>{who(q.by)}</b> asks {q.to?.length ? <b>{q.to.map(who).join(', ')}</b> : 'the project'}: <q>{q.text}</q> <em>· {ago(q.at)}</em>
+            </div>
+            <div className="acts">{close(q)}</div>
+          </div>
+        ))}
+      </Group>
+      <Group label="Not heard yet" n={unheard.length}>
+        {unheard.map(({ x, not }) => (
+          <div key={x.id} className="pc-need quiet" style={{ ['--kc' as any]: KIND_COLOR[x.kind] }}>
+            <span className="k">·</span>
+            <div className="t">
+              <b>{who(x.by)}</b>'s {x.kind}: <q>{x.text.slice(0, 140)}</q> <em>· {not.map(who).join(', ')} {not.length === 1 ? 'hears' : 'hear'} it on the next prompt</em>
+            </div>
+          </div>
+        ))}
+      </Group>
     </div>
   );
 }
@@ -407,15 +503,16 @@ export function ThreadPanel({ sessionId }: Props) {
   const p = useBoardProject(sessionId);
   return p ? <Thread p={p} /> : null;
 }
-const FILTERS: Array<{ k: 'all' | PostKind | 'you'; label: string }> = [
+const FILTERS: Array<{ k: 'all' | PostKind | 'you' | 'direct'; label: string }> = [
   { k: 'all', label: 'All' },
-  { k: 'note', label: 'notes' },
-  { k: 'question', label: 'questions' },
-  { k: 'handoff', label: 'handoffs' },
-  { k: 'change', label: 'changes' },
-  { k: 'decision', label: 'decisions' },
-  { k: 'report', label: 'reports' },
-  { k: 'you', label: 'to you' },
+  { k: 'you', label: 'To you' },
+  { k: 'direct', label: 'Direct' },
+  { k: 'handoff', label: 'Handoffs' },
+  { k: 'question', label: 'Questions' },
+  { k: 'report', label: 'Reports' },
+  { k: 'change', label: 'Changes' },
+  { k: 'decision', label: 'Decisions' },
+  { k: 'note', label: 'Notes' },
 ];
 const YOU = '#f472b6';
 function Thread({ p, compact }: { p: Project; compact?: boolean }) {
@@ -437,19 +534,22 @@ function Thread({ p, compact }: { p: Project; compact?: boolean }) {
   }, [p.thread]);
   const shown = p.thread
     .filter((x) => !x.re || !p.thread.some((y) => y.id === x.re))
-    .filter((x) => filter === 'all' || (filter === 'you' ? x.to?.includes('user') : x.kind === filter))
+    .filter((x) => filter === 'all' || (filter === 'you' ? x.to?.includes('user') : filter === 'direct' ? x.native : x.kind === filter))
     .slice(compact ? -30 : -200);
   const count = (k: PostKind) => p.thread.filter((x) => x.kind === k && (k !== 'question' || isOpenQuestion(p, x))).length;
   useEffect(() => {
     list.current?.scrollTo({ top: list.current.scrollHeight });
   }, [shown.length, filter]);
-  const state = (x: Post) => {
-    if (x.kind === 'question') return x.closed ? { t: 'closed', c: '' } : answers.has(x.id) ? { t: 'answered', c: '' } : { t: 'open', c: 'open' };
-    if (x.kind === 'handoff' && x.to?.length) {
-      const w = (p.waiting ?? []).some((y) => y.post === x.id) || wakes.some((y) => y.post === x.id);
-      return w ? { t: 'waiting', c: 'wait' } : { t: 'delivered', c: '' };
-    }
-    return null;
+  /** What happened to it, in words: an open question; or, for a post to members, delivered, held for your OK, waiting for a busy one's turn, or theirs on the next prompt. */
+  const state = (x: Post): { t: string; c: string } | null => {
+    if (x.kind === 'question' && !x.native) return x.closed ? { t: 'closed', c: '' } : answers.has(x.id) ? { t: 'answered', c: '' } : { t: 'open question', c: 'open' };
+    const members = (x.to ?? []).filter((t) => t !== 'user');
+    if (!members.length) return null;
+    if (wakes.some((y) => y.post === x.id)) return { t: 'held for your OK', c: 'held' };
+    if ((p.waiting ?? []).some((y) => y.post === x.id)) return { t: 'waits for its turn', c: 'wait' };
+    if (x.deliveredAt) return { t: 'delivered', c: '' };
+    if (x.native) return { t: 'sent', c: 'wait' };
+    return members.some((t) => (p.members[t]?.heardTo ?? 0) < x.at) ? { t: 'on its next prompt', c: 'wait' } : { t: 'delivered', c: '' };
   };
   const send = async () => {
     if (!text.trim()) return;
@@ -466,18 +566,25 @@ function Thread({ p, compact }: { p: Project; compact?: boolean }) {
         </span>
         <div>
           <span className="who">
-            <b>{w.name}</b>
+            <b style={{ color: `color-mix(in srgb, ${w.color} 80%, white)` }}>{w.name}</b>
+            {x.to?.length && !nested ? (
+              <span className="to">
+                <i>→</i> {x.to.map((t) => who(t).name).join(', ')}
+              </span>
+            ) : null}
             {nested ? (
               <span className="pp-kind" style={{ ['--kc' as any]: 'var(--ink3)' }}>
                 answer
+              </span>
+            ) : x.native ? (
+              <span className="pp-kind" style={{ ['--kc' as any]: 'var(--ink3)' }} title="A message the session sent directly (Claude Code delivered it)">
+                direct
               </span>
             ) : x.kind !== 'note' ? (
               <span className="pp-kind" style={{ ['--kc' as any]: KIND_COLOR[x.kind] }}>
                 {x.kind}
               </span>
             ) : null}
-            {x.to?.length && !nested ? <span className="to">to {x.to.map((t) => who(t).name).join(', ')}</span> : null}
-            {st ? <span className={`state ${st.c}`}>{st.t}</span> : null}
             {x.pinned ? <Icon name="Pin" size={10} className="pinned" /> : null}
             <time>{new Date(x.at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</time>
             {x.withdrawn ? <span className="edited">withdrawn</span> : x.editedAt ? <span className="edited" title={`Changed ${new Date(x.editedAt).toLocaleString()}`}>edited</span> : null}
@@ -496,6 +603,7 @@ function Thread({ p, compact }: { p: Project; compact?: boolean }) {
                 </button>
               </>
             ) : null}
+            {st ? <span className={`fate ${st.c}`}>{st.t}</span> : null}
           </span>
           {editing?.id === x.id ? (
             <div className="pp-edit">
@@ -528,13 +636,21 @@ function Thread({ p, compact }: { p: Project; compact?: boolean }) {
           {FILTERS.map((f) => {
             const n = f.k === 'question' ? count('question') : 0;
             return (
-              <button key={f.k} className={`pp-chip${filter === f.k ? ' on' : ''}`} style={f.k !== 'all' && f.k !== 'you' ? { ['--kc' as any]: KIND_COLOR[f.k] } : undefined} onClick={() => setFilter(f.k)}>
-                {f.k !== 'all' && f.k !== 'you' ? <i /> : null}
+              <button key={f.k} className={`pp-chip${filter === f.k ? ' on' : ''}`} style={f.k !== 'all' && f.k !== 'you' && f.k !== 'direct' ? { ['--kc' as any]: KIND_COLOR[f.k] } : undefined} onClick={() => setFilter(f.k)}>
+                {f.k !== 'all' && f.k !== 'you' && f.k !== 'direct' ? <i /> : null}
                 {f.label}
                 {n ? <b>{n}</b> : null}
               </button>
             );
           })}
+        </div>
+      ) : null}
+      {!compact ? (
+        <div className="pc-legend">
+          <span className="ok">delivered</span>
+          <span className="wait">waits for its turn</span>
+          <span className="held">held for your OK</span>
+          <span className="open">open question</span>
         </div>
       ) : null}
       <div className="pp-posts" ref={list}>

@@ -38,4 +38,19 @@ describe('starting against a terminal host', () => {
     srv = await startServer(config, { tail: false, listen: false, ptyBackend: hostWithExitedTerminal('s1') });
     expect(srv.store.getSession('s1')?.exitReason).toBe('exited');
   });
+
+  it('a session ended and resumed while the server was down: its old terminal’s exit leaves it alive (the newer one runs on)', async () => {
+    const dataDir = mkdtempSync(join(tmpdir(), 'ab-rs-'));
+    const dbPath = join(dataDir, 'brain.db');
+    const seed = new Store(dbPath);
+    seed.upsertSession({ id: 's2', cwd: tmpdir(), startedAt: 1, lastTs: 1, state: 'idle' } as never);
+    seed.close();
+    const host = hostWithExitedTerminal('s2');
+    // the resumed one, alive, listed after the old one
+    host.restored.push({ id: 't2', meta: { sessionId: 's2', cwd: tmpdir(), mode: 'resume', startedAt: 2 }, alive: true, exitCode: undefined, buf: '' } as never);
+    const config = loadConfig({ dataDir, dbPath, hookToken: 'h', uiToken: 'u', clientDir: join(tmpdir(), 'nope-client') });
+    srv = await startServer(config, { tail: false, listen: false, ptyBackend: host });
+    expect(srv.store.getSession('s2')?.state).not.toBe('ended');
+    expect(srv.store.getSession('s2')?.exitReason).toBeUndefined();
+  });
 });

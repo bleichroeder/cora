@@ -21,7 +21,7 @@ const MAX_ANSWER = 16_000;
 
 export function copyArgs(dir: string, sessionId: string, model?: string): string[] {
   mkdirSync(dir, { recursive: true });
-  writeFileSync(join(dir, 'settings.json'), JSON.stringify({ disableAllHooks: true }, null, 2) + '\n');
+  writeFileSync(join(dir, 'settings.json'), JSON.stringify({ disableAllHooks: true, crossSessionInbound: 'refuse' }, null, 2) + '\n');
   writeFileSync(join(dir, 'system-prompt.md'), SYSTEM);
   return [
     '-p', '--resume', sessionId, '--fork-session', '--no-session-persistence', '--safe-mode',

@@ -1,7 +1,7 @@
 {
   "name": "@cora/desktop",
   "productName": "Cora",
-  "version": "0.1.21",
+  "version": "0.1.22",
   "license": "MIT",
   "private": true,
   "main": "dist/main.cjs",
@@ -10,7 +10,7 @@
     "start": "npm run build && electron ."
   },
   "devDependencies": {
-    "electron": "^44.10.0",
+    "electron": "^44.10.1",
     "tsup": "^9.0.0"
   }
 }

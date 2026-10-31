@@ -303,7 +303,8 @@ export function agentArgs(o: { port: number; hookToken: string; /** its own key 
   const promptPath = join(o.dir, 'prompt.md');
   // on a turn someone else's words started, Cora says no to fetching and browsing (docs/audit-2026-10-20.md S8)
   const gatePath = join(o.dir, GATE_FILE);
-  const gate = { hooks: { PreToolUse: [{ matcher: GATED, hooks: [{ type: 'http', url: `http://127.0.0.1:${o.port}/agent-gate`, headers: { [TOKEN_HEADER]: o.hookToken }, timeout: 10 }] }] } };
+  // other sessions don't message Cora directly: they go through tell_cora, which the user's word gates
+  const gate = { crossSessionInbound: 'refuse', hooks: { PreToolUse: [{ matcher: GATED, hooks: [{ type: 'http', url: `http://127.0.0.1:${o.port}/agent-gate`, headers: { [TOKEN_HEADER]: o.hookToken }, timeout: 10 }] }] } };
   writeFileAtomic(gatePath, JSON.stringify(gate, null, 2), { mode: 0o600 });
   writeFileAtomic(promptPath, agentPrompt({ ...o, ...(o.viewToken ? { ui: `http://127.0.0.1:${o.port}/auth?view=${o.viewToken}` } : {}) }));
   const allowed = agentAllowed(connected);

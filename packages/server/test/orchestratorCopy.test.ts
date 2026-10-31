@@ -12,7 +12,7 @@ describe('side questions to a copy of a session', () => {
     expect(a).toEqual(expect.arrayContaining(['--strict-mcp-config', '--output-format', 'stream-json', '--verbose', '--model', 'opus']));
     expect(a[a.indexOf('--allowedTools') + 1]).toBe('Read,Grep,Glob');
     expect(a[a.indexOf('--disallowedTools') + 1]).toMatch(/^Bash,Edit,Write,NotebookEdit/);
-    expect(JSON.parse(readFileSync(a[a.indexOf('--settings') + 1], 'utf8'))).toEqual({ disableAllHooks: true });
+    expect(JSON.parse(readFileSync(a[a.indexOf('--settings') + 1], 'utf8'))).toEqual({ disableAllHooks: true, crossSessionInbound: 'refuse' });
   });
 
   it('every text it wrote is the answer (not only the last), across split chunks', () => {

@@ -36,6 +36,7 @@ export const updateProject = (id: string, patch: Partial<Pick<Project, 'name' | 
 export const archiveProject = (id: string, on = true) => call('POST', `${P(id)}/archive`, { on });
 export const deleteProject = (id: string) => call('DELETE', P(id));
 export const addToProject = (id: string, sessionId: string) => call('POST', `${P(id)}/sessions`, { sessionId });
+export const orderMembers = (id: string, ids: string[]) => call('POST', `${P(id)}/sessions/order`, { ids });
 export const leaveProject = (id: string, sessionId: string) => call('DELETE', `${P(id)}/sessions/${encodeURIComponent(sessionId)}`);
 export const setMember = (id: string, sessionId: string, patch: Partial<Pick<MemberSettings, 'hears' | 'canPost' | 'wakes' | 'role'>>) => call('PATCH', `${P(id)}/members/${encodeURIComponent(sessionId)}`, patch);
 export const postToProject = (id: string, kind: PostKind, text: string, o: { to?: string[]; re?: string } = {}) => call('POST', `${P(id)}/posts`, { kind, text, ...(o.to?.length ? { to: o.to } : {}), ...(o.re ? { re: o.re } : {}) });

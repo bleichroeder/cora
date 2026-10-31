@@ -112,7 +112,7 @@ export class PtyManager {
   private closing = new Set<string>();
 
   /** `onExit` is for Claude terminals only (it ends their session); a shell's exit just updates the list. */
-  constructor(private o: { spawn?: SpawnFn; backend?: PtyBackend; onChange?: (list: TerminalInfo[]) => void; audit?: Audit; claudeCmd?: string[]; shellCmd?: string[]; maxScrollback?: number; extraArgs?: (sessionId: string) => string[]; onExit?: (t: TerminalInfo) => void; screen?: ((cols: number, rows: number) => Screen) | null } = {}) {
+  constructor(private o: { spawn?: SpawnFn; backend?: PtyBackend; onChange?: (list: TerminalInfo[]) => void; audit?: Audit; claudeCmd?: string[]; shellCmd?: string[]; maxScrollback?: number; extraArgs?: (sessionId: string, cwd: string) => string[]; onExit?: (t: TerminalInfo) => void; screen?: ((cols: number, rows: number) => Screen) | null } = {}) {
     this.backend = o.backend ?? new LocalBackend(o.spawn);
     this.max = o.maxScrollback ?? 200_000;
     this.makeScreen = o.screen === undefined ? headlessScreen : o.screen;
@@ -165,6 +165,7 @@ export class PtyManager {
 
   /** Terminals that outlived the previous server (they kept running in the terminal host): pick them back up. */
   private restore(): void {
+    const ended: string[] = [];
     for (const h of this.backend.restored) {
       const shell = isShell(h.meta);
       if (shell && !h.alive) continue; // a shell that ended while the server was down: nothing to pick up
@@ -178,7 +179,13 @@ export class PtyManager {
         }
       }
       this.terms.set(t.terminalId, t);
-      if (!h.alive) this.o.onExit?.(this.list().find((x) => x.terminalId === t.terminalId)!);
+      if (!h.alive) ended.push(t.terminalId);
+    }
+    // a Claude terminal that ended while the server was down ends its session, unless the session runs on in a newer
+    // terminal (it was ended and resumed): that one is alive, and so is the session
+    for (const id of ended) {
+      const t = this.list().find((x) => x.terminalId === id)!;
+      if (!this.forSession(t.sessionId)) this.o.onExit?.(t);
     }
     if (this.terms.size) {
       this.ensureStatusTimer();
@@ -212,7 +219,7 @@ export class PtyManager {
     const t: Term = { terminalId: randomUUID(), sessionId, cwd: req.cwd, mode: req.mode, alive: true, startedAt: Date.now(), buf: '', sinks: new Set(), screen: this.newScreen(cols, rows), dirty: false, status: null };
     this.ensureStatusTimer();
     this.terms.set(t.terminalId, t);
-    const args = [...pre, ...argsFor(req.mode, req.sessionId, newId), ...(req.prompt ? [req.prompt] : []), ...(req.args ?? []), ...(req.bare ? [] : (this.o.extraArgs?.(sessionId) ?? []))];
+    const args = [...pre, ...argsFor(req.mode, req.sessionId, newId), ...(req.prompt ? [req.prompt] : []), ...(req.args ?? []), ...(req.bare ? [] : (this.o.extraArgs?.(sessionId, req.cwd) ?? []))];
     this.backend.spawn(t.terminalId, file, args, { cwd: req.cwd, cols, rows, env: cleanEnv(process.env) }, { sessionId, cwd: req.cwd, mode: req.mode, startedAt: t.startedAt });
     this.o.audit?.log({ ts: Date.now(), sessionId, agentId: 'main', kind: 'terminal', tool: `claude ${req.mode}`, input: { cwd: req.cwd, from: req.sessionId, ...(req.prompt ? { prompt: req.prompt } : {}) }, decision: 'launch', edited: false, via: 'dashboard' });
     this.changed();

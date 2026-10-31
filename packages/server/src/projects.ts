@@ -91,6 +91,17 @@ export class Projects {
     this.changed();
   }
 
+  /** Your order for its sessions (ids in the order you want; any left out keep their place after). */
+  orderMembers(pid: string, ids: string[]): boolean {
+    const p = this.get(pid);
+    if (!p) return false;
+    const at = new Map(ids.map((x, i) => [x, i]));
+    const n = p.sessions.length;
+    p.sessions = [...p.sessions].sort((a, b) => (at.get(a) ?? n + p.sessions.indexOf(a)) - (at.get(b) ?? n + p.sessions.indexOf(b)));
+    this.changed();
+    return true;
+  }
+
   /** Delete for good (only from the archive). */
   remove(pid: string): boolean {
     const n = this.all.length;
@@ -209,6 +220,30 @@ export class Projects {
     this.changed();
   }
 
+  /** What its members' cards show changed (a member now takes native messages): they get the card again. */
+  touch(pid: string): void {
+    const p = this.get(pid);
+    if (!p) return;
+    p.briefAt = this.now();
+    this.changed();
+  }
+
+  /** A project post went out natively (its writer's mod sent it). */
+  sentNative(pid: string, postId: string): void {
+    const x = this.get(pid)?.thread.find((y) => y.id === postId);
+    if (!x || x.sentNative) return;
+    x.sentNative = true;
+    this.changed();
+  }
+
+  /** A native message reached its member. */
+  delivered(pid: string, postId: string, at: number): void {
+    const x = this.get(pid)?.thread.find((y) => y.id === postId);
+    if (!x || x.deliveredAt) return;
+    x.deliveredAt = at;
+    this.changed();
+  }
+
   /** Pin a note (it joins every member's card), or not. */
   pin(pid: string, postId: string, on: boolean): boolean {
     const x = this.get(pid)?.thread.find((y) => y.id === postId);
@@ -228,13 +263,13 @@ export class Projects {
   }
 
   /** A post in the thread (`by`: a session, 'you' or 'cora'); a decision also goes into the decisions. */
-  post(pid: string, by: string, kind: PostKind, text: string, to?: string[], re?: string, item?: string): Post | null {
+  post(pid: string, by: string, kind: PostKind, text: string, to?: string[], re?: string, extra: { item?: string; native?: boolean; deliveredAt?: number } = {}): Post | null {
     const p = this.get(pid);
     const body = text.trim().slice(0, MAX_POST);
     if (!p || !body || !POST_KINDS.includes(kind)) return null;
     const who = (to ?? []).filter((s) => s === 'user' || (p.sessions.includes(s) && s !== by));
     const answers = re && p.thread.some((y) => y.id === re) ? re : undefined;
-    const post: Post = { id: id(), by, kind, text: body, at: this.now(), ...(who.length ? { to: who } : {}), ...(answers ? { re: answers } : {}), ...(item ? { item } : {}) };
+    const post: Post = { id: id(), by, kind, text: body, at: this.now(), ...(who.length ? { to: who } : {}), ...(answers ? { re: answers } : {}), ...(extra.item ? { item: extra.item } : {}), ...(extra.native ? { native: true } : {}), ...(extra.deliveredAt ? { deliveredAt: extra.deliveredAt } : {}) };
     p.thread.push(post);
     if (p.thread.length > MAX_POSTS) p.thread = p.thread.slice(-MAX_POSTS);
     if (kind === 'decision') {

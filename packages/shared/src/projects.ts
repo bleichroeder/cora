@@ -18,7 +18,7 @@ export const MEMBER_ON: MemberSettings = { hears: 'everything', canPost: true, w
 /** `by`: a session's id, 'you', or 'cora' */
 export type Decision = { id: string; text: string; by: string; at: number };
 /** `to`: members, or 'user' (you); `re`: the post it answers; a note may be pinned (it joins every member's card); a question you closed. */
-export type Post = { id: string; by: string; kind: PostKind; text: string; at: number; to?: string[]; re?: string; pinned?: boolean; closed?: boolean; /** its writer changed it (when) */ editedAt?: number; /** its writer took it back (it stays, struck through) */ withdrawn?: boolean; /** the item it's about (an assignment, an annotation) */ item?: string };
+export type Post = { id: string; by: string; kind: PostKind; text: string; at: number; to?: string[]; re?: string; pinned?: boolean; closed?: boolean; /** its writer changed it (when) */ editedAt?: number; /** its writer took it back (it stays, struck through) */ withdrawn?: boolean; /** the item it's about (an assignment, an annotation) */ item?: string; /** a cross-session message Claude Code delivered itself (Cora records it; it never delivers it again) */ native?: boolean; /** when its member received it (a native message) */ deliveredAt?: number; /** a project post Cora sent natively, as its writer (the receiver's report finds it) */ sentNative?: boolean };
 /** A handoff or question to a member that hasn't reached it yet (busy, or idle and not woken). */
 export type Waiting = { post: string; to: string; since: number };
 

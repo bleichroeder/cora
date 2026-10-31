@@ -136,7 +136,7 @@ const MCP_KEEP_MS = 30 * 86400_000;
  * reads summaries; the composer's attachments folder, readable without a prompt). The MCP config (one per session: its
  * calls say which session they're from) and the prompt go in files, not inline, to avoid command-line quoting issues.
  */
-export function hostedArgs(config: Config, settings: Settings, sessionId?: string): string[] {
+export function hostedArgs(config: Config, settings: Settings, sessionId?: string, native?: { pluginDir: string; name: string }): string[] {
   const dir = join(config.dataDir, 'hosted-mcp');
   mkdirSync(dir, { recursive: true });
   pruneOld(dir);
@@ -165,7 +165,9 @@ ${OTHERS}${settings.orchestrator?.enabled ? `\n\n${CORA_NUDGE}` : ''}`);
   const gatePath = join(config.dataDir, 'hosted-gate.json');
   if ((settings.worktrees?.move ?? DEFAULT_WORKTREES.move) !== 'ask') writeFileAtomic(gatePath, JSON.stringify({ hooks: { PreToolUse: [{ matcher: 'Edit|Write|MultiEdit|NotebookEdit', hooks: [{ type: 'http', url: `http://127.0.0.1:${config.port}/edit-gate`, headers: { [TOKEN_HEADER]: config.hookToken }, timeout: 30 }] }] } }), { mode: 0o600 });
   const gate = (settings.worktrees?.move ?? DEFAULT_WORKTREES.move) !== 'ask' ? ['--settings', gatePath] : [];
-  return ['--ide', ...gate, '--add-dir', attachments, ...(live ? [explains] : []), '--mcp-config', mcpPath, '--allowedTools', allowed, '--append-system-prompt-file', promptPath];
+  // Claude Code with mods: the Cora plugin, and a name its project's other sessions can message it by
+  const own = native ? ['--plugin-dir', native.pluginDir, '--name', native.name] : [];
+  return ['--ide', ...gate, ...own, '--add-dir', attachments, ...(live ? [explains] : []), '--mcp-config', mcpPath, '--allowedTools', allowed, '--append-system-prompt-file', promptPath];
 }
 
 /** With Cora's agent on: what her messages look like, and how a session talks to her. */

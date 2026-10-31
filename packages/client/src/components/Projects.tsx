@@ -21,9 +21,14 @@ const readFolded = (): Record<string, boolean> => {
   }
 };
 /** a session's state, as its dot's colour */
+/** Start a new session in a project (the New session dialog; it joins the project when it starts). */
+const newIn = (pid: string) => {
+  useProjects.setState({ joining: pid });
+  useBrain.getState().setModal('new-session');
+};
 export const stateColor = (s?: SessionInfo) => (!s ? 'var(--ink4)' : s.state === 'needs-you' ? 'var(--need)' : s.state === 'working' || s.state === 'thinking' ? 'var(--run, #3ddc97)' : s.state === 'idle' ? 'var(--ink3)' : 'var(--ink4)');
 
-export function ProjectsSection({ entry, dragging, onDropped }: { entry(s: SessionInfo): React.ReactNode; dragging: string | null; onDropped(): void }) {
+export function ProjectsSection({ entry, dragging, onDropped }: { entry(s: SessionInfo, project?: { id: string; members: string[] }): React.ReactNode; dragging: string | null; onDropped(): void }) {
   const allProjects = useProjects((p) => p.projects);
   const projects = useMemo(() => allProjects.filter((x) => !x.archivedAt), [allProjects]);
   const [folded, setFolded] = useState(readFolded);
@@ -76,7 +81,7 @@ export function ProjectsSection({ entry, dragging, onDropped }: { entry(s: Sessi
 }
 
 type Moving = { id: string; over?: { id: string; below: boolean } } | null;
-function ProjectRow({ p, folded, onFold, entry, dragging, onDropped, moving, setMoving, onMove, onMenu }: { p: Project; folded: boolean; onFold(): void; entry(s: SessionInfo): React.ReactNode; dragging: string | null; onDropped(): void; moving: Moving; setMoving(m: Moving): void; onMove(): void; onMenu(e: React.MouseEvent): void }) {
+function ProjectRow({ p, folded, onFold, entry, dragging, onDropped, moving, setMoving, onMove, onMenu }: { p: Project; folded: boolean; onFold(): void; entry(s: SessionInfo, project?: { id: string; members: string[] }): React.ReactNode; dragging: string | null; onDropped(): void; moving: Moving; setMoving(m: Moving): void; onMove(): void; onMenu(e: React.MouseEvent): void }) {
   const sessions = useBrain((s) => s.sessions);
   const open = useBrain((s) => s.projectOpen === p.id);
   // a session you removed from the list is off it here too (it's still the project's: its page keeps it)
@@ -137,13 +142,16 @@ function ProjectRow({ p, folded, onFold, entry, dragging, onDropped, moving, set
           ))}
         </span>
         {needs ? <b className="pj-need">{needs}</b> : null}
+        <span className="pj-more pj-add" role="button" aria-label="New session in this project" title="Start a new session in this project" onClick={(e) => (e.stopPropagation(), newIn(p.id))}>
+          <Icon name="Plus" size={13} />
+        </span>
         <span className="pj-more" role="button" aria-label="Name, colour, order" title="Name, colour, order" onClick={(e) => (e.stopPropagation(), onMenu(e))}>
           <Icon name="Ellipsis" size={13} />
         </span>
       </button>
       {folded ? null : (
         <div className="pj-members">
-          {members.length ? members.map((s) => entry(s)) : <div className="pj-empty">Drag sessions here, or start one in it from its board.</div>}
+          {members.length ? members.map((s) => entry(s, { id: p.id, members: p.sessions })) : <div className="pj-empty">Drag sessions here, or start one in it from its board.</div>}
         </div>
       )}
     </div>
@@ -233,6 +241,9 @@ function ProjectMenu({ p, x, y, index, all, onClose }: { p: Project; x: number; 
           <Icon name={dir < 0 ? 'ChevronUp' : 'ChevronDown'} size={14} /> Move {dir < 0 ? 'up' : 'down'}
         </button>
       ))}
+      <button className="sm-row" onClick={() => (newIn(p.id), onClose())}>
+        <Icon name="Plus" size={14} /> New session in it
+      </button>
       <button className="sm-row" onClick={() => (useBrain.getState().openProject(p.id), onClose())}>
         <Icon name="LayoutDashboard" size={14} /> Open its board
       </button>

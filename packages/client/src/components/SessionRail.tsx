@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { SessionsMute } from './ReadAloudToggle';
 import { ProjectsSection } from './Projects';
+import { orderMembers } from '../state/projects';
 import { useProjects } from '../state/projects';
 import { GuestCard } from './Live';
 import { useLive, usePrivate } from '../state/live';
@@ -53,7 +54,7 @@ function useNow(ms = 1000) {
  * (its colour, its own icon; a ring when Cora started it), its name, a word for its state only when something is
  * happening; under them its ticket in a column of its own, its folder, and its pipeline when it's running or failed.
  */
-function Entry({ s, onMenu, drag, setDrag }: { s: SessionInfo; onMenu(e: React.MouseEvent, s: SessionInfo): void; drag: Drag | null; setDrag(d: Drag | null): void }) {
+function Entry({ s, onMenu, drag, setDrag, project }: { s: SessionInfo; onMenu(e: React.MouseEvent, s: SessionInfo): void; drag: Drag | null; setDrag(d: Drag | null): void; /** shown in a project: dragging reorders its sessions (the project's own order) */ project?: { id: string; members: string[] } }) {
   const focus = useBrain((st) => st.focus);
   const setFocus = useBrain((st) => st.setFocus);
   const byCora = useOrch((st) => {
@@ -114,7 +115,7 @@ function Entry({ s, onMenu, drag, setDrag }: { s: SessionInfo; onMenu(e: React.M
         onDragEnd={() => setDrag(null)}
         onDragOver={(e) => {
           const from = drag && useBrain.getState().sessions[drag.id];
-          if (!from || !movable || !sameGroup(from, s)) return;
+          if (!from || !movable || !(project ? project.members.includes(from.id) : sameGroup(from, s))) return;
           e.preventDefault();
           const r = e.currentTarget.getBoundingClientRect();
           const below = e.clientY > r.top + r.height / 2;
@@ -122,7 +123,13 @@ function Entry({ s, onMenu, drag, setDrag }: { s: SessionInfo; onMenu(e: React.M
         }}
         onDrop={(e) => {
           e.preventDefault();
-          if (drag?.over && drag.id !== drag.over.id) void saveOrder(dropOrder(useBrain.getState().sessions, drag.id, drag.over.id, drag.over.below));
+          if (drag?.over && drag.id !== drag.over.id) {
+            if (project) {
+              const ids = project.members.filter((x) => x !== drag.id);
+              ids.splice(ids.indexOf(drag.over.id) + (drag.over.below ? 1 : 0), 0, drag.id);
+              void orderMembers(project.id, ids);
+            } else void saveOrder(dropOrder(useBrain.getState().sessions, drag.id, drag.over.id, drag.over.below));
+          }
           setDrag(null);
         }}
       >
@@ -295,7 +302,7 @@ export function SessionRail() {
         )}
       </div>
       <div className="rail-scroll">
-      {guest ? null : <ProjectsSection entry={(s) => <Entry key={s.id} s={s} onMenu={onMenu} drag={drag} setDrag={setDrag} />} dragging={drag?.id ?? null} onDropped={() => setDrag(null)} />}
+      {guest ? null : <ProjectsSection entry={(s, pj) => <Entry key={s.id} s={s} onMenu={onMenu} drag={drag} setDrag={setDrag} project={pj} />} dragging={drag?.id ?? null} onDropped={() => setDrag(null)} />}
       {GROUPS.map((g) => {
         const all = list.filter((s) => g.states.includes(s.state));
         if (!all.length) return null;

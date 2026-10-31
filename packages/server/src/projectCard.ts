@@ -8,7 +8,7 @@ import { itemLine, queryItems } from './projectItems';
  */
 
 /** What another member is, for the card's "who's who". */
-export type MemberInfo = { name: string; state: string; where?: string; ticket?: string; doing?: string };
+export type MemberInfo = { name: string; state: string; where?: string; ticket?: string; doing?: string; /** the name it takes cross-session messages by (Claude Code with Cora's mod) */ native?: string };
 
 /** What's on a project's card: when this changes, a member gets the card again. */
 export const cardKey = (p: Project): string =>
@@ -52,10 +52,11 @@ export function projectCard(p: Project, sid: string, info: (sid: string) => Memb
           "Who's who:",
           ...others.map((x) => {
             const m = info(x);
-            return `- "${m.name}"${role(x) ? ` [${role(x)}]` : ''} (${x}): ${m.state}${m.where ? `, ${m.where}` : ''}${m.ticket ? `, ${m.ticket}` : ''}${m.doing ? `: ${one(m.doing, 160)}` : ''}`;
+            return `- "${m.name}"${role(x) ? ` [${role(x)}]` : ''} (${x}${m.native ? `, message it as @${m.native}` : ''}): ${m.state}${m.where ? `, ${m.where}` : ''}${m.ticket ? `, ${m.ticket}` : ''}${m.doing ? `: ${one(m.doing, 160)}` : ''}`;
           }),
         ]
       : []),
+    ...(others.some((x) => info(x).native) ? ['', 'Talk to a member marked @name directly: SendMessage to that name. It arrives in full: a busy member reads it at its next tool round; an idle one starts a turn with it, unless the user wants to OK waking it first (then it waits for them). The board shows it to the user. Keep project_post for what the project keeps or tracks: changes, decisions, handoffs, questions to the user, reports.'] : []),
     ...(open.length ? ['', `Open incidents: ${open.length} (${sevs.map(([s, n]) => `${n} ${s}`).join(', ')})${mine.length ? `; yours:\n${mine.map((i) => `- ${itemLine(i, who)}`).join('\n')}` : ' (project_items lists them)'}`] : []),
     '',
     canPost ? `${ETIQUETTE}\n${p.lead ? `The lead (${who(p.lead)}) opens incidents, sets severity and owner, merges duplicates; an owner updates its incident's state and next step and closes it with a cause and fix; anyone annotates.` : 'Any member opens an incident; its opener assigns it; its owner updates and closes it; anyone annotates.'}` : 'You hear this project; posting is off for you (project_read shows the card and the thread; project_items the incidents and known issues).',
@@ -67,7 +68,8 @@ export function projectCard(p: Project, sid: string, info: (sid: string) => Memb
 export function projectNews(p: Project, sid: string, since: number, who: (by: string) => string): string | null {
   const posts = p.thread.filter((x) => (x.at > since || (x.editedAt ?? 0) > since) && x.by !== sid);
   if (!posts.length) return null;
-  const toMe = posts.filter((x) => x.to?.includes(sid));
+  // what Claude Code delivered to it already (a native message, or a post sent natively) it has: not again
+  const toMe = posts.filter((x) => x.to?.includes(sid) && !x.deliveredAt);
   // reports go only to their seat; posts to others aren't news here
   const general = posts.filter((x) => !x.to?.length && x.kind !== 'note' && x.kind !== 'report');
   const notes = posts.filter((x) => !x.to?.length && x.kind === 'note');

@@ -217,7 +217,7 @@ export class Namer {
 
   private async ask(text: string): Promise<{ name: string; icon: string | null } | null> {
     mkdirSync(this.dir, { recursive: true });
-    writeFileSync(join(this.dir, 'settings.json'), JSON.stringify({ disableAllHooks: true }, null, 2) + '\n');
+    writeFileSync(join(this.dir, 'settings.json'), JSON.stringify({ disableAllHooks: true, crossSessionInbound: 'refuse' }, null, 2) + '\n');
     writeFileSync(join(this.dir, 'system-prompt.md'), SYSTEM);
     const cmd = [...(this.o.claudeCmd ?? defaultClaudeCmd()), ...namerArgs(this.dir)];
     const r = await this.run(cmd, { cwd: this.dir, env: namerEnv(process.env), input: namePrompt(text, this.o.iconsInUse?.() ?? []), timeoutMs: this.o.timeoutMs ?? TIMEOUT_MS });

@@ -6,7 +6,7 @@ import type { MailOutbox } from './mailOutbox';
 import { GitlabIssues } from './gitlabIssues';
 import type { Memes } from './memes';
 import { SessionNames } from './sessionNames';
-import { createReadStream, existsSync, readFileSync, statSync } from 'node:fs';
+import { appendFileSync, createReadStream, existsSync, readFileSync, statSync } from 'node:fs';
 import { envLine, signature, type EnvLabel, type Environments } from './environments';
 import type { Deploys } from './deploys';
 import { NoteError, type Notes } from './notes';
@@ -34,6 +34,7 @@ import { setGitlabHost } from './gitlabHost';
 import type { Registry } from './registry';
 import { listDirs, listHistory } from './history';
 import type { CalendarApi } from './calendar';
+import { nativeName } from './coraPlugin';
 import { cardKey, itemsSummary, projectCard, projectNews } from './projectCard';
 import { annotateItem, changeItem, claimItem, closeItem, itemLine, mergeItem, openItem, queryItems } from './projectItems';
 import { gitBranch, repoName } from './journal';
@@ -383,7 +384,82 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
     const dir = s.wd || s.cwd;
     const branch = dir ? gitBranch(dir) : null;
     const repo = dir ? repoName(dir) : '';
-    return { name: nameOf(s), state: s.state, ...(repo ? { where: `${repo}${branch ? `@${branch}` : ''}` } : {}), ...(s.ticket ? { ticket: s.ticket.key } : {}), ...(doingOf(sid) ? { doing: doingOf(sid)! } : {}) };
+    return { name: nameOf(s), state: s.state, ...(repo ? { where: `${repo}${branch ? `@${branch}` : ''}` } : {}), ...(s.ticket ? { ticket: s.ticket.key } : {}), ...(doingOf(sid) ? { doing: doingOf(sid)! } : {}), ...(modded.has(sid) ? { native: nativeName(s.cwd, sid) } : {}) };
+  }
+  /**
+   * Sessions whose Cora mod said hello: they were
+   * started with --name and take native cross-session messages. Session → its Claude Code version.
+   */
+  const modded = new Map<string, string>();
+  /** A member of a coordinating project, by what a native message calls it: its name (with or without @), or its id. */
+  const memberByPeer = (p: import('@cora/shared').Project, peer: unknown): string | null => {
+    const raw = typeof peer === 'string' ? peer : peer && typeof peer === 'object' ? String((peer as { sessionId?: unknown; name?: unknown }).sessionId ?? (peer as { name?: unknown }).name ?? '') : '';
+    const ref = raw.replace(/^@/, '').replace(/\s*\[[^\]]*\]\s*$/, '').trim().toLowerCase();
+    if (!ref) return null;
+    return p.sessions.find((sid) => sid === ref || (() => {
+      const s = store.getSession(sid);
+      return !!s && nativeName(s.cwd, sid) === ref;
+    })()) ?? null;
+  };
+  /** How a project post reads as a native message (its kind first, so the receiver knows what it is). */
+  const nativeText = (post: import('@cora/shared').Post) => (post.native ? post.text : `[${post.kind}] ${post.text}`);
+  /**
+   * A native message one of a project's members sent or received (its mod told Cora): kept on the board as a post
+   * (once: the receiver's report finds the sender's, and a project post Cora had sent natively is that post), never
+   * delivered again. Messages outside a project are left alone. What it is on the board, for a hold: the project, the
+   * post, who sent it.
+   */
+  function nativeMessage(sid: string, dir: 'send' | 'receive', peer: unknown, text: string): { pid: string; post: import('@cora/shared').Post; from: string } | null {
+    const projects = d.projects;
+    const p = projects?.projectOf(sid);
+    if (!projects || !p || p.archivedAt || !p.coordination || !text.trim()) return null;
+    // a received message names its sender in its envelope, when the event doesn't
+    const from = dir === 'receive' ? (peer ?? /from-name="([^"]+)"/.exec(text)?.[1]) : peer;
+    const other = memberByPeer(p, from);
+    if (!other || other === sid) return null;
+    const body = text.replace(/<\/?cross-session-message[^>]*>/g, '').trim();
+    const [by, to] = dir === 'send' ? [sid, other] : [other, sid];
+    const now = Date.now();
+    const same = [...p.thread].reverse().find((x) => x.by === by && x.to?.includes(to) && now - x.at < 10 * 60_000 && (x.native || x.sentNative) && nativeText(x) === body.slice(0, nativeText(x).length));
+    // (the caller marks a received one delivered, unless it's held for the user)
+    if (same) return { pid: p.id, post: same, from: by };
+    // sent to a member without the mod: Claude Code delivers it, and nobody will say so
+    const post = projects.post(p.id, by, 'note', body, [to], undefined, { native: true, ...(dir === 'send' && !modLive(to) ? { deliveredAt: now } : {}) });
+    return post ? { pid: p.id, post, from: by } : null;
+  }
+  /**
+   * What Cora has for each session's mod: a turn to
+   * start (a message from you, Cora, or a member's post that waited for it). The mod asks every second or two, and a
+   * request waits up to 20 seconds for something.
+   */
+  type ModNew = { kind: 'submit'; text: string };
+  type ModItem = ModNew & { id: string };
+  const modOut = new Map<string, ModItem[]>();
+  const modWaiting = new Map<string, () => void>();
+  const modSeen = new Map<string, number>();
+  /** Its mod is here now (asked within the last minute). */
+  const modLive = (sid: string) => Date.now() - (modSeen.get(sid) ?? 0) < 60_000;
+  const modPush = (sid: string, item: ModNew) => {
+    modOut.set(sid, [...(modOut.get(sid) ?? []), { ...item, id: randomUUID().slice(0, 8) }]);
+    modWaiting.get(sid)?.();
+  };
+  /** Set by the projects' routes: whether a member's message to an idle member waits for the user's OK (its reason), else null. */
+  let modHold: (pid: string, post: import('@cora/shared').Post, from: string, to: string, idle?: boolean) => string | null = () => null;
+  /**
+   * A prompt that is a project member's native message waking an idle member: why it waits for the user (it's on the
+   * board, and a card asks them), or null to let it through (then it counts as delivered).
+   */
+  function heldPeerPrompt(body: { session_id?: unknown; prompt?: unknown }): string | null {
+    const sid = typeof body.session_id === 'string' ? body.session_id : '';
+    const prompt = typeof body.prompt === 'string' ? body.prompt : '';
+    const env = /<cross-session-message[^>]*>[\s\S]*?<\/cross-session-message>/.exec(prompt)?.[0];
+    if (!sid || !env) return null;
+    const m = nativeMessage(sid, 'receive', undefined, env);
+    // the session's mod already let it through (Cora decided once): not counted twice
+    if (!m || m.post.deliveredAt) return null;
+    const hold = modHold(m.pid, m.post, m.from, sid, true);
+    if (!hold) d.projects?.delivered(m.pid, m.post.id, Date.now());
+    return hold;
   }
   /** What a session is on: its latest journal entry's headline, else its last reply's first sentence. */
   function doingOf(sid: string): string | null {
@@ -490,7 +566,8 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
         const x = mine(sid);
         if (!x?.m.canPost) return { ok: false, error: "You can't change this project's items (posting is off for you)." };
         const r = itemOp(x.p.id, sid, op, f);
-        if (!r.ok) return r;
+        // a refusal names members by id: by name too (and how to message them)
+        if (!r.ok) return { ok: false, error: x.p.sessions.reduce((e, m) => e.split(m).join(`${whoIs(m)} (${m}${modded.has(m) ? `, @${nativeName(store.getSession(m)?.cwd ?? '', m)}` : ''})`), r.error) };
         const who = (by: string) => (by === sid ? 'you' : whoIs(by));
         return { ok: true, text: itemLine(r.item, who) };
       },
@@ -534,6 +611,74 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
   // A hosted session is about to edit a file (its own settings' waiting hook): when another session is changing that
   // repo's main checkout, Cora makes it a worktree and the edit is refused with where to go (EnterWorktree). Anything
   // unclear or failing lets the edit through: this never blocks work.
+  // Cora's mod in a session: it said hello, or a
+  // native cross-session message went out or came in. Cora only records; it never holds or changes a message.
+  app.post('/api/mod/event', async (req, reply) => {
+    if (!sameSecret(hookToken(req), config.hookToken)) return reply.code(401).send({ error: 'bad token' });
+    const b = (req.body ?? {}) as { session?: unknown; kind?: unknown; version?: unknown; to?: unknown; from?: unknown; text?: unknown; origin?: unknown };
+    const sid = typeof b.session === 'string' ? b.session : '';
+    // what each mod said, and what Cora made of it (never the text): mod-events.log in Cora's folder, for tracing
+    const trace = (what: string) => {
+      try {
+        if (config.dbPath !== ':memory:') appendFileSync(join(config.dataDir, 'mod-events.log'), JSON.stringify({ at: new Date().toISOString(), sid: sid.slice(0, 8), kind: b.kind, to: b.to, from: b.from, origin: b.origin, chars: typeof b.text === 'string' ? b.text.length : undefined, what }) + '\n');
+      } catch {
+        /* tracing only */
+      }
+    };
+    if (!sid || !store.getSession(sid)) return (trace('unknown session'), reply.send({ ok: false }));
+    if (b.kind === 'start') {
+      trace('hello');
+      const first = !modded.has(sid);
+      // $.session.version() is { version, base, builtAt }
+      const v = b.version && typeof b.version === 'object' ? (b.version as { version?: unknown }).version : b.version;
+      modded.set(sid, typeof v === 'string' ? v : '');
+      // its name is on its project's card from now on
+      if (first) d.projects?.projectOf(sid) && d.projects.touch(d.projects.projectOf(sid)!.id);
+    } else if (b.kind === 'took') {
+      const t = b as { item?: unknown; what?: unknown; delivered?: unknown; reason?: unknown };
+      trace(`took ${String(t.what)} ${String(t.item)}${t.what === 'send' ? (t.delivered ? ': sent' : `: NOT sent (${String(t.reason ?? 'no reason')})`) : ''}`);
+        } else if ((b.kind === 'send' || b.kind === 'receive') && typeof b.text === 'string') {
+      // what a message looks like from inside a mod, until the shapes settle (not its text)
+      app.log.info({ mod: b.kind, sid, to: b.to, from: b.from, origin: b.origin }, 'native message');
+      modded.has(sid) || modded.set(sid, '');
+      const m = nativeMessage(sid, b.kind, b.kind === 'send' ? b.to : b.from, b.text);
+      if (m && b.kind === 'receive') {
+        // to an idle member, it may wait for the user's OK (a card); else it's delivered now
+        const hold = modHold(m.pid, m.post, m.from, sid);
+        trace(hold ? `held: ${hold}` : `delivered (${store.getSession(sid)?.state})`);
+        if (hold) return reply.send({ ok: true, hold });
+        d.projects?.delivered(m.pid, m.post.id, Date.now());
+      } else trace(m ? `recorded post ${m.post.id}` : 'not a project message');
+    }
+    return reply.send({ ok: true });
+  });
+  // what Cora has for a session's mod: waits up to 20 seconds for something (a newer ask takes over)
+  app.get<{ Querystring: { session?: string } }>('/api/mod/inbox', async (req, reply) => {
+    if (!sameSecret(hookToken(req), config.hookToken)) return reply.code(401).send({ error: 'bad token' });
+    const sid = String(req.query.session ?? '');
+    if (!sid) return reply.send({ items: [] });
+    modSeen.set(sid, Date.now());
+    if (!modOut.get(sid)?.length) {
+      modWaiting.get(sid)?.();
+      await new Promise<void>((done) => {
+        const t = setTimeout(done, 20_000);
+        modWaiting.set(sid, () => (clearTimeout(t), done()));
+      });
+      modSeen.set(sid, Date.now());
+    }
+    if (modWaiting.get(sid)) modWaiting.delete(sid);
+    const items = modOut.get(sid) ?? [];
+    modOut.delete(sid);
+    // handed to its mod (traced, never the text)
+    if (items.length && config.dbPath !== ':memory:') {
+      try {
+        appendFileSync(join(config.dataDir, 'mod-events.log'), JSON.stringify({ at: new Date().toISOString(), sid: sid.slice(0, 8), kind: 'inbox', items: items.map((x) => `${x.kind} ${x.id}`) }) + '\n');
+      } catch {
+        /* tracing only */
+      }
+    }
+    return reply.send({ items });
+  });
   app.post('/edit-gate', async (req, reply) => {
     if (!sameSecret(hookToken(req), config.hookToken)) return reply.code(401).send({ error: 'bad token' });
     const body = (req.body ?? {}) as { session_id?: unknown; tool_input?: { file_path?: unknown; notebook_path?: unknown } };
@@ -579,6 +724,12 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
       if (isNamerCwd(body.cwd, namerDir(config.dataDir))) return reply.code(200).send({});
       const out = await pending.request(event === 'Elicitation' ? 'elicitation' : 'permission', body);
       return reply.code(200).send(out);
+    }
+    // a project member's message waking an idle member arrives as a prompt: it may wait for your OK (a card). Held
+    // here, before it counts as a turn (a busy member reads it mid-turn: that never comes this way).
+    if (event === 'UserPromptSubmit') {
+      const held = heldPeerPrompt(body);
+      if (held) return reply.code(200).send({ decision: 'block', reason: held });
     }
     try {
       pipeline.ingestHook(event, body);
@@ -2072,7 +2223,7 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
       }
     });
     if (r.ok && 'tell' in r && r.tell) {
-      const post = projects.post(pid, actor, 'report', r.tell.text, [r.tell.to === 'you' ? 'user' : r.tell.to], undefined, r.item.id);
+      const post = projects.post(pid, actor, 'report', r.tell.text, [r.tell.to === 'you' ? 'user' : r.tell.to], undefined, { item: r.item.id });
       if (post) projectPosted(pid, post);
     }
     return r;
@@ -2771,6 +2922,8 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
       // handoffs, questions and reports to a seat (an assignment, an alert stream) reach it: waiting, or waking it
       if (!p?.coordination || (post.kind !== 'handoff' && post.kind !== 'question' && post.kind !== 'report')) return;
       for (const to of post.to ?? []) {
+        // (not sent natively as its writer: Claude Code lets a session send a message only when its own turn decides
+        // to, never a plugin in the background; it waits, then reaches its member through the member's mod)
         if (to === 'user' || to === post.by || !p.members[to]?.wakes) continue;
         // it waits until it reaches the member: a card for you now if it's idle here, else when its turn ends
         projects.wait(pid, post.id, to);
@@ -2779,6 +2932,16 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
     };
     /** A wake carried out (you allowed it, or the project lets its sessions wake each other): typed into the idle session, as you'd type it. */
     const deliverWake = (w: ProjectWake): { ok: true } | { ok: false; code: number; error: string } => {
+      const p0 = projects.get(w.project);
+      // its mod takes it: a turn once it's idle, named as from Cora (nothing typed into its terminal)
+      if (modLive(w.to)) {
+        modPush(w.to, { kind: 'submit', text: `(from ${whoIs(w.from)}, in the project "${p0?.name ?? ''}":) ${w.text}` });
+        if (p0) {
+          if (w.post) projects.delivered(p0.id, w.post, Date.now());
+          projects.heard(p0.id, w.to, Date.now(), p0.members[w.to]?.heardBriefAt ?? 0);
+        }
+        return { ok: true };
+      }
       const t = ptys?.list().find((x) => x.sessionId === w.to && x.alive && x.mode !== 'shell');
       if (!t || !ptys) return { ok: false, code: 409, error: "That session isn't running here any more." };
       const p = projects.get(w.project);
@@ -2804,6 +2967,25 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
       const pair = woke.filter((x) => now - x.at < 600_000 && ((x.to === to && x.from === from) || (x.to === from && x.from === to))).length;
       return perHour < 6 && pair < 4;
     };
+    /**
+     * A member's native message reaching an idle member (its mod asks): busy, it reads it at its next tool round;
+     * idle, it waits for your OK (a card), unless the project lets its sessions wake each other and they're within the
+     * rails. A member that's never woken gets it on its next prompt. Null: deliver it now.
+     */
+    modHold = (pid, post, from, to, idle) => {
+      const p = projects.get(pid);
+      if (!p || (!idle && store.getSession(to)?.state !== 'idle')) return null;
+      if (!p.members[to]?.wakes) return 'Held by Cora: the user has this session hear the project on its next prompt, not woken.';
+      if (p.autoWake && mayWake(from, to)) {
+        woke.push({ from, to, at: Date.now() });
+        return null;
+      }
+      const why = p.autoWake ? 'these two sessions have woken each other a lot in the last few minutes (or this one has been woken six times this hour), so' : 'Wake each other is off for this project:';
+      const wake: ProjectWake = { id: randomUUID().slice(0, 8), project: p.id, from, to, text: post.text, at: post.at, post: post.id };
+      wakes.set(wake.id, wake);
+      publish();
+      return `Held by Cora: ${why} the user OKs waking this session first (a card in Cora).`;
+    };
     /** Waiting posts whose member is idle (hosted here) now: delivered (a project that lets them), else a wake card each, for you (once; a no leaves it for its next prompt). */
     const asked = new Set<string>();
     const checkWaiting = () => {
@@ -2814,7 +2996,8 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
           const k = `${w.post}|${w.to}`;
           if (asked.has(k)) continue;
           const s = store.getSession(w.to);
-          const hosted = ptys?.list().some((t) => t.sessionId === w.to && t.alive && t.mode !== 'shell');
+          // reachable: its terminal is hosted here, or its mod is asking Cora for messages
+          const hosted = ptys?.list().some((t) => t.sessionId === w.to && t.alive && t.mode !== 'shell') || modLive(w.to);
           const post = p.thread.find((x) => x.id === w.post);
           if (!post || !hosted || s?.state !== 'idle') continue;
           asked.add(k);
@@ -2859,6 +3042,12 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
       // a session Cora just started may not have said hello yet: its terminal vouches for it
       if (typeof sid !== 'string' || !(store.getSession(sid) || ptys?.list().some((t) => t.sessionId === sid))) return reply.code(400).send({ error: 'sessionId: a session' });
       return pidOk(req, reply) ?? (projects.add(req.params.id, sid), { ok: true });
+    });
+    // your order for its sessions (dragged in the nav)
+    app.post<{ Params: { id: string }; Body: { ids?: unknown } }>('/api/projects/:id/sessions/order', { preHandler: requireAction }, async (req, reply) => {
+      const ids = Array.isArray(req.body?.ids) ? req.body.ids.filter((x): x is string => typeof x === 'string') : null;
+      if (!ids) return reply.code(400).send({ error: 'ids: its sessions in your order' });
+      return projects.orderMembers(req.params.id, ids) ? { ok: true } : reply.code(404).send({ error: 'no such project' });
     });
     app.delete<{ Params: { id: string; sid: string } }>('/api/projects/:id/sessions/:sid', { preHandler: requireAction }, async (req, reply) => (projects.leave(req.params.id, req.params.sid) ? { ok: true } : reply.code(404).send({ error: 'not in that project' })));
     app.patch<{ Params: { id: string; sid: string }; Body: Record<string, unknown> }>('/api/projects/:id/members/:sid', { preHandler: requireAction }, async (req, reply) => {

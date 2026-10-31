@@ -70,6 +70,14 @@ describe('projects', () => {
     expect(new Projects(join(dir, 'projects.json')).get(a.id)!.autoWake).toBe(true);
     p.update(a.id, { autoWake: false });
     expect(p.get(a.id)!.autoWake).toBeUndefined();
+    // its sessions in your order (dragged in the nav): ones you leave out keep their place after
+    for (const s of ['m1', 'm2', 'm3']) p.add(a.id, s);
+    const before = p.get(a.id)!.sessions.filter((x) => x.startsWith('m'));
+    expect(before).toEqual(['m1', 'm2', 'm3']);
+    expect(p.orderMembers(a.id, ['m3', 'm1'])).toBe(true);
+    expect(p.get(a.id)!.sessions.slice(0, 2)).toEqual(['m3', 'm1']);
+    expect(new Projects(join(dir, 'projects.json')).get(a.id)!.sessions.slice(0, 2)).toEqual(['m3', 'm1']);
+    expect(p.orderMembers('nope', [])).toBe(false);
     // an organisation-only project, turned on: its members on the old defaults get the new ones; a member you set stays
     const o = p.create('Old');
     p.update(o.id, { coordination: false });
@@ -153,10 +161,16 @@ describe('projects through the server', () => {
       expect(await prompt('sess-api-0001', 10)).toMatch(/no longer in the project "Insight tags"/);
       expect(await prompt('sess-api-0001', 11)).toBeNull();
 
-      // organisation only: nothing heard, no tools
+      // organisation only: nothing heard; the tools stay (a session's tools are read once, when it starts) and say why not
       await srv.app.inject({ method: 'PATCH', url: `/api/projects/${p.id}`, headers: UI, payload: { coordination: false } });
       expect(await prompt('sess-ui-00002', 12)).toBeNull();
-      expect(await tools('sess-ui-00002')).not.toContain('project_post');
+      expect(await tools('sess-ui-00002')).toContain('project_post');
+      const off = (await mcp('sess-ui-00002', rpc('tools/call', { name: 'project_post', arguments: { kind: 'note', text: 'hello?' } }, 13))).result;
+      expect(off.isError).toBe(true);
+      expect(off.content[0].text).toMatch(/not in a Cora project with coordination on/);
+      // a session that joins later has them from the start
+      srv.store.upsertSession({ id: 'sess-new-00003', cwd: 'C:/work/x', state: 'idle', startedAt: now, lastTs: now } as never);
+      expect(await tools('sess-new-00003')).toEqual(expect.arrayContaining(['project_read', 'project_post', 'project_items', 'project_claim']));
 
       // archive, then delete
       expect((await srv.app.inject({ method: 'DELETE', url: `/api/projects/${p.id}`, headers: UI })).statusCode).toBe(409);
@@ -183,7 +197,7 @@ describe('projects through the server', () => {
       expect((await call('sess-tri-0002', 'project_claim', { item: iid })).isError).toBeFalsy();
       const second = await call('sess-mon-0001', 'project_claim', { item: iid });
       expect(second.isError).toBe(true);
-      expect(second.content[0].text).toMatch(/Already claimed: sess-tri-0002/);
+      expect(second.content[0].text).toContain('Already claimed: "Triage" (sess-tri-0002) has owned');
       expect((await call('sess-mon-0001', 'project_items', { owner: 'sess-tri-0002' })).content[0].text).toMatch(/\[high · working\] Station A: no video/);
       // a note on it: its owner hears it, in full, on its next prompt
       await call('sess-mon-0001', 'project_annotate', { item: iid, text: 'recovered at 14:20' });

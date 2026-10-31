@@ -137,12 +137,12 @@ export const PANELS: Record<Exclude<PanelKind, 'explain'>, { name: string; hint:
   worktrees: { name: 'Worktrees', hint: 'Every worktree of your repos: who works in it, how far it has got, what can go', group: 'Cora', size: [10, 15] },
   today: { name: 'Today', hint: 'Your calls today (your Google calendar): when, with whom, Join, their prep notes', group: 'Cora', size: [10, 12] },
   constellation: { name: 'Constellation', hint: "The project's sessions as their orbs, together: what each is doing, and the thread's posts between them", group: 'Project', size: [12, 12] },
-  members: { name: "Who's on what", hint: 'Each session: its state, what it is on, where, its ticket, what waits for it', group: 'Project', size: [10, 12] },
-  loops: { name: 'Open loops', hint: 'What is unresolved: questions (answer yours here), handoffs to deliver, changes some have not heard', group: 'Project', size: [10, 10] },
+  members: { name: 'Crew', hint: "Who's doing what, and what each last said: reply to any session right here, and answer what it asks you", group: 'Project', size: [10, 14] },
+  loops: { name: 'Needs you', hint: "What's waiting on your word: wakes to deliver, questions to you, incidents nobody owns, known issues to approve", group: 'Project', size: [10, 12] },
   incidents: { name: 'Incidents', hint: 'One per outage, most urgent first: severity, owner, state, next step; claim, assign and close them; the log of closed ones', group: 'Project', size: [12, 12] },
   known: { name: 'Known issues', hint: 'What the sessions know is wrong and how to treat it: approve what they propose, retire what is fixed', group: 'Project', size: [10, 10] },
   pnotes: { name: 'Shared notes', hint: "The sessions' and your notes as a pinboard; pinned ones join every session's project card", group: 'Project', size: [10, 10] },
-  thread: { name: 'Conversation', hint: "The project's conversation: every post by kind, answers under their questions; write to the project or one session", group: 'Project', size: [10, 14] },
+  thread: { name: 'Conversation', hint: 'What passed between the sessions: who to whom, and what happened to each (delivered, held for you, waiting); write to the project or one session', group: 'Project', size: [10, 14] },
   brief: { name: 'Brief & decisions', hint: "The project's goal and the decisions it keeps", group: 'Project', size: [10, 10] },
   repos: { name: 'Across repos', hint: "The members' worktrees, tickets, merge requests and pipelines in one list", group: 'Project', size: [12, 10] },
   activity: { name: 'Activity', hint: "What the project's sessions did lately, together", group: 'Project', size: [12, 10] },
@@ -171,12 +171,10 @@ export const fitsBoard = (k: PanelKind, owner: string) => {
 export const forMember = (k: PanelKind) => k === 'explain' || PANEL_SCOPE[k] === 'session';
 /** A session's panels that can show every member at once on a project's board. */
 export const FOR_ALL = new Set<PanelKind>(['changes', 'tests', 'pipeline', 'git']);
-/** A project's board as it starts: the orbs over who's on what, open loops over shared notes, the conversation down the right. */
+/** A project's board as it starts: the crew, what needs you, the conversation. */
 export const PROJECT_LAYOUT: BoardItem[] = [
-  { id: 'constellation', k: 'constellation', x: 0, y: 0, w: 8, h: 12 },
-  { id: 'members', k: 'members', x: 0, y: 12, w: 8, h: 12 },
-  { id: 'loops', k: 'loops', x: 8, y: 0, w: 8, h: 12 },
-  { id: 'pnotes', k: 'pnotes', x: 8, y: 12, w: 8, h: 12 },
+  { id: 'members', k: 'members', x: 0, y: 0, w: 9, h: 24 },
+  { id: 'loops', k: 'loops', x: 9, y: 0, w: 7, h: 24 },
   { id: 'thread', k: 'thread', x: 16, y: 0, w: 8, h: 24 },
 ];
 /** Cora's board as it starts: the sessions large, their worktrees and what needs you beside them. */

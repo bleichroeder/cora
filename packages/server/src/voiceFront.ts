@@ -110,7 +110,7 @@ export class VoiceFront {
 
   private start(): void {
     mkdirSync(this.dir, { recursive: true });
-    writeFileSync(join(this.dir, 'settings.json'), JSON.stringify({ disableAllHooks: true, alwaysThinkingEnabled: false }, null, 2) + '\n');
+    writeFileSync(join(this.dir, 'settings.json'), JSON.stringify({ disableAllHooks: true, alwaysThinkingEnabled: false, crossSessionInbound: 'refuse' }, null, 2) + '\n');
     writeFileSync(join(this.dir, 'system-prompt.md'), SYSTEM);
     const cmd = [
       ...(this.o.claudeCmd ?? defaultClaudeCmd()),
