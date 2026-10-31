@@ -18,7 +18,7 @@ import type { SlackLive } from './slackLive';
 import { attachmentRoots, checkAttachments } from './slackFiles';
 import { OTHERS_REFUSAL, registerOrchestratorTools, type OrchToolDeps } from './orchestrator/tools';
 import { GmailError, mailLine, type Gmail } from './gmail';
-import { WatchError, watchLine, type MailWatches } from './mailWatches';
+import { WatchError, verdicts, watchLine, type MailWatches } from './mailWatches';
 import { UNTRUSTED_MAIL, UNTRUSTED_SLACK, quoteOthers } from './untrusted';
 
 /** Gmail for the tools: the mail, the email watches, and a session's name (who set a watch). */
@@ -699,7 +699,7 @@ function registerGmail(server: McpServer, gmail: Gmail, outbox?: MailOutbox, ses
     async ({ id }) => {
       try {
         const m = await gmail.read(id);
-        const head = [`From: ${m.from}`, `To: ${m.to}`, ...(m.cc ? [`Cc: ${m.cc}`] : []), `Date: ${new Date(m.at).toLocaleString()}`, `Subject: ${m.subject}`, `Thread: ${m.threadId}`].join('\n');
+        const head = [`From: ${m.from}`, `To: ${m.to}`, ...(m.cc ? [`Cc: ${m.cc}`] : []), `Date: ${new Date(m.at).toLocaleString()}`, `Subject: ${m.subject}`, `Thread: ${m.threadId}`, `Sender check (Gmail's): ${m.auth.trim() ? verdicts(m.auth) : 'none'}`].join('\n');
         return { content: [{ type: 'text', text: quoteOthers('email', UNTRUSTED_MAIL, `${head}\n\n${m.body || m.snippet}`) }] };
       } catch (e) {
         return gmailFail(e);

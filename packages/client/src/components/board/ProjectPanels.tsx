@@ -5,6 +5,7 @@ import { answerWake, closeQuestion, editDecision, leaveProject, pinPost, postToP
 import type { CoraState } from '../../state/orchestrator';
 import { ago, sessionColor, sessionName } from '../../lib/format';
 import { CoraOrb } from '../CoraOrb';
+import { useVoice } from '../../lib/voice';
 import { CiGlyph } from '../CiStrip';
 import { Icon } from '../Icon';
 import '../projects.css';
@@ -50,6 +51,8 @@ export function ConstellationPanel({ sessionId }: Props) {
   const members = useMembers(p);
   const doing = useProjects((s) => s.doing);
   const waiting = useWaiting(p);
+  // the one session being read aloud (each orb speaks only for itself; none given, an orb would take Cora's voice)
+  const speakingSid = useVoice((v) => (v.reading && !v.reading.id.startsWith('cora') ? v.reading.sessionId : null));
   const box = useRef<HTMLDivElement>(null);
   const [w, setW] = useState(400);
   useEffect(() => {
@@ -107,7 +110,7 @@ export function ConstellationPanel({ sessionId }: Props) {
         return (
           <button key={s.id} className={`pp-star${s.state === 'needs-you' ? ' need' : ''}${s.state === 'ended' ? ' ended' : ''}`} style={{ left: `${x}%`, top: `${y}%` }} onClick={() => open(s.id)} title={`${sessionName(s)}${doing[s.id] ? `: ${doing[s.id]}` : ''}`}>
             <span className="orbw">
-              <CoraOrb state={orbState(s)} size={size} agent={s.id} color={sessionColor(s)} />
+              <CoraOrb state={orbState(s)} size={size} agent={s.id} color={sessionColor(s)} speaking={speakingSid === s.id} />
               {n ? <span className="pp-badge" title={`${n} waiting for it`}>{n}</span> : null}
             </span>
             <b>{sessionName(s)}</b>

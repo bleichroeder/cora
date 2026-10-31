@@ -18,6 +18,12 @@ What changed in each release. Cora updates itself; each update's notes are on it
   question, write to the project or one session).
 - **Cora keeps you posted on projects:** questions and handoffs for you reach her, and your Cora DM when you're away;
   she posts your answers back when you tell her to.
+- **Sessions may wake each other on their own**, if you let them: **Wake each other** in a project's header (six
+  times an hour per session at most, and back to asking you if two keep waking each other).
+- **Email watches trust your internal senders.** Gmail's SPF result for the sender's own domain now counts (alert
+  servers rarely sign their mail), you can list domains to trust in Settings › Gmail, and a watch that won't act says
+  what Gmail found (spf, dkim, dmarc).
+- In the Constellation, an orb speaks only when its own session is read aloud (every orb used to speak at once).
 - **A plain message on request:** ask Cora (or a session) for no banner, and a message comes without one, to you too.
 
 ## 0.1.19

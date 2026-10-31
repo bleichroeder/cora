@@ -140,21 +140,33 @@ export function watchLine(w: MailWatch): string {
   return `[${w.id}] ${w.about}: ${what}, from ${w.from}, ${w.mode === 'thread' ? 'following its replies' : 'one email'}, until ${until}. When it comes: ${act} ${where} ("${w.then}"); reply: ${w.reply === 'ask' ? 'ask before drafting' : 'draft it'}.`;
 }
 
+/** A domain's organisation (its last two labels: alerts.example.com → example.com), as DMARC's relaxed alignment compares them. */
+const orgOf = (d: string) => d.toLowerCase().split('.').filter(Boolean).slice(-2).join('.');
+
+/** Gmail's own verdicts on an email (spf, dkim, dmarc), for saying why a check didn't pass. */
+export function verdicts(auth: string): string {
+  const a = auth.replace(/\([^)]*\)/g, ' ').toLowerCase();
+  const one = (k: string) => new RegExp(`\\b${k}=(\\w+)`).exec(a)?.[1] ?? 'none';
+  return `spf=${one('spf')}, dkim=${one('dkim')}, dmarc=${one('dmarc')}`;
+}
+
 /**
- * Is the email really from the watch's sender? Its From must be that address (or domain), and Gmail's check of it
- * must pass: the sender's domain signed it (DKIM) or DMARC passed. Mail that never left Google (between colleagues
- * in the user's own Workspace) can carry no check at all: that's fine for the user's own domain only, since mail from
- * outside always gets one (and a forged one fails).
+ * Is an email from who a watch waits for, really? Its From address must match, and Gmail's own check must pass for the
+ * From domain, aligned as DMARC aligns (the same organisation): DKIM signed by it, DMARC passed for it, or SPF passed
+ * for an envelope sender of it. Domains you trust (Settings › Gmail: internal alert senders that neither sign nor
+ * align) skip Gmail's check; your own domain's mail without one (inside your Google Workspace) passes too.
  */
-export function authentic(fromHeader: string, auth: string, want: string, myDomain: string): { ok: boolean; why?: string } {
+export function authentic(fromHeader: string, auth: string, want: string, myDomain: string, trusted: string[] = []): { ok: boolean; why?: string } {
   const addr = (/<([^>]+)>/.exec(fromHeader)?.[1] ?? fromHeader).trim().toLowerCase();
   const domain = addr.split('@')[1] ?? '';
   if (!addressAllowed(addr, [want])) return { ok: false, why: `it's from ${addr}, not ${want}` };
+  if (domain && trusted.some((t) => domain === t.toLowerCase().replace(/^@/, '') || domain.endsWith(`.${t.toLowerCase().replace(/^@/, '')}`))) return { ok: true };
   // only Gmail's own verdicts (not what earlier hops reported, in parentheses)
   const a = auth.replace(/\([^)]*\)/g, ' ').toLowerCase();
-  if (!a.trim()) return domain && domain === myDomain.toLowerCase() ? { ok: true } : { ok: false, why: 'Gmail has no sender check on it' };
-  const under = (d: string) => d === domain || domain.endsWith(`.${d}`);
-  const dkim = [...a.matchAll(/dkim=pass\s+header\.(?:i=@?|d=)([\w.-]+)/g)].some((m) => under(m[1].replace(/^.*@/, '')));
-  const dmarc = [...a.matchAll(/dmarc=pass[^;]*?header\.from=([\w.-]+)/g)].some((m) => under(m[1]));
-  return dkim || dmarc ? { ok: true } : { ok: false, why: `Gmail's sender check didn't pass for ${domain}` };
+  if (!a.trim()) return domain && domain === myDomain.toLowerCase() ? { ok: true } : { ok: false, why: `Gmail has no sender check on it; if ${domain} is yours (internal alerts), trust it in Settings › Gmail` };
+  const aligned = (d: string) => !!d && orgOf(d.replace(/^.*@/, '')) === orgOf(domain);
+  const dkim = [...a.matchAll(/dkim=pass\s+header\.(?:i=@?|d=)([\w.@-]+)/g)].some((m) => aligned(m[1]));
+  const dmarc = [...a.matchAll(/dmarc=pass[^;]*?header\.from=([\w.-]+)/g)].some((m) => aligned(m[1]));
+  const spf = [...a.matchAll(/spf=pass[^;]*?smtp\.mailfrom=([\w.@+-]+)/g)].some((m) => aligned(m[1]));
+  return dkim || dmarc || spf ? { ok: true } : { ok: false, why: `Gmail's sender check didn't pass for ${domain} (${verdicts(auth)}); if ${domain} is yours (internal alerts), trust it in Settings › Gmail` };
 }

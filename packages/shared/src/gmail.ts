@@ -17,6 +17,8 @@ export type GmailStatus = {
   drafts: boolean;
   /** who its drafts may go to (addresses, or @domains); empty: anyone */
   draftTo: string[];
+  /** domains whose mail a watch trusts without Gmail's sender check (internal alert senders that neither sign nor align) */
+  trusted: string[];
   /** sessions may ask for an email to be sent: it waits in Cora for your Send (default off) */
   send: boolean;
   /** the emails being waited for (email watches) */

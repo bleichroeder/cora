@@ -1399,11 +1399,11 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
     return d.gmail.status();
   });
   // what Cora watches for (your rules, Gmail's important), and who its drafts may go to
-  app.post<{ Body: { rules?: any; important?: unknown; drafts?: unknown; draftTo?: any; send?: unknown } }>('/api/gmail/config', { preHandler: requireAction }, async (req, reply) => {
+  app.post<{ Body: { rules?: any; important?: unknown; drafts?: unknown; draftTo?: any; send?: unknown; trusted?: any } }>('/api/gmail/config', { preHandler: requireAction }, async (req, reply) => {
     if (!d.gmail) return reply.code(501).send({ error: 'not supported' });
     const b = req.body ?? {};
     try {
-      d.gmail.setConfig({ ...(b.rules !== undefined ? { rules: b.rules } : {}), ...(b.important !== undefined ? { important: b.important === true } : {}), ...(b.drafts !== undefined ? { drafts: b.drafts === true } : {}), ...(b.draftTo !== undefined ? { draftTo: b.draftTo } : {}), ...(b.send !== undefined ? { send: b.send === true } : {}) });
+      d.gmail.setConfig({ ...(b.rules !== undefined ? { rules: b.rules } : {}), ...(b.important !== undefined ? { important: b.important === true } : {}), ...(b.drafts !== undefined ? { drafts: b.drafts === true } : {}), ...(b.draftTo !== undefined ? { draftTo: b.draftTo } : {}), ...(b.send !== undefined ? { send: b.send === true } : {}), ...(b.trusted !== undefined ? { trusted: b.trusted } : {}) });
       return d.gmail.status();
     } catch (e) {
       return reply.code(400).send({ error: (e as Error).message });
@@ -2713,7 +2713,34 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
       }
       checkWaiting();
     };
-    /** Waiting posts whose member is idle (hosted here) now: a wake card each, for you (once; a no leaves it for its next prompt). */
+    /** A wake carried out (you allowed it, or the project lets its sessions wake each other): typed into the idle session, as you'd type it. */
+    const deliverWake = (w: ProjectWake): { ok: true } | { ok: false; code: number; error: string } => {
+      const t = ptys?.list().find((x) => x.sessionId === w.to && x.alive && x.mode !== 'shell');
+      if (!t || !ptys) return { ok: false, code: 409, error: "That session isn't running here any more." };
+      const p = projects.get(w.project);
+      const input = terminalInput(`(from ${whoIs(w.from)}, in the project "${p?.name ?? ''}":) ${w.text}`);
+      if ('error' in input) return { ok: false, code: 400, error: input.error };
+      const lines = ptys.screenLines(t.terminalId);
+      if (lines && choiceOpen(lines)) return { ok: false, code: 409, error: 'It is showing a choice: answer that first.' };
+      ptys.write(t.terminalId, input.data);
+      setTimeout(() => ptys.write(t.terminalId, '\r'), input.paste ? 150 : 80);
+      // what it now has, it has heard
+      if (p) projects.heard(p.id, w.to, Date.now(), p.members[w.to]?.heardBriefAt ?? 0);
+      return { ok: true };
+    };
+    /**
+     * A project that lets its sessions wake each other: is this one still within its rails? Six wakes an hour per
+     * session, and back to asking you when two sessions keep waking each other (more than four in ten minutes).
+     */
+    const woke: Array<{ to: string; from: string; at: number }> = [];
+    const mayWake = (from: string, to: string) => {
+      const now = Date.now();
+      while (woke.length && now - woke[0].at > 3_600_000) woke.shift();
+      const perHour = woke.filter((x) => x.to === to).length;
+      const pair = woke.filter((x) => now - x.at < 600_000 && ((x.to === to && x.from === from) || (x.to === from && x.from === to))).length;
+      return perHour < 6 && pair < 4;
+    };
+    /** Waiting posts whose member is idle (hosted here) now: delivered (a project that lets them), else a wake card each, for you (once; a no leaves it for its next prompt). */
     const asked = new Set<string>();
     const checkWaiting = () => {
       let changed = false;
@@ -2728,6 +2755,12 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
           if (!post || !hosted || s?.state !== 'idle') continue;
           asked.add(k);
           const wake: ProjectWake = { id: randomUUID().slice(0, 8), project: p.id, from: post.by, to: w.to, text: post.text, at: post.at, post: post.id };
+          // the project lets them, within its rails: delivered now (else the card)
+          if (p.autoWake && mayWake(post.by, w.to) && deliverWake(wake).ok) {
+            woke.push({ from: post.by, to: w.to, at: Date.now() });
+            changed = true;
+            continue;
+          }
           wakes.set(wake.id, wake);
           changed = true;
         }
@@ -2811,18 +2844,8 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
       wakes.delete(w.id);
       publish();
       if (req.body?.allow !== true) return { ok: true, woke: false };
-      const t = ptys?.list().find((x) => x.sessionId === w.to && x.alive && x.mode !== 'shell');
-      if (!t || !ptys) return reply.code(409).send({ error: "That session isn't running here any more." });
-      const p = projects.get(w.project);
-      const input = terminalInput(`(from ${whoIs(w.from)}, in the project "${p?.name ?? ''}":) ${w.text}`);
-      if ('error' in input) return reply.code(400).send(input);
-      const lines = ptys.screenLines(t.terminalId);
-      if (lines && choiceOpen(lines)) return reply.code(409).send({ error: 'It is showing a choice: answer that first.' });
-      ptys.write(t.terminalId, input.data);
-      setTimeout(() => ptys.write(t.terminalId, '\r'), input.paste ? 150 : 80);
-      // what it now has, it has heard
-      if (p) projects.heard(p.id, w.to, Date.now(), p.members[w.to]?.heardBriefAt ?? 0);
-      return { ok: true, woke: true };
+      const r = deliverWake(w);
+      return r.ok ? { ok: true, woke: true } : reply.code(r.code).send({ error: r.error });
     });
   }
 

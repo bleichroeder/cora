@@ -67,7 +67,7 @@ export function GmailSection() {
     const r = await call('POST', '/api/gmail/disconnect');
     if (r.ok) setSt(r.v);
   };
-  const config = async (c: { rules?: MailRule[]; important?: boolean; drafts?: boolean; draftTo?: string[]; send?: boolean }) => {
+  const config = async (c: { rules?: MailRule[]; important?: boolean; drafts?: boolean; draftTo?: string[]; send?: boolean; trusted?: string[] }) => {
     setErr(null);
     const r = await call('POST', '/api/gmail/config', c);
     if (r.ok) setSt(r.v);
@@ -230,6 +230,12 @@ export function GmailSection() {
       ) : null}
 
       {st?.connected ? (
+        <Group label="Senders you trust">
+          <Trusted list={st.trusted ?? []} onSave={(trusted) => config({ trusted })} />
+        </Group>
+      ) : null}
+
+      {st?.connected ? (
         <Group label="Drafts">
           <Toggle
             label="Let Cora write drafts"
@@ -312,6 +318,26 @@ function DraftTo({ list, onSave }: { list: string[]; onSave(l: string[]): Promis
     <Row wide label="Only to" hint="Addresses or domains, comma-separated (ana@example.com, @example.com). Empty: anyone.">
       <span className="gm-rule">
         <input className="set-input code" value={text} spellCheck={false} placeholder="Anyone (or e.g. @example.com)" onChange={(e) => setText(e.target.value)} />
+        <button className="btn allow" disabled={!dirty} onClick={() => void onSave(text.split(/[\s,]+/).map((x) => x.trim()).filter(Boolean))}>
+          Save
+        </button>
+      </span>
+    </Row>
+  );
+}
+
+/** Domains a watch trusts without Gmail's sender check: internal alert senders that neither sign nor align. */
+function Trusted({ list, onSave }: { list: string[]; onSave(l: string[]): Promise<boolean> }) {
+  const [text, setText] = useState(list.join(', '));
+  const dirty = text.split(/[\s,]+/).filter(Boolean).join(',') !== list.join(',');
+  return (
+    <Row
+      wide
+      label="Trusted sender domains"
+      hint="An email watch acts on mail from a sender only when Gmail's sender check passes (DKIM, DMARC, or SPF for that domain). Internal alert senders (a Nagios server, say) often pass none of them: list their domains here and watches trust their mail as it is. Only your own domains: mail from these could be faked."
+    >
+      <span className="gm-rule">
+        <input className="set-input code" value={text} spellCheck={false} placeholder="e.g. alerts.example.com" onChange={(e) => setText(e.target.value)} />
         <button className="btn allow" disabled={!dirty} onClick={() => void onSave(text.split(/[\s,]+/).map((x) => x.trim()).filter(Boolean))}>
           Save
         </button>

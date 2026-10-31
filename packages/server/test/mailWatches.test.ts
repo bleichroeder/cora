@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { MailWatch } from '@cora/shared';
-import { MailWatches, WatchError, authentic, watchLine } from '../src/mailWatches';
+import { MailWatches, WatchError, authentic, watchLine, verdicts } from '../src/mailWatches';
 import { runWatch, watchText, type WatchRunDeps } from '../src/mailWatchRun';
 import type { Mail } from '../src/gmail';
 
@@ -53,6 +53,23 @@ describe('email watches: is it really from them?', () => {
     expect(authentic('qa@acme.com', 'mx.google.com; dkim=fail; arc=pass (dmarc=pass header.from=acme.com dkim=pass header.i=@acme.com)', 'qa@acme.com', 'acme.com').ok).toBe(false);
     // the wrong person, even from the right place
     expect(authentic('bob@acme.com', acme, 'qa@acme.com', 'acme.com')).toMatchObject({ ok: false, why: expect.stringMatching(/bob@acme.com/) });
+  });
+  it("SPF for the sender's own domain counts (internal alert servers rarely sign); a domain you trust skips the check; a failure says what Gmail found", () => {
+    // an alert server that doesn't sign, sending through an authorised relay
+    const nagios = 'mx.google.com; spf=pass (google.com: domain of nagiosxi@alerts.acme.com designates 10.0.0.5 as permitted sender) smtp.mailfrom=nagiosxi@alerts.acme.com';
+    expect(authentic('Nagios XI <nagiosxi@alerts.acme.com>', nagios, 'nagiosxi@alerts.acme.com', 'acme.com').ok).toBe(true);
+    // SPF for some other domain (a bulk sender's envelope): not it
+    expect(authentic('qa@acme.com', 'mx.google.com; spf=pass smtp.mailfrom=bounce@mailer.evil.com', 'qa@acme.com', 'acme.com').ok).toBe(false);
+    // signed by the organisation for a subdomain (relaxed alignment)
+    expect(authentic('nagiosxi@alerts.acme.com', 'mx.google.com; dkim=pass header.i=@acme.com', 'nagiosxi@alerts.acme.com', 'acme.com').ok).toBe(true);
+    // nothing passed: what Gmail found, and where to trust it
+    const r = authentic('nagiosxi@acme-alerts.com', 'mx.google.com; spf=softfail smtp.mailfrom=nagiosxi@acme-alerts.com; dkim=none; dmarc=none', 'nagiosxi@acme-alerts.com', 'acme.com');
+    expect(r).toMatchObject({ ok: false, why: expect.stringMatching(/spf=softfail, dkim=none, dmarc=none\); if acme-alerts\.com is yours .*Settings › Gmail/) });
+    // a domain you trust: its mail as it is (the address must still match)
+    expect(authentic('nagiosxi@acme-alerts.com', 'mx.google.com; spf=softfail; dkim=none', 'nagiosxi@acme-alerts.com', 'acme.com', ['acme-alerts.com']).ok).toBe(true);
+    expect(authentic('nagios@ops.acme-alerts.com', '', '@ops.acme-alerts.com', 'acme.com', ['@acme-alerts.com']).ok).toBe(true);
+    expect(authentic('evil@acme-alerts.com.evil.com', '', '@acme-alerts.com.evil.com', 'acme.com', ['acme-alerts.com']).ok).toBe(false);
+    expect(verdicts('mx.google.com; dkim=pass header.i=@acme.com; spf=pass')).toBe('spf=pass, dkim=pass, dmarc=none');
   });
   it('no check at all: fine from inside your own Workspace, not from outside', () => {
     expect(authentic('ana@acme.com', '', 'ana@acme.com', 'acme.com').ok).toBe(true);

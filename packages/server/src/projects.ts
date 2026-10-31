@@ -43,7 +43,7 @@ export class Projects {
     return p;
   }
 
-  update(pid: string, patch: { name?: unknown; color?: unknown; brief?: unknown; coordination?: unknown; shade?: unknown }): Project | null {
+  update(pid: string, patch: { name?: unknown; color?: unknown; brief?: unknown; coordination?: unknown; shade?: unknown; autoWake?: unknown }): Project | null {
     const p = this.get(pid);
     if (!p) return null;
     if (typeof patch.name === 'string' && patch.name.trim()) p.name = patch.name.trim().slice(0, 60);
@@ -59,6 +59,8 @@ export class Projects {
         for (const [sid, m] of Object.entries(p.members)) if (m.hears === 'nothing' && !m.canPost && !m.wakes) p.members[sid] = { ...m, ...MEMBER_ON };
       p.coordination = patch.coordination;
     }
+    if (patch.autoWake === true) p.autoWake = true;
+    else if (patch.autoWake === false) delete p.autoWake;
     if (patch.shade === true) p.shade = true;
     else if (patch.shade === false) delete p.shade;
     this.changed();

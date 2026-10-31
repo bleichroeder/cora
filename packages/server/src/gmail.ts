@@ -28,9 +28,9 @@ const NOT_FOR_YOU = ['CATEGORY_PROMOTIONS', 'CATEGORY_SOCIAL', 'CATEGORY_UPDATES
 const MAX_BODY = 12_000;
 
 export type GoogleClient = { clientId: string; clientSecret: string; projectId?: string; authUri: string; tokenUri: string };
-type Stored = { refresh: string; email: string; historyId?: string; watch?: boolean; rules?: MailRule[]; important?: boolean; drafts?: boolean; draftTo?: string[]; send?: boolean; /** what Google granted (space-separated), when known */ scopes?: string };
+type Stored = { refresh: string; email: string; historyId?: string; watch?: boolean; rules?: MailRule[]; important?: boolean; drafts?: boolean; draftTo?: string[]; send?: boolean; /** what Google granted (space-separated), when known */ scopes?: string; trusted?: string[] };
 /** What the user set: what Cora watches for, and who its drafts may go to. */
-export type MailConfig = { rules?: MailRule[]; important?: boolean; drafts?: boolean; draftTo?: string[]; send?: boolean };
+export type MailConfig = { rules?: MailRule[]; important?: boolean; drafts?: boolean; draftTo?: string[]; send?: boolean; trusted?: string[] };
 
 export class GmailError extends Error {
   constructor(
@@ -175,6 +175,12 @@ export function checkConfig(c: MailConfig): MailConfig {
     const bad = out.draftTo.find((x) => !/^@?[\w.+-]+(@[\w-]+(\.[\w-]+)+)?$/.test(x) || (!x.includes('@') && !x.includes('.')));
     if (bad) throw new GmailError('bad_config', `"${bad}" isn't an address or a domain (like ana@example.com or @example.com).`);
   }
+  if (c.trusted !== undefined) {
+    if (!Array.isArray(c.trusted) || c.trusted.length > 20) throw new GmailError('bad_config', 'At most 20 trusted domains.');
+    out.trusted = c.trusted.map((x) => String(x).trim().toLowerCase().replace(/^@/, '')).filter(Boolean);
+    const bad = out.trusted.find((x) => !/^[\w-]+(\.[\w-]+)+$/.test(x));
+    if (bad) throw new GmailError('bad_config', `"${bad}" isn't a domain (like alerts.example.com).`);
+  }
   return out;
 }
 
@@ -239,6 +245,7 @@ export class Gmail {
       important: !!this.stored?.important,
       drafts: !!this.stored?.drafts,
       draftTo: this.stored?.draftTo ?? [],
+      trusted: this.stored?.trusted ?? [],
       send: !!this.stored?.send,
       watches: this.o.watches?.list() ?? [],
       ...(this.lastError ? { error: this.lastError } : {}),
@@ -292,7 +299,7 @@ export class Gmail {
     if (granted && !granted.includes('gmail.readonly')) throw new GmailError('scope', 'Cora needs permission to read your mail: tick it on the sign-in page.');
     const prof: any = await this.apiWith(j.access_token, '/profile');
     const keep = this.stored ?? this.kept;
-    this.stored = { refresh: j.refresh_token, email: String(prof.emailAddress ?? ''), historyId: String(prof.historyId ?? ''), watch: keep?.watch, rules: keep?.rules, important: keep?.important, drafts: keep?.drafts, draftTo: keep?.draftTo, send: keep?.send, ...(granted ? { scopes: granted } : {}) };
+    this.stored = { refresh: j.refresh_token, email: String(prof.emailAddress ?? ''), historyId: String(prof.historyId ?? ''), watch: keep?.watch, rules: keep?.rules, important: keep?.important, drafts: keep?.drafts, draftTo: keep?.draftTo, send: keep?.send, ...(keep?.trusted ? { trusted: keep.trusted } : {}), ...(granted ? { scopes: granted } : {}) };
     this.save();
     this.lastError = undefined;
     this.o.onChange?.();
@@ -493,7 +500,7 @@ export class Gmail {
       for (const id of ids) {
         const m = await this.read(id).catch(() => null);
         if (!m || addressOf(m.from) === me.toLowerCase()) continue;
-        const trust = authentic(m.from, m.auth, w.from, myDomain);
+        const trust = authentic(m.from, m.auth, w.from, myDomain, this.stored?.trusted ?? []);
         this.o.onWatch?.(w, m, trust);
         if (!trust.ok) continue;
         ws.hit(w.id, m.threadId);

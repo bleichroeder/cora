@@ -65,6 +65,11 @@ export function ProjectView({ id }: { id: string }) {
         <button className={`pjv-sw${p.coordination ? ' on' : ''}`} onClick={() => void updateProject(p.id, { coordination: !p.coordination })} title={p.coordination ? 'Its sessions hear what you set for each (Members)' : 'Off: organisation only (no tokens spent). On: its sessions can share the brief, decisions and thread'}>
           <i /> Coordination
         </button>
+        {p.coordination ? (
+          <button className={`pjv-sw${p.autoWake ? ' on' : ''}`} onClick={() => void updateProject(p.id, { autoWake: !p.autoWake })} title={p.autoWake ? 'Its sessions wake each other on their own (six times an hour each at most; back to asking you if two keep at it)' : 'A handoff or question to an idle session asks you first. On: they wake each other on their own'}>
+            <i /> Wake each other
+          </button>
+        ) : null}
         <button className="dl-btn" onClick={newSession} title="Start a new session in this project">
           <Icon name="Plus" size={13} />
           <span className="bt-l">Session</span>

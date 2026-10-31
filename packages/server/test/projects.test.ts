@@ -65,6 +65,11 @@ describe('projects', () => {
     p.leave(a.id, 's1');
     expect(p.takeLeft('s1')).toBe('Tags');
     expect(p.takeLeft('s1')).toBeUndefined();
+    // its sessions may wake each other on their own: kept, and taken back
+    p.update(a.id, { autoWake: true });
+    expect(new Projects(join(dir, 'projects.json')).get(a.id)!.autoWake).toBe(true);
+    p.update(a.id, { autoWake: false });
+    expect(p.get(a.id)!.autoWake).toBeUndefined();
     // an organisation-only project, turned on: its members on the old defaults get the new ones; a member you set stays
     const o = p.create('Old');
     p.update(o.id, { coordination: false });

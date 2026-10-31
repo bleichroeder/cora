@@ -43,6 +43,8 @@ export type Project = {
   shade?: boolean;
   /** handoffs and questions to members not delivered yet */
   waiting?: Waiting[];
+  /** its sessions wake each other without asking you (a few times an hour each; back to asking if two keep at it) */
+  autoWake?: boolean;
 };
 
 /** A question is open until a post answers it (`re`) or you close it. */

@@ -32,7 +32,7 @@ const call = async (method: string, url: string, body?: unknown): Promise<{ ok: 
 const P = (id: string) => `/api/projects/${encodeURIComponent(id)}`;
 
 export const createProject = (name: string, sessionId?: string) => call('POST', '/api/projects', { name, ...(sessionId ? { sessionId } : {}) }).then((r) => (r.ok ? (r.project as Project) : null));
-export const updateProject = (id: string, patch: Partial<Pick<Project, 'name' | 'color' | 'brief' | 'coordination' | 'shade'>>) => call('PATCH', P(id), patch);
+export const updateProject = (id: string, patch: Partial<Pick<Project, 'name' | 'color' | 'brief' | 'coordination' | 'shade' | 'autoWake'>>) => call('PATCH', P(id), patch);
 export const archiveProject = (id: string, on = true) => call('POST', `${P(id)}/archive`, { on });
 export const deleteProject = (id: string) => call('DELETE', P(id));
 export const addToProject = (id: string, sessionId: string) => call('POST', `${P(id)}/sessions`, { sessionId });
