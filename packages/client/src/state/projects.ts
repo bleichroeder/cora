@@ -32,15 +32,19 @@ const call = async (method: string, url: string, body?: unknown): Promise<{ ok: 
 const P = (id: string) => `/api/projects/${encodeURIComponent(id)}`;
 
 export const createProject = (name: string, sessionId?: string) => call('POST', '/api/projects', { name, ...(sessionId ? { sessionId } : {}) }).then((r) => (r.ok ? (r.project as Project) : null));
-export const updateProject = (id: string, patch: Partial<Pick<Project, 'name' | 'color' | 'brief' | 'coordination' | 'shade' | 'autoWake'>>) => call('PATCH', P(id), patch);
+export const updateProject = (id: string, patch: Partial<Pick<Project, 'name' | 'color' | 'brief' | 'coordination' | 'shade' | 'autoWake' | 'coraRoutes'>> & { lead?: string | null }) => call('PATCH', P(id), patch);
 export const archiveProject = (id: string, on = true) => call('POST', `${P(id)}/archive`, { on });
 export const deleteProject = (id: string) => call('DELETE', P(id));
 export const addToProject = (id: string, sessionId: string) => call('POST', `${P(id)}/sessions`, { sessionId });
 export const leaveProject = (id: string, sessionId: string) => call('DELETE', `${P(id)}/sessions/${encodeURIComponent(sessionId)}`);
-export const setMember = (id: string, sessionId: string, patch: Partial<Pick<MemberSettings, 'hears' | 'canPost' | 'wakes'>>) => call('PATCH', `${P(id)}/members/${encodeURIComponent(sessionId)}`, patch);
+export const setMember = (id: string, sessionId: string, patch: Partial<Pick<MemberSettings, 'hears' | 'canPost' | 'wakes' | 'role'>>) => call('PATCH', `${P(id)}/members/${encodeURIComponent(sessionId)}`, patch);
 export const postToProject = (id: string, kind: PostKind, text: string, o: { to?: string[]; re?: string } = {}) => call('POST', `${P(id)}/posts`, { kind, text, ...(o.to?.length ? { to: o.to } : {}), ...(o.re ? { re: o.re } : {}) });
 export const pinPost = (id: string, post: string, on: boolean) => call('POST', `${P(id)}/posts/${encodeURIComponent(post)}/pin`, { on });
 export const closeQuestion = (id: string, post: string) => call('POST', `${P(id)}/posts/${encodeURIComponent(post)}/close`, {});
+/** your own post changed, or withdrawn (null) */
+export const editPost = (id: string, post: string, text: string | null) => call('PATCH', `${P(id)}/posts/${encodeURIComponent(post)}`, text === null ? { withdraw: true } : { text });
+/** you, on its incidents and known issues */
+export const itemOp = (id: string, op: 'open' | 'change' | 'claim' | 'annotate' | 'close' | 'merge', f: Record<string, unknown>) => call('POST', `${P(id)}/items`, { op, ...f });
 export const editDecision = (id: string, did: string, text: string | null) => call('PATCH', `${P(id)}/decisions/${encodeURIComponent(did)}`, { text });
 // the New session dialog closed (started or not): nothing joins a project any more
 useBrain.subscribe((s, p) => {

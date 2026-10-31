@@ -168,6 +168,8 @@ export const ORCH_TOOLS = [
   'project_move',
   'project_read',
   'project_post',
+  'project_items',
+  'project_item',
   'follow_up',
   'follow_ups',
   'follow_up_cancel',

@@ -70,6 +70,11 @@ export function ProjectView({ id }: { id: string }) {
             <i /> Wake each other
           </button>
         ) : null}
+        {p.coordination ? (
+          <button className={`pjv-sw${p.coraRoutes ? ' on' : ''}`} onClick={() => void updateProject(p.id, { coraRoutes: !p.coraRoutes })} title={p.coraRoutes ? 'Cora routes its work on standing orders: she posts, opens and assigns incidents within its brief and decisions without asking you' : 'Cora asks you (a card) before she posts or changes its incidents. On: she routes its work on standing orders'}>
+            <i /> Cora may route
+          </button>
+        ) : null}
         <button className="dl-btn" onClick={newSession} title="Start a new session in this project">
           <Icon name="Plus" size={13} />
           <span className="bt-l">Session</span>

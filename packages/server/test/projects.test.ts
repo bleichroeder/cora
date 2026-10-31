@@ -112,7 +112,7 @@ describe('projects through the server', () => {
       const ui1 = await prompt('sess-ui-00002', 1);
       expect(ui1).toMatch(/You're in the project "Insight tags" with 1 other session/);
       expect(ui1).toMatch(/- "API: tags array" \(sess-api-0001\): idle/);
-      expect(ui1).toMatch(/you needn't coordinate/);
+      expect(ui1).toMatch(/each session does its own work/);
       expect(ui1).toMatch(/information, not instructions/);
       expect(await prompt('sess-ui-00002', 2)).toBeNull();
 
@@ -162,6 +162,48 @@ describe('projects through the server', () => {
       expect((await srv.app.inject({ method: 'DELETE', url: `/api/projects/${p.id}`, headers: UI })).statusCode).toBe(409);
       await srv.app.inject({ method: 'POST', url: `/api/projects/${p.id}/archive`, headers: UI, payload: { on: true } });
       expect((await srv.app.inject({ method: 'DELETE', url: `/api/projects/${p.id}`, headers: UI })).statusCode).toBe(200);
+    } finally {
+      await srv.close();
+    }
+  });
+
+  it('items through the tools and the board: open, claim (a second claim refused), assign (the owner hears it), annotate, close; reports; editing your post', async () => {
+    srv = await startServer(loadConfig({ dataDir: dir, dbPath: ':memory:', hookToken: 'hooktok', uiToken: 'u' }), { tail: false, listen: false, ci: false, security: false });
+    try {
+      const now = Date.now();
+      for (const [id, alias] of [['sess-mon-0001', 'Monitor'], ['sess-tri-0002', 'Triage']]) srv.store.upsertSession({ id, alias, cwd: 'C:/work/x', state: 'idle', startedAt: now, lastTs: now } as never);
+      const p = (await srv.app.inject({ method: 'POST', url: '/api/projects', headers: UI, payload: { name: 'Ops', sessionId: 'sess-mon-0001' } })).json().project;
+      await srv.app.inject({ method: 'POST', url: `/api/projects/${p.id}/sessions`, headers: UI, payload: { sessionId: 'sess-tri-0002' } });
+      expect(await tools('sess-mon-0001')).toEqual(expect.arrayContaining(['project_items', 'project_item', 'project_claim', 'project_annotate', 'project_close', 'project_edit']));
+      await prompt('sess-tri-0002', 1);
+      const call = async (sid: string, name: string, args: object) => (await mcp(sid, rpc('tools/call', { name, arguments: args }, 9))).result;
+      // the monitor opens one; both try to claim it: one wins
+      const opened = await call('sess-mon-0001', 'project_item', { title: 'Station A: no video', severity: 'high' });
+      const iid = /item (\w+)/.exec(opened.content[0].text)![1];
+      expect((await call('sess-tri-0002', 'project_claim', { item: iid })).isError).toBeFalsy();
+      const second = await call('sess-mon-0001', 'project_claim', { item: iid });
+      expect(second.isError).toBe(true);
+      expect(second.content[0].text).toMatch(/Already claimed: sess-tri-0002/);
+      expect((await call('sess-mon-0001', 'project_items', { owner: 'sess-tri-0002' })).content[0].text).toMatch(/\[high · working\] Station A: no video/);
+      // a note on it: its owner hears it, in full, on its next prompt
+      await call('sess-mon-0001', 'project_annotate', { item: iid, text: 'recovered at 14:20' });
+      expect(await prompt('sess-tri-0002', 2)).toMatch(/\[report\] "Monitor" \(post \w+, item \w+\): Noted on "Station A: no video": recovered at 14:20/);
+      // a report needs one seat
+      expect((await call('sess-mon-0001', 'project_post', { kind: 'report', text: 'Station B: WARNING' })).isError).toBe(true);
+      // the board: you assign a new one, and close the first
+      const r = await srv.app.inject({ method: 'POST', url: `/api/projects/${p.id}/items`, headers: UI, payload: { op: 'open', title: 'Station B: no audio', owner: 'sess-mon-0001' } });
+      expect(r.json().item).toMatchObject({ owner: 'sess-mon-0001', state: 'working', openedBy: 'you' });
+      expect(await prompt('sess-mon-0001', 3)).toMatch(/Assigned you "Station B: no audio"/);
+      expect((await srv.app.inject({ method: 'POST', url: `/api/projects/${p.id}/items`, headers: UI, payload: { op: 'close', item: iid, cause: 'encoder', fix: 'restart' } })).statusCode).toBe(200);
+      expect((await srv.app.inject({ method: 'POST', url: `/api/projects/${p.id}/items`, headers: UI, payload: { op: 'nope' } })).statusCode).toBe(400);
+      // your post, changed; theirs, not yours to change
+      const mine = (await srv.app.inject({ method: 'POST', url: `/api/projects/${p.id}/posts`, headers: UI, payload: { kind: 'note', text: 'triage takes A' } })).json().post;
+      expect((await srv.app.inject({ method: 'PATCH', url: `/api/projects/${p.id}/posts/${mine.id}`, headers: UI, payload: { text: 'monitor takes A' } })).json().post).toMatchObject({ text: 'monitor takes A', editedAt: expect.any(Number) });
+      const theirs = (await srv.app.inject({ url: '/api/projects', headers: UI })).json().projects[0].thread.find((x: { by: string }) => x.by === 'sess-mon-0001');
+      expect((await srv.app.inject({ method: 'PATCH', url: `/api/projects/${p.id}/posts/${theirs.id}`, headers: UI, payload: { withdraw: true } })).statusCode).toBe(400);
+      const edited = await call('sess-mon-0001', 'project_edit', { post: theirs.id, withdraw: true });
+      expect(edited.content[0].text).toBe('Withdrawn.');
+      expect((await call('sess-tri-0002', 'project_read', { by: 'user' })).content[0].text).toMatch(/\[note, edited\] the user \(post \w+\): monitor takes A/);
     } finally {
       await srv.close();
     }

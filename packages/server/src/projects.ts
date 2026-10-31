@@ -43,7 +43,7 @@ export class Projects {
     return p;
   }
 
-  update(pid: string, patch: { name?: unknown; color?: unknown; brief?: unknown; coordination?: unknown; shade?: unknown; autoWake?: unknown }): Project | null {
+  update(pid: string, patch: { name?: unknown; color?: unknown; brief?: unknown; coordination?: unknown; shade?: unknown; autoWake?: unknown; lead?: unknown; coraRoutes?: unknown }): Project | null {
     const p = this.get(pid);
     if (!p) return null;
     if (typeof patch.name === 'string' && patch.name.trim()) p.name = patch.name.trim().slice(0, 60);
@@ -59,6 +59,13 @@ export class Projects {
         for (const [sid, m] of Object.entries(p.members)) if (m.hears === 'nothing' && !m.canPost && !m.wakes) p.members[sid] = { ...m, ...MEMBER_ON };
       p.coordination = patch.coordination;
     }
+    // the lead seat: a member (or none)
+    const lead = p.lead;
+    if (patch.lead === null || patch.lead === '') delete p.lead;
+    else if (typeof patch.lead === 'string' && p.sessions.includes(patch.lead)) p.lead = patch.lead;
+    if (p.lead !== lead) p.briefAt = this.now();
+    if (patch.coraRoutes === true) p.coraRoutes = true;
+    else if (patch.coraRoutes === false) delete p.coraRoutes;
     if (patch.autoWake === true) p.autoWake = true;
     else if (patch.autoWake === false) delete p.autoWake;
     if (patch.shade === true) p.shade = true;
@@ -121,18 +128,53 @@ export class Projects {
     p.sessions = p.sessions.filter((s) => s !== sid);
     delete p.members[sid];
     if (p.coordination) this.left.set(sid, p.name);
+    if (p.lead === sid) delete p.lead;
     if (p.waiting) p.waiting = p.waiting.filter((w) => w.to !== sid);
     this.changed();
     return true;
   }
 
-  setMember(pid: string, sid: string, patch: { hears?: unknown; canPost?: unknown; wakes?: unknown }): MemberSettings | null {
+  /** A change to its items (projectItems.ts), kept when it took. */
+  item<T extends { ok: boolean }>(pid: string, change: (p: Project, now: number) => T): T | { ok: false; error: string } {
+    const p = this.get(pid);
+    if (!p) return { ok: false, error: 'No such project.' };
+    const r = change(p, this.now());
+    if (r.ok) this.changed();
+    return r;
+  }
+
+  /** Its writer changes a post (new words), or takes it back (null: it stays, struck through). Nobody else's. */
+  editPost(pid: string, actor: string, postId: string, text: string | null): { ok: true; post: Post } | { ok: false; error: string } {
+    const x = this.get(pid)?.thread.find((y) => y.id === postId);
+    if (!x) return { ok: false, error: `No post ${postId}.` };
+    if (x.by !== actor) return { ok: false, error: "Only its writer changes a post: the thread is the record of who said what. Annotate or answer it instead." };
+    if (text === null) x.withdrawn = true;
+    else {
+      const t = text.trim().slice(0, MAX_POST);
+      if (!t) return { ok: false, error: 'Nothing to change it to (withdraw it instead).' };
+      x.text = t;
+      delete x.withdrawn;
+    }
+    x.editedAt = this.now();
+    // a pinned note's new words reach every member's card
+    if (x.pinned) this.get(pid)!.briefAt = x.editedAt;
+    this.changed();
+    return { ok: true, post: x };
+  }
+
+  setMember(pid: string, sid: string, patch: { hears?: unknown; canPost?: unknown; wakes?: unknown; role?: unknown }): MemberSettings | null {
     const p = this.get(pid);
     if (!p?.sessions.includes(sid)) return null;
     const m = (p.members[sid] ??= { ...MEMBER_DEFAULTS });
     if (HEARS.includes(patch.hears as ProjectHears)) m.hears = patch.hears as ProjectHears;
     if (typeof patch.canPost === 'boolean') m.canPost = patch.canPost;
     if (typeof patch.wakes === 'boolean') m.wakes = patch.wakes;
+    if (typeof patch.role === 'string') {
+      const r = patch.role.trim().slice(0, 40);
+      if (r) m.role = r;
+      else delete m.role;
+      p.briefAt = this.now();
+    }
     this.changed();
     return m;
   }
@@ -186,13 +228,13 @@ export class Projects {
   }
 
   /** A post in the thread (`by`: a session, 'you' or 'cora'); a decision also goes into the decisions. */
-  post(pid: string, by: string, kind: PostKind, text: string, to?: string[], re?: string): Post | null {
+  post(pid: string, by: string, kind: PostKind, text: string, to?: string[], re?: string, item?: string): Post | null {
     const p = this.get(pid);
     const body = text.trim().slice(0, MAX_POST);
     if (!p || !body || !POST_KINDS.includes(kind)) return null;
     const who = (to ?? []).filter((s) => s === 'user' || (p.sessions.includes(s) && s !== by));
     const answers = re && p.thread.some((y) => y.id === re) ? re : undefined;
-    const post: Post = { id: id(), by, kind, text: body, at: this.now(), ...(who.length ? { to: who } : {}), ...(answers ? { re: answers } : {}) };
+    const post: Post = { id: id(), by, kind, text: body, at: this.now(), ...(who.length ? { to: who } : {}), ...(answers ? { re: answers } : {}), ...(item ? { item } : {}) };
     p.thread.push(post);
     if (p.thread.length > MAX_POSTS) p.thread = p.thread.slice(-MAX_POSTS);
     if (kind === 'decision') {

@@ -43,6 +43,8 @@ export type PanelKind =
   | 'constellation'
   | 'members'
   | 'loops'
+  | 'incidents'
+  | 'known'
   | 'pnotes'
   | 'thread'
   | 'brief'
@@ -96,7 +98,7 @@ export const PANEL_ICON: Record<Exclude<PanelKind, 'explain'>, string> = {
   needs: 'Hand', mentions: 'AtSign', notes: 'NotebookPen', usage: 'ChartPie', sessions: 'LayoutList',
   terminal: 'SquareTerminal', browser: 'Globe', ide: 'Code',
   wall: 'LayoutGrid', worktrees: 'GitFork', today: 'CalendarClock',
-  constellation: 'Orbit', members: 'Users', loops: 'CircleDot', pnotes: 'StickyNote', thread: 'MessagesSquare', brief: 'NotebookText', repos: 'FolderGit2', activity: 'History', project: 'FolderKanban',
+  constellation: 'Orbit', members: 'Users', loops: 'CircleDot', incidents: 'Siren', known: 'BookMarked', pnotes: 'StickyNote', thread: 'MessagesSquare', brief: 'NotebookText', repos: 'FolderGit2', activity: 'History', project: 'FolderKanban',
 };
 
 /** Where a panel sits in the + Panel menu. */
@@ -137,6 +139,8 @@ export const PANELS: Record<Exclude<PanelKind, 'explain'>, { name: string; hint:
   constellation: { name: 'Constellation', hint: "The project's sessions as their orbs, together: what each is doing, and the thread's posts between them", group: 'Project', size: [12, 12] },
   members: { name: "Who's on what", hint: 'Each session: its state, what it is on, where, its ticket, what waits for it', group: 'Project', size: [10, 12] },
   loops: { name: 'Open loops', hint: 'What is unresolved: questions (answer yours here), handoffs to deliver, changes some have not heard', group: 'Project', size: [10, 10] },
+  incidents: { name: 'Incidents', hint: 'One per outage, most urgent first: severity, owner, state, next step; claim, assign and close them; the log of closed ones', group: 'Project', size: [12, 12] },
+  known: { name: 'Known issues', hint: 'What the sessions know is wrong and how to treat it: approve what they propose, retire what is fixed', group: 'Project', size: [10, 10] },
   pnotes: { name: 'Shared notes', hint: "The sessions' and your notes as a pinboard; pinned ones join every session's project card", group: 'Project', size: [10, 10] },
   thread: { name: 'Conversation', hint: "The project's conversation: every post by kind, answers under their questions; write to the project or one session", group: 'Project', size: [10, 14] },
   brief: { name: 'Brief & decisions', hint: "The project's goal and the decisions it keeps", group: 'Project', size: [10, 10] },
@@ -154,7 +158,7 @@ export const PANEL_SCOPE: Record<Exclude<PanelKind, 'explain'>, PanelScope> = {
   changes: 'session', git: 'session', tests: 'session', background: 'session', pipeline: 'session', deploys: 'session', ticket: 'session', mentions: 'session', terminal: 'session', ide: 'session',
   needs: 'both', notes: 'both', usage: 'both', sessions: 'both', browser: 'both',
   wall: 'cora', worktrees: 'cora', today: 'cora',
-  constellation: 'project', members: 'project', loops: 'project', pnotes: 'project', thread: 'project', brief: 'project', repos: 'project', activity: 'project', project: 'session',
+  constellation: 'project', members: 'project', loops: 'project', incidents: 'project', known: 'project', pnotes: 'project', thread: 'project', brief: 'project', repos: 'project', activity: 'project', project: 'session',
 };
 /** Does this panel fit this board (a session's, or Cora's)? An explain is a session's. */
 export const fitsBoard = (k: PanelKind, owner: string) => {

@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { isOpenQuestion, type Post, type PostKind, type Project, type ProjectHears, type SessionInfo } from '@cora/shared';
+import { bySeverity, isOpenQuestion, itemOpen, type Post, type PostKind, type Project, type ProjectHears, type SessionInfo } from '@cora/shared';
 import { useBrain, sessionEvents } from '../../state/store';
-import { answerWake, closeQuestion, editDecision, leaveProject, pinPost, postToProject, projectOfBoard, setMember, updateProject, useProject, useProjectOfSession, useProjects } from '../../state/projects';
+import { answerWake, closeQuestion, editDecision, editPost, itemOp, leaveProject, pinPost, postToProject, projectOfBoard, setMember, updateProject, useProject, useProjectOfSession, useProjects } from '../../state/projects';
 import type { CoraState } from '../../state/orchestrator';
 import { ago, sessionColor, sessionName } from '../../lib/format';
 import { CoraOrb } from '../CoraOrb';
 import { useVoice } from '../../lib/voice';
 import { CiGlyph } from '../CiStrip';
 import { Icon } from '../Icon';
+import { SEV_COLOR } from './ItemPanels';
 import '../projects.css';
 
 /**
@@ -25,7 +26,7 @@ function useMembers(p?: Project): SessionInfo[] {
 }
 const orbState = (s: SessionInfo): CoraState => (s.state === 'needs-you' ? 'needs-you' : s.state === 'working' || s.state === 'thinking' ? 'thinking' : s.state === 'ended' ? 'off' : 'idle');
 const STATE_WORD: Record<string, string> = { 'needs-you': 'needs you', working: 'working', thinking: 'thinking', idle: 'idle', ended: 'ended' };
-const KIND_COLOR: Record<PostKind, string> = { note: 'var(--ink3)', change: '#60a5fa', question: '#fbbf24', handoff: '#3ddc97', decision: '#a78bfa' };
+const KIND_COLOR: Record<PostKind, string> = { note: 'var(--ink3)', change: '#60a5fa', question: '#fbbf24', handoff: '#3ddc97', decision: '#a78bfa', report: '#2dd4bf' };
 const NoMembers = () => <div className="pp-empty">No sessions in this project yet. Drag a session onto it in the nav, or start one from the project's header.</div>;
 const open = (sid: string) => useBrain.getState().setFocus(sid);
 
@@ -147,6 +148,8 @@ export function MembersPanel({ sessionId }: Props) {
             <span className="dot" style={{ ['--sc' as any]: sessionColor(s) }} />
             <button className="n" onClick={() => open(s.id)} title="Open it">
               {sessionName(s)}
+              {m?.role ? <span className="role"> · {m.role}</span> : null}
+              {p.lead === s.id ? <span className="lead" title="The project's lead: opens incidents, sets severity and owner, merges duplicates"> lead</span> : null}
             </button>
             <span className={`st${busy ? ' busy' : s.state === 'needs-you' ? ' need' : ''}`}>{STATE_WORD[s.state] ?? s.state}</span>
             <button className="pp-x more" title="Its settings in this project" onClick={() => setSetting(setting === s.id ? null : s.id)}>
@@ -175,6 +178,19 @@ export function MembersPanel({ sessionId }: Props) {
                     </button>
                     <button className={`pp-tg${m.wakes ? ' on' : ''}`} onClick={() => void setMember(p.id, s.id, { wakes: !m.wakes })} title="A handoff or question to it may wake it when it's idle: each one asks you first">
                       <Icon name="AlarmClock" size={11} /> May be woken
+                    </button>
+                    <span className="lab">Seat</span>
+                    <input
+                      key={`${s.id}${m.role ?? ''}`}
+                      className="role-in"
+                      defaultValue={m.role ?? ''}
+                      placeholder="triage, monitor…"
+                      title="Its role in the project: every member's card shows it"
+                      onBlur={(e) => e.target.value.trim() !== (m.role ?? '') && void setMember(p.id, s.id, { role: e.target.value })}
+                      onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
+                    />
+                    <button className={`pp-tg${p.lead === s.id ? ' on' : ''}`} onClick={() => void updateProject(p.id, { lead: p.lead === s.id ? null : s.id })} title="The lead opens incidents, sets their severity and owner, and merges duplicates (with no lead, an incident's opener does)">
+                      <Icon name="Crown" size={11} /> Lead
                     </button>
                   </>
                 ) : null}
@@ -208,8 +224,11 @@ export function LoopsPanel({ sessionId }: Props) {
     .filter((u) => u.not.length)
     .reverse()
     .slice(0, 6);
-  const n = questions.length + myWakes.length + waits.length + unheard.length;
-  if (!n) return <div className="pp-empty">Nothing open: no questions waiting for an answer, no handoffs waiting to be delivered.</div>;
+  // incidents nobody owns, and known issues waiting for your yes
+  const unowned = (p.items ?? []).filter((i) => i.kind === 'incident' && itemOpen(i) && !i.owner).sort(bySeverity);
+  const proposed = (p.items ?? []).filter((i) => i.kind === 'known' && i.state === 'proposed');
+  const n = questions.length + myWakes.length + waits.length + unheard.length + unowned.length + proposed.length;
+  if (!n) return <div className="pp-empty">Nothing open: no questions waiting for an answer, no handoffs waiting to be delivered, no incident without an owner.</div>;
   const send = async (q: Post) => {
     const t = answer[q.id]?.trim();
     if (!t) return;
@@ -218,6 +237,47 @@ export function LoopsPanel({ sessionId }: Props) {
   };
   return (
     <div className="pp-loops">
+      {unowned.map((i) => (
+        <div key={i.id} className="pp-loop" style={{ ['--kc' as any]: SEV_COLOR[i.severity ?? 'medium'] }}>
+          <span className="k">
+            <Icon name="Siren" size={11} />
+          </span>
+          <div className="t">
+            <b>{i.title}</b> <em>· {i.severity ?? 'medium'} · nobody owns it · {ago(i.openedAt)}</em>
+          </div>
+          <div className="acts">
+            <select className="pp-btn" value="" onChange={(e) => e.target.value && void itemOp(p.id, 'change', { item: i.id, owner: e.target.value })} title="Give it to a session (it's told)">
+              <option value="">Assign to…</option>
+              {p.sessions
+                .filter((sid) => sessions[sid])
+                .map((sid) => (
+                  <option key={sid} value={sid}>
+                    {sessionName(sessions[sid])}
+                  </option>
+                ))}
+            </select>
+          </div>
+        </div>
+      ))}
+      {proposed.map((i) => (
+        <div key={i.id} className="pp-loop" style={{ ['--kc' as any]: '#fbbf24' }}>
+          <span className="k">
+            <Icon name="BookMarked" size={11} />
+          </span>
+          <div className="t">
+            <b>{who(i.openedBy)}</b> proposes a known issue: {i.title}
+            {i.rule ? <em> · rule: {i.rule}</em> : null}
+          </div>
+          <div className="acts">
+            <button className="pp-btn go" onClick={() => void itemOp(p.id, 'change', { item: i.id, state: 'approved' })} title="It joins every member's project card">
+              Approve
+            </button>
+            <button className="pp-btn" onClick={() => void itemOp(p.id, 'change', { item: i.id, state: 'retired' })}>
+              Reject
+            </button>
+          </div>
+        </div>
+      ))}
       {myWakes.map((w) => (
         <div key={w.id} className="pp-loop" style={{ ['--kc' as any]: KIND_COLOR.handoff }}>
           <span className="k">
@@ -354,6 +414,7 @@ const FILTERS: Array<{ k: 'all' | PostKind | 'you'; label: string }> = [
   { k: 'handoff', label: 'handoffs' },
   { k: 'change', label: 'changes' },
   { k: 'decision', label: 'decisions' },
+  { k: 'report', label: 'reports' },
   { k: 'you', label: 'to you' },
 ];
 const YOU = '#f472b6';
@@ -365,6 +426,8 @@ function Thread({ p, compact }: { p: Project; compact?: boolean }) {
   const [to, setTo] = useState('');
   const [re, setRe] = useState<Post | null>(null);
   const [filter, setFilter] = useState<(typeof FILTERS)[number]['k']>('all');
+  // your own post being changed: its id and new words
+  const [editing, setEditing] = useState<{ id: string; text: string } | null>(null);
   const list = useRef<HTMLDivElement>(null);
   const who = (by: string) => (by === 'you' || by === 'user' ? { name: by === 'user' ? 'you' : 'You', color: YOU } : by === 'cora' ? { name: 'Cora', color: 'var(--cora)' } : sessions[by] ? { name: sessionName(sessions[by]), color: sessionColor(sessions[by]) } : { name: 'A session', color: 'var(--ink3)' });
   const answers = useMemo(() => {
@@ -397,7 +460,7 @@ function Thread({ p, compact }: { p: Project; compact?: boolean }) {
     const w = who(x.by);
     const st = nested ? null : state(x);
     return (
-      <div key={x.id} className={`pp-post${x.to?.includes('user') && !nested ? ' you' : ''}${nested ? ' re' : ''}`}>
+      <div key={x.id} className={`pp-post${x.to?.includes('user') && !nested ? ' you' : ''}${nested ? ' re' : ''}${x.withdrawn ? ' gone' : ''}`}>
         <span className="pp-av" style={{ ['--sc' as any]: w.color }}>
           {w.name[0]?.toUpperCase()}
         </span>
@@ -417,13 +480,41 @@ function Thread({ p, compact }: { p: Project; compact?: boolean }) {
             {st ? <span className={`state ${st.c}`}>{st.t}</span> : null}
             {x.pinned ? <Icon name="Pin" size={10} className="pinned" /> : null}
             <time>{new Date(x.at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</time>
+            {x.withdrawn ? <span className="edited">withdrawn</span> : x.editedAt ? <span className="edited" title={`Changed ${new Date(x.editedAt).toLocaleString()}`}>edited</span> : null}
             {!compact && !nested && x.kind === 'question' && !x.closed ? (
               <button className="reply" onClick={() => (setRe(x), setTo(''))} title="Answer it">
                 Answer
               </button>
             ) : null}
+            {!compact && x.by === 'you' && !x.withdrawn && editing?.id !== x.id ? (
+              <>
+                <button className="mine" onClick={() => setEditing({ id: x.id, text: x.text })} title="Change its words">
+                  Edit
+                </button>
+                <button className="mine" onClick={() => void editPost(p.id, x.id, null)} title="Take it back: it stays, struck through">
+                  Withdraw
+                </button>
+              </>
+            ) : null}
           </span>
-          <p>{x.text}</p>
+          {editing?.id === x.id ? (
+            <div className="pp-edit">
+              <input
+                autoFocus
+                value={editing.text}
+                onChange={(e) => setEditing({ id: x.id, text: e.target.value })}
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') setEditing(null);
+                  if (e.key === 'Enter' && editing.text.trim()) void editPost(p.id, x.id, editing.text.trim()).then((r) => r.ok && setEditing(null));
+                }}
+              />
+              <button className="pp-btn" onClick={() => setEditing(null)}>
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <p>{x.text}</p>
+          )}
           {!nested ? answers.get(x.id)?.map((y) => one(y, true)) : null}
         </div>
       </div>

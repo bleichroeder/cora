@@ -4,11 +4,12 @@
  * sessions can share a brief, decisions and a thread, each hearing only as much as you choose.
  */
 export type ProjectHears = 'nothing' | 'brief' | 'everything';
-export type PostKind = 'note' | 'change' | 'question' | 'handoff' | 'decision';
-export const POST_KINDS: PostKind[] = ['note', 'change', 'question', 'handoff', 'decision'];
+/** `report`: to one seat only (an alert or status stream: a monitor to triage), never to anyone else's news */
+export type PostKind = 'note' | 'change' | 'question' | 'handoff' | 'decision' | 'report';
+export const POST_KINDS: PostKind[] = ['note', 'change', 'question', 'handoff', 'decision', 'report'];
 
 /** What one session in a project hears, and may do (all off until you say). */
-export type MemberSettings = { hears: ProjectHears; canPost: boolean; wakes: boolean; /** what it has heard up to (a post's time; the brief's change) */ heardTo?: number; heardBriefAt?: number; /** the project card it last had (what's on it: brief, decisions, pins, members) */ heardCard?: string };
+export type MemberSettings = { hears: ProjectHears; canPost: boolean; wakes: boolean; /** what it has heard up to (a post's time; the brief's change) */ heardTo?: number; heardBriefAt?: number; /** the project card it last had (what's on it: brief, decisions, pins, members) */ heardCard?: string; /** its seat, as you name it (Triage, Monitor, Analyst 01) */ role?: string };
 /** A member of a project that doesn't coordinate (organisation only): hears nothing, can't post. */
 export const MEMBER_DEFAULTS: MemberSettings = { hears: 'nothing', canPost: false, wakes: false };
 /** A member of a project that coordinates: hears it, posts, may ask to wake another (you OK each wake). */
@@ -17,7 +18,7 @@ export const MEMBER_ON: MemberSettings = { hears: 'everything', canPost: true, w
 /** `by`: a session's id, 'you', or 'cora' */
 export type Decision = { id: string; text: string; by: string; at: number };
 /** `to`: members, or 'user' (you); `re`: the post it answers; a note may be pinned (it joins every member's card); a question you closed. */
-export type Post = { id: string; by: string; kind: PostKind; text: string; at: number; to?: string[]; re?: string; pinned?: boolean; closed?: boolean };
+export type Post = { id: string; by: string; kind: PostKind; text: string; at: number; to?: string[]; re?: string; pinned?: boolean; closed?: boolean; /** its writer changed it (when) */ editedAt?: number; /** its writer took it back (it stays, struck through) */ withdrawn?: boolean; /** the item it's about (an assignment, an annotation) */ item?: string };
 /** A handoff or question to a member that hasn't reached it yet (busy, or idle and not woken). */
 export type Waiting = { post: string; to: string; since: number };
 
@@ -45,7 +46,59 @@ export type Project = {
   waiting?: Waiting[];
   /** its sessions wake each other without asking you (a few times an hour each; back to asking if two keep at it) */
   autoWake?: boolean;
+  /** shared state, updated in place: incidents and known issues */
+  items?: ProjectItem[];
+  /** the lead seat (a member's id): it opens incidents, assigns and merges them */
+  lead?: string;
+  /** Cora posts, and opens or assigns items, without asking you each time */
+  coraRoutes?: boolean;
 };
+
+export type ItemKind = 'incident' | 'known';
+export const SEVERITIES = ['low', 'medium', 'high', 'critical'] as const;
+export type ItemSeverity = (typeof SEVERITIES)[number];
+export const INCIDENT_STATES = ['open', 'working', 'waiting', 'resolved'] as const;
+export const KNOWN_STATES = ['proposed', 'approved', 'retired'] as const;
+/** A dated, signed note on an item (`by`: a session, 'you' or 'cora'). */
+export type ItemNote = { by: string; at: number; text: string };
+/**
+ * One row of shared state: an incident
+ * (owned, with a state and a next step; closed with a cause and fix into the log) or a known issue (proposed, approved
+ * by you, retired). Times are Cora's.
+ */
+export type ProjectItem = {
+  id: string;
+  kind: ItemKind;
+  title: string;
+  /** incident: open, working, waiting, resolved; known issue: proposed, approved, retired */
+  state: string;
+  severity?: ItemSeverity;
+  owner?: string;
+  /** when its owner took it */
+  ownedAt?: number;
+  next?: string;
+  link?: string;
+  /** a known issue's description */
+  body?: string;
+  /** a known issue's rule: "drop matching alerts while someone owns an incident for it" */
+  rule?: string;
+  cause?: string;
+  fix?: string;
+  mergedInto?: string;
+  openedBy: string;
+  openedAt: number;
+  updatedBy: string;
+  updatedAt: number;
+  closedAt?: number;
+  notes: ItemNote[];
+};
+export const MAX_ITEMS = 1000;
+export const MAX_ITEM_NOTES = 100;
+/** Open: an incident not resolved, a known issue proposed or approved. */
+export const itemOpen = (i: ProjectItem) => (i.kind === 'incident' ? i.state !== 'resolved' : i.state !== 'retired');
+const SEV_RANK: Record<ItemSeverity, number> = { critical: 0, high: 1, medium: 2, low: 3 };
+/** Most urgent first: severity, then the longest waiting. */
+export const bySeverity = (a: ProjectItem, b: ProjectItem) => SEV_RANK[a.severity ?? 'medium'] - SEV_RANK[b.severity ?? 'medium'] || a.openedAt - b.openedAt;
 
 /** A question is open until a post answers it (`re`) or you close it. */
 export const isOpenQuestion = (p: Project, x: Post) => x.kind === 'question' && !x.closed && !p.thread.some((y) => y.re === x.id);

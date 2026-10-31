@@ -2,6 +2,7 @@ import type { PanelKind } from '../../lib/boardLayout';
 import { VideosPanel } from '../Videos';
 import { RemoteBrowserView } from '../RemoteBrowser';
 import { desktop } from '../../lib/desktop';
+import { IncidentsPanel, KnownPanel } from './ItemPanels';
 import { ActivityPanel, BriefPanel, ConstellationPanel, LoopsPanel, MembersPanel, NotesBoardPanel, ProjectPanel, ReposPanel, ThreadPanel } from './ProjectPanels';
 import { PrivateCard } from '../Live';
 import { useLive } from '../../state/live';
@@ -52,6 +53,8 @@ const BODIES: Partial<Record<PanelKind, React.ComponentType<Props>>> = {
   constellation: ConstellationPanel,
   members: MembersPanel,
   loops: LoopsPanel,
+  incidents: IncidentsPanel,
+  known: KnownPanel,
   pnotes: NotesBoardPanel,
   thread: ThreadPanel,
   brief: BriefPanel,

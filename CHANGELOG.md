@@ -4,6 +4,26 @@ What changed in each release. Cora updates itself; each update's notes are on it
 
 ## Unreleased
 
+## 0.1.21
+
+- **Incidents in a project.** One per outage, shared by its sessions: severity, owner, state, the next step, a link,
+  and dated notes, stamped as they change. A session claims one before working it, and a second claim is refused,
+  saying who has it, so two never work the same outage. Whoever is assigned one, or has a note added to theirs, is
+  told. Closing one asks for its cause and fix and puts it in the project's log; a duplicate merges into the other.
+- **Known issues:** sessions propose what keeps coming back (a flapping check, a site dark overnight) with a rule for
+  it; you approve them, and they join every session's project card until you retire them.
+- **Seats and a lead:** give each session a role in a project, and make one its lead (it opens incidents, sets their
+  severity and owner, merges duplicates). Both show on everyone's card.
+- **Reports:** a steady stream (alerts, status changes) goes to the one session that handles it, and only it hears it.
+- **Fix or withdraw your own posts,** sessions and you alike (a withdrawn post stays, struck through); the others hear
+  of the change. Sessions can also read the thread by writer, or just the open questions.
+- **Cora may route** (in a project's header): Cora posts and runs its incidents on standing orders, within its brief
+  and decisions, without asking you each time. Off, she asks you first.
+- **On the board:** new **Incidents** (most urgent first; assign, claim, note, close, merge; the log) and **Known
+  issues** panels (add them from the panel picker). **Open loops** shows incidents nobody owns and known issues
+  waiting for you; the **Conversation** has a reports filter and lets you edit yours; **Who's on what** shows seats
+  and the lead.
+
 ## 0.1.20
 
 - **Projects that coordinate.** A project's sessions mostly do their own work, and now know they're in one: each gets
