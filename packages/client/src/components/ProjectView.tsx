@@ -5,6 +5,8 @@ import { answerWake, archiveProject, projectBoard, updateProject, useProject, us
 import { launchTerminal } from '../state/ws';
 import { sessionName } from '../lib/format';
 import { LiveBoard } from './LiveBoard';
+import { builderEntry } from './board/TeamPanel';
+import { draftInProgress, openBuilder, useProjectDraft } from '../state/builder';
 import { Icon } from './Icon';
 import './projects.css';
 
@@ -18,6 +20,8 @@ export function ProjectView({ id }: { id: string }) {
   const [name, setName] = useState(p?.name ?? '');
   const [busy, setBusy] = useState<string | null>(null);
   const [menu, setMenu] = useState(false);
+  // a team draft in progress: said here, so leaving the builder never looks like losing the work
+  const draft = draftInProgress(useProjectDraft(p?.id), p?.team);
   useEffect(() => setName(p?.name ?? ''), [p?.name]);
   // gone (archived, or deleted elsewhere): back to where you were
   useEffect(() => {
@@ -75,6 +79,10 @@ export function ProjectView({ id }: { id: string }) {
             <i /> Cora may route
           </button>
         ) : null}
+        <button className={`dl-btn${draft ? ' pjv-drafting' : ''}`} onClick={() => openBuilder(p.id)} title={draft ? draft.line : builderEntry(p).title}>
+          <Icon name="Network" size={13} />
+          <span className="bt-l">{draft ? draft.label : p.team ? 'Edit team' : 'Build a team'}</span>
+        </button>
         <button className="dl-btn" onClick={newSession} title="Start a new session in this project">
           <Icon name="Plus" size={13} />
           <span className="bt-l">Session</span>
@@ -102,6 +110,15 @@ export function ProjectView({ id }: { id: string }) {
           ) : null}
         </span>
       </div>
+      {draft ? (
+        <div className="pjv-draft">
+          <i />
+          <span>{draft.line}</span>
+          <button className="dl-btn" onClick={() => openBuilder(p.id)}>
+            Continue
+          </button>
+        </div>
+      ) : null}
       <div className="pjv-body">
         <LiveBoard sessionId={projectBoard(p.id)} />
       </div>

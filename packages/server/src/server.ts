@@ -26,6 +26,7 @@ import { homedir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import type { FastifyInstance } from 'fastify';
 import { buildApp } from './app';
+import { inBuilderFolder } from './builder';
 import { Audit } from './audit';
 import type { Config } from './config';
 import { stage } from './stages';
@@ -37,6 +38,7 @@ import { gitlabHost, setGitlabHost } from './gitlabHost';
 import { resolveTicketStart, ticketFirstPrompt } from './ticketStart';
 import { MailWatches } from './mailWatches';
 import { runWatch, type WatchRunDeps } from './mailWatchRun';
+import { parseSeatWatchId } from './teams';
 import { Hub } from './hub';
 import { PendingManager } from './pending';
 import { createPipeline, type Pipeline } from './pipeline';
@@ -54,7 +56,7 @@ import { Outbox, Slack, filesLine, filesOf, slackPlain, type SlackApi } from './
 import { MyThreads, slackKey, slackWhy, type SlackSeen } from './slackInbox';
 import { SlackLive, replyLine, type SlackReply, type SlackWatch, type WsLike } from './slackLive';
 import { deliverWhenReady } from './orchestrator/deliver';
-import { terminalInput } from './input';
+import { sendTyped, typedInput } from './input';
 import { SecurityWatch } from './security';
 import { OrchestratorManager } from './orchestrator/manager';
 import { setWorkServers } from './orchestrator/files';
@@ -88,12 +90,16 @@ export type Running = {
   sim: { name(sessionId: string, name: string): void; cora(status: OrchestratorStatus): void; show(msg: import('@cora/shared').ServerMsg): void };
   /** Cora's Slack banners (the desktop app makes them) */
   banners: Banners;
+  /** your projects (and their teams) */
+  projects: Projects;
+  /** the teams' side of watched email (a seat's standing watch's email) */
+  teamHooks: NonNullable<import('./app').AppDeps['teamHooks']>;
   /** stop; terminals in the terminal host keep running unless `endTerminals` */
   close(o?: { endTerminals?: boolean }): Promise<void>;
 };
 
 /** Compose and start the whole server. */
-export async function startServer(config: Config, opts: { tail?: boolean; listen?: boolean; spawn?: SpawnFn; ptyBackend?: PtyBackend; onShutdown?: (o: { endTerminals: boolean }) => void; voiceFetch?: Fetch; namerRun?: RunFn; /** Cora's note drafts' `claude -p` (a fake in tests) */ draftRun?: RunFn; /** GitLab pipelines (off in tests) */ ci?: boolean; /** the security check (off in tests and simulations) */ security?: boolean; /** Tailscale's command line (a fake in tests) */ remoteRun?: import('./remote').Run; /** Go live's public door (a fake in tests) */ door?: Pick<Door, 'start' | 'stop' | 'open' | 'port'>; /** Slack's Web API and Socket Mode (fakes in tests) */ slackApi?: (token: string) => SlackApi; slackSocket?: (url: string) => WsLike; /** environments: where kubeconfigs are, and how reachability is checked (fakes in tests) */ kubeDir?: string; envProbe?: (url: string) => Promise<boolean>; /** setting Cora up: a scratch Claude settings file, and checks to fake (tests) */ claudeSettingsFile?: string; setupChecks?: Partial<import('./setup').SetupDeps> } = {}): Promise<Running> {
+export async function startServer(config: Config, opts: { tail?: boolean; listen?: boolean; spawn?: SpawnFn; ptyBackend?: PtyBackend; onShutdown?: (o: { endTerminals: boolean }) => void; voiceFetch?: Fetch; namerRun?: RunFn; /** Cora's note drafts' `claude -p` (a fake in tests) */ draftRun?: RunFn; /** GitLab pipelines (off in tests) */ ci?: boolean; /** the security check (off in tests and simulations) */ security?: boolean; /** Tailscale's command line (a fake in tests) */ remoteRun?: import('./remote').Run; /** Go live's public door (a fake in tests) */ door?: Pick<Door, 'start' | 'stop' | 'open' | 'port'>; /** Slack's Web API and Socket Mode (fakes in tests) */ slackApi?: (token: string) => SlackApi; slackSocket?: (url: string) => WsLike; /** environments: where kubeconfigs are, and how reachability is checked (fakes in tests) */ kubeDir?: string; envProbe?: (url: string) => Promise<boolean>; /** setting Cora up: a scratch Claude settings file, and checks to fake (tests) */ claudeSettingsFile?: string; setupChecks?: Partial<import('./setup').SetupDeps>; /** Cora's plugin folder, as if Claude Code had mods (tests) */ pluginDir?: string; /** how long a new seat's mod is waited for (tests: shorter) */ modFirstWaitMs?: number } = {}): Promise<Running> {
   const store = new Store(config.dbPath);
   let hub: Hub | undefined;
   let ci: CiWatcher | undefined;
@@ -102,6 +108,16 @@ export async function startServer(config: Config, opts: { tail?: boolean; listen
   let bot: CoraBot | undefined;
   /** each session's last state (a session that was working and now isn't has finished) */
   const lastState = new Map<string, string>();
+  /** the team builder's own session (in a builder folder): nobody else's to alert on, list or hear from */
+  const isBuilder = (sid: string) => inBuilderFolder(config.dataDir, store.getSession(sid)?.cwd);
+  // your projects: sessions grouped by hand
+  const projects = new Projects(config.dbPath === ':memory:' ? null : join(config.dataDir, 'projects.json'));
+  /** a team seat's session (its project's team has its seat): the team's own, never fed to Cora's agent */
+  const isTeamSeat = (sid: string) => {
+    const p = projects.projectOf(sid);
+    const seat = p?.members[sid]?.seat;
+    return !!seat && !!p?.team?.seats.some((s) => s.id === seat);
+  };
   // `hub?` throughout: restoring terminals from the host can end sessions (or change pending state) while
   // the PtyManager is constructed, before the hub exists; clients get those in their snapshot instead
   const registry = new Registry(store, (c) => {
@@ -110,7 +126,7 @@ export async function startServer(config: Config, opts: { tail?: boolean; listen
       const s = c.session;
       const was = lastState.get(s.id);
       lastState.set(s.id, s.state);
-      if ((was === 'working' || was === 'thinking') && s.state === 'idle' && !orch?.isAgent(s.id)) bot?.alert({ kind: 'finished', text: `${nameOf(s)} finished`, sessionId: s.id });
+      if ((was === 'working' || was === 'thinking') && s.state === 'idle' && !orch?.isAgent(s.id) && !isBuilder(s.id)) bot?.alert({ kind: 'finished', text: `${nameOf(s)} finished`, sessionId: s.id });
     }
     if (c.agent) hub?.publishAgent(c.agent);
   }, {
@@ -180,12 +196,12 @@ export async function startServer(config: Config, opts: { tail?: boolean; listen
   };
   // Claude Code with mods (2.1.287 on): the Cora plugin in every session Cora starts (not in tests, nor an older Claude)
   const claudeVer = config.dbPath === ':memory:' || opts.spawn ? null : claudeVersion(findClaude().cmd);
-  const pluginDir = hasMods(claudeVer) ? writeCoraPlugin(config.dataDir, `http://127.0.0.1:${config.port}`, config.hookToken) : null;
+  const pluginDir = opts.pluginDir ?? (hasMods(claudeVer) ? writeCoraPlugin(config.dataDir, `http://127.0.0.1:${config.port}`, config.hookToken) : null);
   const ptys = new PtyManager({
     audit,
     spawn: opts.spawn,
     backend: opts.ptyBackend,
-    extraArgs: (sid, cwd) => hostedArgs(config, prefs.get(), sid, pluginDir && sid ? { pluginDir, name: nativeName(cwd, sid) } : undefined),
+    extraArgs: (sid, cwd, seat) => hostedArgs(config, prefs.get(), sid, pluginDir && sid ? { pluginDir, name: nativeName(cwd, sid) } : undefined, seat),
     onChange: (list) => {
       hub?.publishTerminals(list);
       orch?.changed();
@@ -229,10 +245,9 @@ export async function startServer(config: Config, opts: { tail?: boolean; listen
     const t = ptys.list().find((x) => x.sessionId === sessionId && x.alive && x.mode !== 'shell');
     if (!t) return null;
     const type = (s: string) => {
-      const input = terminalInput(s);
+      const input = typedInput(s);
       if ('error' in input) return;
-      ptys.write(t.terminalId, input.data);
-      setTimeout(() => ptys.write(t.terminalId, '\r'), input.paste ? 150 : 80);
+      sendTyped(ptys, t.terminalId, input);
     };
     return deliverWhenReady(
       { screen: () => ptys.screenLines(t.terminalId), alive: () => ptys.list().some((x) => x.terminalId === t.terminalId && x.alive), type, key: (d) => void ptys.write(t.terminalId, d) },
@@ -257,7 +272,7 @@ export async function startServer(config: Config, opts: { tail?: boolean; listen
   const workTerms = (): string[] => {
     const out = new Set<string>();
     for (const s of store.listSessions()) {
-      if (s.state === 'ended' || orch?.isAgent(s.id)) continue;
+      if (s.state === 'ended' || orch?.isAgent(s.id) || isBuilder(s.id)) continue;
       if (s.ticket?.key) out.add(s.ticket.key);
       const repo = ci?.repoOf(s.id)?.project;
       for (const n of [repo ? ciRepoName(repo) : '', s.cwd ? basename(s.cwd.replace(/[\\/]+$/, '')) : '']) if (n.length >= 4 && !COMMON.has(n.toLowerCase())) out.add(n);
@@ -356,6 +371,9 @@ export async function startServer(config: Config, opts: { tail?: boolean; listen
   const gitlabIssues = new GitlabIssues();
   const o = (orch = new OrchestratorManager({
     dataDir: config.dataDir,
+    // the team builder's session isn't Cora's to watch or act for
+    ignored: (sid) => isBuilder(sid),
+    teamSeat: (sid) => isTeamSeat(sid),
     rehome: (from, to) => live.rehome(from, to),
     slackConnected: () => slack.status().connected,
     jiraWatching: () => prefs.get().jira.watch.on,
@@ -457,14 +475,14 @@ export async function startServer(config: Config, opts: { tail?: boolean; listen
     },
     // a fresh recap (one written now, not an old one read from a transcript at start) goes in the session's journal
     onRecap: (sid, r) => {
-      if (o.isAgent(sid) || prefs.get().journal?.on === false || r.at < Date.now() - 15 * 60_000) return;
+      if (o.ignores(sid) || prefs.get().journal?.on === false || r.at < Date.now() - 15 * 60_000) return;
       const text = recapText(r.text);
       if (text) journalAdd(sid, 'recap', text, r.at);
     },
     // the orchestrator's own session isn't about a ticket and keeps its name
-    onCommand: (sid, c) => void (!o.isAgent(sid) && tickets.consider(sid, c.text, c.ts, c.id)),
+    onCommand: (sid, c) => void (!o.ignores(sid) && tickets.consider(sid, c.text, c.ts, c.id)),
     onPrompt: (e) => {
-      if (o.isAgent(e.sessionId)) return;
+      if (o.ignores(e.sessionId)) return;
       tickets.consider(e.sessionId, e.text, e.ts, e.id);
       const first = store.firstPrompt(e.sessionId);
       const earlier = !!first && first.id !== e.id && first.ts <= e.ts;
@@ -477,6 +495,8 @@ export async function startServer(config: Config, opts: { tail?: boolean; listen
   if (voiceFront && prefs.get().voice.enabled && prefs.get().voice.front !== false) setTimeout(() => voiceFront.warm(), 5000);
   // Gmail (the user's own Google app): important new mail goes to Cora (held, like Jira) and to your phone while away
   // email watches: emails the user waits for, and what to do when each comes (mailWatchRun.ts)
+  /** the teams' side of watched email (set by the app): a seat's email that came while its member wasn't running */
+  const teamHooks: NonNullable<import('./app').AppDeps['teamHooks']> = {};
   const mailWatches = new MailWatches({ file: config.dbPath === ':memory:' ? undefined : join(config.dataDir, 'mail-watches.json') });
   const watchDeps: WatchRunDeps = {
     typeInto: (sid, text) => typeIntoSession(sid, text),
@@ -504,10 +524,16 @@ export async function startServer(config: Config, opts: { tail?: boolean; listen
     // connected, reconnected (the calendar permission may be new) or disconnected: read the calendar again
     onChange: () => void calendar?.refresh(),
     watches: mailWatches,
-    onWatch: (w, m, trust) =>
+    onWatch: (w, m, trust) => {
+      // a team seat's standing watch: quietly to its member (the teams' side, below), nothing in the Inbox
+      if (parseSeatWatchId(w.id)) {
+        const did = seatWatchMail(teamHooks, w, m, trust);
+        return void (did && console.log(`  gmail watch ${w.id}: ${did}`));
+      }
       void runWatch(watchDeps, w, m, trust)
         .then((did) => inbox.add(fromWatch(w, m, did, w.sessionId)))
-        .catch((e) => console.log(`  gmail watch: ${(e as Error).message}`)),
+        .catch((e) => console.log(`  gmail watch: ${(e as Error).message}`));
+    },
     log: (m) => console.log(`  ${m}`),
     onMail: (hits) => {
       orch?.mailNotes(hits);
@@ -598,7 +624,7 @@ export async function startServer(config: Config, opts: { tail?: boolean; listen
   // what each environment runs, the sessions' tickets' journeys, and the dev bump (read-only otherwise; real runs only)
   const deploys = new Deploys({
     envs: () => environments.list(),
-    sessions: () => store.listSessions().filter((s) => s.state !== 'ended' && !o.isAgent(s.id)).map((s) => ({ id: s.id, ticket: s.ticket?.key ?? null, repo: ci?.repoOf(s.id) ?? null })),
+    sessions: () => store.listSessions().filter((s) => s.state !== 'ended' && !o.ignores(s.id)).map((s) => ({ id: s.id, ticket: s.ticket?.key ?? null, repo: ci?.repoOf(s.id) ?? null })),
     publish: (m) => hub?.publishDeploys(m),
     hasClients: () => (hub?.clientCount() ?? 0) > 0,
     onBump: (b, line) => {
@@ -617,7 +643,7 @@ export async function startServer(config: Config, opts: { tail?: boolean; listen
   const drafts = new Drafts({
     sessions: () => store.listSessions(),
     events: (sid) => store.eventsForSession(sid, { limit: 4000 }),
-    isAgent: (sid) => o.isAgent(sid),
+    isAgent: (sid) => o.ignores(sid),
     jira: (ms) => jira.recent(ms),
     deploys: () => deploys.state().events,
     jots: () => notes.read('scratch').jots ?? [],
@@ -767,8 +793,6 @@ export async function startServer(config: Config, opts: { tail?: boolean; listen
   // Go live: sharing your Cora with a teammate (one share at a time, kept in memory only)
   const shares = new Shares();
   // your Cora's look on every device
-  // your projects: sessions grouped by hand
-  const projects = new Projects(config.dbPath === ':memory:' ? null : join(config.dataDir, 'projects.json'));
   const synced = new Synced(config.dbPath === ':memory:' ? null : join(config.dataDir, 'synced.json'));
   // its public door (a port of its own, guests only), opened while a share's link is public
   const door = opts.door ?? new Door({ target: config.port, port: config.port + 11 });
@@ -794,7 +818,7 @@ export async function startServer(config: Config, opts: { tail?: boolean; listen
         });
   const videosMsg = (): VideosMsg => ({ t: 'videos', jobs: videos?.list() ?? [], ffmpeg: videos?.ffmpeg() ?? { state: 'missing', canDownload: false } });
   hub.videosSnapshot = videosMsg;
-  const app = await buildApp({ config, store, hub, pipeline, pending, ptys, live: liveExplains, registry, prefs, voice, voiceFront, gmail, mailWatches, mailOutbox, ide, ideBridge, namer, tickets, jira, environments, deploys, notes, drafts, bot, inbox, ...(calendarApi ? { calendar: calendarApi } : {}), ...(opts.claudeSettingsFile ? { claudeSettingsFile: opts.claudeSettingsFile } : {}), ...(opts.setupChecks ? { setupChecks: opts.setupChecks } : {}), onShutdown: opts.onShutdown, ci: () => ci, slack: {
+  const app = await buildApp({ ...(opts.modFirstWaitMs !== undefined ? { modFirstWaitMs: opts.modFirstWaitMs } : {}), config, store, hub, pipeline, pending, ptys, pluginDir, teamHooks, live: liveExplains, registry, prefs, voice, voiceFront, gmail, mailWatches, mailOutbox, ide, ideBridge, namer, tickets, jira, environments, deploys, notes, drafts, bot, inbox, ...(calendarApi ? { calendar: calendarApi } : {}), ...(opts.claudeSettingsFile ? { claudeSettingsFile: opts.claudeSettingsFile } : {}), ...(opts.setupChecks ? { setupChecks: opts.setupChecks } : {}), onShutdown: opts.onShutdown, ci: () => ci, slack: {
       slack,
       outbox,
       live,
@@ -853,7 +877,7 @@ export async function startServer(config: Config, opts: { tail?: boolean; listen
   registry.tick(Date.now());
   // read, and the stale ones ended: how many sessions, how many live (Cora's own isn't one)
   if (tailer) {
-    const all = store.listSessions().filter((s) => !o.isAgent(s.id));
+    const all = store.listSessions().filter((s) => !o.ignores(s.id));
     stage('tx', 'done', { sessions: all.length, live: all.filter((s) => s.state !== 'ended').length });
   }
   // pipelines for the sessions still live once the transcripts are read and stale ones have ended
@@ -872,7 +896,7 @@ export async function startServer(config: Config, opts: { tail?: boolean; listen
         }
         if (p.status === 'failed' && p.finishedAt && Date.now() - p.finishedAt < 15 * 60_000) bot?.alert({ kind: 'failure', key: `ci:${p.key}`, text: `Pipeline failed: ${ciRepoName(p.project)} ${ciRef(p.ref)} (#${p.id}) ${p.url}` });
       }
-    }, hasClients: () => h.clientCount() > 0, sessions: () => store.listSessions().filter((s) => !o.isAgent(s.id)), recent: (sid, since) => store.eventsForSession(sid, { limit: 400 }).filter((e) => e.ts >= since), gitWork: (sid) => store.gitWork(sid), log: (m) => console.log(`  ${m}`) });
+    }, hasClients: () => h.clientCount() > 0, sessions: () => store.listSessions().filter((s) => !o.ignores(s.id)), recent: (sid, since) => store.eventsForSession(sid, { limit: 400 }).filter((e) => e.ts >= since), gitWork: (sid) => store.gitWork(sid), log: (m) => console.log(`  ${m}`) });
     h.ciSnapshot = () => ci!.snapshot();
     ci.start();
   }
@@ -896,6 +920,8 @@ export async function startServer(config: Config, opts: { tail?: boolean; listen
 
   return {
     banners,
+    projects,
+    teamHooks,
     app,
     store,
     pipeline,
@@ -940,6 +966,11 @@ export async function startServer(config: Config, opts: { tail?: boolean; listen
       store.close();
     },
   };
+}
+
+/** A team seat's watched email: the teams' way (to its member), or said when no teams run here (never dropped in silence). */
+export function seatWatchMail(hooks: NonNullable<import('./app').AppDeps['teamHooks']>, w: import('@cora/shared').MailWatch, m: import('./gmail').Mail, trust: { ok: boolean; why?: string }): string {
+  return hooks.seatMail ? hooks.seatMail(w, m, trust) : "Teams aren't running here, so its seat didn't get it";
 }
 
 /**

@@ -1,3 +1,4 @@
+import { useOnScreen } from '../lib/onScreen';
 import { useEffect, useRef, useState } from 'react';
 import { ProjectMenuRows } from './Projects';
 import { SESSION_ICONS, type SessionInfo } from '@cora/shared';
@@ -112,6 +113,8 @@ export function SessionMenu({ s, x, y, onClose }: { s: SessionInfo; x: number; y
   const [err, setErr] = useState<string | null>(null);
   const [naming, setNaming] = useState(false);
   const box = useRef<HTMLDivElement>(null);
+  // all of it on screen, opened near the bottom of the list too
+  const at = useOnScreen(box, x, y);
   const hosted = useBrain((st) => st.terminals.some((t) => t.sessionId === s.id && t.alive));
 
   useEffect(() => {
@@ -139,7 +142,7 @@ export function SessionMenu({ s, x, y, onClose }: { s: SessionInfo; x: number; y
   const label = sessionName(s);
   const go = (f: () => unknown) => () => (f(), onClose());
   return (
-    <div className="session-menu" ref={box} style={{ left: x, top: Math.min(y, window.innerHeight - 380) }}>
+    <div className="session-menu" ref={box} style={{ ...at, overflowY: 'auto' }}>
       {/* the session, as its row */}
       <div className="sm-h" style={{ ['--sc' as any]: current }}>
         <span className="ses-tile sm-tile">{s.icon ? <Icon name={s.icon} size={15} /> : <i className="ses-core" />}</span>

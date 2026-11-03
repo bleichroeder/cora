@@ -110,3 +110,32 @@ export async function runWatch(d: WatchRunDeps, w: MailWatch, m: Mail, trust: { 
     return `Couldn't start on it: ${(e as Error).message}`;
   }
 }
+
+export type SeatWatchDeps = {
+  /** its owner member is running here (its mod or its terminal) */
+  running(sessionId: string): boolean;
+  /** given to the member as a turn, through its mod */
+  deliver(sessionId: string, text: string): void;
+  /** it came while the member wasn't running (Cora tells the user, once an hour per seat) */
+  missed(w: MailWatch, subject: string): void;
+  /** it failed the sender check (Cora tells the user, once an hour per seat) */
+  refused(w: MailWatch, subject: string, why: string): void;
+};
+
+/**
+ * A team seat's standing watch's email: quietly to its owner member,
+ * through its mod. No line in Cora's feed, no Inbox item, no phone ping for each: the seat's work is the team's. Its
+ * member not running: missed. Failing the sender check: not given to it. What came of it, in a few words.
+ */
+export function runSeatWatch(d: SeatWatchDeps, w: MailWatch, m: Mail, trust: { ok: boolean; why?: string }): string {
+  if (!trust.ok) {
+    d.refused(w, m.subject, trust.why ?? 'unknown');
+    return `Not given to its seat: it failed the sender check (${trust.why})`;
+  }
+  if (!w.sessionId || !d.running(w.sessionId)) {
+    d.missed(w, m.subject);
+    return "Its seat wasn't running";
+  }
+  d.deliver(w.sessionId, watchText(w, m));
+  return 'Given to its seat';
+}

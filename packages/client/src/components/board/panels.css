@@ -198,7 +198,7 @@
 .live-board .lb-goal .ask.open { max-height: none; -webkit-mask-image: none; mask-image: none; }
 .live-board .lb-goal .ask.last { max-height: none; -webkit-mask-image: none; mask-image: none; }
 .live-board .lb-goal .ask p { margin: 0 0 6px; }
-.live-board .lb-goal .more { margin: 4px 0 6px; padding: 0; border: 0; background: none; color: var(--ink3); font: 500 11px var(--ui); cursor: pointer; }
+.live-board .lb-goal .lb-goal-more { margin: 4px 0 6px; padding: 0; border: 0; background: none; color: var(--ink3); font: 500 11px var(--ui); cursor: pointer; }
 
 /* terminal: a mirror, scaled to fit */
 .live-board .lb-term { display: flex; flex-direction: column; height: 100%; }

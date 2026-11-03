@@ -355,7 +355,7 @@ function WatchRow({ w, onStop }: { w: MailWatch; onStop(): void }) {
       label={w.about}
       hint={
         <>
-          From <code>{w.from}</code> · {w.mode === 'thread' ? 'following the thread' : 'one email'} · until {until} · set by {w.by}
+          From <code>{w.from}</code> · {w.mode === 'thread' ? 'following the thread' : w.mode === 'every' ? 'every email' : 'one email'} · until {until} · set by {w.by}
           {w.hits ? ` · ${w.hits} so far` : ''}
           <br />
           {act}

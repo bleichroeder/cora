@@ -1,6 +1,7 @@
 import { useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { isTablet, useTabletChoice } from '../lib/tablet';
 import { createProject } from '../state/projects';
+import { createWithTeam } from '../state/builder';
 import { endLive, goLive, liveNote, useLive } from '../state/live';
 import { jumpToHyperspace } from '../scene/system/warp';
 import { create } from 'zustand';
@@ -40,6 +41,8 @@ import './palette.css';
  */
 type PaletteState = { open: boolean; /** a session whose end-confirm the palette asked for */ ending: string | null };
 export const usePalette = create<PaletteState>(() => ({ open: false, ending: null }));
+/** Ask before ending a session: the confirm PaletteHost shows (always mounted, never inside a drawer or a row). */
+export const askEnd = (sid: string) => usePalette.setState({ ending: sid });
 /** where focus was before the palette took it (the terminal, an input), given back when it closes without acting */
 let before: HTMLElement | null = null;
 export function openPalette(open = !usePalette.getState().open) {
@@ -298,7 +301,9 @@ function useEntries(): PEntry[] {
     cmd('settings', 'Settings', 'Settings', () => openSettings(), { keywords: 'preferences options', featured: true, boost: 2 });
     cmd('lock', 'Lock Cora', 'Lock', () => void lockNow(), { keywords: 'lockdown away pin secure screen' });
     if (!desktop) cmd('layout', isTablet() ? 'Use the desktop layout on this device' : 'Use the tablet layout on this device', 'Tablet', () => useTabletChoice.getState().set(isTablet() ? 'off' : 'on'), { keywords: 'ipad tablet touch layout mobile desktop' });
-    cmd('newproject', 'New project…', 'FolderPlus', () => { const n = window.prompt('Project name'); if (n?.trim()) void createProject(n.trim()).then((p) => p && st().openProject(p.id)); }, { keywords: 'project group sessions together workspace' });
+    const named = (f: (name: string) => void) => () => { const n = window.prompt('Project name')?.trim(); if (n) f(n); };
+    cmd('newproject', 'New project…', 'FolderPlus', named((n) => void createProject(n).then((p) => p && st().openProject(p.id))), { keywords: 'project group sessions together workspace' });
+    cmd('newteamproject', 'New project with a team…', 'Network', named((n) => void createWithTeam(n)), { keywords: 'project team builder seats crew routes create' });
     if (!useLive.getState().live) cmd('golive', 'Go live (share your Cora with a teammate)', 'Radio', () => void goLive().then((r) => !r.ok && liveNote(r.error ?? 'Could not go live')), { keywords: 'share live teammate pair stream watch tailscale' });
     else cmd('endlive', 'End the live share', 'Radio', () => void endLive(), { keywords: 'share live stop' });
     if (thawing) cmd('thaw', 'Bring back sessions from before the restart…', 'Snowflake', () => useThaw.setState({ open: true }), { keywords: 'deep freeze restore resume reopen last time shutdown', boost: 3 });
@@ -542,7 +547,7 @@ function Palette() {
 /**
  * Always mounted: Ctrl+K anywhere opens the palette (captured before the terminal sees it; a page in the built-in
  * browser forwards it from the desktop app). An element that wants Ctrl+K for itself marks a container with
- * `data-own-ctrl-k`. Also hosts the end-session confirm the palette can ask for.
+ * `data-own-ctrl-k`. Also hosts the end-session confirm (askEnd: the palette's, the nav's).
  */
 export function PaletteHost() {
   const open = usePalette((s) => s.open);

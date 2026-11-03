@@ -154,3 +154,16 @@ export function stopKey(
   if (e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey && e.key.toLowerCase() === 'c') return box.selection ? null : 'ctrl-c';
   return null;
 }
+
+/**
+ * The composer's layout from its box's height: past three lines the text takes the whole width (the buttons drop
+ * under it); back to one line (or empty) they come back beside it. The gap between the two keeps the change of width
+ * from flipping it back and forth.
+ */
+export function composerTall(height: number, line: number, tall: boolean, empty: boolean): boolean {
+  if (!tall && height > line * 3 + 12) return true;
+  if (tall && (empty || height <= line + 12)) return false;
+  return tall;
+}
+/** Can the box size itself to its text (CSS field-sizing), so nothing measures it on every keystroke? */
+export const sizesItself = (): boolean => typeof CSS !== 'undefined' && typeof CSS.supports === 'function' && CSS.supports('field-sizing', 'content');

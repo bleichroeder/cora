@@ -89,6 +89,58 @@ describe('projects', () => {
     expect(p.get(o.id)!.members.x1).toMatchObject({ hears: 'everything', canPost: true, wakes: true });
     expect(p.get(o.id)!.members.x2).toMatchObject({ hears: 'brief', canPost: false });
   });
+
+  it('a decision edited by its writer changes on the card too; withdrawn, it leaves it (and comes back in its place if restored)', () => {
+    let t = 1000;
+    const file = join(dir, 'projects.json');
+    const p = new Projects(file, () => t);
+    const a = p.create('Tags');
+    p.add(a.id, 's1');
+    const d1 = p.post(a.id, 's1', 'decision', 'queue: A, B')!;
+    t = 2000;
+    p.post(a.id, 's1', 'decision', 'tags is string[]');
+    t = 3000;
+    expect(p.editPost(a.id, 's1', d1.id, 'queue: B, C')).toMatchObject({ ok: true });
+    expect(p.get(a.id)).toMatchObject({ decisions: [{ id: d1.id, text: 'queue: B, C', by: 's1', at: 1000 }, { text: 'tags is string[]' }], briefAt: 3000 });
+    t = 4000;
+    p.editPost(a.id, 's1', d1.id, null);
+    expect(p.get(a.id)!.decisions.map((d) => d.text)).toEqual(['tags is string[]']);
+    expect(p.get(a.id)!.briefAt).toBe(4000);
+    // given new words again: back, first, where it was
+    p.editPost(a.id, 's1', d1.id, 'queue: C');
+    expect(p.get(a.id)!.decisions.map((d) => d.text)).toEqual(['queue: C', 'tags is string[]']);
+    // a note's edit leaves the decisions alone
+    const n = p.post(a.id, 's1', 'note', 'fyi')!;
+    p.editPost(a.id, 's1', n.id, null);
+    expect(p.get(a.id)!.decisions).toHaveLength(2);
+  });
+
+  it('a decision you took off the card stays off when its writer later changes its words', () => {
+    const p = new Projects(join(dir, 'projects.json'));
+    const a = p.create('Tags');
+    p.add(a.id, 's1');
+    const d1 = p.post(a.id, 's1', 'decision', 'queue: A, B')!;
+    p.post(a.id, 's1', 'decision', 'tags is string[]');
+    expect(p.editDecision(a.id, d1.id, null)).toBe(true);
+    expect(p.editPost(a.id, 's1', d1.id, 'queue: A, B (typo fixed)')).toMatchObject({ ok: true });
+    expect(p.get(a.id)!.decisions.map((d) => d.text)).toEqual(['tags is string[]']);
+    // its post still has the new words
+    expect(p.get(a.id)!.thread.find((x) => x.id === d1.id)!.text).toBe('queue: A, B (typo fixed)');
+  });
+
+  it('a decision an older Cora left on the card after its post was withdrawn is dropped on loading', () => {
+    const file = join(dir, 'projects.json');
+    const p = new Projects(file);
+    const a = p.create('Tags');
+    p.add(a.id, 's1');
+    const d1 = p.post(a.id, 's1', 'decision', 'old queue')!;
+    p.post(a.id, 's1', 'decision', 'keep me');
+    p.editPost(a.id, 's1', d1.id, null);
+    // as an older Cora kept it: the post withdrawn, its decision still there
+    p.get(a.id)!.decisions.unshift({ id: d1.id, text: 'old queue', by: 's1', at: d1.at });
+    p.touch(a.id);
+    expect(new Projects(file).get(a.id)!.decisions.map((d) => d.text)).toEqual(['keep me']);
+  });
 });
 
 describe('projects through the server', () => {
@@ -151,7 +203,8 @@ describe('projects through the server', () => {
       await mcp('sess-api-0001', rpc('tools/call', { name: 'project_post', arguments: { kind: 'handoff', text: 'done, your turn', to: ['sess-ui-00002'] } }, 8));
       const after = (await srv.app.inject({ url: '/api/projects', headers: UI })).json();
       expect(after.wakes).toEqual([]);
-      expect(after.projects[0].waiting).toEqual([expect.objectContaining({ to: 'sess-ui-00002' })]);
+      // (your answer to it waits too: it reaches it as a turn from you once it's here and idle)
+      expect(after.projects[0].waiting).toEqual([expect.objectContaining({ to: 'sess-ui-00002' }), expect.objectContaining({ to: 'sess-ui-00002' })]);
       expect(await prompt('sess-ui-00002', 9)).toMatch(/\[handoff\] "API: tags array" \(post \w+\): done, your turn/);
       expect((await srv.app.inject({ url: '/api/projects', headers: UI })).json().projects[0].waiting).toEqual([]);
       expect((await srv.app.inject({ method: 'POST', url: '/api/projects/wakes/nope', headers: UI, payload: { allow: true } })).statusCode).toBe(404);

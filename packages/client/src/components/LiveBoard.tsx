@@ -71,6 +71,7 @@ import { closeShell } from '../state/shells';
 import { SpotlightPanel } from './board/Spotlight';
 import type { Spot } from '../lib/spotlight';
 import type { PanelKind } from '../lib/boardLayout';
+import { useBoardShow } from '../state/boardDock';
 import './liveBoard.css';
 
 /** How far back "Touching" looks, and how many of each it lists. */
@@ -378,6 +379,17 @@ export function LiveBoard({ sessionId }: { sessionId: string }) {
     window.addEventListener('keydown', k);
     return () => window.removeEventListener('keydown', k);
   }, [maxed]);
+  // a panel asks this board to show another (showPanel): on its page, in view; none on the board: one added here
+  const show = useBoardShow((s) => (s.ask?.board === sessionId ? s.ask : null));
+  useEffect(() => {
+    if (!show) return;
+    useBoardShow.setState({ ask: null });
+    const there = latest().all.find((x) => x.k === show.k);
+    if (!there) return save(addPanel(items, show.k as Exclude<PanelKind, 'explain'>));
+    setMaxed(null);
+    if ((there.pg ?? 0) !== pg) setBoard({ page: there.pg ?? 0 });
+    requestAnimationFrame(() => document.querySelector(`.bd-pn[data-id="${CSS.escape(there.id)}"]`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }));
+  }, [show?.at]); // eslint-disable-line react-hooks/exhaustive-deps
   const pop = (title: string) => save(popExplain(items, sessionId, title));
   // the Board's own shells no panel holds any more (a page removed, the board reset): ended
   // (one just opened isn't held yet: its panel saves it a moment later, so a shell gets a while before it counts)

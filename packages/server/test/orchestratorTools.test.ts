@@ -1,6 +1,6 @@
 import Fastify from 'fastify';
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_SETTINGS, FROM_CORA, type BrainEvent, type SessionInfo, type TerminalInfo, type UiCommand } from '@cora/shared';
+import { DEFAULT_SETTINGS, FROM_CORA, type BrainEvent, type SessionInfo, type TerminalInfo, type UiCommand, type Seat, type Team } from '@cora/shared';
 import { registerMcp } from '../src/mcp';
 import { Approvals } from '../src/orchestrator/approvals';
 import { deliverWhenReady, promptReady } from '../src/orchestrator/deliver';
@@ -474,5 +474,93 @@ describe('Slack as Cora herself', () => {
     await t.approvals.decide(card.id, { ok: true });
     await pending;
     expect(posted.at(-1)).toEqual(['#releases', 'Heads up', undefined]);
+  });
+});
+
+describe("Cora's team tools", () => {
+  const seat = (id: string, name: string): Seat => ({ id, name, instructions: `Be ${id}.`, agent: {}, skills: [], folder: { path: 'C:/work' }, count: { min: 1, max: 1 }, startup: {} });
+  const TEAM: Team = { version: 4, seats: [seat('triage', 'Triage')], groups: [], labels: [], routes: [], fallback: 'user', escalation: [] };
+  const withTeams = () => {
+    const t = setup();
+    const edits: Array<[string, Team, number]> = [];
+    t.deps.projects = {
+      find: (ref) => (ref === 'Ops' || ref === 'p-ops' ? { id: 'p-ops', name: 'Ops' } : { error: `No project "${ref}".` }),
+      move: () => null,
+      team: () => ({ team: TEAM, version: 4, text: `The team of "Ops": version 4, up.\nIts definition (JSON):\n${JSON.stringify(TEAM)}` }),
+      teamEdit: async (pid, team, version) => (edits.push([pid, team, version]), { ok: true, text: 'The team of "Ops" is version 5 now.' }),
+    };
+    return { ...t, edits };
+  };
+
+  it("project_post: Cora may send a direct message (to someone: it's a message to one member)", async () => {
+    const t = withTeams();
+    t.deps.userTurn = () => true;
+    const posted: unknown[][] = [];
+    t.deps.projects!.post = (...a) => (posted.push(a), 'p1');
+    expect((await t.call('project_post', { project: 'Ops', kind: 'direct', text: 'Look at encoder 3.', to: ['s1'] })).content[0].text).toBe('Posted to "Ops" as Cora.');
+    expect(posted).toEqual([['p-ops', 'direct', 'Look at encoder 3.', ['s1'], undefined]]);
+    const none = await t.call('project_post', { project: 'Ops', kind: 'direct', text: 'Anyone?' });
+    expect(none.isError).toBe(true);
+    expect(none.content[0].text).toBe('A direct message goes to someone: to: [their id].');
+  });
+
+  it('team_get: the definition and how it runs', async () => {
+    const t = withTeams();
+    const r = await t.call('team_get', { project: 'Ops' });
+    expect(r.content[0].text).toMatch(/^The team of "Ops": version 4, up\.\nIts definition \(JSON\):\n\{"version":4,"seats":\[\{"id":"triage"/);
+    expect((await t.call('team_get', { project: 'Nope' })).isError).toBe(true);
+  });
+
+  it('team_edit: a card unless the user asked on their turn; checked first; nothing to change says so', async () => {
+    const t = withTeams();
+    let mine = false;
+    t.deps.userTurn = () => mine;
+    const next = { ...TEAM, seats: [...TEAM.seats, seat('pager', 'Pager')] };
+    const pending = t.call('team_edit', { project: 'Ops', team: next });
+    await new Promise((r) => setTimeout(r, 20));
+    const card = t.approvals.list().at(-1)!;
+    // what it changes, line by line: where the new seat works is marked; its mode (the user's own) isn't risky
+    expect(card).toMatchObject({ kind: 'send', title: 'Change the team of "Ops"', detail: 'New seat: Pager (1)\nPager instructions: "Be pager."\n⚠ Pager works in C:/work\nPager permission mode: yours (the mode your sessions start in)' });
+    expect(t.edits).toEqual([]);
+    await t.approvals.decide(card.id, { ok: true });
+    expect((await pending).content[0].text).toBe('The team of "Ops" is version 5 now.');
+    expect(t.edits).toEqual([['p-ops', next, 4]]);
+    // on their word: at once (as JSON text too; the version it was read at given beside it)
+    mine = true;
+    const { version: _v, ...noVersion } = next;
+    expect((await t.call('team_edit', { project: 'Ops', team: JSON.stringify(noVersion), version: 4 })).content[0].text).toBe('The team of "Ops" is version 5 now.');
+    expect(t.edits).toHaveLength(2);
+    // a definition read at another version (the team changed since): refused, never written over the newer one
+    const stale = await t.call('team_edit', { project: 'Ops', team: { ...next, version: 3 } });
+    expect(stale.isError).toBe(true);
+    expect(stale.content[0].text).toBe('The team changed since you read it (it is version 4 now, you read version 3). Read it again with team_get and make your change on top of it.');
+    expect((await t.call('team_edit', { project: 'Ops', team: noVersion })).content[0].text).toMatch(/^Say which version you read/);
+    expect(t.edits).toHaveLength(2);
+    const bad = await t.call('team_edit', { project: 'Ops', team: { ...next, fallback: 'seat:nope' } });
+    expect(bad.isError).toBe(true);
+    expect(bad.content[0].text).toMatch(/^The team has problems:\n- The fallback "seat:nope"/);
+    expect((await t.call('team_edit', { project: 'Ops', team: TEAM })).content[0].text).toBe("That's the team as it is: nothing to change.");
+    expect(t.edits).toHaveLength(2);
+    // a change no running seat acts on (limits, a name) is still an edit
+    const limits = { ...TEAM, seats: [{ ...TEAM.seats[0], limits: { turnsPerHour: 5 } }] };
+    expect((await t.call('team_edit', { project: 'Ops', team: limits })).content[0].text).toBe('The team of "Ops" is version 5 now.');
+    const renamed = { ...TEAM, seats: [{ ...TEAM.seats[0], name: 'Triage desk' }] };
+    expect((await t.call('team_edit', { project: 'Ops', team: renamed })).content[0].text).toBe('The team of "Ops" is version 5 now.');
+    expect(t.edits.map((e) => e[1])).toEqual([next, next, limits, renamed]);
+    // someone else's Slack words: refused
+    t.deps.othersTurn = () => true;
+    expect((await t.call('team_edit', { project: 'Ops', team: next })).content[0].text).toMatch(/nobody but the user can make Cora act/);
+  });
+
+  it('team_edit: the card shows long instructions in full (the user approves what they read)', async () => {
+    const t = withTeams();
+    t.deps.userTurn = () => false;
+    const long = `Triage every alert.\n${'Read the logs, the thumbnails and the last incident before you decide anything. '.repeat(3)}`;
+    const pending = t.call('team_edit', { project: 'Ops', team: { ...TEAM, seats: [{ ...TEAM.seats[0], instructions: long }] } });
+    await new Promise((r) => setTimeout(r, 20));
+    const card = t.approvals.list().at(-1)!;
+    expect(card.detail).toBe(`Triage instructions: "Be triage." → "${long.trim()}"`);
+    await t.approvals.decide(card.id, { ok: false });
+    await pending;
   });
 });

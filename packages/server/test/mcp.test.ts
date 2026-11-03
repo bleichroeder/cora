@@ -1,4 +1,4 @@
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -29,6 +29,29 @@ describe('MCP tools', () => {
     const listed = async (headers: Record<string, string>) => ((await call(rpc('tools/list', {}, 3), headers)).json.result.tools as Array<{ name: string }>).map((t) => t.name);
     expect(await listed({ ...H, 'x-cora-session': 'sess-live-1' })).toContain('live_explain');
     expect(await listed(H)).not.toContain('live_explain');
+  });
+
+  it("a session's tools from before an upgrade: its next prompt hears which it lacks (once); listing them again settles it", async () => {
+    const dataDir = mkdtempSync(join(tmpdir(), 'ab-mcp-'));
+    // listed by an older Cora: no live_explain then
+    writeFileSync(join(dataDir, 'mcp-tools.json'), JSON.stringify({ 'sess-old-1': { names: ['open_tab', 'journal'], at: 1 } }));
+    srv = await startServer(loadConfig({ dataDir, dbPath: ':memory:', hookToken: 'hooktok', uiToken: 'u' }), { tail: false, listen: false });
+    const prompt = async (sid: string) => {
+      const r = await srv.app.inject({ method: 'POST', url: '/hook/UserPromptSubmit', headers: { 'x-cora-token': 'hooktok', 'content-type': 'application/json' }, payload: { session_id: sid, prompt: 'hi', cwd: dataDir } });
+      return r.statusCode === 200 ? String(r.json().hookSpecificOutput?.additionalContext ?? '') : '';
+    };
+    const first = await prompt('sess-old-1');
+    expect(first).toMatch(/From Cora: Cora has tools this session doesn't have yet \(mcp__cora__\w+(, mcp__cora__\w+){5} and \d+ more\)/);
+    expect(first).toMatch(/type \/mcp and reconnect "cora"/);
+    // said once
+    expect(await prompt('sess-old-1')).not.toMatch(/doesn't have yet/);
+    // never listed: nothing to compare
+    expect(await prompt('sess-never-1')).not.toMatch(/doesn't have yet/);
+    // reconnected: its list is today's
+    await call(rpc('initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 't', version: '1' } }));
+    await call(rpc('tools/list', {}, 2), { ...H, 'x-cora-session': 'sess-old-1' });
+    const saved = JSON.parse(readFileSync(join(dataDir, 'mcp-tools.json'), 'utf8'));
+    expect(saved['sess-old-1'].names).toContain('live_explain');
   });
 
   it('a debrief: checked against the files, saved, listed, its markdown; a bad one comes back named', async () => {

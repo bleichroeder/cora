@@ -100,7 +100,7 @@ describe('project items', () => {
     ps.setMember(p.id, 'triage', { role: 'triage' });
     ps.update(p.id, { lead: 'orch' });
     const card = projectCard(p, 'triage', (x) => ({ name: x, state: 'idle' }), (x) => x, true);
-    expect(card).toMatch(/Your seat: triage\./);
+    expect(card).toMatch(/Your role: triage\./);
     expect(card).toMatch(/- "orch" \[lead\] \(orch\)/);
     expect(card).toMatch(/The lead \(orch\) opens incidents/);
     ps.leave(p.id, 'orch');

@@ -81,23 +81,24 @@ function Masked({ text, jira, sessionId }: { text: string; jira?: boolean; sessi
 }
 
 /** A line Claude said out loud (its speak tool): one dim line, with a button to hear it again. */
-function SaidRow({ item }: { item: Extract<Item, { kind: 'tool' }> }) {
+function SaidRow({ item, sessionId }: { item: Extract<Item, { kind: 'tool' }>; sessionId: string }) {
   const e = item.start ?? item.end!;
   const tool = { ...item.start?.tool, ...item.end?.tool };
   const text = String((tool.input as { text?: unknown } | undefined)?.text ?? tool.summary ?? '');
   // the same id the automation reads it under, so the button shows stop while it's being said
-  return <SaidLine id={`said:${e.toolUseId}`} text={text} failed={Boolean(item.end?.tool?.failed)} />;
+  return <SaidLine id={`said:${e.toolUseId}`} text={text} sessionId={sessionId} failed={Boolean(item.end?.tool?.failed)} />;
 }
 
 /** A spoken line (a speak call, or a reply's say-line): dim and italic, with a button to hear it again. */
-export function SaidLine({ id, text, failed = false }: { id: string; text: string; failed?: boolean }) {
+/** `sessionId`: whose line it was, so hearing it again uses that session's voice (without it, the default one played) */
+export function SaidLine({ id, text, sessionId, failed = false }: { id: string; text: string; sessionId?: string; failed?: boolean }) {
   const on = useVoice((s) => s.settings.enabled && !!s.key?.set);
   const playing = useVoice((s) => s.reading?.id === id);
   return (
     <div className={`said${playing ? ' playing' : ''}${failed ? ' fail' : ''}`} title={failed ? 'Not said: spoken summaries were off' : undefined}>
       <span className="said-t">🔊 said: {text}</span>
       {on && text ? (
-        <button className={`spk${playing ? ' playing' : ''}`} title={playing ? 'Stop' : 'Say it again'} onClick={() => (playing ? stopSpeaking() : void speak(id, text, 400, false, undefined, { now: true }))}>
+        <button className={`spk${playing ? ' playing' : ''}`} title={playing ? 'Stop' : 'Say it again'} onClick={() => (playing ? stopSpeaking() : void speak(id, text, 400, false, sessionId, { now: true }))}>
           <Icon name={playing ? 'Square' : 'RotateCcw'} size={10} />
         </button>
       ) : null}
@@ -167,7 +168,7 @@ export function RanRow({ item, sessionId }: { item: Extract<Item, { kind: 'tool'
 export function ToolRow({ item, sessionId }: { item: Extract<Item, { kind: 'tool' }>; sessionId: string }) {
   const e = item.start ?? item.end!;
   if (isPresentTool(e.tool?.name)) return <ExplainCard item={item} />;
-  if (e.tool?.name === SPEAK_TOOL) return <SaidRow item={item} />;
+  if (e.tool?.name === SPEAK_TOOL) return <SaidRow item={item} sessionId={sessionId} />;
   return <PlainToolRow item={item} sessionId={sessionId} />;
 }
 

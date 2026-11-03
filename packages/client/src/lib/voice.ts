@@ -8,6 +8,7 @@ import { fileOf } from '../scene/derive';
 import { desktop } from './desktop';
 import { composerInbox } from '../state/composer';
 import { sessionName } from './format';
+import { speechVolume, useSpeechVolume } from './speechVolume';
 
 /**
  * Live levels for the 3D scene, read every frame (no React), and whose they are: the session being read aloud or
@@ -103,6 +104,10 @@ function drain(): void {
   queue = rest;
   if (line) void play(line);
 }
+// the volume moved while it speaks: heard at once
+useSpeechVolume.subscribe((st) => {
+  if (audio) audio.volume = st.volume;
+});
 // you finished talking: what waited goes on
 useVoice.subscribe((st, prev) => {
   if (st.ptt.phase === 'idle' && prev.ptt.phase !== 'idle') drain();
@@ -215,6 +220,7 @@ async function play(line: Line): Promise<void> {
       watchdog = setTimeout(giveUp, (est * 1.6 + 15) * 1000);
     };
     a.src = j.url;
+    a.volume = speechVolume();
     voiceLevels.speaking = true;
     voiceLevels.speakFor = sessionId ?? null;
     await a.play();
@@ -464,7 +470,7 @@ export function heardYou(): void {
       o.frequency.value = f;
       const t = t0 + i * 0.09;
       g.gain.setValueAtTime(0, t);
-      g.gain.linearRampToValueAtTime(0.05, t + 0.015);
+      g.gain.linearRampToValueAtTime(0.05 * speechVolume() || 0.0001, t + 0.015);
       g.gain.exponentialRampToValueAtTime(0.0001, t + 0.16);
       o.connect(g).connect(c.destination);
       o.start(t);

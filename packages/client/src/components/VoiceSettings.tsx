@@ -3,6 +3,7 @@ import { DEFAULT_VOICE, VOICE_MODELS, type Settings, type VoiceSettings, directi
 import { speak, stopSpeaking, useVoice, SILENCE_MS } from '../lib/voice';
 import { useWake } from '../lib/wake/controller';
 import { Icon } from './Icon';
+import { setSpeechVolume, useSpeechVolume } from '../lib/speechVolume';
 import { desktop } from '../lib/desktop';
 
 const openOut = (url: string) => (desktop?.openExternal ? desktop.openExternal(url) : void window.open(url, '_blank', 'noopener'));
@@ -224,6 +225,9 @@ export function VoiceSection() {
               <Row label="Pace">
                 <Choice value={v.speed} onChange={(speed) => void save({ speed })} options={[[0.9, 'Slower'], [1, 'Normal'], [1.1, 'Faster']]} />
               </Row>
+              <Row label="Volume" hint="How loud Cora speaks on this device, apart from your system volume: every voice and her soft cues.">
+                <VolumeSlider />
+              </Row>
               </Group>
               <Group label="How it's said">
                 <HowItsSaid v={v} save={save} />
@@ -279,6 +283,17 @@ export function VoiceSection() {
 }
 
 /** How it's said: direction (audio tags) for every line and for Cora's, style, and pronunciations. */
+/** Cora's speech volume on this device (lib/speechVolume), as a percentage. */
+export function VolumeSlider() {
+  const volume = useSpeechVolume((s) => s.volume);
+  return (
+    <span className="set-volume">
+      <input type="range" min={0} max={100} step={5} value={Math.round(volume * 100)} onChange={(e) => setSpeechVolume(Number(e.target.value) / 100)} aria-label="Speech volume" />
+      <span className="pct">{Math.round(volume * 100)}%</span>
+    </span>
+  );
+}
+
 function HowItsSaid({ v, save }: { v: VoiceSettings; save: (p: Partial<VoiceSettings>) => Promise<void> }) {
   const tags = takesTags(v.model);
   const style = takesStyle(v.model);

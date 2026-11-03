@@ -26,6 +26,29 @@ describe('parseLine', () => {
     expect(parseLine(asst('a2', 'm2', { type: 'text', text: 'hi' }, 20), newParseCtx()).meta.model).toBe('claude-opus-5-5');
   });
 
+it('a model changed mid-session (/model) is the session’s model at once, not only after its next reply', () => {
+    const ctx = newParseCtx();
+    parseLine({ type: 'attachment', uuid: 'at1', timestamp: iso(0), sessionId: SID, attachment: { type: 'model', identity: { modelId: 'claude-opus-5-5[1m]' } } }, ctx);
+    const set = (text: string, ms: number) => parseLine({ type: 'user', uuid: `u${ms}`, timestamp: iso(ms), sessionId: SID, message: { role: 'user', content: `<local-command-stdout>${text}</local-command-stdout>` } }, ctx);
+    // what Claude Code 2.1.316 writes the moment you choose one
+    expect(set('Set model to `Sonnet 5.5` and saved as your default for new sessions', 10).meta.model).toBe('claude-sonnet-5-5');
+    // its replies after it keep it (no 1M carried over from before)
+    expect(parseLine(asst('a1', 'm1', { type: 'text', text: 'hi' }, 20, { message: { id: 'm1', model: 'claude-sonnet-5-5', role: 'assistant', content: [{ type: 'text', text: 'hi' }], usage } }), ctx).meta.model).toBe('claude-sonnet-5-5');
+    expect(set('Set model to Opus 5.5 (1M context)', 30).meta.model).toBe('claude-opus-5-5[1m]');
+    expect(set('Set model to `Haiku 5.5`', 40).meta.model).toBe('claude-haiku-5-5');
+    // a name it can't read leaves the model as it was, until the next reply says
+    expect(set('Set model to Default (recommended)', 50).meta.model).toBeUndefined();
+    expect(set('Kept model as Opus', 60).meta.model).toBeUndefined();
+  });
+
+  it('a synthetic assistant line (an interrupted or failed turn) is not a model', () => {
+    const ctx = newParseCtx();
+    expect(parseLine(asst('a1', 'm1', { type: 'text', text: 'hi' }, 0), ctx).meta.model).toBe('claude-opus-5-5');
+    const synthetic = parseLine(asst('a2', 'm2', { type: 'text', text: 'API Error' }, 10, { message: { id: 'm2', model: '<synthetic>', role: 'assistant', content: [{ type: 'text', text: 'API Error' }] } }), ctx);
+    expect(synthetic.meta.model).toBeUndefined();
+  });
+
+
   it('human prompt → prompt event', () => {
     const ctx = newParseCtx();
     const { events, meta } = parseLine({ type: 'user', uuid: 'u1', promptId: 'p1', timestamp: iso(0), sessionId: SID, cwd: 'C:\\code\\proj', version: '2.1.281', origin: { kind: 'human' }, promptSource: 'typed', message: { role: 'user', content: 'Look at the design' } }, ctx);

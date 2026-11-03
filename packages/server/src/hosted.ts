@@ -1,6 +1,6 @@
-import { mkdirSync, readdirSync, rmSync, statSync } from 'node:fs';
+import { mkdirSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import { BOARD_TOOL, DEBRIEF_TOOL, DEFAULT_WORKTREES, SECRETS_TOOLS, DEFAULT_DEBRIEF, type DebriefSettings, JOURNAL_TOOL, JOURNAL_SEARCH_TOOL, TELL_CORA_TOOL, FROM_CORA, type BoardPageMode, MEME_TOOL, type MemeMode, DEPLOYS_TOOL, ENV_TOOL, LIVE_EXPLAIN_TOOL, NOTES_TOOLS, MCP_SERVER, OPEN_TAB_TOOL, SPOTLIGHT_TOOL, SESSION_HEADER, SLACK_FIND_TOOL, SLACK_READ_TOOL, SLACK_SEND_TOOL, SPEAK_TOOL, TOKEN_HEADER, speaksSummaries, type Settings, type VoiceSettings, takesTags } from '@cora/shared';
+import { BOARD_TOOL, DEBRIEF_TOOL, DEFAULT_WORKTREES, SECRETS_TOOLS, DEFAULT_DEBRIEF, type DebriefSettings, JOURNAL_TOOL, JOURNAL_SEARCH_TOOL, TELL_CORA_TOOL, FROM_CORA, type BoardPageMode, MEME_TOOL, type MemeMode, DEPLOYS_TOOL, ENV_TOOL, LIVE_EXPLAIN_TOOL, NOTES_TOOLS, MCP_SERVER, OPEN_TAB_TOOL, SEAT_MESSAGING_TOOLS, SPOTLIGHT_TOOL, SESSION_HEADER, SLACK_FIND_TOOL, SLACK_READ_TOOL, SLACK_SEND_TOOL, SPEAK_TOOL, TOKEN_HEADER, speaksSummaries, type Settings, type VoiceSettings, takesTags } from '@cora/shared';
 import type { Config } from './config';
 import { attachmentsDir } from './attachments';
 import { writeFileAtomic } from './fsx';
@@ -136,7 +136,10 @@ const MCP_KEEP_MS = 30 * 86400_000;
  * reads summaries; the composer's attachments folder, readable without a prompt). The MCP config (one per session: its
  * calls say which session they're from) and the prompt go in files, not inline, to avoid command-line quoting issues.
  */
-export function hostedArgs(config: Config, settings: Settings, sessionId?: string, native?: { pluginDir: string; name: string }): string[] {
+/** A team's seat: its agent (`cora-team-<project>:<seat>`), its team's plugin folder, its prompt and settings files, its permission mode and name. */
+export type SeatLaunch = { agent: string; pluginDir: string; prompt: string; settings: string; permissionMode?: string; name: string };
+
+export function hostedArgs(config: Config, settings: Settings, sessionId?: string, native?: { pluginDir: string; name: string }, seat?: SeatLaunch): string[] {
   const dir = join(config.dataDir, 'hosted-mcp');
   mkdirSync(dir, { recursive: true });
   pruneOld(dir);
@@ -166,8 +169,25 @@ ${OTHERS}${settings.orchestrator?.enabled ? `\n\n${CORA_NUDGE}` : ''}`);
   if ((settings.worktrees?.move ?? DEFAULT_WORKTREES.move) !== 'ask') writeFileAtomic(gatePath, JSON.stringify({ hooks: { PreToolUse: [{ matcher: 'Edit|Write|MultiEdit|NotebookEdit', hooks: [{ type: 'http', url: `http://127.0.0.1:${config.port}/edit-gate`, headers: { [TOKEN_HEADER]: config.hookToken }, timeout: 30 }] }] } }), { mode: 0o600 });
   const gate = (settings.worktrees?.move ?? DEFAULT_WORKTREES.move) !== 'ask' ? ['--settings', gatePath] : [];
   // Claude Code with mods: the Cora plugin, and a name its project's other sessions can message it by
-  const own = native ? ['--plugin-dir', native.pluginDir, '--name', native.name] : [];
-  return ['--ide', ...gate, ...own, '--add-dir', attachments, ...(live ? [explains] : []), '--mcp-config', mcpPath, '--allowedTools', allowed, '--append-system-prompt-file', promptPath];
+  const own = native ? ['--plugin-dir', native.pluginDir, '--name', seat?.name ?? native.name] : [];
+  if (!seat) return ['--ide', ...gate, ...own, '--add-dir', attachments, ...(live ? [explains] : []), '--mcp-config', mcpPath, '--allowedTools', allowed, '--append-system-prompt-file', promptPath];
+  // a team's seat: its agent (in its team's own plugin), and ONE prompt file (Cora's first, then the seat's) and ONE
+  // settings file (the gate's hooks, the seat's permissions), its own copies (an edit to the team never pulls them
+  // from under it)
+  const mine = sessionId && /^[\w-]{8,80}$/.test(sessionId) ? `.${sessionId}` : '';
+  const full = (path: string, ext: string) => `${path.endsWith(ext) ? path.slice(0, -ext.length) : path}${mine}.full${ext}`;
+  const seatPrompt = full(seat.prompt, '.md');
+  writeFileAtomic(seatPrompt, `${readFileSync(promptPath, 'utf8')}
+
+${readFileSync(seat.prompt, 'utf8')}`);
+  const seatSettings = full(seat.settings, '.json');
+  const merged = { ...(gate.length ? JSON.parse(readFileSync(gatePath, 'utf8')) : {}), ...JSON.parse(readFileSync(seat.settings, 'utf8')) };
+  writeFileAtomic(seatSettings, JSON.stringify(merged, null, 2), { mode: 0o600 });
+  // 'default' is Claude Code's own: no flag (it has no --permission-mode default)
+  // its team messaging never stops at a permission prompt (a hand-off would wait on the user); the seat's own
+  // disallowedTools still take one away
+  const seatAllowed = [allowed, ...SEAT_MESSAGING_TOOLS].join(',');
+  return ['--ide', '--settings', seatSettings, '--agent', seat.agent, ...(seat.permissionMode && seat.permissionMode !== 'default' ? ['--permission-mode', seat.permissionMode] : []), ...own, '--plugin-dir', seat.pluginDir, '--add-dir', attachments, ...(live ? [explains] : []), '--mcp-config', mcpPath, '--allowedTools', seatAllowed, '--append-system-prompt-file', seatPrompt];
 }
 
 /** With Cora's agent on: what her messages look like, and how a session talks to her. */

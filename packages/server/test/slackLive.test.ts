@@ -325,7 +325,8 @@ describe('a ticket in Slack', () => {
     expect(ctx.hookEventName).toBe('UserPromptSubmit');
     expect(ctx.additionalContext).toMatch(/^From Cora: ACME-5206 comes up in Slack: #dev \(2 messages, latest: https:.+\); #support \(once, latest: https:.+\)\. Read the ones/);
     expect((await prompt('sess-aaaa1111', 'and now ACME-5206 again', 2)).statusCode).toBe(204);
-    expect((await prompt('sess-bbbb2222', 'nothing about a ticket')).statusCode).toBe(204);
+    // a new session's first prompt hears only the time
+    expect((await prompt('sess-bbbb2222', 'nothing about a ticket')).json().hookSpecificOutput.additionalContext).toMatch(/^From Cora: it's [^\n]+\.$/);
   });
 
   it('turns live events on with the app token, and reports them in the status', async () => {

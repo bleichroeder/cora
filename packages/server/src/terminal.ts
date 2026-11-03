@@ -14,15 +14,16 @@ function ps(script: string): Promise<string> {
 /**
  * Is a `claude` process running with this session id on its command line (i.e. started with
  * `--resume <id>` or `--session-id <id>`)? Sessions started as plain `claude` can't be detected this way,
- * which is why the UI still asks the user to confirm before resuming.
+ * which is why the UI still asks the user to confirm before resuming one that may be open. Null: it couldn't look
+ * (not Windows, not an id, the scan failed or timed out).
  */
-export async function findSessionProcess(sessionId: string): Promise<number[]> {
-  if (process.platform !== 'win32' || !/^[0-9a-f-]{8,}$/i.test(sessionId)) return [];
+export async function scanSessionProcess(sessionId: string): Promise<number[] | null> {
+  if (process.platform !== 'win32' || !/^[0-9a-f-]{8,}$/i.test(sessionId)) return null;
   try {
     const out = await ps(`Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -match '${sessionId}' -and $_.CommandLine -match 'claude' -and $_.Name -match '^(claude|node)(\\.exe)?$' } | ForEach-Object { $_.ProcessId }`);
     return out.split(/\s+/).filter(Boolean).map(Number);
   } catch {
-    return [];
+    return null;
   }
 }
 

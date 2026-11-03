@@ -6,6 +6,8 @@ import { useTablet, useTabletUi, useViewport, tabletScene } from './lib/tablet';
 import { TabletDrawer, TabletRail, TabletTabs } from './components/Tablet';
 import { ProjectSuggest } from './components/Projects';
 import { ProjectView, ProjectWakes } from './components/ProjectView';
+import { BuilderView } from './components/builder/BuilderView';
+import { builderShown, useBuilder } from './state/builder';
 import { GuestBar, LiveAsks, LiveChip, LiveCursors, LivePings } from './components/Live';
 import { useLive, usePrivate } from './state/live';
 import { IdeHost } from './components/board/IdeHost';
@@ -447,7 +449,7 @@ function BrowserButton({ sessionId }: { sessionId: string }) {
  *   you click on stays (you went to read it).
  * Each runs when what it looks at changes (the sessions; the focus, or whether its Claude still runs here).
  */
-function watchSessions(): () => void {
+export function watchSessions(): () => void {
   // the focused session's Claude still running here (not a shell beside it: that outlives Claude)
   const runningHere = (st: ReturnType<typeof useBrain.getState>) => !!st.focus && st.terminals.some((t) => t.sessionId === st.focus && t.alive && !isShell(t));
   let watching: { id: string | null; live: boolean; ended: boolean } = { id: null, live: false, ended: false };
@@ -469,10 +471,8 @@ function watchSessions(): () => void {
     if (focus && sessions[focus] && focusRunning) return;
     const next = visible.find((s) => s.id !== focus && s.state !== 'ended')?.id ?? null;
     if (next === focus) return;
-    // a session going away doesn't take you out of the Overview
-    const ov = useBrain.getState().overview;
-    useBrain.getState().setFocus(next);
-    if (ov) useBrain.setState({ overview: true });
+    // a session going away doesn't take you out of the Overview, a project or its builder: only the focus behind it moves
+    useBrain.getState().setFocus(next, { stay: true });
   };
   run(useBrain.getState());
   return useBrain.subscribe(run);
@@ -502,6 +502,7 @@ export function App() {
   const focus = useBrain((s) => s.focus);
   const overview = useBrain((s) => s.overview);
   const projectOpen = useBrain((s) => s.projectOpen);
+  const builder = useBuilder((s) => builderShown(s.open, projectOpen));
   const modal = useBrain((s) => s.modal);
   // setting Cora up: the first run shows instead of the app while something required is missing (or on a fresh install)
   const setupState = useSetup((s) => s.state);
@@ -701,7 +702,8 @@ export function App() {
           {overview ? (
             <Overview />
           ) : projectOpen && !guest ? (
-            <ProjectView id={projectOpen} />
+            // the team builder is a full view in the project view's place while it's open (its back button returns here)
+            builder ? <BuilderView key={projectOpen} id={projectOpen} proposal={builder.proposal} /> : <ProjectView id={projectOpen} />
           ) : focus ? (
             <Focus sessionId={focus} />
           ) : !ready ? null : (

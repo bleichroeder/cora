@@ -11,6 +11,7 @@ import { checkRunning, launchTerminal } from '../state/ws';
 import { closeShell, loadShellKinds, openShell, shellBusy, useShells, useTermView } from '../state/shells';
 import { activeTab, afterClose, atPrompt, commandAt, shellLabel } from '../lib/shellTabs';
 import { ago, sessionName, shortCwd } from '../lib/format';
+import { recentlyActive as activeLately, resumeStep } from '../lib/resumeHere';
 import { activeRegion } from '../lib/termRegion';
 import { desktop } from '../lib/desktop';
 import { oops } from '../state/oops';
@@ -326,9 +327,10 @@ function ExternalPanel({ sessionId }: { sessionId: string }) {
   const s = useBrain((st) => st.sessions[sessionId]);
   const guest = useLive((l) => l.role === 'guest');
   const [phase, setPhase] = useState<'idle' | 'checking' | 'confirm' | 'blocked' | 'launching'>('idle');
+  const [unchecked, setUnchecked] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   if (!s) return null;
-  const recentlyActive = Date.now() - s.lastTs < 3 * 60_000 && s.state !== 'ended' && s.state !== 'idle';
+  const recentlyActive = activeLately(s);
 
   const go = async (mode: 'resume' | 'fork') => {
     setPhase('launching');
@@ -342,7 +344,11 @@ function ExternalPanel({ sessionId }: { sessionId: string }) {
     setErr(null);
     setPhase('checking');
     const r = await checkRunning(sessionId);
-    setPhase(r.elsewhere ? 'blocked' : 'confirm');
+    // known to have ended and running nowhere else: it resumes on this click; otherwise asked first
+    const step = resumeStep(useBrain.getState().sessions[sessionId] ?? s, r);
+    if (step === 'go') return void go('resume');
+    setUnchecked(!r.checked);
+    setPhase(step);
   };
 
   return (
@@ -353,8 +359,9 @@ function ExternalPanel({ sessionId }: { sessionId: string }) {
       {phase === 'blocked' ? (
         <p className="warn"><Icon name="TriangleAlert" size={12} /> It's still running in another terminal. Exit it there first, or fork a copy to continue separately.</p>
       ) : phase === 'confirm' ? (
-        <p className={recentlyActive ? 'warn' : 'dim'}>
-          {recentlyActive ? `It was active ${ago(s.lastTs)} ago, so it's probably still open somewhere. ` : ''}
+        <p className="warn">
+          <Icon name="TriangleAlert" size={12} /> {recentlyActive ? `It was active ${ago(s.lastTs)} ago, so it's probably still open somewhere. ` : ''}
+          {unchecked ? "Cora couldn't check whether it's running somewhere else. " : ''}
           Make sure it isn't open in another terminal: resuming it in two places splits the conversation.
         </p>
       ) : guest ? (

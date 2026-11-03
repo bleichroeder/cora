@@ -3,13 +3,15 @@
  * By default only organisation (the nav, the project's board, resume and wrap up together). With coordination on, its
  * sessions can share a brief, decisions and a thread, each hearing only as much as you choose.
  */
+import type { Team } from './teams';
 export type ProjectHears = 'nothing' | 'brief' | 'everything';
 /** `report`: to one seat only (an alert or status stream: a monitor to triage), never to anyone else's news */
-export type PostKind = 'note' | 'change' | 'question' | 'handoff' | 'decision' | 'report';
-export const POST_KINDS: PostKind[] = ['note', 'change', 'question', 'handoff', 'decision', 'report'];
+/** `direct`: a message to one member (what a team's route calls a direct message) */
+export type PostKind = 'note' | 'change' | 'question' | 'handoff' | 'decision' | 'report' | 'direct';
+export const POST_KINDS: PostKind[] = ['note', 'change', 'question', 'handoff', 'decision', 'report', 'direct'];
 
 /** What one session in a project hears, and may do (all off until you say). */
-export type MemberSettings = { hears: ProjectHears; canPost: boolean; wakes: boolean; /** what it has heard up to (a post's time; the brief's change) */ heardTo?: number; heardBriefAt?: number; /** the project card it last had (what's on it: brief, decisions, pins, members) */ heardCard?: string; /** its seat, as you name it (Triage, Monitor, Analyst 01) */ role?: string };
+export type MemberSettings = { hears: ProjectHears; canPost: boolean; wakes: boolean; /** what it has heard up to (a post's time; the brief's change) */ heardTo?: number; heardBriefAt?: number; /** the project card it last had (what's on it: brief, decisions, pins, members) */ heardCard?: string; /** its seat, as you name it (Triage, Monitor, Analyst 01) */ role?: string; /** its team seat id (a team's definition; not the free-text role) */ seat?: string; /** which instance of that seat (1-based) */ instance?: number };
 /** A member of a project that doesn't coordinate (organisation only): hears nothing, can't post. */
 export const MEMBER_DEFAULTS: MemberSettings = { hears: 'nothing', canPost: false, wakes: false };
 /** A member of a project that coordinates: hears it, posts, may ask to wake another (you OK each wake). */
@@ -18,9 +20,9 @@ export const MEMBER_ON: MemberSettings = { hears: 'everything', canPost: true, w
 /** `by`: a session's id, 'you', or 'cora' */
 export type Decision = { id: string; text: string; by: string; at: number };
 /** `to`: members, or 'user' (you); `re`: the post it answers; a note may be pinned (it joins every member's card); a question you closed. */
-export type Post = { id: string; by: string; kind: PostKind; text: string; at: number; to?: string[]; re?: string; pinned?: boolean; closed?: boolean; /** its writer changed it (when) */ editedAt?: number; /** its writer took it back (it stays, struck through) */ withdrawn?: boolean; /** the item it's about (an assignment, an annotation) */ item?: string; /** a cross-session message Claude Code delivered itself (Cora records it; it never delivers it again) */ native?: boolean; /** when its member received it (a native message) */ deliveredAt?: number; /** a project post Cora sent natively, as its writer (the receiver's report finds it) */ sentNative?: boolean };
+export type Post = { id: string; by: string; kind: PostKind; text: string; at: number; to?: string[]; re?: string; pinned?: boolean; closed?: boolean; /** its writer changed it (when) */ editedAt?: number; /** its writer took it back (it stays, struck through) */ withdrawn?: boolean; /** the item it's about (an assignment, an annotation) */ item?: string; /** a cross-session message Claude Code delivered itself (Cora records it; it never delivers it again) */ native?: boolean; /** when its member received it (a native message) */ deliveredAt?: number; /** a project post Cora sent natively, as its writer (the receiver's report finds it) */ sentNative?: boolean; /** team labels it carries */ labels?: Record<string, string>; /** its writer's team seat when it wrote it (its route still applies once the writer has left) */ seat?: string; /** a message the team's routes refused: kept quietly on the board, never delivered, nobody's news */ blocked?: true };
 /** A handoff or question to a member that hasn't reached it yet (busy, or idle and not woken). */
-export type Waiting = { post: string; to: string; since: number };
+export type Waiting = { post: string; to: string; since: number; /** when Cora found it couldn't reach its member (not hosted here, nothing of it asking for messages) and told its sender */ undelivered?: number };
 
 export type Project = {
   id: string;
@@ -31,6 +33,32 @@ export type Project = {
   archivedAt?: number;
   /** member sessions, in the order you added them */
   sessions: string[];
+  /** its team definition, when it has one */
+  team?: Team;
+  /** earlier versions of the team (newest last, at most 50) */
+  teamHistory?: Array<{ version: number; at: number; by: string; team: Team }>;
+  /** its team was brought up (and not stood down): Cora keeps its standing seats running, after a restart too */
+  teamUp?: boolean;
+  /** seats stood down on their own (ids): not started again until Bring up, after a restart too */
+  teamDown?: string[];
+  /** seats whose running members wait for your Restart (an edit they take only at start): asked for after a restart too */
+  teamRestart?: string[];
+  /** pools made smaller whose extras still close once idle, after a restart too */
+  teamTrim?: string[];
+  /** its team was up and you stood it down (until it's brought up again): not running on purpose */
+  teamStoodDown?: true;
+  /** you chose no lead (Crew): an Apply or a bring-up doesn't give it one, until you pick one or the team's lead seat changes */
+  leadNone?: true;
+  /** a change to its team its lead proposed, waiting for the user (one at a time; `base`: the version it edits) */
+  teamProposal?: { team: Team; why: string; by: string; at: number; base: number };
+  /** where the builder draws its team (seats, You and Cora): beside the team, never a change to it */
+  teamLayout?: TeamLayout;
+  /** the team being built (one draft, yours and Cora's): never the project's team until it's applied */
+  builderDraft?: BuilderDraft;
+  /** the builder's own session (published in place of the draft, so screens keep it out of the session list) */
+  builderSession?: string;
+  /** the newest revision the project's draft has had (kept when it is discarded, so revisions only go up) */
+  builderRev?: number;
   /** its sessions may hear each other (off: organisation only) */
   coordination: boolean;
   /** markdown: the goal, the repos, done-when, don'ts */
@@ -54,36 +82,66 @@ export type Project = {
   coraRoutes?: boolean;
 };
 
-export type ItemKind = 'incident' | 'known';
+/** Where the builder draws a team: seat ids, '@user', '@cora'. */
+export type TeamLayout = { pos: Record<string, { x: number; y: number }>; color?: Record<string, string> };
+/** One of Cora's changes to a draft (team_draft_set): what it did, and the team before and after it (for Undo). */
+export type BuilderTurn = { id: string; at: number; summary: string; before: Team; after: Team; undone?: true };
+/** The team being built: one draft per project, every change (yours or Cora's) a new revision; `base`: the team version it edits. */
+export type BuilderDraft = { team: Team; rev: number; by: 'you' | 'cora'; base: number; at: number; turns: BuilderTurn[]; session?: string };
+/** The draft as screens get it: its turns without their teams. */
+export type BuilderDraftView = Omit<BuilderDraft, 'turns'> & { turns: Array<Omit<BuilderTurn, 'before' | 'after'>> };
+/** A project's draft changed (null: there is none now). */
+/** A project's builder draft as the screens hold it; `talkError`: what you said in Talk didn't reach Cora's session, and why. */
+export type BuilderMsg = { t: 'builder'; project: string; draft: BuilderDraftView | null; talkError?: string };
+export const draftView = (d: BuilderDraft): BuilderDraftView => ({ ...d, turns: d.turns.map(({ before: _b, after: _a, ...x }) => x) });
+/** The builder session's own first prompt (Talk doesn't show it). */
+export const BUILDER_FIRST_PROMPT = 'Read the draft with team_draft_get and wait for the user';
+
+export type ItemKind = 'incident' | 'known' | 'task';
 export const SEVERITIES = ['low', 'medium', 'high', 'critical'] as const;
 export type ItemSeverity = (typeof SEVERITIES)[number];
 export const INCIDENT_STATES = ['open', 'working', 'waiting', 'resolved'] as const;
 export const KNOWN_STATES = ['proposed', 'approved', 'retired'] as const;
+/** A task's states while it's open (its owner sets them); closed, it's done (with its outcome). */
+export const TASK_STATES = ['queued', 'building', 'review', 'testing', 'blocked'] as const;
+export type TaskState = (typeof TASK_STATES)[number];
 /** A dated, signed note on an item (`by`: a session, 'you' or 'cora'). */
 export type ItemNote = { by: string; at: number; text: string };
 /**
  * One row of shared state: an incident
  * (owned, with a state and a next step; closed with a cause and fix into the log) or a known issue (proposed, approved
- * by you, retired). Times are Cora's.
+ * by you, retired), or a task (a piece of work: queued in rank order, owned, moved through building, review and testing;
+ * closed as done with its outcome). Times are Cora's.
  */
 export type ProjectItem = {
+  /** team labels it carries */
+  labels?: Record<string, string>;
+  /** a team group it is offered to (id) */
+  offeredTo?: string;
+  /** the team's route it was offered on (id): escalation rules scoped to a route read it */
+  route?: string;
   id: string;
   kind: ItemKind;
   title: string;
-  /** incident: open, working, waiting, resolved; known issue: proposed, approved, retired */
+  /** incident: open, working, waiting, resolved; known issue: proposed, approved, retired; task: TASK_STATES, or done */
   state: string;
   severity?: ItemSeverity;
+  /** a member's session id (or 'you'); a task's may be a team group's id while it's offered to the group */
   owner?: string;
   /** when its owner took it */
   ownedAt?: number;
   next?: string;
   link?: string;
-  /** a known issue's description */
+  /** a known issue's description, or what a task is */
   body?: string;
   /** a known issue's rule: "drop matching alerts while someone owns an incident for it" */
   rule?: string;
   cause?: string;
   fix?: string;
+  /** a task's place in the queue (lower first) */
+  rank?: number;
+  /** a task done: how it ended, in a line ("merged as abc1234") */
+  outcome?: string;
   mergedInto?: string;
   openedBy: string;
   openedAt: number;
@@ -94,8 +152,10 @@ export type ProjectItem = {
 };
 export const MAX_ITEMS = 1000;
 export const MAX_ITEM_NOTES = 100;
-/** Open: an incident not resolved, a known issue proposed or approved. */
-export const itemOpen = (i: ProjectItem) => (i.kind === 'incident' ? i.state !== 'resolved' : i.state !== 'retired');
+/** Open: an incident not resolved, a known issue proposed or approved, a task not done. */
+export const itemOpen = (i: ProjectItem) => (i.kind === 'incident' ? i.state !== 'resolved' : i.kind === 'task' ? i.state !== 'done' : i.state !== 'retired');
+/** Tasks in the queue's order: rank, then the oldest first. */
+export const byRank = (a: ProjectItem, b: ProjectItem) => (a.rank ?? Infinity) - (b.rank ?? Infinity) || a.openedAt - b.openedAt;
 const SEV_RANK: Record<ItemSeverity, number> = { critical: 0, high: 1, medium: 2, low: 3 };
 /** Most urgent first: severity, then the longest waiting. */
 export const bySeverity = (a: ProjectItem, b: ProjectItem) => SEV_RANK[a.severity ?? 'medium'] - SEV_RANK[b.severity ?? 'medium'] || a.openedAt - b.openedAt;
@@ -104,7 +164,7 @@ export const bySeverity = (a: ProjectItem, b: ProjectItem) => SEV_RANK[a.severit
 export const isOpenQuestion = (p: Project, x: Post) => x.kind === 'question' && !x.closed && !p.thread.some((y) => y.re === x.id);
 
 /** A session asking to wake another (a handoff or a question to an idle member that wakes): yours to allow. */
-export type ProjectWake = { id: string; project: string; from: string; to: string; text: string; at: number; /** the post it carries */ post?: string };
+export type ProjectWake = { id: string; project: string; from: string; to: string; text: string; at: number; /** the post it carries */ post?: string; /** a team's offer that Cora carries (its text names its real sender) */ offer?: true };
 
 export type ProjectsMsg = { t: 'projects'; projects: Project[]; wakes: ProjectWake[]; /** what each member is on now (its latest journal headline, else its last reply's first sentence) */ doing?: Record<string, string> };
 

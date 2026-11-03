@@ -2,7 +2,64 @@
 
 What changed in each release. Cora updates itself; each update's notes are on its release page too.
 
-## Unreleased
+## 0.1.23
+
+- **The team builder.** Build a project's team on a canvas instead of writing it out: seats, groups and the routes
+  between them, laid out for you and yours to drag. Open it from **Build a team** (or **Edit team**) in the project's
+  header, from **Create with a team →** when you make a project, from **New project with a team…** in the palette, or
+  from a new project's empty Crew. Start from a shape (hub and spokes, a pipeline, a pool) that asks a few questions,
+  or a blank canvas, and a short tour shows you around.
+- **Build it by talking.** **Build with Cora** opens a conversation of its own beside the canvas: describe the team and
+  watch it take shape as she replies, each reply with its own Undo. Take over at any point; she sees your edits and
+  works from them.
+- **Read it back, try it, then apply it.** **In words** says what the team does in plain sentences. Checks flag
+  problems as you go (a seat nobody can reach, a route to nowhere) and point at them on the canvas. **Try a message**
+  traces where a message would go, labels included, before anything is live. **Apply** says what will change and which
+  seats restart; **Apply and bring up** starts it. The draft is kept until you apply or discard it (Start over).
+- **A lead's proposal on the canvas.** Open a lead's team proposal in the builder to see it laid out, edit it, and
+  approve it with your edits. Leaving with unsaved edits asks first.
+- **More in the builder:** Talk grows as you type, like the session composer, and shows what Cora is doing as she
+  drafts. Talk and In words can be made wider by dragging their edge. The builder stays open while you work elsewhere,
+  and a draft in progress shows on its project. A team can name its lead seat. Apply's sheet says what you're agreeing
+  to (the team in numbers, the few things to check, one row per seat), and the checks warn about seat folders that
+  aren't there and startup steps that can't run as written.
+
+- **Teams.** Give a project a team: its **seats** (roles, each a Claude Code agent with its own instructions, tools,
+  model and permission rules), **groups** of seats, **labels**, and **routes** (who may message whom, which kinds,
+  and whether a message may wake an idle seat: on its own, with your OK, or never). Cora starts each seat as its own
+  session from the team's own plugin, and a message no route allows is refused, telling the sender who it may message
+  instead. Work posted to a group is offered to its free members (split by label down nested groups), and the first to
+  claim it owns it. A busy pool grows when the work needs it and closes its extras once they've been idle for a while.
+  Escalation rules re-offer unclaimed work, nudge stale owners and tell you about critical incidents. Each seat can
+  have turn and cost limits and quiet hours. Needs Claude Code 2.1.287 or later.
+- **Change a team while it runs.** Cora edits it when you ask (`team_get`, `team_edit`), or the project's lead
+  proposes a change and you approve it. Either way you see exactly what it changes, line by line, with ⚠ on folders,
+  permissions and risky modes. New seats start, removed ones stand down, a retasked seat is told its new role at once,
+  and a seat whose tools or permissions changed offers a restart. Every version is kept, and you can roll back.
+- **Bring up and Stand down** from the Team panel. Bring up brings stood-down seats back as the same sessions, with
+  their memory; **Start fresh** replaces them. A seat that dies is restarted (resumed once, then fresh), and one that
+  keeps dying lands in Needs you.
+- **On the board:** Crew groups members by seat ("Encoder analysts 1 of 2"), Needs you shows team proposals, seats to
+  restart, seats failing to start and a team that isn't running yet, and the Conversation shows work offered to a
+  group and refused messages (quietly). Seats are named by their seat.
+- **Conversation panel:** filter chips only for what the thread has, a one-line key, and a centred empty state.
+- **A session that started before an upgrade** hears which of Cora's tools it doesn't have yet, and how to reconnect.
+- **The Work panel.** A project's work queue as tasks, one row each in rank order (title, owner, state, branch, when
+  it last changed), with the details a click away. The lead opens, ranks, assigns and closes them; the owner moves
+  them through building, review and testing; anyone adds a note. A new board starts with it, under the Crew.
+- **The team map.** A board panel that draws a team project's team live: each seat with a row per member (its state,
+  what it's on, its branch) and the routes between them. A working member's dot breathes, one that waits on you shows
+  a Needs you chip, and a route that just carried a message stays lit. An activity rail lists posts, refused messages,
+  task moves and members starting and stopping. A member's row opens its drawer: a reply line, its work, and Resume,
+  End or Restart. In a narrow panel the map is drawn as one compact column.
+- **Voice:** a speech volume of Cora's own (Settings › Voice), and hearing a line again plays it in its session's voice.
+- **Sessions know the time:** a session's first prompt says the day, date, time and zone, and again every ten minutes.
+- Fixes: a session's model follows `/model` at once; Cora's messages to sessions arrive as plain prompts; ending a
+  session whose check couldn't run says "couldn't tell" instead of ending it; a post to a member Cora can't reach is
+  marked not delivered after ten minutes, and its sender is told; Resume here is one click for a session that has
+  ended; team seats never stop at Claude Code's "trust this folder?" question; an edited decision post updates the
+  card; a team's Inbox item says why for everything you haven't read; typing in a long composer is no longer slow;
+  dropdowns take the app's colours; Cora's agent stays out of team projects' traffic.
 
 ## 0.1.22
 

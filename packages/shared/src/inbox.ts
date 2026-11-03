@@ -49,6 +49,20 @@ export const isUnread = (i: InboxItem): boolean => i.readAt == null || i.at > i.
 /** How many of its entries came since you last opened it (all of them, if you never did). */
 export const newCount = (i: InboxItem): number => i.entries.filter((e) => i.readAt == null || e.got > i.readAt).length;
 
+/**
+ * A team's Inbox item, why it's there: what's in it you haven't read (its posts' kinds, oldest first). One: "a question
+ * for you", "handed to you"; more: "a question and a handoff for you", "two questions and a report for you".
+ */
+export function teamInboxWhy(kinds: string[]): string {
+  const noun = (k: string) => (k === 'direct' ? 'direct message' : k);
+  if (kinds.length === 1) return kinds[0] === 'handoff' ? 'handed to you' : `a ${noun(kinds[0])} for you`;
+  const n = new Map<string, number>();
+  for (const k of kinds) n.set(k, (n.get(k) ?? 0) + 1);
+  const parts = [...n].map(([k, c]) => (c === 1 ? `a ${noun(k)}` : `${NUM[c] ?? c} ${noun(k)}s`));
+  return parts.length ? `${parts.length > 1 ? `${parts.slice(0, -1).join(', ')} and ${parts.at(-1)}` : parts[0]} for you` : 'for you';
+}
+const NUM = ['no', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten'];
+
 /** Unread conversations per source. */
 export function unreadCounts(items: InboxItem[]): Record<InboxSource, number> {
   const c = { jira: 0, slack: 0, mail: 0, gitlab: 0, cora: 0 };

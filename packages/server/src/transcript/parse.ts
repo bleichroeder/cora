@@ -94,6 +94,19 @@ function handbackBody(raw: string): string {
   return body.replace(/<\/agent-message>\s*$/, '').replace(/^\n/, '').replace(/^ {2}/gm, '').trim();
 }
 
+/**
+ * The model a /model line chose, as its id: Claude Code writes "Set model to `Sonnet 5.5` and saved as your default…"
+ * (2.1.316) the moment you choose. Its marketing name becomes the id the replies will carry (claude-sonnet-5-5; with
+ * "1M" in it, the [1m] context window). A name it can't read (Default, an alias): null, and the next reply says.
+ */
+export function modelFromSetLine(text: string): string | null {
+  const m = /^\s*<local-command-stdout>\s*Set model to `?([^`\n<]+?)`?(?:\s+and saved\b[^<]*)?\s*(?:<\/local-command-stdout>|$)/i.exec(text);
+  const name = m?.[1].trim();
+  const id = name && /^(opus|sonnet|haiku|fable)\s+(\d+)(?:\.(\d+))?\b/i.exec(name);
+  if (!id) return null;
+  return `claude-${id[1].toLowerCase()}-${id[2]}${id[3] ? `-${id[3]}` : ''}${/\b1M\b/i.test(name) ? '[1m]' : ''}`;
+}
+
 function userText(content: unknown): string | undefined {
   if (typeof content === 'string') return content;
   if (Array.isArray(content) && content.length && content.every((b: any) => b?.type === 'text')) {
@@ -150,8 +163,9 @@ export function parseLine(obj: any, ctx: ParseCtx): ParseResult {
   const msg = obj.message ?? {};
 
   if (type === 'assistant') {
-    // keep the context-window suffix ("[1m]") the attachment carried
-    if (msg.model) meta.model = ctx.modelId?.startsWith(msg.model) ? ctx.modelId : msg.model;
+    // keep the context-window suffix ("[1m]") the attachment carried; a synthetic line (an interrupted or failed turn,
+    // "<synthetic>") names no model
+    if (msg.model && !String(msg.model).startsWith('<')) meta.model = ctx.modelId?.startsWith(msg.model) ? ctx.modelId : msg.model;
     let tokens: NewEvent['tokens'];
     if (msg.id && msg.usage && !ctx.seenMsgIds.has(msg.id)) {
       ctx.seenMsgIds.add(msg.id);
@@ -261,6 +275,12 @@ export function parseLine(obj: any, ctx: ParseCtx): ParseResult {
       return { events, meta };
     }
     if (SYSTEM_INJECTED.test(text)) {
+      // you chose another model (/model): it's the session's now, not only once its next reply says
+      const chosen = agentId === 'main' ? modelFromSetLine(text) : null;
+      if (chosen) {
+        ctx.modelId = chosen;
+        meta.model = chosen;
+      }
       const name = text.startsWith('<command-') && agentId === 'main' && obj.origin?.kind === 'human' ? tag(text, 'command-name') : undefined;
       if (name?.startsWith('/')) meta.command = { id: obj.promptId ? `prompt:${obj.promptId}` : obj.uuid, text: `${name} ${tag(text, 'command-args') ?? ''}`.trim(), ts };
       return { events, meta };

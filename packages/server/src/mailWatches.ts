@@ -12,11 +12,13 @@ import { writeFileAtomic } from './fsx';
 
 export type WatchInput = {
   id?: string;
+  /** with an id that isn't there: made with that id (a team seat's standing watch) */
+  create?: boolean;
   about: string;
   thread?: string;
   query?: string;
   from: string;
-  mode?: 'once' | 'thread';
+  mode?: 'once' | 'thread' | 'every';
   then: string;
   act?: 'tell' | 'ask' | 'do';
   reply?: 'ask' | 'draft';
@@ -29,6 +31,13 @@ export type WatchInput = {
 export class WatchError extends Error {}
 
 const oneLine = (s: string) => s.replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ').trim();
+/** A watch's words as they are kept (so one set again compares with what's there). */
+export const watchWords = (i: Pick<WatchInput, 'about' | 'from' | 'query' | 'then'>) => ({
+  about: oneLine(i.about ?? '').slice(0, 120),
+  from: oneLine(i.from ?? '').toLowerCase(),
+  then: (i.then ?? '').trim().slice(0, 2000),
+  query: i.query ? oneLine(i.query).slice(0, 300) : undefined,
+});
 
 export class MailWatches {
   private all: MailWatch[] = [];
@@ -61,11 +70,8 @@ export class MailWatches {
 
   /** A new watch, or (with an id) a change to one: what the user said, checked. */
   set(i: WatchInput): MailWatch {
-    const about = oneLine(i.about ?? '').slice(0, 120);
-    const from = oneLine(i.from ?? '').toLowerCase();
-    const then = (i.then ?? '').trim().slice(0, 2000);
+    const { about, from, then, query } = watchWords(i);
     const thread = i.thread?.trim();
-    const query = i.query ? oneLine(i.query).slice(0, 300) : undefined;
     if (!about) throw new WatchError('Say in a few words what the watch is for (about).');
     if (!from || !/^@?[\w.+-]+(@[\w-]+(\.[\w-]+)+)?$/.test(from) || (!from.includes('@') && !from.includes('.'))) throw new WatchError('from must be the sender\'s address (ana@example.com) or domain (@example.com): find it with gmail_search first.');
     if (!then) throw new WatchError('Say what to do when it comes (then), in the user\'s words.');
@@ -75,15 +81,15 @@ export class MailWatches {
     const hours = Math.min(MAIL_WATCH_MAX_DAYS * 24, Math.max(1, Number(i.hours) || MAIL_WATCH_DAYS * 24));
     const n = this.now();
     const old = i.id ? this.get(i.id) : undefined;
-    if (i.id && !old) throw new WatchError(`No watch ${i.id} (gmail_watches lists them).`);
+    if (i.id && !old && !i.create) throw new WatchError(`No watch ${i.id} (gmail_watches lists them).`);
     if (!old && this.list().length >= MAX_MAIL_WATCHES) throw new WatchError(`At most ${MAX_MAIL_WATCHES} watches: stop one first.`);
     const w: MailWatch = {
-      id: old?.id ?? randomUUID().slice(0, 8),
+      id: old?.id ?? (i.create && i.id ? i.id : randomUUID().slice(0, 8)),
       about,
       ...(thread ? { thread } : {}),
       ...(query ? { query } : {}),
       from,
-      mode: i.mode === 'thread' ? 'thread' : 'once',
+      mode: i.mode === 'thread' || i.mode === 'every' ? i.mode : 'once',
       then,
       act: i.act === 'tell' || i.act === 'do' ? i.act : 'ask',
       reply: i.reply === 'draft' ? 'draft' : 'ask',
@@ -115,7 +121,7 @@ export class MailWatches {
     this.save();
   }
 
-  /** A watch had its email: a `once` watch ends; a `thread` watch now follows that thread. */
+  /** A watch had its email: a `once` watch ends; a `thread` watch now follows that thread; an `every` watch goes on. */
   hit(id: string, threadId: string): MailWatch | undefined {
     const w = this.all.find((x) => x.id === id);
     if (!w) return undefined;
@@ -137,7 +143,7 @@ export function watchLine(w: MailWatch): string {
   const act = w.act === 'tell' ? 'tell the user' : w.act === 'ask' ? 'ask the user before starting' : 'start on it';
   const where = w.sessionId ? 'in the session that set it' : `in a new session in ${w.cwd}`;
   const until = new Date(w.until).toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' });
-  return `[${w.id}] ${w.about}: ${what}, from ${w.from}, ${w.mode === 'thread' ? 'following its replies' : 'one email'}, until ${until}. When it comes: ${act} ${where} ("${w.then}"); reply: ${w.reply === 'ask' ? 'ask before drafting' : 'draft it'}.`;
+  return `[${w.id}] ${w.about}: ${what}, from ${w.from}, ${w.mode === 'thread' ? 'following its replies' : w.mode === 'every' ? 'every email' : 'one email'}, until ${until}. When it comes: ${act} ${where} ("${w.then}"); reply: ${w.reply === 'ask' ? 'ask before drafting' : 'draft it'}.`;
 }
 
 /** A domain's organisation (its last two labels: alerts.example.com → example.com), as DMARC's relaxed alignment compares them. */

@@ -153,6 +153,26 @@ describe('Gmail: your own Google app', () => {
     expect(gm.status().watches.map((w) => [w.about, w.hits])).toEqual([['capture 12', 1], ['Mark', 0]]);
   });
 
+  it('an every-email watch gets each matching email of one look (and goes on); a once watch stops after the first', async () => {
+    const g = google({
+      history: ['b1', 'b2'],
+      search: { 'from:(qa@acme.com)': ['b1', 'b2'] },
+      msgs: { b1: msg('b1', { from: 'QA <qa@acme.com>', subject: 'one' }), b2: msg('b2', { from: 'QA <qa@acme.com>', subject: 'two' }) },
+    });
+    const dataDir = mkdtempSync(join(tmpdir(), 'cora-gmail-'));
+    writeFileSync(join(dataDir, 'google-client.json'), CLIENT);
+    const watches = new MailWatches({});
+    const seen: Array<[string, string]> = [];
+    const gm = new Gmail({ dataDir, fetchFn: g.fetchFn, watches, onWatch: (w, m) => void seen.push([w.about, m.id]) });
+    const url = new URL(gm.authUrl('http://127.0.0.1:4317/api/gmail/callback'));
+    await gm.finish(url.searchParams.get('state')!, 'c');
+    const every = watches.set({ about: 'alerts', from: 'qa@acme.com', query: 'x', mode: 'every', then: 'triage', sessionId: 's1', by: 'Triage' });
+    watches.set({ about: 'just one', from: 'qa@acme.com', query: 'y', then: 'look', sessionId: 's2', by: 'orion' });
+    await gm.check();
+    expect(seen).toEqual([['alerts', 'b1'], ['alerts', 'b2'], ['just one', 'b1']]);
+    expect(watches.list().map((w) => [w.id, w.hits])).toEqual([[every.id, 2]]);
+  });
+
   it('a header can never be smuggled in; non-ASCII subjects are encoded', () => {
     const m = mime({ to: 'a@b.com\r\nBcc: spy@x.com', subject: 'Café\nBcc: spy@x.com', body: 'hi' });
     expect(m.split('\r\n').filter((l) => /^Bcc:/i.test(l))).toEqual([]);

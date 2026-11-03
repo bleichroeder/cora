@@ -1,0 +1,168 @@
+/*
+ * The live team map (a board panel). The SVG layer (regions, routes, pulses) wears the builder's canvas styles (.tb);
+ * the tiles are HTML with fixed row heights (TeamMapModel's HEAD_H, ROW_H, EMPTY_H: keep them in step).
+ */
+.tb.tm { display: flex; flex-direction: column; grid-template-rows: none; height: 100%; min-height: 0; }
+/* the header (the Team panel's own row) over the map: the map has the rest */
+.tb.tm .tm-top-bar { flex: none; border-bottom: 1px solid var(--hair); }
+.tb.tm .tm-top-bar .tm-head { flex-wrap: wrap; row-gap: 6px; }
+.tb.tm .tm-unassigned { height: 22px; padding: 0 8px; border: 0; border-radius: 6px; background: color-mix(in srgb, var(--need) 10%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--need) 35%, transparent); color: var(--need); font: 500 11px var(--ui); cursor: pointer; white-space: nowrap; }
+.tb.tm .tm-main { flex: 1; display: flex; min-height: 0; }
+.tb.tm .tm-body { position: relative; flex: 1; min-width: 0; min-height: 0; overflow: hidden; }
+.tb.tm .cv { position: absolute; inset: 0; }
+.tb.tm .tm-tiles { position: absolute; left: 0; top: 0; width: 0; height: 0; transform-origin: 0 0; }
+
+/* a tile: a card you act on (its rows open a session) */
+.tb.tm .tm-card { box-sizing: border-box; display: flex; flex-direction: column; overflow: hidden; border: 0; border-radius: 12px; background: var(--raise); box-shadow: inset 0 0 0 1px var(--hair2); color: var(--ink); font: 400 12px/1.3 var(--ui); text-align: left; }
+.tb.tm .tm-head, .tb.tm .tm-free, .tb.tm .tm-fixed { flex: none; display: flex; align-items: center; gap: 10px; height: 44px; padding: 0 10px; box-sizing: border-box; }
+.tb.tm .tm-free, .tb.tm .tm-fixed { flex-direction: row; height: 52px; }
+.tb.tm .tm-free { cursor: pointer; }
+.tb.tm .tm-free:hover { background: var(--raise2); }
+.tb.tm .tm-fixed { background: none; box-shadow: inset 0 0 0 1px var(--hair2); border: 1px dashed transparent; }
+.tb.tm .tile { position: relative; flex: none; display: grid; place-items: center; width: 28px; height: 28px; border-radius: 8px; background: color-mix(in srgb, var(--sc) 16%, var(--nav)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--sc) 35%, transparent); color: color-mix(in srgb, var(--sc) 85%, white); font: 600 12px var(--ui); }
+/* its state on the tile's corner, one signal (working breathes) */
+.tb.tm .tile > i { position: absolute; right: -3px; bottom: -3px; width: 10px; height: 10px; border-radius: 50%; border: 2px solid var(--raise); background: var(--st, var(--ink3)); box-sizing: border-box; }
+.tb.tm .s-work { --st: var(--work); } .tb.tm .s-need { --st: var(--need); } .tb.tm .s-idle { --st: var(--ink3); }
+.tb.tm .s-down .tile > i { background: var(--raise); box-shadow: inset 0 0 0 1.5px var(--ink3); }
+.tb.tm .s-work .tile > i { animation: tb-breathe 2.4s ease-in-out infinite; }
+.tb.tm .hn { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.tb.tm .hn b { overflow: hidden; color: var(--ink); font: 500 13px var(--ui); text-overflow: ellipsis; white-space: nowrap; }
+.tb.tm .hn .hs { overflow: hidden; color: var(--ink4); font: 400 10.5px var(--code); text-overflow: ellipsis; white-space: nowrap; }
+.tb.tm .hb { flex: none; display: flex; gap: 3px; }
+
+/* a member's row: line 1 its dot, name, state and badges; line 2 what it's on; line 3 its branch */
+.tb.tm .tm-row { flex: none; display: flex; flex-direction: column; justify-content: center; gap: 2px; height: 60px; margin: 0 4px; padding: 0 8px; box-sizing: border-box; border: 0; border-top: 1px solid var(--hair); border-radius: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; transition: background .12s; }
+.tb.tm .tm-row:hover { background: var(--raise2); border-radius: 8px; }
+.tb.tm .tm-row > span { display: flex; align-items: center; gap: 6px; min-width: 0; height: 17px; }
+.tb.tm .tm-row .md { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--ms, var(--ink3)); }
+.tb.tm .tm-row.m-work { --ms: var(--work); } .tb.tm .tm-row.m-need { --ms: var(--need); } .tb.tm .tm-row.m-down { --ms: var(--ink4); }
+.tb.tm .tm-row .nm { flex: 1; min-width: 0; overflow: hidden; color: var(--ink); font: 500 12.5px var(--ui); text-overflow: ellipsis; white-space: nowrap; }
+.tb.tm .tm-row .st { flex: none; color: var(--ink4); font: 400 10px var(--code); }
+.tb.tm .tm-row.m-need .st { color: var(--need); }
+.tb.tm .tm-row .l2 { display: block; overflow: hidden; color: var(--ink3); font: 400 11.5px var(--ui); text-overflow: ellipsis; white-space: nowrap; padding-left: 13px; }
+.tb.tm .tm-row .l3 { padding-left: 13px; }
+.tb.tm .tm-row code { max-width: 100%; overflow: hidden; padding: 0 6px; border-radius: 5px; background: var(--nav); box-shadow: inset 0 0 0 1px var(--hair); color: var(--ink3); font: 400 10px/16px var(--code); text-overflow: ellipsis; white-space: nowrap; }
+.tb.tm .tm-row em, .tb.tm .tm-empty { color: var(--ink4); font: 400 10.5px var(--ui); font-style: normal; }
+.tb.tm .tm-empty { display: flex; align-items: center; height: 28px; margin: 0 4px; padding: 0 8px; border-top: 1px solid var(--hair); }
+
+/* an open task on its owner: its place in the queue, its state's colour */
+.tb.tm .tm-badge { flex: none; display: inline-grid; place-items: center; min-width: 18px; height: 15px; padding: 0 4px; box-sizing: border-box; border-radius: 4px; background: color-mix(in srgb, var(--bc) 14%, var(--raise)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--bc) 45%, transparent); color: var(--bc); font: 600 9px var(--code); }
+.tb.tm .tm-gbadges { position: absolute; display: flex; gap: 3px; transform: translateX(-100%); }
+
+/* a message that just arrived, on the compact map: its writer's and recipients' rows lit a moment (red: refused) */
+.tb.tm .lit { animation: tm-lit 1.4s ease-out both; }
+.tb.tm .lit.refused { animation-name: tm-lit-red; }
+@keyframes tm-lit { 0%, 30% { background: color-mix(in srgb, var(--run) 16%, transparent); } 100% { background: transparent; } }
+@keyframes tm-lit-red { 0%, 30% { background: color-mix(in srgb, var(--need) 16%, transparent); } 100% { background: transparent; } }
+
+/* the SVG layer: a route's count of the last hour, quiet; a refused route flashes red once */
+.tb.tm .route .tm-count { fill: var(--ink4); font: 400 9px var(--code); }
+.tb.tm .route.refused .ln, .tb.tm .route.refused .ah { animation: tm-refused 1.4s ease-out both; }
+.tb.tm .tm-line { fill: none; stroke: var(--run); stroke-width: 1.2; stroke-dasharray: 3 3; vector-effect: non-scaling-stroke; opacity: .7; animation: tm-fade .7s ease-out both; }
+.tb.tm .tm-line.refused { stroke: var(--need); animation-duration: 1.4s; }
+@keyframes tm-refused { 0%, 35% { stroke: var(--need); stroke-width: 2; } 100% { stroke: var(--ink3); } }
+@keyframes tm-fade { 0%, 60% { opacity: .7; } 100% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .tb.tm .route.refused .ln, .tb.tm .route.refused .ah { animation: none; stroke: var(--need); }
+  .tb.tm .tm-line, .tb.tm .s-work .tile > i { animation: none; }
+  .tb.tm .lit { animation: none; background: color-mix(in srgb, var(--run) 12%, transparent); }
+  .tb.tm .lit.refused { background: color-mix(in srgb, var(--need) 12%, transparent); }
+}
+
+/* the compact map (a narrow panel): sections read top to bottom, side by side when there's room; never sideways */
+.tb.tm.compact .tm-body { overflow-x: hidden; overflow-y: auto; }
+/* (cards shrink to the panel's width, down to 200px: never cut off, never sideways) */
+.tb.tm .tm-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(240px, 100%), 1fr)); align-items: start; gap: 12px; padding: 12px; }
+.tb.tm.compact .tm-card { min-width: 0; width: 100%; }
+.tb.tm .tm-sec { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.tb.tm .tm-top { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(180px, 100%), 1fr)); gap: 8px; }
+.tb.tm .tm-glab { display: flex; align-items: center; gap: 8px; color: var(--ink3); font: 600 9.5px var(--code); letter-spacing: .14em; text-transform: uppercase; }
+.tb.tm .tm-glab span { color: var(--ink4); font-weight: 400; letter-spacing: 0; text-transform: none; }
+.tb.tm .tm-rlw { position: relative; }
+.tb.tm .tm-rl { display: block; width: 100%; overflow: hidden; padding: 3px 8px; border: 0; border-radius: 6px; background: none; color: var(--ink4); font: 400 11px var(--ui); text-align: left; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+.tb.tm .tm-rl:hover, .tb.tm .tm-rl.sel { background: var(--raise); color: var(--ink3); }
+.tb.tm .tm-rl b { color: var(--ink2); font-weight: 500; }
+.tb.tm .tm-rl .ar { color: var(--ink3); }
+.tb.tm .tm-rl.w-never { opacity: .6; }
+
+/* a route's last few posts */
+.tb.tm .tm-pop { position: absolute; z-index: 2; width: 280px; max-width: calc(100% - 24px); transform: translateX(-50%); padding: 6px; border-radius: 10px; background: var(--raise); box-shadow: inset 0 0 0 1px var(--hair2), 0 8px 24px rgba(0, 0, 0, .35); }
+.tb.tm .tm-pop.inline { position: static; width: auto; max-width: none; margin-top: 4px; transform: none; }
+.tb.tm .tm-post { padding: 5px 6px; border-radius: 7px; color: var(--ink3); font: 400 11px var(--ui); }
+.tb.tm .tm-post + .tm-post { border-top: 1px solid var(--hair); border-radius: 0; }
+.tb.tm .tm-post b { color: var(--ink2); font-weight: 600; }
+.tb.tm .tm-post .k { color: var(--ink4); font: 500 9.5px var(--code); text-transform: uppercase; letter-spacing: .08em; }
+.tb.tm .tm-post.refused .k { color: var(--need); }
+.tb.tm .tm-post time { color: var(--ink4); font: 400 10px var(--code); }
+.tb.tm .tm-post p { margin: 2px 0 0; color: var(--ink2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tb.tm .tm-post.none { color: var(--ink4); }
+
+/* a member's drawer: from the right on the wide map, over all of it on the compact one */
+.tb.tm .tm-drawer { position: absolute; top: 0; right: 0; bottom: 0; z-index: 3; display: flex; flex-direction: column; width: min(360px, 100%); background: var(--nav); box-shadow: inset 1px 0 0 var(--hair2), -16px 0 40px rgba(0, 0, 0, .35); animation: tm-drawer-in .16s ease-out both; }
+.tb.tm .tm-drawer.full { left: 0; width: auto; box-shadow: none; }
+@keyframes tm-drawer-in { from { opacity: 0; transform: translateX(12px); } }
+@media (prefers-reduced-motion: reduce) { .tb.tm .tm-drawer { animation: none; } }
+.tb.tm .tm-drawer .dh { flex: none; display: flex; align-items: center; gap: 10px; height: 52px; padding: 0 8px 0 12px; border-bottom: 1px solid var(--hair); }
+.tb.tm .tm-drawer .dh .tile > i { border-color: var(--nav); }
+.tb.tm .tm-drawer .x { flex: none; width: 28px; height: 28px; border: 0; border-radius: 8px; background: none; color: var(--ink3); font: 400 18px/1 var(--ui); cursor: pointer; }
+.tb.tm .tm-drawer .x:hover { background: var(--raise); color: var(--ink); }
+.tb.tm .tm-drawer .db { flex: 1; min-height: 0; overflow-y: auto; padding: 4px 12px 16px; }
+.tb.tm .tm-drawer .lab { display: flex; align-items: center; gap: 6px; margin: 14px 0 6px; color: var(--ink4); font: 600 10px var(--code); letter-spacing: .16em; text-transform: uppercase; }
+.tb.tm .tm-drawer .lab b { color: var(--ink3); font-weight: 500; letter-spacing: 0; }
+.tb.tm .tm-drawer .acts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.tb.tm .tm-drawer .none { color: var(--ink4); font: 400 11.5px var(--ui); }
+/* Crew's own settings, in place (not floating) */
+.tb.tm .tm-drawer .pc-menu { position: static; z-index: auto; width: auto; padding: 4px; box-shadow: inset 0 0 0 1px var(--hair2); animation: none; }
+.tb.tm .tm-drawer .pc-menu .hd { display: none; }
+.tb.tm .tm-drawer .pc-compose { padding: 0; border-top: 0; }
+.tb.tm .tm-drawer .tw { padding: 6px 0; border-top: 1px solid var(--hair); }
+.tb.tm .tm-drawer .tw .tt { display: flex; align-items: center; gap: 6px; min-width: 0; margin-bottom: 4px; }
+.tb.tm .tm-drawer .tw .tt .n { color: var(--ink4); font: 500 10px var(--code); }
+.tb.tm .tm-drawer .tw .tt b { overflow: hidden; color: var(--ink); font: 500 12px var(--ui); text-overflow: ellipsis; white-space: nowrap; }
+.tb.tm .tm-drawer .tw .row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.tb.tm .tm-drawer .tw .lab { margin: 0; }
+.tb.tm .tm-top-bar .tm-head { padding: 8px 10px; }
+
+/* ---- live (pass 3): motion only for what's running or just happened; nothing loops when nothing is */
+/* working: its dot breathes (opacity only), its turn's time beside its name */
+.tb.tm .tm-row.m-work .md { animation: tb-breathe 2.4s ease-in-out infinite; }
+.tb.tm .tm-row .tt { flex: none; color: var(--work); font: 400 10px var(--code); }
+/* needs you: a quiet tint on its row, and a chip to see to it */
+.tb.tm .tm-row.m-need { background: color-mix(in srgb, var(--need) 7%, transparent); border-radius: 8px; }
+.tb.tm .tm-row .need { flex: none; height: 16px; padding: 0 6px; border-radius: 5px; background: color-mix(in srgb, var(--need) 14%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--need) 40%, transparent); color: var(--need); font: 600 9.5px/16px var(--ui); cursor: pointer; }
+.tb.tm .tm-row .need:hover, .tb.tm .tm-row .need:focus-visible { background: color-mix(in srgb, var(--need) 22%, transparent); outline: none; }
+/* a hovered rail entry lights its members and route */
+.tb.tm .tm-row.hl, .tb.tm .tm-card.hl { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--run) 55%, transparent); background: color-mix(in srgb, var(--run) 8%, var(--raise)); border-radius: 8px; }
+.tb.tm .route.hl .ln, .tb.tm .route.hl .ah { stroke: var(--run); }
+/* talking: a route that carried a message in the last five minutes, solid where it came, its last kind by its chip */
+.tb.tm .route .ln { transition: stroke .6s, stroke-width .6s, opacity .6s; }
+.tb.tm .route.talking .ln.on { stroke: var(--ink2); stroke-width: 1.8; stroke-dasharray: none; opacity: 1; }
+.tb.tm .route.talking .ah { stroke: var(--ink2); stroke-width: 1.8; }
+.tb.tm .route .tm-count .last { fill: var(--ink3); }
+.tb.tm .tm-line.talk { stroke: var(--ink3); stroke-dasharray: none; opacity: .55; animation: none; }
+.tb.tm .tm-rl.talking { color: var(--ink3); box-shadow: inset 2px 0 0 var(--ink3); }
+.tb.tm .tm-rl .last { color: var(--ink3); }
+.tb.tm .tm-rl.hl { background: color-mix(in srgb, var(--run) 10%, transparent); }
+@media (prefers-reduced-motion: reduce) {
+  .tb.tm .tm-row.m-work .md { animation: none; }
+  .tb.tm .route .ln { transition: none; }
+}
+
+/* the activity rail: a thin column at the wide map's edge, a strip at the compact one's top; it folds, per board */
+.tb.tm .tm-rail { flex: none; display: flex; flex-direction: column; width: 232px; min-height: 0; border-left: 1px solid var(--hair); background: var(--nav); }
+.tb.tm .tm-rail.folded { width: 34px; }
+.tb.tm .tm-rail.strip { width: auto; max-height: 132px; border-left: 0; border-bottom: 1px solid var(--hair); }
+.tb.tm .tm-rail.strip.folded { max-height: none; }
+.tb.tm .tm-rail .rh { flex: none; display: flex; align-items: center; gap: 6px; height: 30px; padding: 0 10px; border: 0; background: none; color: var(--ink4); font: 600 9.5px var(--code); letter-spacing: .14em; text-transform: uppercase; cursor: pointer; }
+.tb.tm .tm-rail .rh b { color: var(--ink3); font-weight: 500; letter-spacing: 0; }
+.tb.tm .tm-rail .rh .chev { margin-left: auto; font-style: normal; color: var(--ink3); }
+.tb.tm .tm-rail.folded:not(.strip) .rh { flex-direction: column; justify-content: flex-start; height: auto; padding: 10px 0; writing-mode: vertical-rl; }
+.tb.tm .tm-rail.folded:not(.strip) .rh .chev { margin: 6px 0 0; }
+.tb.tm .tm-rail .rl { flex: 1; min-height: 0; overflow-y: auto; margin: 0; padding: 0 4px 8px; list-style: none; }
+.tb.tm .tm-rail .re { display: flex; gap: 8px; width: 100%; min-width: 0; padding: 4px 6px; border: 0; border-radius: 6px; background: none; color: var(--ink3); font: 400 11px/1.35 var(--ui); text-align: left; cursor: pointer; }
+.tb.tm .tm-rail .re:hover, .tb.tm .tm-rail .re:focus-visible { background: var(--raise); color: var(--ink2); outline: none; }
+.tb.tm .tm-rail .re time { flex: none; width: 26px; color: var(--ink4); font: 400 9.5px/15px var(--code); }
+.tb.tm .tm-rail .re span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tb.tm .tm-rail .re.k-refused { color: var(--need); }
+.tb.tm .tm-rail .re.k-member { color: var(--ink4); }
+.tb.tm .tm-rail .none { padding: 4px 6px; color: var(--ink4); font: 400 11px var(--ui); }

@@ -261,6 +261,18 @@ describe("the bar's strip of page tabs", () => {
   });
 });
 
+describe("a project's board", () => {
+  it('starts with the crew and its Work queue under it, Needs you and the conversation, filling the grid', () => {
+    const start = boardFor(undefined, 'project:p1', null);
+    expect(start.map((p) => p.k)).toEqual(['members', 'work', 'loops', 'thread']);
+    expect(tiles(start)).toBe(true);
+    expect(start.every((p) => fitsBoard(p.k, 'project:p1'))).toBe(true);
+    // a board the user saved keeps what it has (no Work panel added to it)
+    const saved: BoardItem[] = [{ id: 'm', k: 'members', x: 0, y: 0, w: 24, h: 24 }];
+    expect(boardFor(saved, 'project:p1', null).map((p) => p.k)).toEqual(['members']);
+  });
+});
+
 describe("Cora's board", () => {
   it('panels fit their board: session ones on sessions, Cora ones on Cora, some on both', () => {
     expect(fitsBoard('agents', 's1')).toBe(true);

@@ -27,6 +27,8 @@ export class Hub {
    * (private areas closed); the host's view and everyone's pointers go to the others.
    */
   guests?: { live(id: string): boolean; on(): boolean; allows(t: string): boolean; name(seat: string): string };
+  /** sessions a guest never gets (the team builder's; Cora's own unless you opened her console): their rows, events, prompts, terminals */
+  isPrivate?: (sid: string) => boolean;
   private lastView: import('@cora/shared').LiveView | null = null;
   /** the device Cora is in use on now, and its name */
   activeSeat = 'pc';
@@ -296,6 +298,11 @@ export class Hub {
     this.broadcast(m);
   }
 
+  /** a project's builder draft (guests never get it: 'builder' is one of the messages they never receive); did a screen get it? */
+  publishBuilder(m: import('@cora/shared').BuilderMsg): boolean {
+    return this.broadcast(m) > 0;
+  }
+
   /** debrief videos: their progress, ffmpeg */
   publishVideos(m: import('@cora/shared').VideosMsg): void {
     this.broadcast(m);
@@ -338,14 +345,69 @@ export class Hub {
     this.broadcast(msg, true);
   }
 
-  private broadcast(msg: ServerMsg, sim = false): void {
-    if (!sim && this.simShown.has(msg.t)) return;
-    if (!this.socks.size) return;
+  /** to every screen that may have it (a guest's: without the private sessions); how many got it */
+  private broadcast(msg: ServerMsg, sim = false): number {
+    if (!sim && this.simShown.has(msg.t)) return 0;
+    if (!this.socks.size) return 0;
     const data = JSON.stringify(msg);
-    for (const s of this.socks) if (s.readyState === OPEN && this.fed(s) && this.may(s, msg.t)) s.send(data);
+    let guestData: string | null | undefined;
+    let n = 0;
+    for (const s of this.socks) {
+      if (s.readyState !== OPEN || !this.fed(s) || !this.may(s, msg.t)) continue;
+      if (this.isGuest(s)) {
+        if (guestData === undefined) {
+          const g = this.forGuest(msg);
+          guestData = g === msg ? data : g && JSON.stringify(g);
+        }
+        if (guestData === null) continue;
+        s.send(guestData);
+      } else s.send(data);
+      n++;
+    }
+    return n;
+  }
+
+  /** A message as a guest gets it: the private sessions' rows, events, prompts, terminals and feeds left out (null: nothing left). */
+  private forGuest(msg: ServerMsg): ServerMsg | null {
+    const no = this.isPrivate;
+    if (!no) return msg;
+    switch (msg.t) {
+      case 'session':
+        return no(msg.session.id) ? null : msg;
+      case 'agent':
+        return no(msg.agent.sessionId) ? null : msg;
+      case 'events': {
+        const events = msg.events.filter((e) => !no(e.sessionId));
+        return !events.length ? null : events.length === msg.events.length ? msg : { ...msg, events };
+      }
+      case 'pending':
+        return { ...msg, pending: msg.pending.filter((p) => !no(p.sessionId)) };
+      case 'terminals':
+        return { ...msg, terminals: msg.terminals.filter((t) => !t.sessionId || !no(t.sessionId)) };
+      // a session's memes, debriefs, debrief videos and live documents
+      case 'meme':
+      case 'debriefs':
+      case 'explain-data':
+        return no(msg.sessionId) ? null : msg;
+      case 'videos':
+        return { ...msg, jobs: msg.jobs.filter((j) => !no(j.sessionId)) };
+      case 'snapshot':
+        return {
+          ...msg,
+          sessions: msg.sessions.filter((x) => !no(x.id)),
+          agents: msg.agents.filter((a) => !no(a.sessionId)),
+          pending: msg.pending.filter((p) => !no(p.sessionId)),
+          terminals: msg.terminals.filter((t) => !t.sessionId || !no(t.sessionId)),
+          recent: Object.fromEntries(Object.entries(msg.recent).filter(([sid]) => !no(sid))),
+        };
+      default:
+        return msg;
+    }
   }
 
   private send(sock: Sock, msg: ServerMsg, always = false): void {
-    if (sock.readyState === OPEN && (always || this.may(sock, msg.t))) sock.send(JSON.stringify(msg));
+    if (sock.readyState !== OPEN || !(always || this.may(sock, msg.t))) return;
+    const m = this.isGuest(sock) ? this.forGuest(msg) : msg;
+    if (m) sock.send(JSON.stringify(m));
   }
 }

@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { FollowUps } from './followUps';
 import { AWAY_MS, FROM_CORA, bareWords, choiceOpen, highlightedOption, isShell, trustQuestion, type BriefKind, type BrainEvent, type SessionInfo, type CiMsg, type GoalState, type OrchestratorStatus, type PendingDecision, type PendingRequest, type Settings, type TerminalInfo, type UiCommand, takesTags, jiraLine, type JiraEvent, type MailHit, type GitlabTodo, type GitlabIssue, todoWhy } from '@cora/shared';
-import { terminalInput } from '../input';
+import { sendTyped, typedInput } from '../input';
 import type { PtyManager } from '../pty';
 import { Approvals, type ApprovalOutcome } from './approvals';
 import { EventFeed, type FeedMode } from './feed';
@@ -20,6 +20,7 @@ import { Copies, type CopyRun } from './copy';
 import { JiraStarts, type JiraStartDeps } from './jiraStart';
 import { defaultClaudeCmd } from '../pty';
 import { writeFileAtomic } from '../fsx';
+import { promptReady } from './deliver';
 
 export type OrchDeps = {
   dataDir: string;
@@ -73,6 +74,10 @@ export type OrchDeps = {
   gitlabIssue?(project: string, iid: number): Promise<GitlabIssue | null>;
   /** how many prompts a session has (a Jira start's first is Cora's) */
   prompts?(sessionId: string): number;
+  /** sessions that aren't Cora's to watch, hear from or act for (the team builder's own) */
+  ignored?(sessionId: string): boolean;
+  /** a team seat's session: a team is its design and Cora isn't in it, so nothing it does is fed to her (she still acts for it when the user asks) */
+  teamSeat?(sessionId: string): boolean;
   /** what Cora did or asked (Cora's Inbox) */
   told?(t: CoraTold): void;
   claudeCmd?: string[];
@@ -81,6 +86,10 @@ export type OrchDeps = {
 const fmtTokens = (n: number) => (n >= 1_000_000 ? `${(n / 1_000_000).toFixed(n % 1_000_000 ? 1 : 0)}M` : `${Math.round(n / 1000)}k`);
 
 /** It keeps stopping: this many exits within the window and it stays stopped until started again. */
+/** A new agent terminal's box on screen this long (two looks) before it's sent anything: its first Enter is lost otherwise. */
+export const AGENT_SETTLE_MS = 1000;
+/** An agent terminal that has run this long takes input as soon as its box shows (one already going when Cora started). */
+export const AGENT_UP_MS = 30_000;
 const MAX_EXITS = 5;
 const EXIT_WINDOW_MS = 10 * 60_000;
 const RELAUNCH_MS = [2_000, 10_000, 60_000];
@@ -155,7 +164,8 @@ export class OrchestratorManager {
       agentBusy: () => this.agentBusy(),
       mode: () => this.feedMode(),
       isWorker: (sid) => this.goals.isWorker(sid),
-      isAgent: (sid) => this.isAgent(sid),
+      isAgent: (sid) => this.ignores(sid),
+      inTeam: (sid) => !!this.d.teamSeat?.(sid),
       name: (sid) => this.d.nameOf?.(sid) ?? sid.slice(0, 8),
       now: () => this.now(),
     });
@@ -302,6 +312,7 @@ export class OrchestratorManager {
   fromSession(sid: string, text: string, reason: 'user_asked' | 'reply_to_cora'): { ok: true } | { ok: false; error: string } {
     if (!this.status().enabled) return { ok: false, error: "Cora's agent is off (Settings › Cora Orchestrator)." };
     if (this.isAgent(sid)) return { ok: false, error: "That's Cora's own session." };
+    if (this.ignores(sid)) return { ok: false, error: "That's the team builder's session: it talks to the user in the builder." };
     const now = this.now();
     const prompt = [...(this.d.eventsSince?.(sid, now - 12 * 3_600_000) ?? [])].reverse().find((e) => e.kind === 'prompt' && e.agentId === 'main' && !e.queue && (e.text ?? '').trim());
     const said = (prompt?.text ?? '').trim();
@@ -325,6 +336,10 @@ export class OrchestratorManager {
 
   isAgent(sessionId: string | null | undefined): boolean {
     return !!sessionId && sessionId === this.sid;
+  }
+  /** Cora's own session, or one that isn't hers to watch or act for (the team builder's) */
+  ignores(sessionId: string | null | undefined): boolean {
+    return this.isAgent(sessionId) || (!!sessionId && !!this.d.ignored?.(sessionId));
   }
   terminal(): TerminalInfo | undefined {
     return this.sid ? this.d.ptys.list().find((t) => t.sessionId === this.sid && t.alive && !isShell(t)) : undefined;
@@ -561,9 +576,15 @@ export class OrchestratorManager {
     }
     // what it was holding (Jira) goes in with your words, so it knows when you ask
     const held = this.feed.takeHeld();
-    const r = this.say(held.length ? `${held.map((l) => `- ${l}`).join('\n')}\n\n${text}` : text);
-    if (r.ok) this.noteUserInput();
-    else for (const l of held) this.feed.hold(l);
+    const words = held.length ? `${held.map((l) => `- ${l}`).join('\n')}\n\n${text}` : text;
+    // its terminal still starting (or already holding something for it): yours go in, whole, once it can take them
+    const r = this.due.length ? { ok: false, starting: true as const } : this.say(words);
+    if (r.ok || r.starting) {
+      if (!r.ok) this.sayWhenFree(words);
+      this.noteUserInput();
+      return { ok: true };
+    }
+    for (const l of held) this.feed.hold(l);
     return r;
   }
 
@@ -633,16 +654,40 @@ export class OrchestratorManager {
     return this.terminal()?.terminalId ?? null;
   }
 
-  /** Typed into the agent's input and sent. */
-  say(text: string): { ok: boolean; error?: string } {
+  /**
+   * The agent's terminal takes input yet? Claude Code draws its box before it takes a submit: an Enter in its first
+   * moment is lost (the words stay in the box, unsent). So a new terminal takes input once its box has been on screen
+   * for AGENT_SETTLE_MS (seen on two looks), or once it has run AGENT_UP_MS (one Cora found already going). Once it
+   * has, it always does (a box out of view later is no reason to hold back, as before).
+   */
+  private readyTerminal: string | null = null;
+  private boxSeen: { id: string; at: number } | null = null;
+  private takesInput(t: { terminalId: string; startedAt: number }, lines: string[] | null): boolean {
+    if (this.readyTerminal === t.terminalId) return true;
+    const now = this.now();
+    if (!lines || !promptReady(lines)) {
+      this.boxSeen = null;
+      return false;
+    }
+    if (now - t.startedAt >= AGENT_UP_MS || (this.boxSeen?.id === t.terminalId && now - this.boxSeen.at >= AGENT_SETTLE_MS)) {
+      this.readyTerminal = t.terminalId;
+      return true;
+    }
+    if (this.boxSeen?.id !== t.terminalId) this.boxSeen = { id: t.terminalId, at: now };
+    return false;
+  }
+
+  /** Typed into the agent's input and sent. `starting`: its terminal can't take it yet (sayWhenFree gives it soon). */
+  say(text: string): { ok: boolean; error?: string; starting?: true } {
     const t = this.terminal();
     if (!t) return { ok: false, error: this.enabled() ? 'Cora is starting; try again in a moment' : 'Cora is off (Settings → Cora Orchestrator)' };
-    const input = terminalInput(text);
+    // typed as keys, so what it hears arrives as a plain prompt, never as pasted text (input.ts typedInput)
+    const input = typedInput(text);
     if ('error' in input) return { ok: false, error: input.error };
     const lines = this.d.ptys.screenLines(t.terminalId);
     if (lines && choiceOpen(lines)) return { ok: false, error: 'Cora is waiting on a choice in its terminal' };
-    this.d.ptys.write(t.terminalId, input.data);
-    setTimeout(() => this.d.ptys.write(t.terminalId, '\r'), input.paste ? 150 : 80);
+    if (!this.takesInput(t, lines)) return { ok: false, error: 'Cora is starting; it gets this once its terminal is ready', starting: true };
+    sendTyped(this.d.ptys, t.terminalId, input);
     // its own input (sayFromUser marks yours after this)
     this.lastInput = { from: 'cora', at: Date.now() };
     return { ok: true };
@@ -820,7 +865,7 @@ export class OrchestratorManager {
     const budgetOk = !goal || goal.state !== 'blocked';
     const todo: Array<[PendingRequest, Verdict]> = [];
     for (const p of list) {
-      if (!p.sessionId || this.verdicts.has(p.id) || this.isAgent(p.sessionId)) continue;
+      if (!p.sessionId || this.verdicts.has(p.id) || this.ignores(p.sessionId)) continue;
       if (!this.goals.isWorker(p.sessionId) && !this.control) continue;
       const v = this.judge(p.sessionId, { tool: p.toolName, input: p.toolInput, kind: p.kind });
       const verdict = v.verdict === 'allow' && !budgetOk ? { verdict: 'ask' as const, rule: 'budget', why: "the goal's budget is spent" } : v;

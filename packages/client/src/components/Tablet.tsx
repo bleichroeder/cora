@@ -10,6 +10,7 @@ import { sessionColor, sessionName } from '../lib/format';
 import { sortedSessions, SessionRail } from './SessionRail';
 import { SessionMenu } from './SessionMenu';
 import { Icon } from './Icon';
+import { usePalette } from './Palette';
 import { useState } from 'react';
 import './tablet.css';
 import './projects.css';
@@ -99,17 +100,27 @@ function SessionTile({ s, on, onMenu }: { s: SessionInfo; on: boolean; onMenu(x:
   );
 }
 
+/**
+ * The drawer closes on a choice made in it: a session, the board, a project or the Inbox opened, a modal, or a session's
+ * End confirm asked for (it shows above the page, never under the drawer's dim). Its unsubscribe.
+ */
+export function closeOnChoice(): () => void {
+  const close = () => useTabletUi.setState({ drawer: false });
+  const a = useBrain.subscribe((s, p) => {
+    if (s.focus !== p.focus || s.overview !== p.overview || s.projectOpen !== p.projectOpen || s.inbox !== p.inbox || (s.modal && !p.modal)) close();
+  });
+  const b = usePalette.subscribe((s, p) => {
+    if (s.ending && s.ending !== p.ending) close();
+  });
+  return () => (a(), b());
+}
+
 /** The full nav, sliding over from the left (☰, or a swipe in from the left edge); a choice in it closes it. */
 export function TabletDrawer() {
   const open = useTabletUi((t) => t.drawer);
   const close = () => useTabletUi.setState({ drawer: false });
-  // what you pick in it (a session, the board, a project, the Inbox): it closes
-  useEffect(() => {
-    if (!open) return;
-    return useBrain.subscribe((s, p) => {
-      if (s.focus !== p.focus || s.overview !== p.overview || s.projectOpen !== p.projectOpen || s.inbox !== p.inbox || (s.modal && !p.modal)) close();
-    });
-  }, [open]);
+  // what you pick in it (a session, the board, a project, the Inbox, a dialog): it closes
+  useEffect(() => (open ? closeOnChoice() : undefined), [open]);
   // a swipe in from the left edge opens it
   useEffect(() => {
     let start: { x: number; y: number } | null = null;

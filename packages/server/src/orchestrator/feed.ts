@@ -12,6 +12,8 @@ export type FeedDeps = {
   mode(): FeedMode;
   isWorker(sessionId: string): boolean;
   isAgent(sessionId: string): boolean;
+  /** a team seat's session: a team is its own (its failures, stalls, prompts and pipelines aren't Cora's news) */
+  inTeam?(sessionId: string): boolean;
   name(sessionId: string): string;
   now?(): number;
   /** lines gather this long before they go (several things at once arrive together) */
@@ -123,7 +125,7 @@ export class EventFeed {
   }
 
   event(e: BrainEvent): void {
-    if (!e.sessionId || this.d.isAgent(e.sessionId) || e.agentId !== 'main') return;
+    if (!e.sessionId || this.d.isAgent(e.sessionId) || this.d.inTeam?.(e.sessionId) || e.agentId !== 'main') return;
     // news only: an event read again (old), or one heard already, is neither counted nor told
     if (this.now() - e.ts > LIVE_MS) return;
     const key = `${e.id}|${e.phase ?? ''}`;
@@ -189,7 +191,7 @@ export class EventFeed {
   sessions(list: SessionInfo[]): void {
     const now = this.now();
     for (const s of list) {
-      if (this.d.isAgent(s.id)) continue;
+      if (this.d.isAgent(s.id) || this.d.inTeam?.(s.id)) continue;
       const working = s.state === 'working' || s.state === 'thinking';
       // one Cora hasn't heard from since it started may only look busy (its transcript read again): not stuck
       if (!working || !this.turns.has(s.id)) {
@@ -208,7 +210,7 @@ export class EventFeed {
     const mode = this.d.mode();
     const now = this.now();
     for (const p of list) {
-      if (!p.sessionId || this.d.isAgent(p.sessionId)) continue;
+      if (!p.sessionId || this.d.isAgent(p.sessionId) || this.d.inTeam?.(p.sessionId)) continue;
       const name = this.d.name(p.sessionId);
       if (mode === 'autopilot' && this.d.isWorker(p.sessionId) && !this.seenPending.has(p.id)) {
         this.seenPending.add(p.id);
@@ -235,6 +237,8 @@ export class EventFeed {
     const prev = this.pipes.get(p.key);
     this.pipes.set(p.key, p.status);
     if (prev === p.status || prev === undefined) return;
+    // followed only by team seats: the team's own
+    if (sessionIds.length && sessionIds.every((s) => this.d.inTeam?.(s))) return;
     const workers = sessionIds.filter((s) => this.d.isWorker(s));
     const failedJobs = p.stages.flatMap((s) => s.jobs.filter((j) => j.status === 'failed' && !j.allowFailure).map((j) => j.name));
     const jobs = failedJobs.length ? ` (failed: ${failedJobs.slice(0, 5).join(', ')})` : '';
@@ -243,7 +247,7 @@ export class EventFeed {
       return;
     }
     if (p.status === 'failed' && ciActive(prev as never)) {
-      const who = sessionIds.filter((s) => !this.d.isAgent(s)).map((s) => `"${this.d.name(s)}"`);
+      const who = sessionIds.filter((s) => !this.d.isAgent(s) && !this.d.inTeam?.(s)).map((s) => `"${this.d.name(s)}"`);
       this.push(`pipeline #${p.id} on ${p.ref} failed${jobs}${who.length ? ` (${who.join(', ')})` : ''} ${p.url}`);
     }
   }

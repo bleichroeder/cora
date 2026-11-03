@@ -15,7 +15,9 @@ const replayHooks = async (s: Running) => {
   for (const f of readdirSync(fixtures).sort()) {
     const body = JSON.parse(readFileSync(join(fixtures, f), 'utf8')).body;
     const r = await s.app.inject({ method: 'POST', url: `/hook/${body.hook_event_name}`, headers: { 'x-cora-token': 'hooktok' }, payload: body });
-    expect(r.statusCode).toBe(204);
+    // a prompt hears the time (its session's first, then every ten minutes); nothing else answers
+    if (body.hook_event_name === 'UserPromptSubmit' && r.statusCode === 200) expect(r.json().hookSpecificOutput.additionalContext).toMatch(/^From Cora: it's [^\n]+\.$/);
+    else expect(r.statusCode).toBe(204);
   }
 };
 

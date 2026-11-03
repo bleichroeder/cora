@@ -5,6 +5,8 @@
 .composer.cmp-on .cmp-row { border-color: #334155; }
 .cmp-row textarea { flex: 1; min-width: 0; resize: none; border: 0; outline: 0; background: transparent; color: #e2e8f0; font: 13px/1.45 var(--sans, system-ui); padding: 4px 0; max-height: 40vh; overflow-y: auto; }
 .cmp-row textarea::placeholder { color: #475569; }
+/* sized to its text by the browser (no measuring on every keystroke), up to a third of the window, then it scrolls */
+@supports (field-sizing: content) { .cmp-row textarea { field-sizing: content; min-height: calc(1.45em + 8px); max-height: max(120px, 33vh); } }
 .cmp-btn { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 7px; color: #64748b; cursor: pointer; background: none; border: 0; }
 .cmp-btn:hover { color: #e2e8f0; background: #1e293b; }
 .cmp-send { color: var(--blue); }

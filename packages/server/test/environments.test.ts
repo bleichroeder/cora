@@ -118,7 +118,8 @@ describe('sessions hear about the network', () => {
     const { startServer } = await import('../src/server');
     const { loadConfig } = await import('../src/config');
     let up = new Set(['rancher.acme-dev.aws.example.com']);
-    const srv = await startServer(loadConfig({ dataDir: mkdtempSync(join(tmpdir(), 'cora-envsrv-')), dbPath: ':memory:', hookToken: 'hooktok', uiToken: 'uitok', clientDir: join(tmpdir(), 'nope-client') }), { tail: false, listen: false, kubeDir: kubeDir(), envProbe: async (u) => up.has(new URL(u).hostname) });
+    const dataDir = mkdtempSync(join(tmpdir(), 'cora-envsrv-'));
+    const srv = await startServer(loadConfig({ dataDir, dbPath: ':memory:', hookToken: 'hooktok', uiToken: 'uitok', clientDir: join(tmpdir(), 'nope-client') }), { tail: false, listen: false, kubeDir: kubeDir(), envProbe: async (u) => up.has(new URL(u).hostname) });
     try {
       const UI = { cookie: 'ab_session=uitok', origin: 'http://127.0.0.1:4317' };
       const prompt = (sid: string, n: number) => srv.app.inject({ method: 'POST', url: '/hook/UserPromptSubmit', headers: { 'x-cora-token': 'hooktok' }, payload: { session_id: sid, cwd: 'C:/work/x', prompt: 'hi', prompt_id: `${sid}-p${n}` } });
@@ -126,6 +127,9 @@ describe('sessions hear about the network', () => {
       const first = await prompt('sess-env-1', 1);
       expect(first.json().hookSpecificOutput.additionalContext).toMatch(/^From Cora: network: Reachable now: dev \(acme-dev\)\..*KUBECONFIG=.*acme-dev\.yaml/);
       expect((await prompt('sess-env-1', 2)).statusCode).toBe(204);
+      // the team builder's own session (its folder is Cora's) hears nothing of it: it has no use for it
+      const builder = await srv.app.inject({ method: 'POST', url: '/hook/UserPromptSubmit', headers: { 'x-cora-token': 'hooktok' }, payload: { session_id: 'sess-builder-1', cwd: join(dataDir, 'builder', 'p1'), prompt: 'hi', prompt_id: 'sess-builder-1-p1' } });
+      expect(builder.statusCode).toBe(204);
       up = new Set(['rancher.acme-staging.aws.example.com']);
       await srv.app.inject({ method: 'POST', url: '/api/environments/check', headers: UI });
       expect((await prompt('sess-env-1', 3)).json().hookSpecificOutput.additionalContext).toMatch(/the network changed: Reachable now: staging/);

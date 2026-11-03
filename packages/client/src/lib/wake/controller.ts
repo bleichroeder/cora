@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { WAKE_THRESHOLDS } from '@cora/shared';
 import { WORKLET, cancelPtt, coraLine, isFrontLine, onSpeechEnd, startListening, useVoice, voiceLevels } from '../voice';
 import { agentId, useOrch } from '../../state/orchestrator';
+import { speechVolume } from '../speechVolume';
 
 export type WakeState = 'off' | 'starting' | 'waiting' | 'paused' | 'muted' | 'capturing' | 'followup' | 'error';
 export type WakeWorkerLike = { post(m: unknown): void; onMessage(cb: (m: any) => void): void };
@@ -196,7 +197,7 @@ function chime(): void {
   try {
     const ctx = new AudioContext();
     const g = ctx.createGain();
-    g.gain.value = 0.06;
+    g.gain.value = 0.06 * speechVolume();
     g.connect(ctx.destination);
     [880, 1320].forEach((hz, i) => {
       const o = ctx.createOscillator();

@@ -1,6 +1,7 @@
 import { applyJira } from './jiraWatch';
 import { applyRBrowse } from '../components/RemoteBrowser';
 import { addToProject, useProjects } from './projects';
+import { useBuilder } from './builder';
 import { useVideos } from './videos';
 import { useDebrief } from './debrief';
 import { useWorktrees } from './worktrees';
@@ -153,6 +154,9 @@ function open() {
       case 'projects':
         useProjects.getState().apply(msg);
         break;
+      case 'builder':
+        useBuilder.getState().apply(msg);
+        break;
       case 'videos':
         useVideos.getState().apply(msg);
         break;
@@ -271,9 +275,16 @@ export async function launchTerminal(body: { mode: ClaudeMode; cwd?: string; ses
   return { ok: true, terminal: t };
 }
 
-export async function checkRunning(sid: string): Promise<{ hosted: boolean; elsewhere: boolean; pids?: number[] }> {
-  const r = await fetch(`/api/sessions/${encodeURIComponent(sid)}/running`);
-  return r.ok ? r.json() : { hosted: false, elsewhere: false };
+/** Is the session running here or in another terminal? `checked`: false when that couldn't be looked at (never "not running"). */
+export async function checkRunning(sid: string): Promise<{ hosted: boolean; checked: boolean; elsewhere: boolean; pids?: number[] }> {
+  try {
+    const r = await fetch(`/api/sessions/${encodeURIComponent(sid)}/running`);
+    if (!r.ok) return { hosted: false, checked: false, elsewhere: false };
+    const j = (await r.json()) as { hosted?: boolean; checked?: boolean; elsewhere?: boolean; pids?: number[] };
+    return { ...j, hosted: !!j.hosted, checked: j.checked === true, elsewhere: !!j.elsewhere };
+  } catch {
+    return { hosted: false, checked: false, elsewhere: false };
+  }
 }
 
 export async function fetchHistory(): Promise<HistoryItem[]> {

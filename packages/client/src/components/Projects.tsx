@@ -5,7 +5,9 @@ import { PROJECT_COLORS } from '@cora/shared';
 import { addToProject, archiveProject, createProject, deleteProject, leaveProject, reorderProjects, shadesOf, updateProject, useProjects } from '../state/projects';
 import { MAIN_COLORS, isDismissed, sessionName } from '../lib/format';
 import { Icon } from './Icon';
+import { createWithTeam } from '../state/builder';
 import './projects.css';
+import { useOnScreen } from '../lib/onScreen';
 
 /**
  * Projects in the nav: a section above Working / Idle / Ended.
@@ -184,8 +186,10 @@ function ProjectMenu({ p, x, y, index, all, onClose }: { p: Project; x: number; 
     void reorderProjects(ids);
   };
   const colors = [...new Set([...PROJECT_COLORS, ...MAIN_COLORS])].slice(0, 14);
+  // all of it on screen, opened near the bottom of the list too
+  const at = useOnScreen(box, x, y);
   return (
-    <div className="session-menu" ref={box} style={{ left: Math.min(x, window.innerWidth - 290), top: Math.min(y, window.innerHeight - 440) }}>
+    <div className="session-menu" ref={box} style={{ ...at, overflowY: 'auto' }}>
       <div className="sm-h" style={{ ['--pc' as any]: p.color }}>
         <span className="pj-sq" style={{ width: 14, height: 14, margin: '0 7px' }} />
         <span className="sm-t">
@@ -303,13 +307,28 @@ export function ArchivedProjects({ q, onDone }: { q: string; onDone(): void }) {
   );
 }
 
-/** A new project's name (Enter makes it; Esc, or nothing typed, doesn't). `sessionId`: it starts with that session. */
+/**
+ * A new project's name (Enter makes it; Esc, or nothing typed, doesn't). `sessionId`: it starts with that session.
+ * From the nav (no session), Create with a team makes it and opens its builder.
+ */
 export function NewProject({ onDone, sessionId }: { onDone(p?: Project | null): void; sessionId?: string }) {
   const [name, setName] = useState('');
+  // Create with a team pressed before a name was typed: the field asks for one
+  const [needName, setNeedName] = useState(false);
   const ref = useRef<HTMLInputElement>(null);
+  // made once: a second Enter or click while it's on its way doesn't make another
+  const making = useRef(false);
   useEffect(() => ref.current?.focus(), []);
-  const go = async () => {
+  const withTeam = () => {
+    if (name.trim()) return void go(true);
+    setNeedName(true);
+    ref.current?.focus();
+  };
+  const go = async (team = false) => {
     if (!name.trim()) return onDone();
+    if (making.current) return;
+    making.current = true;
+    if (team) return onDone(await createWithTeam(name.trim()));
     const p = await createProject(name.trim(), sessionId);
     onDone(p);
     if (p && !sessionId) useBrain.getState().openProject(p.id);
@@ -319,7 +338,8 @@ export function NewProject({ onDone, sessionId }: { onDone(p?: Project | null): 
       <input
         ref={ref}
         value={name}
-        placeholder="Project name"
+        className={needName && !name.trim() ? 'need' : undefined}
+        placeholder={needName ? 'Name it first, then Create with a team' : 'Project name'}
         maxLength={60}
         onChange={(e) => setName(e.target.value)}
         onKeyDown={(e) => {
@@ -328,6 +348,12 @@ export function NewProject({ onDone, sessionId }: { onDone(p?: Project | null): 
         }}
         onBlur={() => !name.trim() && onDone()}
       />
+      {sessionId ? null : (
+        // (the field keeps focus on press, so an empty one doesn't close under the click)
+        <button className="pj-withteam" title="Make it and open the builder: talk it through with Cora, start from a shape, or draw it" onMouseDown={(e) => e.preventDefault()} onClick={withTeam}>
+          Create with a team →
+        </button>
+      )}
     </div>
   );
 }

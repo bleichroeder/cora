@@ -17,9 +17,8 @@ import { Icon } from './Icon';
 import { RecapPeek } from './Recap';
 import { IssueChip } from './IssuePicker';
 import { JiraChip } from './JiraChip';
-import { EndSessionConfirm } from './EndSession';
 import { GROUPS, dropOrder, inList, sameGroup, saveOrder, sortedSessions } from '../lib/sessionOrder';
-import { openPalette } from './Palette';
+import { askEnd, openPalette } from './Palette';
 import { CiGlyph } from './CiStrip';
 import { ToolsDock } from './Tools';
 import { securityLevel } from '@cora/shared';
@@ -72,7 +71,6 @@ function Entry({ s, onMenu, drag, setDrag, project }: { s: SessionInfo; onMenu(e
     if (focus === s.id) ref.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
   }, [focus, s.id]);
   const hint = drag?.over?.id === s.id && drag.id !== s.id ? (drag.over.below ? ' drop-below' : ' drop-above') : '';
-  const [ending, setEnding] = useState(false);
   const ended = s.state === 'ended';
   // its Claude Code still open in Cora (it said it ended, and hasn't quit yet): ending it comes before taking it off
   const hosted = useBrain((st) => st.terminals.some((t) => t.sessionId === s.id && t.alive));
@@ -94,7 +92,6 @@ function Entry({ s, onMenu, drag, setDrag, project }: { s: SessionInfo; onMenu(e
 
   return (
     <>
-      {ending ? <EndSessionConfirm s={s} onClose={() => setEnding(false)} /> : null}
       {peek && s.recap && ref.current ? <RecapPeek sessionId={s.id} row={ref.current} /> : null}
       <button
         ref={ref}
@@ -163,7 +160,9 @@ function Entry({ s, onMenu, drag, setDrag, project }: { s: SessionInfo; onMenu(e
             onClick={(e) => {
               e.stopPropagation();
               if (ended && !hosted) void removeSession(s.id).then((err) => err && oops("Couldn't take it off the list", err));
-              else setEnding(true);
+              // asked of the confirm Cora always has open to her (PaletteHost), never one inside this row: in the tablet's
+              // drawer, a row's dialog sat under the drawer's dim, and went when the drawer closed
+              else askEnd(s.id);
             }}
           >
             <Icon name="X" size={11} />

@@ -126,7 +126,7 @@ export function GoalPanel({ sessionId }: { sessionId: string }) {
         <Markdown text={first ?? '…'} />
       </div>
       {(first?.length ?? 0) > 280 ? (
-        <button className="more" onClick={() => setMore(!more)}>
+        <button className="lb-goal-more" onClick={() => setMore(!more)}>
           {more ? 'less' : 'more'}
         </button>
       ) : null}

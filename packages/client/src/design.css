@@ -32,6 +32,11 @@
    timeline) say so themselves. Explain pages get the same (lib/explainShim.ts). */
 * { scrollbar-width: thin; scrollbar-color: var(--scroll-thumb) transparent; }
 
+/* a dropdown's open list (the Crew's lead and To:, and every other select): the app's raised surface and ink, not
+   the browser's grey list */
+select option, select optgroup { background-color: var(--raise2); color: var(--ink); }
+select option:disabled { color: var(--ink4); }
+
 /* the same button everywhere: a raised surface, an inset hairline */
 .dl-btn { flex: none; display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 28px; padding: 0 10px; border: 0; border-radius: 8px; background: var(--raise); box-shadow: inset 0 0 0 1px var(--hair2); color: var(--ink); font: 500 12px var(--ui); cursor: pointer; }
 .dl-btn:hover { background: var(--raise2); }

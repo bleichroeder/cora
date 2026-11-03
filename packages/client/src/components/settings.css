@@ -193,3 +193,8 @@
 .lk-form .lk-pin { width: 150px; letter-spacing: .25em; }
 .lk-acts { display: inline-flex; gap: 6px; }
 .lk-err { flex-basis: 100%; color: #ffb3b3; font: 500 12px var(--ui); }
+
+/* Cora's speech volume (Voice): a slim track in the accent, its percentage beside it */
+.modal.settings .set-volume { display: inline-flex; align-items: center; gap: 10px; }
+.modal.settings .set-volume input[type='range'] { width: 180px; accent-color: var(--cora); }
+.modal.settings .set-volume .pct { min-width: 36px; color: var(--ink2); font: 500 12px var(--code); text-align: right; }

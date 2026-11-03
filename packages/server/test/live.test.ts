@@ -1,7 +1,9 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { Hub } from '../src/hub';
+import { OrchestratorManager } from '../src/orchestrator/manager';
 import type { Run } from '../src/remote';
 import { Shares } from '../src/shares';
 import { Door, doorAllows, doorHeaders } from '../src/door';
@@ -111,6 +113,106 @@ describe('Go live, through the server', () => {
       await srv.app.inject({ method: 'POST', url: '/api/live/end', headers: pc });
       expect((await srv.app.inject({ url: path })).statusCode).toBe(404);
       expect((await srv.app.inject({ url: '/api/live', headers: pc })).json()).toMatchObject({ role: 'host', live: null });
+    } finally {
+      await srv.close();
+    }
+  });
+
+  it("the team builder's session is never a guest's: not listed, not read, not prompted", async () => {
+    const fakeSpawn = () => ({ onData() {}, onExit() {}, write() {}, resize() {}, kill() {} });
+    const srv = await startServer(loadConfig({ dataDir: dir, dbPath: ':memory:', hookToken: 'hooktok', uiToken: 'u', projectsDir: join(dir, 'projects') }), { tail: false, listen: false, ci: false, security: false, remoteRun: tailnet, door: fakeDoor0(), spawn: fakeSpawn as never });
+    try {
+      const pc = { cookie: 'ab_session=u', origin: 'http://127.0.0.1:4317' };
+      const pid = (await srv.app.inject({ method: 'POST', url: '/api/projects', headers: pc, payload: { name: 'Drill' } })).json().project.id;
+      expect((await srv.app.inject({ method: 'POST', url: `/api/projects/${pid}/builder/talk`, headers: pc, payload: { text: 'hello' } })).statusCode).toBe(200);
+      const sid = srv.projects.draft(pid)!.session!;
+      srv.store.upsertSession({ id: sid, cwd: join(dir, 'builder', pid), state: 'idle', startedAt: Date.now(), lastTs: Date.now() } as never);
+      srv.store.upsertSession({ id: 'plain-0001', cwd: 'C:/work', state: 'idle', startedAt: Date.now(), lastTs: Date.now() } as never);
+      const started = (await srv.app.inject({ method: 'POST', url: '/api/live/start', headers: pc, payload: { reach: 'tailnet' } })).json();
+      const r = await srv.app.inject({ url: new URL(started.live.link).pathname, headers: { 'tailscale-user-name': 'Ana Ruiz', 'tailscale-user-login': 'ana@example.com', 'x-forwarded-proto': 'https' } });
+      const ana = { cookie: String(r.headers['set-cookie']).split(';')[0], origin: 'https://pc.tail1.ts.net' };
+      await srv.app.inject({ method: 'POST', url: '/api/live/mode', headers: pc, payload: { mode: 'drive' } });
+      const ids = (await srv.app.inject({ url: '/api/sessions', headers: ana })).json().sessions.map((x: { id: string }) => x.id);
+      expect(ids).toContain('plain-0001');
+      expect(ids).not.toContain(sid);
+      expect((await srv.app.inject({ url: '/api/terminals', headers: ana })).json().terminals.map((t: { sessionId: string }) => t.sessionId)).not.toContain(sid);
+      expect((await srv.app.inject({ url: `/api/sessions/${sid}/events`, headers: ana })).statusCode).toBe(403);
+      expect((await srv.app.inject({ url: '/api/sessions/plain-0001/events', headers: ana })).statusCode).toBe(200);
+      expect((await srv.app.inject({ method: 'POST', url: '/api/live/act', headers: ana, payload: { kind: 'prompt', sessionId: sid, text: 'build something else' } })).statusCode).toBe(403);
+      // you still see it all (your screens keep it out of the lists themselves)
+      expect((await srv.app.inject({ url: '/api/terminals', headers: pc })).json().terminals.map((t: { sessionId: string }) => t.sessionId)).toContain(sid);
+    } finally {
+      await srv.close();
+    }
+  });
+
+  it("Cora's console closed to guests: their screens start afresh at once, without her sessions' rows (opened: with them)", async () => {
+    const refresh = vi.spyOn(Hub.prototype, 'refreshGuests');
+    // (Cora's own session: as her agent would have it)
+    const agent = vi.spyOn(OrchestratorManager.prototype, 'isAgent').mockImplementation((sid) => sid === 'cora-0001');
+    const srv = await startServer(loadConfig({ dataDir: dir, dbPath: ':memory:', hookToken: 'hooktok', uiToken: 'u' }), { tail: false, listen: false, ci: false, security: false, remoteRun: tailnet, door: fakeDoor0() });
+    try {
+      const pc = { cookie: 'ab_session=u', origin: 'http://127.0.0.1:4317' };
+      const now = Date.now();
+      for (const id of ['cora-0001', 'plain-0001']) srv.store.upsertSession({ id, cwd: 'C:/work', state: 'idle', startedAt: now, lastTs: now } as never);
+      const started = (await srv.app.inject({ method: 'POST', url: '/api/live/start', headers: pc, payload: { reach: 'tailnet' } })).json();
+      const r = await srv.app.inject({ url: new URL(started.live.link).pathname, headers: { 'tailscale-user-name': 'Ana Ruiz', 'tailscale-user-login': 'ana@example.com', 'x-forwarded-proto': 'https' } });
+      const ana = { cookie: String(r.headers['set-cookie']).split(';')[0], origin: 'https://pc.tail1.ts.net' };
+      const guestId = (await srv.app.inject({ url: '/api/live', headers: ana })).json().live.you as string;
+      const area = async (a: string, open: boolean) => {
+        refresh.mockClear();
+        expect((await srv.app.inject({ method: 'POST', url: '/api/live/area', headers: pc, payload: { area: a, open } })).statusCode).toBe(200);
+        return refresh.mock.calls.length;
+      };
+      expect(await area('console', true)).toBe(1);
+      // a guest's screen on the server's hub: what it's sent when the console closes
+      const hub = refresh.mock.contexts[0] as Hub;
+      const got: Array<{ t: string; sessions?: Array<{ id: string }> }> = [];
+      hub.add({ send: (x: string) => got.push(JSON.parse(x)), on() {}, readyState: 1 } as never, `guest:${guestId}`);
+      const snapshot = () => got.filter((m) => m.t === 'snapshot').at(-1)!.sessions!.map((x) => x.id).sort();
+      hub.refreshGuests();
+      expect(snapshot()).toEqual(['cora-0001', 'plain-0001']);
+      expect(await area('console', false)).toBe(1);
+      expect(snapshot()).toEqual(['plain-0001']);
+      // (another area closing: their screens clear it themselves)
+      expect(await area('notes', true)).toBe(1);
+      expect(await area('notes', false)).toBe(0);
+    } finally {
+      refresh.mockRestore();
+      agent.mockRestore();
+      await srv.close();
+    }
+  });
+
+  it("nor are its recaps, memes, documents or token use: a guest's feeds leave it out", async () => {
+    const fakeSpawn = () => ({ onData() {}, onExit() {}, write() {}, resize() {}, kill() {} });
+    const srv = await startServer(loadConfig({ dataDir: dir, dbPath: ':memory:', hookToken: 'hooktok', uiToken: 'u', projectsDir: join(dir, 'projects') }), { tail: false, listen: false, ci: false, security: false, remoteRun: tailnet, door: fakeDoor0(), spawn: fakeSpawn as never });
+    try {
+      const pc = { cookie: 'ab_session=u', origin: 'http://127.0.0.1:4317' };
+      const pid = (await srv.app.inject({ method: 'POST', url: '/api/projects', headers: pc, payload: { name: 'Drill' } })).json().project.id;
+      await srv.app.inject({ method: 'POST', url: `/api/projects/${pid}/builder/talk`, headers: pc, payload: { text: 'hello' } });
+      const sid = srv.projects.draft(pid)!.session!;
+      const now = Date.now();
+      for (const [id, cwd] of [[sid, join(dir, 'builder', pid)], ['plain-0001', 'C:/work']]) {
+        srv.store.upsertSession({ id, cwd, state: 'idle', startedAt: now, lastTs: now } as never);
+        srv.store.addRecap({ id: `r-${id}`, sessionId: id, at: now, text: `What ${id} did.` });
+        srv.store.upsertEvent({ id: `tool:x-${id}:start`, sessionId: id, agentId: 'main', ts: now, kind: 'tool', phase: 'start', toolUseId: `x-${id}`, tool: { name: 'mcp__cora__present', input: { title: 'Doc' } }, icon: 'tool' } as never);
+        srv.store.upsertEvent({ id: `call-${id}`, sessionId: id, agentId: 'main', ts: now, kind: 'say', tokens: { in: 10, out: 5 }, icon: 'say' } as never);
+      }
+      const started = (await srv.app.inject({ method: 'POST', url: '/api/live/start', headers: pc, payload: { reach: 'tailnet' } })).json();
+      const r = await srv.app.inject({ url: new URL(started.live.link).pathname, headers: { 'tailscale-user-name': 'Ana Ruiz', 'tailscale-user-login': 'ana@example.com', 'x-forwarded-proto': 'https' } });
+      const ana = { cookie: String(r.headers['set-cookie']).split(';')[0], origin: 'https://pc.tail1.ts.net' };
+      const get = async (url: string, headers: Record<string, string>) => (await srv.app.inject({ url, headers })).json();
+      expect((await get('/api/recaps', ana)).recaps.map((x: { sessionId: string }) => x.sessionId)).toEqual(['plain-0001']);
+      expect((await get('/api/explains', ana)).explains.map((x: { sessionId: string }) => x.sessionId)).toEqual(['plain-0001']);
+      expect((await get('/api/usage', ana)).sessions.map((x: { sessionId: string }) => x.sessionId)).toEqual(['plain-0001']);
+      // asked for by name: no
+      for (const url of [`/api/recaps?session=${sid}`, `/api/memes?session=${sid}`, `/api/explains?sessionId=${sid}`]) expect((await srv.app.inject({ url, headers: ana })).statusCode, url).toBe(403);
+      expect((await srv.app.inject({ url: '/api/memes?session=plain-0001', headers: ana })).statusCode).toBe(200);
+      // yours have it all
+      expect((await get('/api/recaps', pc)).recaps).toHaveLength(2);
+      expect((await get('/api/explains', pc)).explains).toHaveLength(2);
+      expect((await get('/api/usage', pc)).sessions).toHaveLength(2);
     } finally {
       await srv.close();
     }

@@ -7,6 +7,7 @@ import type { Audit } from './audit';
 import { headlessScreen, statusLine, type Screen } from './screen';
 import { LocalBackend, type PtyBackend } from './ptyhost/backend';
 import type { SpawnFn } from './ptyhost/spawn';
+import type { SeatLaunch } from './hosted';
 
 export type { TerminalInfo, TerminalMode };
 
@@ -112,7 +113,7 @@ export class PtyManager {
   private closing = new Set<string>();
 
   /** `onExit` is for Claude terminals only (it ends their session); a shell's exit just updates the list. */
-  constructor(private o: { spawn?: SpawnFn; backend?: PtyBackend; onChange?: (list: TerminalInfo[]) => void; audit?: Audit; claudeCmd?: string[]; shellCmd?: string[]; maxScrollback?: number; extraArgs?: (sessionId: string, cwd: string) => string[]; onExit?: (t: TerminalInfo) => void; screen?: ((cols: number, rows: number) => Screen) | null } = {}) {
+  constructor(private o: { spawn?: SpawnFn; backend?: PtyBackend; onChange?: (list: TerminalInfo[]) => void; audit?: Audit; claudeCmd?: string[]; shellCmd?: string[]; maxScrollback?: number; extraArgs?: (sessionId: string, cwd: string, seat?: SeatLaunch) => string[]; onExit?: (t: TerminalInfo) => void; screen?: ((cols: number, rows: number) => Screen) | null } = {}) {
     this.backend = o.backend ?? new LocalBackend(o.spawn);
     this.max = o.maxScrollback ?? 200_000;
     this.makeScreen = o.screen === undefined ? headlessScreen : o.screen;
@@ -199,7 +200,7 @@ export class PtyManager {
    * swallow it.
    */
   /** `newId`: the new session's id (Cora's own agent chooses its own); `bare`: without the hosted sessions' extras (MCP config, prompt) */
-  launch(req: { mode: TerminalMode; cwd: string; sessionId?: string; cols?: number; rows?: number; args?: string[]; prompt?: string; newId?: string; bare?: boolean; /** a shell: which kind (its id) */ shell?: string; /** a shell: the Board's own */ place?: 'board' }): TerminalInfo {
+  launch(req: { mode: TerminalMode; cwd: string; sessionId?: string; cols?: number; rows?: number; args?: string[]; prompt?: string; newId?: string; bare?: boolean; /** a shell: which kind (its id) */ shell?: string; /** a shell: the Board's own */ place?: 'board'; /** a team's seat: its agent, prompt and settings files */ seat?: SeatLaunch }): TerminalInfo {
     if (!['new', 'resume', 'fork', 'shell'].includes(req.mode)) throw new Error('mode must be new|resume|fork|shell');
     if ((req.mode === 'resume' || req.mode === 'fork' || req.mode === 'shell') && !req.sessionId) throw new Error('sessionId required');
     // it goes on claude's command line (`--resume <id>`): only an id, never something that reads as a flag
@@ -219,7 +220,7 @@ export class PtyManager {
     const t: Term = { terminalId: randomUUID(), sessionId, cwd: req.cwd, mode: req.mode, alive: true, startedAt: Date.now(), buf: '', sinks: new Set(), screen: this.newScreen(cols, rows), dirty: false, status: null };
     this.ensureStatusTimer();
     this.terms.set(t.terminalId, t);
-    const args = [...pre, ...argsFor(req.mode, req.sessionId, newId), ...(req.prompt ? [req.prompt] : []), ...(req.args ?? []), ...(req.bare ? [] : (this.o.extraArgs?.(sessionId, req.cwd) ?? []))];
+    const args = [...pre, ...argsFor(req.mode, req.sessionId, newId), ...(req.prompt ? [req.prompt] : []), ...(req.args ?? []), ...(req.bare ? [] : (this.o.extraArgs?.(sessionId, req.cwd, req.seat) ?? []))];
     this.backend.spawn(t.terminalId, file, args, { cwd: req.cwd, cols, rows, env: cleanEnv(process.env) }, { sessionId, cwd: req.cwd, mode: req.mode, startedAt: t.startedAt });
     this.o.audit?.log({ ts: Date.now(), sessionId, agentId: 'main', kind: 'terminal', tool: `claude ${req.mode}`, input: { cwd: req.cwd, from: req.sessionId, ...(req.prompt ? { prompt: req.prompt } : {}) }, decision: 'launch', edited: false, via: 'dashboard' });
     this.changed();

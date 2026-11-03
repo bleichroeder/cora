@@ -15,7 +15,7 @@ export function MailWatchChip({ sessionId }: { sessionId: string }) {
   const when = (t: number) => new Date(t).toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' });
   const title = [
     'Waiting for email:',
-    ...mine.map((w) => `• ${w.about} (from ${w.from}${w.mode === 'thread' ? ', following the thread' : ''}, until ${when(w.until)})\n  then: ${w.act === 'ask' ? 'ask you, then ' : w.act === 'tell' ? 'tell you' : ''}${w.act === 'tell' ? '' : w.then}`),
+    ...mine.map((w) => `• ${w.about} (from ${w.from}${w.mode === 'thread' ? ', following the thread' : w.mode === 'every' ? ', every email' : ''}, until ${when(w.until)})\n  then: ${w.act === 'ask' ? 'ask you, then ' : w.act === 'tell' ? 'tell you' : ''}${w.act === 'tell' ? '' : w.then}`),
     'Click: Settings › Gmail (stop one there)',
   ].join('\n');
   return (

@@ -325,6 +325,50 @@ describe('the manager on autopilot', () => {
     m.dispose();
   });
 
+  it('your words right after it starts wait for its box to settle, then go in whole, Enter and all (never typed into a box that drops the Enter)', () => {
+    vi.useFakeTimers();
+    const { m, writes, setScreen, terms } = managerSetup();
+    const RULE = '─'.repeat(40);
+    // a terminal that has only just started: its welcome, no box yet
+    terms[0].startedAt = Date.now();
+    setScreen(['', ' ✻ Welcome to Claude Code', '']);
+    writes.length = 0;
+    expect(m.sayFromUser('what is on today?')).toEqual({ ok: true });
+    expect(writes).toEqual([]);
+    vi.advanceTimersByTime(2000);
+    expect(writes).toEqual([]);
+    // its box shows: not at once (an Enter in its first moment is lost), a moment later
+    setScreen(['', RULE, '❯ ', RULE]);
+    vi.advanceTimersByTime(2000);
+    expect(writes).toEqual([]);
+    vi.advanceTimersByTime(2000);
+    vi.advanceTimersByTime(500);
+    expect(writes.join('')).toBe('what is on today?\r');
+    // in order, and once: a second while the first waited goes after it; from now on, at once
+    writes.length = 0;
+    expect(m.sayFromUser('and tomorrow?')).toEqual({ ok: true });
+    vi.advanceTimersByTime(500);
+    expect(writes.join('')).toBe('and tomorrow?\r');
+    vi.useRealTimers();
+    m.dispose();
+  });
+
+  it('two things said while it starts go in, in the order said', () => {
+    vi.useFakeTimers();
+    const { m, writes, setScreen, terms } = managerSetup();
+    const RULE = '─'.repeat(40);
+    terms[0].startedAt = Date.now();
+    setScreen(['', ' ✻ Welcome to Claude Code', '']);
+    writes.length = 0;
+    m.sayFromUser('first');
+    m.sayFromUser('second');
+    setScreen(['', RULE, '❯ ', RULE]);
+    vi.advanceTimersByTime(10_000);
+    expect(writes.join('')).toBe('first\rsecond\r');
+    vi.useRealTimers();
+    m.dispose();
+  });
+
   it("a goal given while its terminal shows a menu goes in once the menu's answered, once (audit B10)", () => {
     vi.useFakeTimers();
     const { m, writes, setScreen } = managerSetup();
@@ -517,13 +561,22 @@ describe('briefs', () => {
     m.dispose();
   });
 
-  it('a brief or a wrap-up when you ask', () => {
-    const { m, writes } = managerSetup();
-    expect(m.brief('now').ok).toBe(true);
-    expect(typed(writes)).toMatch(/\[Cora brief\] The user asked for a brief\./);
-    expect(m.brief('wrap').ok).toBe(true);
-    expect(typed(writes)).toMatch(/\[Cora wrap-up\]/);
-    m.dispose();
+  it('a brief or a wrap-up when you ask (the second typed once the first is sent, never mixed into it)', () => {
+    vi.useFakeTimers();
+    try {
+      const { m, writes } = managerSetup();
+      expect(m.brief('now').ok).toBe(true);
+      expect(m.brief('wrap').ok).toBe(true);
+      vi.advanceTimersByTime(2000);
+      // each prompt ends with its own Enter (a write of just CR)
+      const enters = writes.flatMap((w, i) => (w === '\r' ? [i] : []));
+      expect(enters).toHaveLength(2);
+      expect(writes.slice(0, enters[0]).join('')).toMatch(/^\[Cora brief\] The user asked for a brief\./);
+      expect(writes.slice(enters[0] + 1, enters[1]).join('')).toMatch(/^\[Cora wrap-up\]/);
+      m.dispose();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

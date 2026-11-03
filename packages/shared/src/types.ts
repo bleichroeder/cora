@@ -515,6 +515,7 @@ export type ServerMsg =
   | import('./security').SecurityMsg
   | import('./orchestrator').OrchMsg
   | import('./projects').ProjectsMsg
+  | import('./projects').BuilderMsg
   | import('./debriefVideo').VideosMsg
   | import('./orchestrator').UiCommandMsg
   | ExplainDataMsg

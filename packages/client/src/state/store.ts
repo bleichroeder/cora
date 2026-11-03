@@ -188,7 +188,8 @@ type State = {
   upsertAgent(a: AgentInfo): void;
   setPending(p: PendingRequest[]): void;
   markLoaded(sid: string): void;
-  setFocus(sid: string | null): void;
+  /** `stay`: what's on screen (the Overview, a project or its builder) stays; only the focus behind it moves (an automatic move, never a click). */
+  setFocus(sid: string | null, o?: { stay?: boolean }): void;
   setAgentFilter(f: 'all' | string): void;
   toggleOverview(force?: boolean): void;
   setInbox(on: boolean): void;
@@ -261,11 +262,11 @@ export const useBrain = create<State>((set, get) => ({
     for (const sid of Object.keys(touched)) versions[sid] = (versions[sid] ?? 0) + 1;
     set({
       ready: true,
-      sessions: Object.fromEntries(s.sessions.filter((x) => x.id !== hidden).map((x) => [x.id, x])),
+      sessions: Object.fromEntries(s.sessions.filter((x) => x.id !== hidden && !builders.has(x.id)).map((x) => [x.id, x])),
       agentSession: s.sessions.find((x) => x.id === hidden) ?? get().agentSession,
       agents: Object.fromEntries(s.agents.map((a) => [agentKey(a.sessionId, a.agentId), a])),
-      pending: s.pending,
-      waits: trackWaits(get().waits, s.pending),
+      pending: s.pending.filter((x) => !builders.has(x.sessionId)),
+      waits: trackWaits(get().waits, s.pending.filter((x) => !builders.has(x.sessionId))),
       ...(s.terminals ? splitTerminals(s.terminals) : {}),
       lastSeq: Math.max(get().lastSeq, s.lastSeq),
       versions,
@@ -305,6 +306,7 @@ export const useBrain = create<State>((set, get) => ({
   },
 
   upsertSession: (s) => {
+    if (builders.has(s.id)) return;
     if (s.id === hidden) return set({ agentSession: s });
     const was = get().sessions[s.id]?.state;
     let unseen = get().unseen;
@@ -319,7 +321,9 @@ export const useBrain = create<State>((set, get) => ({
   },
   upsertAgent: (a) => set({ agents: { ...get().agents, [agentKey(a.sessionId, a.agentId)]: a } }),
 
-  setPending: (pending) => {
+  setPending: (all) => {
+    // the team builder's session's asks: never yours to see here (as in the snapshot)
+    const pending = all.filter((x) => !builders.has(x.sessionId));
     const before = new Set(get().pending.map((p) => p.id));
     const focus = get().focus;
     const fresh = pending.filter((p) => !before.has(p.id) && p.sessionId !== focus);
@@ -335,8 +339,23 @@ export const useBrain = create<State>((set, get) => ({
   },
 
   markLoaded: (sid) => set({ loaded: { ...get().loaded, [sid]: true }, versions: { ...get().versions, [sid]: (get().versions[sid] ?? 0) + 1 } }),
-  setFocus: (focus) =>
-    set({ focus, agentFilter: 'all', overview: false, projectOpen: null, ...(focus && get().unseen[focus] ? { unseen: Object.fromEntries(Object.entries(get().unseen).filter(([k]) => k !== focus)) } : {}), ...(focus !== get().focus ? { cursor: null } : {}), toasts: get().toasts.filter((t) => t.sessionId !== focus), ...(get().viewer?.pinned && focus !== get().focus ? { viewer: null, viewerWide: false } : {}) }),
+  setFocus: (focus, o) =>
+    set({
+      focus,
+      agentFilter: 'all',
+      ...(focus !== get().focus ? { cursor: null } : {}),
+      // shown: on screen now, so what it had for you is seen (an automatic move behind what's on screen shows nothing:
+      // its unseen mark, its toasts and a pinned explain stay)
+      ...(o?.stay
+        ? {}
+        : {
+            overview: false,
+            projectOpen: null,
+            ...(focus && get().unseen[focus] ? { unseen: Object.fromEntries(Object.entries(get().unseen).filter(([k]) => k !== focus)) } : {}),
+            toasts: get().toasts.filter((t) => t.sessionId !== focus),
+            ...(get().viewer?.pinned && focus !== get().focus ? { viewer: null, viewerWide: false } : {}),
+          }),
+    }),
   setAgentFilter: (agentFilter) => set({ agentFilter }),
   toggleOverview: (force) => {
     const overview = force ?? !get().overview;
@@ -366,6 +385,24 @@ export function setHiddenSession(id: string | null): void {
     delete sessions[id];
   }
   useBrain.setState({ sessions, agentSession, ...(id && st.focus === id ? { focus: null } : {}) });
+}
+
+/** The team builder's sessions (Cora building a team with you): never in `sessions` either, once seen as one. */
+let builders = new Set<string>();
+export function setBuilderSessions(ids: string[]): void {
+  if (ids.every((id) => builders.has(id))) return;
+  builders = new Set([...builders, ...ids]);
+  const st = useBrain.getState();
+  const sessions = { ...st.sessions };
+  for (const id of ids) delete sessions[id];
+  const unseen = Object.fromEntries(Object.entries(st.unseen).filter(([k]) => !builders.has(k)));
+  useBrain.setState({
+    sessions,
+    unseen,
+    pending: st.pending.filter((x) => !builders.has(x.sessionId)),
+    waits: st.waits.filter((w) => !builders.has(w.sessionId)),
+    ...(st.focus && builders.has(st.focus) ? { focus: null } : {}),
+  });
 }
 
 export function mergeFetched(sid: string, events: BrainEvent[]) {

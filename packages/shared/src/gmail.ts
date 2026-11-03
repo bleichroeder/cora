@@ -68,8 +68,8 @@ export type MailWatch = {
   query?: string;
   /** the address (or @domain) it must really come from */
   from: string;
-  /** one email then done, or that thread's every reply */
-  mode: 'once' | 'thread';
+  /** one email then done, or that thread's every reply, or every email that matches (a team seat's standing watch) */
+  mode: 'once' | 'thread' | 'every';
   /** the user's instruction: what to do with it */
   then: string;
   /** tell the user; ask before starting; or start */

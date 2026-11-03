@@ -338,7 +338,7 @@ export function KnownPanel({ sessionId }: Props) {
         {approved.map(row)}
         {!proposed.length && !approved.length ? <div className="pp-empty">No known issues. A session proposes one when it finds something that keeps coming back (a flapping check, a site that's always down at night); you approve it.</div> : null}
         {gone.length ? (
-          <button className="pk-lab more" onClick={() => setRetired(!retired)}>
+          <button className="pk-lab pk-more" onClick={() => setRetired(!retired)}>
             <Icon name={retired ? 'ChevronDown' : 'ChevronRight'} size={10} /> Retired ({gone.length})
           </button>
         ) : null}

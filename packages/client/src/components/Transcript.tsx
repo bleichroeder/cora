@@ -156,7 +156,7 @@ function StepView({ step, sessionId, hosted, bare }: { step: Step; sessionId: st
       </div>
       {step.text ? <Say text={step.text} clamp={hosted && step.agentId === 'main'} /> : null}
       {step.text ? <ReadingLine id={step.key} /> : null}
-      {step.said ? <SaidLine id={step.said.id} text={step.said.text} /> : null}
+      {step.said ? <SaidLine id={step.said.id} text={step.said.text} sessionId={sessionId} /> : null}
       <div className="body">{body()}</div>
     </div>
   );

@@ -3,7 +3,7 @@ import { desktop } from '../lib/desktop';
 import { useLive } from '../state/live';
 import { useBrain, sessionEvents } from '../state/store';
 import { attachFile, composerInbox, draftOf, loadCommands, previews, sendToSession, useComposer, interruptSession } from '../state/composer';
-import { buildPrompt, caretOnEdge, filterCommands, keyAction, promptHistory, slashQuery, stepHistory, type Attachment, type SlashCommand, stopKey } from '../lib/composer';
+import { buildPrompt, caretOnEdge, composerTall, filterCommands, keyAction, promptHistory, sizesItself, slashQuery, stepHistory, type Attachment, type SlashCommand, stopKey } from '../lib/composer';
 import { useShells } from '../state/shells';
 import { Icon } from './Icon';
 import { startListening, stopListening, useVoice } from '../lib/voice';
@@ -78,16 +78,32 @@ function ComposerBox({ sessionId }: { sessionId: string }) {
   // (the buttons drop to a row under it); back to one line, they come back beside it. The gap between the two keeps
   // the change of width from flipping it back and forth.
   const [tall, setTall] = useState(false);
+  // The box sizes itself to its text (CSS field-sizing) and its size is watched after layout: nothing measures it on
+  // every keystroke (setting its height and reading it back forced the whole page's layout each time, so holding
+  // Delete was slow). Where it can't size itself (an older browser), it's measured as before.
+  const selfSized = useMemo(sizesItself, []);
+  const empty = useRef(!text);
+  empty.current = !text;
+  useEffect(() => {
+    const el = ta.current;
+    if (!selfSized || !el || typeof ResizeObserver === 'undefined') return;
+    const line = parseFloat(getComputedStyle(el).lineHeight) || 20;
+    const ro = new ResizeObserver(([e]) => setTall((t) => composerTall(e.contentRect.height, line, t, empty.current)));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [selfSized]);
+  useEffect(() => {
+    if (selfSized && !text) setTall(false);
+  }, [selfSized, !text]); // eslint-disable-line react-hooks/exhaustive-deps
   useLayoutEffect(() => {
     const el = ta.current;
-    if (!el) return;
+    if (selfSized || !el) return;
     el.style.height = 'auto';
     const h = el.scrollHeight;
     const line = parseFloat(getComputedStyle(el).lineHeight) || 20;
-    if (!tall && h > line * 3 + 12) setTall(true);
-    else if (tall && (!text || h <= line + 12)) setTall(false);
+    setTall((t) => composerTall(h, line, t, !text));
     el.style.height = `${Math.min(h + 2, Math.max(120, window.innerHeight * 0.33))}px`;
-  }, [text, tall]);
+  }, [text, tall, selfSized]);
 
   // push-to-talk puts its words here for review
   useEffect(() => {

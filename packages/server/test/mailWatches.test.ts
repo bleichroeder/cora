@@ -39,6 +39,17 @@ describe('email watches: the store', () => {
     expect(new MailWatches({ file }).get(conv.id)).toMatchObject({ thread: 't9', sessionId: 's7', cwd: 'C:/work/ops' });
     expect(watchLine(new MailWatches({ file }).get(conv.id)!)).toMatch(/following its replies/);
   });
+
+  it('every: each matching email counts, and the watch goes on (a team seat’s standing watch)', () => {
+    const ws = new MailWatches({});
+    const every = ws.set({ ...base, mode: 'every' });
+    expect(every.mode).toBe('every');
+    expect(ws.hit(every.id, 't1')).toMatchObject({ hits: 1 });
+    expect(ws.hit(every.id, 't2')).toMatchObject({ hits: 2 });
+    expect(ws.get(every.id)).toMatchObject({ hits: 2, mode: 'every' });
+    expect(ws.get(every.id)!.thread).toBeUndefined();
+    expect(watchLine(ws.get(every.id)!)).toMatch(/every email/);
+  });
 });
 
 describe('email watches: is it really from them?', () => {

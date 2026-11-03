@@ -11,6 +11,7 @@ import { NoteError, type Notes } from './notes';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { z } from 'zod';
+import { BUILDER_HEADER, TEAM_JSON_MAX } from './builder';
 import { noteLinks, BOARD_LAYOUTS, BOARD_LAYOUT_INFO, SVG_MAX, svgProblem, AGENT_HEADER, MCP_SERVER, SESSION_HEADER, deploysText, parseSlackLink, speaksSummaries, type Settings, ATTACH_MAX, type SlackAttachment, type UiCommand } from '@cora/shared';
 import { hookToken, sameSecret } from './config';
 import { SlackError, type Outbox, type Slack, hitLine, isImage } from './slack';
@@ -61,26 +62,90 @@ export type McpDebrief = { make(sessionId: string, script: unknown): { ok: true;
 
 /** Sessions' journals: add to one (an entry, a wrap-up); the file's path. */
 /** A session's project, when it has coordination on and the session is a member (what it hears, whether it may post). */
+export type McpPostResult = boolean | { error: string } | { text: string };
 export type McpProjects = {
   forSession(sessionId: string): { name: string; canPost: boolean; hears: import('@cora/shared').ProjectHears; members: Array<{ id: string; name: string }> } | null;
-  post(sessionId: string, kind: import('@cora/shared').PostKind, text: string, to?: string[], re?: string): boolean;
+  /** false: it can't post; { error }: the team's routes refused it (why, and who it may message); { text }: what became of it (work offered to a team group) */
+  post(sessionId: string, kind: import('@cora/shared').PostKind, text: string, to?: string[], re?: string, labels?: Record<string, string>): McpPostResult | Promise<McpPostResult>;
   read(sessionId: string, since?: number, filter?: { kind?: import('@cora/shared').PostKind; toMe?: boolean; by?: string; open?: boolean }): string;
   /** its project's items: a query, or one change (project_item, project_claim, project_annotate, project_close), as text for the session */
-  items?(sessionId: string, q: { kind?: 'incident' | 'known'; log?: boolean; owner?: string; severity?: string; words?: string }): string;
+  items?(sessionId: string, q: { kind?: 'incident' | 'known' | 'task'; log?: boolean; owner?: string; severity?: string; words?: string }): string;
   item?(sessionId: string, op: 'open' | 'change' | 'claim' | 'annotate' | 'close' | 'merge', f: Record<string, unknown>): { ok: true; text: string } | { ok: false; error: string };
   /** its writer edits a post, or withdraws it (text null) */
   edit?(sessionId: string, post: string, text: string | null): { ok: true } | { ok: false; error: string };
   /** for Cora's agent: every live project, its members, and its brief's first line */
   list(): string;
+  /** its lead proposes a new team definition (the whole of it) for the user to approve */
+  proposeTeam?(sessionId: string, team: unknown, why: string): { ok: true; text: string } | { ok: false; error: string };
 };
 export type McpJournal = { add(sessionId: string, kind: 'entry' | 'wrapup', text: string, more?: { refs?: JournalRefs; tag?: JournalTag }): string; /** the Board's Journal panel */ read?(sessionId: string): { file: string; text: string } | null; /** Journal 2: entries that match */ query?(q: Parameters<Journal['query']>[0]): JournalEntry[] };
 
-function buildServer(settings: Settings, sessionId: string | null, s?: McpSlack, orch?: McpOrchestrator, env?: Environments, deploys?: Deploys, notes?: McpNotes, mail?: McpGmail, /** the caller proved it's Cora's agent */ proven = false, /** drives the dashboards (open_tab) */ ui?: (cmd: UiCommand) => void, live?: McpLive, memes?: Memes, journal?: McpJournal, debrief?: McpDebrief, secrets?: McpSecrets, projects?: McpProjects, calendar?: CalendarApi): McpServer {
+/** The team builder's own session: its draft, nothing else. */
+export type McpBuilder = {
+  /** the project whose builder this session is (null: it isn't one) */
+  projectOf(sessionId: string): string | null;
+  /** the session's own proof (its BUILDER_HEADER value) is the right one; the session id alone proves nothing */
+  proves(sessionId: string, proof: unknown): boolean;
+  get(pid: string): { ok: true; text: string } | { ok: false; error: string };
+  set(pid: string, team: unknown, base: number): { ok: true; text: string } | { ok: false; error: string };
+  trace(pid: string, m: { from: string; to: string; kind: string; labels?: Record<string, string>; critical?: boolean }): { ok: true; text: string } | { ok: false; error: string };
+};
+
+/** A builder session's server: its draft's three tools and nothing else of Cora's (it never sees the rest). */
+function builderServer(server: McpServer, pid: string, b: McpBuilder): McpServer {
+  const done = (r: { ok: true; text: string } | { ok: false; error: string }) => (r.ok ? { content: [{ type: 'text' as const, text: r.text }] } : fail(r.error));
+  server.registerTool(
+    'team_draft_get',
+    { title: 'The team draft', description: "The draft as it is now, with the user's own edits: its revision, the team in plain words, its checks, and the team as JSON. Read it before every change.", inputSchema: {} },
+    async () => done(b.get(pid)),
+  );
+  server.registerTool(
+    'team_draft_set',
+    {
+      title: 'Change the team draft',
+      description: "A new draft: the whole team as JSON, on the revision you read (base). Refused if the user edited since (read it again and redo your change on theirs) or if the team has problems (fix them). The user sees it on the canvas at once; nothing reaches the project's team until the user applies it.",
+      inputSchema: {
+        team: z.union([z.record(z.string(), z.unknown()), z.string().max(TEAM_JSON_MAX)]).describe('The whole team (JSON)'),
+        base: z.number().int().min(0).describe('The revision you read with team_draft_get'),
+      },
+    },
+    async ({ team, base }) => done(b.set(pid, team, base)),
+  );
+  server.registerTool(
+    'team_trace',
+    {
+      title: 'Try a message through the draft',
+      description: "What happens to a message in the draft, step by step (the route it matches or why it's blocked, the split, who is woken, the claim, a pool growing, escalation), without starting anything. For \"what happens if…\".",
+      inputSchema: {
+        from: z.string().max(120).describe('user, cora or seat:<id>'),
+        to: z.string().max(120).describe('user, cora, seat:<id> or group:<id>'),
+        kind: z.enum(['direct', 'report', 'handoff', 'question', 'change', 'note', 'decision']),
+        labels: z.record(z.string().max(40), z.string().max(80)).refine((o) => Object.keys(o).length <= 20, 'at most 20 labels').optional().describe('e.g. { "issue": "encoder" }'),
+        critical: z.boolean().optional(),
+      },
+    },
+    async (m) => done(b.trace(pid, m)),
+  );
+  return server;
+}
+
+/** A server with no tools at all (a proven builder session whose draft has gone: never the ordinary toolset). */
+function noTools(): McpServer {
+  const server = new McpServer({ name: MCP_SERVER, version: '0.1.0' });
+  // (a tool registered and removed: it answers tools/list with none)
+  server.registerTool('none', { description: 'none', inputSchema: {} }, async () => ({ content: [] })).remove();
+  return server;
+}
+
+function buildServer(settings: Settings, sessionId: string | null, s?: McpSlack, orch?: McpOrchestrator, env?: Environments, deploys?: Deploys, notes?: McpNotes, mail?: McpGmail, /** the caller proved it's Cora's agent */ proven = false, /** drives the dashboards (open_tab) */ ui?: (cmd: UiCommand) => void, live?: McpLive, memes?: Memes, journal?: McpJournal, debrief?: McpDebrief, secrets?: McpSecrets, projects?: McpProjects, calendar?: CalendarApi, builder?: McpBuilder): McpServer {
   // a session id alone says nothing: only Cora's own agent (with its own key) is Cora (docs/audit-2026-10-20.md S3)
   const asCora = (sid: string | null): sid is string => !!(proven && orch && sid && orch.isAgent(sid));
   const mode = settings.explains.mode;
   const voice = settings.voice;
   const server = new McpServer({ name: MCP_SERVER, version: '0.1.0' });
+  // the team builder's session: its draft's tools only (decided before anything else is registered)
+  const building = builder && sessionId ? builder.projectOf(sessionId) : null;
+  if (building) return builderServer(server, building, builder!);
   // Cora on a turn someone else's words started: what acts, reaches out, or lets it act later refuses (audit S8)
   if (asCora(sessionId)) {
     const register = server.registerTool.bind(server) as (name: string, def: unknown, fn: (...a: any[]) => unknown) => unknown;
@@ -219,7 +284,7 @@ function buildServer(settings: Settings, sessionId: string | null, s?: McpSlack,
   const hosted = !!projects && !!sessionId && !asCora(sessionId);
   const away = () => fail("You're not in a Cora project with coordination on (the user adds sessions to projects, and turns coordination on, in Cora).");
   const mine = () => projects!.forSession(sessionId!);
-  const KINDS = ['note', 'change', 'question', 'handoff', 'decision', 'report'] as const;
+  const KINDS = ['note', 'change', 'question', 'handoff', 'decision', 'report', 'direct'] as const;
   if (hosted) {
     server.registerTool(
       'project_read',
@@ -240,11 +305,11 @@ function buildServer(settings: Settings, sessionId: string | null, s?: McpSlack,
       server.registerTool(
         'project_items',
         {
-          title: "Your project's incidents and known issues",
-          description: "The project's shared state: open incidents (most urgent first: severity, owner, state, next step, link, age, latest note) and known issues; or the incident log (closed). Check it before any outward action: is this outage already an incident, and who owns it?",
+          title: "Your project's incidents, known issues and tasks",
+          description: "The project's shared state: open incidents (most urgent first: severity, owner, state, next step, link, age, latest note), known issues, and tasks (the work queue, in rank order); or the log (closed ones). Check it before any outward action: is this outage already an incident, and who owns it?",
           inputSchema: {
-            kind: z.enum(['incident', 'known']).optional(),
-            log: z.boolean().optional().describe('The closed ones (the incident log) instead'),
+            kind: z.enum(['incident', 'known', 'task']).optional(),
+            log: z.boolean().optional().describe('The closed ones (the log) instead'),
             owner: z.string().max(80).optional().describe('Only one owner: a session id, me, or none (unowned)'),
             severity: z.enum(['low', 'medium', 'high', 'critical']).optional(),
             words: z.string().max(200).optional().describe('Words that must all appear (a site, a station)'),
@@ -258,15 +323,21 @@ function buildServer(settings: Settings, sessionId: string | null, s?: McpSlack,
       'project_post',
       {
         title: 'Tell the other sessions in your project',
-        description: `Post to your Cora project's thread, seen on its board. A post to a member (to: [its id]) is your direct message to it: it gets it in full, woken if idle (on its own, or with the user's OK), else when its turn ends; to: [user] reaches the user. Kinds: a change others depend on, a question to whoever can answer, a handoff ("done, your turn"), a note (a finding others may need), a decision the project keeps, a report (a steady stream, alerts or status, to the one seat that handles them; only it hears it). Answer a question with re set to its post id. Shared state (incidents, known issues) goes in project_item, not posts.`,
+        description: `Post to your Cora project's thread, seen on its board. A post to a member (to: [its id]) is your direct message to it: it gets it in full, woken if idle (on its own, or with the user's OK), else when its turn ends; to: [user] reaches the user; to: [a team group's name] offers it to that group as work (the first free member to claim it owns it). Kinds: a change others depend on, a question to whoever can answer, a handoff ("done, your turn"), a note (a finding others may need), a decision the project keeps, a report (a steady stream, alerts or status, to the one seat that handles them; only it hears it), a direct message (to one member: what a team's route calls direct). Answer a question with re set to its post id. Shared state (incidents, known issues) goes in project_item, not posts.`,
         inputSchema: {
           kind: z.enum(KINDS).describe('What it is'),
           text: z.string().min(1).max(4000).describe('The post'),
-          to: z.array(z.string().max(80)).max(10).optional().describe("Who it's for: sessions by id (from the card), or user (a report needs one seat)"),
+          to: z.array(z.string().max(80)).max(10).optional().describe("Who it's for: sessions by id (from the card), user, or a team group by its name (work for the group: its free members are offered it). A report needs one seat"),
           re: z.string().max(40).optional().describe("The post it answers (its id, from the card's news or project_read)"),
+          labels: z.record(z.string().max(40), z.string().max(80)).optional().describe('Team labels it carries (e.g. { "issue": "encoder" }): some routes take only messages with certain labels'),
         },
       },
-      async ({ kind, text, to, re }) => (!mine() ? away() : projects!.post(sessionId!, kind, text, to, re) ? { content: [{ type: 'text', text: `Posted to "${mine()?.name ?? 'the project'}".` }] } : fail(kind === 'report' && !to?.length ? 'A report goes to one seat: to: [its id].' : "Couldn't post (the project's coordination is off, or this session can't post).")),
+      async ({ kind, text, to, re, labels }) => {
+        if (!mine()) return away();
+        const r = await projects!.post(sessionId!, kind, text, to, re, labels);
+        if (typeof r === 'object') return 'error' in r ? fail(r.error) : { content: [{ type: 'text' as const, text: r.text }] };
+        return r ? { content: [{ type: 'text' as const, text: `Posted to "${mine()?.name ?? 'the project'}".` }] } : fail(kind === 'report' && !to?.length ? 'A report goes to one seat: to: [its id].' : "Couldn't post (the project's coordination is off, or this session can't post).");
+      },
     );
     if (projects?.edit)
       server.registerTool(
@@ -282,23 +353,49 @@ function buildServer(settings: Settings, sessionId: string | null, s?: McpSlack,
           return r.ok ? { content: [{ type: 'text', text: withdraw ? 'Withdrawn.' : 'Changed.' }] } : fail(r.error);
         },
       );
+    if (projects?.proposeTeam)
+      server.registerTool(
+        'project_team_propose',
+        {
+          title: 'Propose a change to your team',
+          description: "As your project's lead: propose a new definition of its team (the whole of it, as JSON: version, seats, groups, labels, routes, fallback, escalation, lead) and why. The user approves or rejects it in Cora; one at a time (a new one replaces the one waiting). Only the lead proposes team changes.",
+          inputSchema: {
+            team: z.union([z.record(z.string(), z.unknown()), z.string().max(200_000)]).describe('The full team definition (JSON)'),
+            why: z.string().min(1).max(2000).describe('Why, in a sentence or two (the user reads it)'),
+          },
+        },
+        async ({ team, why }) => {
+          if (!mine()) return away();
+          let t: unknown = team;
+          if (typeof team === 'string') {
+            try {
+              t = JSON.parse(team);
+            } catch {
+              return fail('team: the definition as JSON (it could not be read).');
+            }
+          }
+          const r = projects!.proposeTeam!(sessionId!, t, why);
+          return r.ok ? { content: [{ type: 'text' as const, text: r.text }] } : fail(r.error);
+        },
+      );
     if (projects?.item) {
       const done = (r: { ok: true; text: string } | { ok: false; error: string }) => (r.ok ? { content: [{ type: 'text' as const, text: r.text }] } : fail(r.error));
       server.registerTool(
         'project_item',
         {
-          title: 'Open or change an incident or a known issue',
-          description: "Shared state, updated in place. Without item: open one (an incident: title = the site or station and what, severity, owner, next step, link; a known issue: title, body, rule like \"drop matching alerts while someone owns an incident for it\"; the user approves it). With item: change its fields. Who may: the lead (or with no lead, the opener) sets severity, owner and title, and merges a duplicate (merge_into); an owner sets state (open, working, waiting) and next step. Times are stamped for you. An owner you set is told.",
+          title: 'Open or change an incident, a known issue or a task',
+          description: "Shared state, updated in place. Without item: open one (an incident: title = the site or station and what, severity, owner, next step, link; a known issue: title, body, rule like \"drop matching alerts while someone owns an incident for it\"; the user approves it; a task: title, body, owner, link (its branch), rank). With item: change its fields. Who may: the lead (or with no lead, the opener) sets severity, owner and title, and merges a duplicate (merge_into); an owner sets state (incident: open, working, waiting; task: queued, building, review, testing, blocked) and next step. A task's rank and body are the lead's, its link its owner's. Times are stamped for you. An owner you set is told.",
           inputSchema: {
             item: z.string().max(40).optional().describe('The item to change (its id); leave out to open one'),
-            kind: z.enum(['incident', 'known']).optional(),
+            kind: z.enum(['incident', 'known', 'task']).optional(),
             title: z.string().max(160).optional(),
             severity: z.enum(['low', 'medium', 'high', 'critical']).optional(),
             owner: z.string().max(80).optional().describe("A member's id (or user); empty to unassign"),
-            state: z.enum(['open', 'working', 'waiting']).optional(),
+            state: z.enum(['open', 'working', 'waiting', 'queued', 'building', 'review', 'testing', 'blocked']).optional(),
             next: z.string().max(400).optional().describe('The next step'),
-            link: z.string().max(500).optional().describe('A ticket or thread'),
-            body: z.string().max(2000).optional().describe("A known issue's description"),
+            link: z.string().max(500).optional().describe("A ticket or thread; a task's branch or MR"),
+            body: z.string().max(2000).optional().describe("A known issue's description, or a task's"),
+            rank: z.number().optional().describe("A task's place in the queue (lower first)"),
             rule: z.string().max(400).optional().describe("A known issue's rule"),
             merge_into: z.string().max(40).optional().describe('Merge this duplicate into another item (its id)'),
           },
@@ -313,8 +410,8 @@ function buildServer(settings: Settings, sessionId: string | null, s?: McpSlack,
       server.registerTool(
         'project_claim',
         {
-          title: 'Claim an incident',
-          description: "Make an incident yours, only if nobody owns it: the check that stops two sessions working one outage. Fails, saying who has it, if it's taken.",
+          title: 'Claim an incident, or a task offered to your group',
+          description: "Make an incident yours, only if nobody owns it: the check that stops two sessions working one outage (or a task the lead offered to your seat's group). Fails, saying who has it, if it's taken.",
           inputSchema: { item: z.string().min(2).max(40) },
         },
         async ({ item }) => done(projects!.item!(sessionId!, 'claim', { item })),
@@ -331,11 +428,16 @@ function buildServer(settings: Settings, sessionId: string | null, s?: McpSlack,
       server.registerTool(
         'project_close',
         {
-          title: 'Close an incident',
-          description: 'Close an incident you own (or as the lead) with its cause and fix: it goes to the incident log.',
-          inputSchema: { item: z.string().min(2).max(40), cause: z.string().min(1).max(1000), fix: z.string().min(1).max(1000) },
+          title: 'Close an incident, or a task as done',
+          description: 'Close an incident you own (or as the lead) with its cause and fix: it goes to the log. A task is closed by the lead, as done, with its outcome in a line (e.g. "merged as abc1234").',
+          inputSchema: {
+            item: z.string().min(2).max(40),
+            cause: z.string().min(1).max(1000).optional().describe("An incident's cause"),
+            fix: z.string().min(1).max(1000).optional().describe("An incident's fix"),
+            outcome: z.string().min(1).max(300).optional().describe("A task's outcome"),
+          },
         },
-        async ({ item, cause, fix }) => done(projects!.item!(sessionId!, 'close', { item, cause, fix })),
+        async ({ item, cause, fix, outcome }) => (outcome || (cause && fix) ? done(projects!.item!(sessionId!, 'close', { item, cause, fix, outcome })) : fail('Close an incident with its cause and fix, a task with its outcome.')),
       );
     }
   }
@@ -1194,14 +1296,20 @@ ${out.text}` : ''}` }] };
  * Streamable-HTTP MCP endpoint (stateless: a fresh server per request). The tool itself has no side effects:
  * the document travels in the tool call, which lands in the transcript, and the UI renders it from there.
  */
-export function registerMcp(app: FastifyInstance, token: string, getSettings: () => Settings, slack?: McpSlack, orch?: McpOrchestrator, env?: Environments, deploys?: Deploys, notes?: McpNotes, mail?: McpGmail, /** Cora's agent's own key (Cora passes its own; tests use the hook token) */ agentToken: string = token, /** drives the dashboards (open_tab) */ ui?: (cmd: UiCommand) => void, /** live explains */ live?: McpLive, /** the Vibes panel */ memes?: Memes, /** sessions' journals */ journal?: McpJournal, /** Cora Secrets */ secrets?: McpSecrets, /** debriefs */ debrief?: McpDebrief, /** projects */ projects?: McpProjects, /** your Google calendar (Cora's agent) */ calendar?: CalendarApi): void {
+export function registerMcp(app: FastifyInstance, token: string, getSettings: () => Settings, slack?: McpSlack, orch?: McpOrchestrator, env?: Environments, deploys?: Deploys, notes?: McpNotes, mail?: McpGmail, /** Cora's agent's own key (Cora passes its own; tests use the hook token) */ agentToken: string = token, /** drives the dashboards (open_tab) */ ui?: (cmd: UiCommand) => void, /** live explains */ live?: McpLive, /** the Vibes panel */ memes?: Memes, /** sessions' journals */ journal?: McpJournal, /** Cora Secrets */ secrets?: McpSecrets, /** debriefs */ debrief?: McpDebrief, /** projects */ projects?: McpProjects, /** your Google calendar (Cora's agent) */ calendar?: CalendarApi, /** told the tools a session was given (its tools/list) */ listed?: (sid: string, names: string[]) => void, /** the team builder's session */ builder?: McpBuilder): { toolsFor(sid: string): string[] } {
   app.post('/mcp', async (req, reply) => {
     if (!sameSecret(hookToken(req), token)) return reply.code(401).send({ error: 'bad token' });
     // sessions launched here say who they are (older ones don't: their drafts are matched to them by their events)
     const sid = req.headers[SESSION_HEADER];
     const proven = !!agentToken && sameSecret(req.headers[AGENT_HEADER], agentToken);
-    const server = buildServer(getSettings(), typeof sid === 'string' && /^[\w-]{8,80}$/.test(sid) ? sid : null, slack, orch, env, deploys, notes, mail, proven, ui, live, memes, journal, debrief, secrets, projects, calendar);
+    // the builder's tools need its own proof beside the session id (the hook token is shared by every session)
+    const proved = builder && typeof sid === 'string' && builder.proves(sid, req.headers[BUILDER_HEADER]) ? builder : undefined;
+    // a proven builder session that is no project's builder now (its draft applied or thrown away): nothing
+    const server = proved && !proved.projectOf(sid as string) ? noTools() : buildServer(getSettings(), typeof sid === 'string' && /^[\w-]{8,80}$/.test(sid) ? sid : null, slack, orch, env, deploys, notes, mail, proven, ui, live, memes, journal, debrief, secrets, projects, calendar, proved);
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
+    // what it was given: Claude Code asks once, when it connects, and keeps that list (a newer Cora's tools it lacks)
+    const asked = ([] as Array<{ method?: unknown }>).concat((req.body ?? []) as never);
+    if (listed && typeof sid === 'string' && /^[\w-]{8,80}$/.test(sid) && asked.some((m) => m?.method === 'tools/list')) listed(sid, toolNames(server));
     reply.hijack();
     reply.raw.on('close', () => {
       void transport.close();
@@ -1213,4 +1321,12 @@ export function registerMcp(app: FastifyInstance, token: string, getSettings: ()
   const notAllowed = async (_req: unknown, reply: any) => reply.code(405).header('allow', 'POST').send({ error: 'method not allowed' });
   app.get('/mcp', notAllowed);
   app.delete('/mcp', notAllowed);
+  // the tools a session would be given now (a session launched here; not Cora's own agent)
+  return { toolsFor: (sid) => toolNames(buildServer(getSettings(), sid, slack, orch, env, deploys, notes, mail, false, ui, live, memes, journal, debrief, secrets, projects, calendar, builder)) };
+}
+
+/** A built server's tools, by name (the ones it lists). */
+function toolNames(server: McpServer): string[] {
+  const tools = (server as unknown as { _registeredTools?: Record<string, { enabled?: boolean }> })._registeredTools ?? {};
+  return Object.keys(tools).filter((k) => tools[k]?.enabled !== false);
 }

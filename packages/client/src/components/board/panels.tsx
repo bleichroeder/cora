@@ -3,6 +3,9 @@ import { VideosPanel } from '../Videos';
 import { RemoteBrowserView } from '../RemoteBrowser';
 import { desktop } from '../../lib/desktop';
 import { IncidentsPanel, KnownPanel } from './ItemPanels';
+import { WorkPanel } from './WorkPanel';
+import { TeamMapPanel } from './TeamMap';
+import { TeamPanel } from './TeamPanel';
 import { ActivityPanel, BriefPanel, ConstellationPanel, LoopsPanel, MembersPanel, NotesBoardPanel, ProjectPanel, ReposPanel, ThreadPanel } from './ProjectPanels';
 import { PrivateCard } from '../Live';
 import { useLive } from '../../state/live';
@@ -52,8 +55,11 @@ const BODIES: Partial<Record<PanelKind, React.ComponentType<Props>>> = {
   today: TodayPanel,
   constellation: ConstellationPanel,
   members: MembersPanel,
+  team: TeamPanel,
   loops: LoopsPanel,
   incidents: IncidentsPanel,
+  work: WorkPanel,
+  teammap: TeamMapPanel,
   known: KnownPanel,
   pnotes: NotesBoardPanel,
   thread: ThreadPanel,
