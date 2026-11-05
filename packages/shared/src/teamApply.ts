@@ -3,7 +3,7 @@
  * team (and undoing one of Cora's turns, the same way backwards), what a change does to running sessions (the team
  * model's table), and how many things changed.
  */
-import { diffTeam, seatedChangeDetails, type Route, type Team } from './teams';
+import { diffTeam, renamedBefore, seatedChangeDetails, seatRenames, type Route, type Team } from './teams';
 import { clone, countOf, emptyTeam, listWords, routeName, sameValue, seatById } from './teamHelpers';
 
 type Keyed = { id: string } & Record<string, unknown>;
@@ -60,16 +60,23 @@ export function rebaseTeam(oldBase: Team, theirs: Team, mine: Team): { team: Tea
   return { team: out, conflicts };
 }
 
-export type SessionEffect = { seat: string; name: string; kind: 'start' | 'restart' | 'tell' | 'now' | 'stop'; text: string };
+export type SessionEffect = { seat: string; name: string; kind: 'start' | 'restart' | 'tell' | 'now' | 'stop' | 'keep'; text: string };
 
 const RESTART_WORDS: Record<string, string> = { tools: 'tools', disallowedTools: 'tools', model: 'model', effort: 'model', permissionMode: 'permission mode' };
 
 /** What a change does to a running team, seat by seat (the team model's table), and what takes effect at once. It reads diffTeam's change list, the one the runtime acts on. */
-export function sessionEffects(prev: Team | undefined, next: Team): { rows: SessionEffect[]; atOnce: string[] } {
-  const before = prev ?? emptyTeam(0);
-  const rows: SessionEffect[] = [];
+/**
+ * What Apply does to running sessions, a row per seat, and what changes at once. A seat only renamed (seatRenames: the
+ * same name or instructions under a new id) keeps its sessions, adopted into the new id: its row says so, and what else
+ * changed in it reads as for any seat. `ending`: seats it stands down, said plainly (their sessions end, and what they
+ * run and know goes with them).
+ */
+export function sessionEffects(prev: Team | undefined, next: Team): { rows: SessionEffect[]; atOnce: string[]; ending?: string } {
+  const renames = seatRenames(prev, next);
+  const before = prev ? renamedBefore(prev, renames) : emptyTeam(0);
+  const rows: SessionEffect[] = renames.map((r) => ({ seat: r.to.id, name: r.to.name, kind: 'keep' as const, text: `renamed from ${r.from.id}: its sessions keep running as ${r.to.name} (and what they run and know), each told its new seat` }));
   const atOnce: string[] = [];
-  for (const c of diffTeam(prev, next)) {
+  for (const c of diffTeam(prev ? before : undefined, next)) {
     if (c.kind === 'routes-changed') {
       atOnce.push(...(c.detail ?? '').replace(/ changed$/, '').split(', ').filter(Boolean));
       continue;
@@ -87,7 +94,16 @@ export function sessionEffects(prev: Team | undefined, next: Team): { rows: Sess
     } else if (c.kind === 'pool-resized' && o) row('now', `pool ${countOf(o.count)} → ${countOf(s.count)}, at once${s.count.max < o.count.max ? ' (extras close once idle)' : ''}`);
     else if (c.kind === 'watches-changed') row('now', 'its watches are set again, at once');
   }
-  return { rows, atOnce };
+  const ending = endingWords(before, next);
+  return { rows, atOnce, ...(ending ? { ending } : {}) };
+}
+
+/** What ends when seats stand down (a seat only renamed doesn't: its sessions are kept); none: null. */
+export function endingWords(before: Team, next: Team): string | null {
+  const renamed = new Set(seatRenames(before, next).map((r) => r.from.id));
+  const gone = before.seats.filter((s) => !seatById(next, s.id) && !renamed.has(s.id));
+  if (!gone.length) return null;
+  return `${listWords(gone.map((s) => s.name))} ${gone.length > 1 ? 'stand' : 'stands'} down: ${gone.length > 1 ? 'their' : 'its'} sessions end, and with them anything they run (a /loop, a cron, a Monitor) and what they know.`;
 }
 
 /** How many things changed (a new seat is one change, however many lines describe it). */

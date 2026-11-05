@@ -4,6 +4,7 @@ import { toolWindowFill, watchLoginForms } from './opFill';
 import { windowFind } from './findBar';
 import { chromeUserAgent } from './userAgent';
 import { chromeIdentity, chromeSession } from './chromeIdentity';
+import { usedPings } from './pageUse';
 
 /** The built-in browser's logins and cookies: saved across restarts, kept apart from the dashboard's. */
 export const WEB_PARTITION = 'persist:web';
@@ -103,6 +104,9 @@ function attachWebviews(win: BrowserWindow) {
       win.webContents.send('ab:web-tab', { from: wc.id, url, background: disposition === 'background-tab' });
       return { action: 'deny' };
     });
+    // you using the page (scrolling it, keys, clicks): told to the dashboard, at most once a second (pageUse.ts)
+    const used = usedPings();
+    wc.on('input-event', (_e, i) => void (used(i.type) && !win.isDestroyed() && win.webContents.send('ab:web-tab', { from: wc.id, used: true })));
     // Ctrl+T / W / L / F / Tab inside a page work on the app's tabs and find bar (and Ctrl+W must not close the app window);
     // Ctrl+K opens the app's command palette
     wc.on('before-input-event', (e, i) => {

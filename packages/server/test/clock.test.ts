@@ -39,4 +39,24 @@ describe('sessions hear the time', () => {
       await srv.close();
     }
   });
+  it("Cora's agent hears it on every prompt (what it's given can have waited hours)", async () => {
+    const { mkdtempSync, mkdirSync, writeFileSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const { loadConfig } = await import('../src/config');
+    const { startServer } = await import('../src/server');
+    const dataDir = mkdtempSync(join(tmpdir(), 'cora-clock-'));
+    mkdirSync(join(dataDir, 'orchestrator'), { recursive: true });
+    writeFileSync(join(dataDir, 'orchestrator', 'state.json'), JSON.stringify({ sessionId: 'cora-agent-1' }));
+    const srv = await startServer(loadConfig({ dataDir, dbPath: ':memory:', hookToken: 'hooktok', uiToken: 'u', clientDir: join(tmpdir(), 'nope-client') }), { tail: false, listen: false });
+    try {
+      const prompt = (sid: string, n: number) => srv.app.inject({ method: 'POST', url: '/hook/UserPromptSubmit', headers: { 'x-cora-token': 'hooktok' }, payload: { session_id: sid, cwd: 'C:/work/x', prompt: 'hi', prompt_id: `a-${n}` } });
+      for (let n = 1; n <= 3; n++) expect((await prompt('cora-agent-1', n)).json().hookSpecificOutput.additionalContext).toMatch(/From Cora: it's /);
+      // another session: once
+      expect((await prompt('sess-other', 4)).json().hookSpecificOutput.additionalContext).toMatch(/From Cora: it's /);
+      expect((await prompt('sess-other', 5)).statusCode).toBe(204);
+    } finally {
+      await srv.close();
+    }
+  });
 });

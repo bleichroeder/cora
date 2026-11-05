@@ -10,6 +10,7 @@ import { SecretsSection } from './SecretsSettings';
 import { DevicesSection } from './DevicesSettings';
 import { OrchestratorSection } from './OrchestratorSettings';
 import type { InboxSource, Settings } from '@cora/shared';
+import { CONTEXT_NUDGES, nudgeAt } from '@cora/shared';
 import { BrandIcon } from './BrandIcon';
 import { SetupList } from './Setup';
 import { useSetup } from '../state/setup';
@@ -322,6 +323,18 @@ export function SettingsModal() {
                     checked={server.journal?.on !== false}
                     onChange={(on) => void save({ journal: { on } })}
                   />
+                ) : null}
+                {server ? (
+                  <Row
+                    label="Big context"
+                    hint={
+                      nudgeAt(server) > 0
+                        ? `A session whose context passes ${Math.round(nudgeAt(server) / 1000)}k rereads all of it on every turn. Once it does, its context in the header turns amber, you're told once (a handover or /compact would help), and a team seat's lead hears it. Cora never does anything about it herself.`
+                        : 'Sessions are never nudged about the size of their context.'
+                    }
+                  >
+                    <Choice value={nudgeAt(server)} onChange={(v) => void save({ context: { nudgeAt: v } })} options={CONTEXT_NUDGES.map((n): [number, string] => [n, n ? `${n / 1000}k` : 'Off'])} />
+                  </Row>
                 ) : null}
                 {server ? (
                   <>

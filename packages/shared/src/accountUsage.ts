@@ -17,8 +17,11 @@ export type UsageLimit = {
   resetsAt?: number;
 };
 export type AccountUsage = {
-  /** ok: read; none: no Claude login here to read with; expired: the login needs Claude Code to run once; error: the read failed */
-  state: 'ok' | 'none' | 'expired' | 'error';
+  /**
+   * ok: read; none: no Claude login here to read with; expired: the login needs Claude Code to run once; error: the
+   * read failed; off: this Cora doesn't ask (a test Cora)
+   */
+  state: 'ok' | 'none' | 'expired' | 'error' | 'off';
   at: number;
   limits: UsageLimit[];
   /** extra usage (pay as you go past the limits), in the currency's units */
@@ -26,6 +29,8 @@ export type AccountUsage = {
   /** the plan, e.g. "max" */
   plan?: string;
   message?: string;
+  /** the last good reading, shown while reading again fails (rate-limited, say): why, and when it's next asked */
+  stale?: { message: string; retryAt: number };
 };
 
 const LABELS: Record<string, string> = { session: 'Current session', weekly_all: 'This week · all models', weekly_scoped: 'This week' };

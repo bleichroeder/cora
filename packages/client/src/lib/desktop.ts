@@ -33,7 +33,8 @@ export type DesktopBridge = {
   onOpenWeb?(cb: (url: string) => void): () => void;
   openExternal?(url: string): void;
   /** a page asked for a new tab (url) or pressed a tab shortcut (key: t, w, l, f, next, prev; k: the command palette); `from` is its web contents id */
-  onWebTab?(cb: (m: { from: number; url?: string; background?: boolean; key?: string }) => void): () => void;
+  /** a page asking for a tab, a tab shortcut in it, or you using it (`used`: at most once a second) */
+  onWebTab?(cb: (m: { from: number; url?: string; background?: boolean; key?: string; used?: true }) => void): () => void;
   /** a tool in its own window (same logins as the browser) */
   toolWindow?(url: string, title: string): void;
   /** the tools' sites: their pages may show Windows notifications (other pages may not) */

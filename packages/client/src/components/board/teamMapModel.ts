@@ -283,6 +283,18 @@ export function nextFade(p: Project, now: number): number | null {
   return next;
 }
 
+/**
+ * Where a lit route's label ("question · 3m · 1") goes: on a pill centred just under its chip, off the route's line
+ * (which runs through the chip, and would run through the text beside it) and so clear of the tiles at its ends.
+ * `textW`: the label's width. The pill's box, and where its text is centred.
+ */
+export function litLabel(chip: { x: number; y: number }, cs: { h: number }, textW: number): { x: number; y: number; w: number; h: number; tx: number; ty: number } {
+  const w = Math.ceil(textW) + 12;
+  const h = 14;
+  const y = chip.y + cs.h / 2 + 3;
+  return { x: chip.x - w / 2, y, w, h, tx: chip.x, ty: y + 10 };
+}
+
 /** One line of the activity rail: when, what (a post, a refused one, a task's move, a member starting or stopping), whom it lights. */
 export type RailEvent = { key: string; at: number; kind: 'post' | 'refused' | 'task' | 'member'; text: string; who: string[]; route: string | null; item?: string };
 const first = (s: string, n = 60) => {
@@ -291,8 +303,8 @@ const first = (s: string, n = 60) => {
 };
 /**
  * The activity rail: the project's last events, newest first. Posts (who → who, kind, first words; refused ones as
- * such), task moves (opened, assigned, its latest state, done with its outcome: a task keeps no history of its moves, so
- * each says its last), members starting and stopping (their session's start, and its end). `name`: a writer's or
+ * such), task moves (opened, then each move it kept: every assignment and state, done with its outcome; one from before
+ * moves were kept says its last of each), members starting and stopping (their session's start, and its end). `name`: a writer's or
  * recipient's name (a session id, 'you', 'user', 'cora', a group's id).
  */
 export function railEvents(p: Project, team: Team, sessions: Record<string, SessionInfo>, name: (who: string) => string, max = 30): RailEvent[] {
@@ -307,9 +319,22 @@ export function railEvents(p: Project, team: Team, sessions: Record<string, Sess
   for (const i of p.items ?? []) {
     if (i.kind !== 'task') continue;
     out.push({ key: `t:${i.id}:open`, at: i.openedAt, kind: 'task', text: `Task opened: ${first(i.title, 50)}`, who: [you(i.openedBy)], route: null, item: i.id });
+    const done = () => `${first(i.title, 40)} done${i.outcome ? `: ${first(i.outcome, 40)}` : ''}`;
+    if (i.moves?.length) {
+      // every step it took: each assignment, each state (building, review, testing), done
+      let owner = i.moves.find((m) => m.field === 'owner')?.from;
+      i.moves.forEach((m, k) => {
+        if (m.field === 'owner') owner = m.to;
+        const lights = owner ? [you(owner)] : [];
+        const text = m.field === 'owner' ? `${first(i.title, 40)} → ${m.to ? name(m.to) : 'nobody'}` : m.to === 'done' ? done() : `${first(i.title, 40)}: ${m.to ?? '?'}`;
+        out.push({ key: `t:${i.id}:m${k}`, at: m.at, kind: 'task', text, who: lights, route: null, item: i.id });
+      });
+      continue;
+    }
+    // one from before moves were kept: its last of each
     if (i.owner && i.ownedAt) out.push({ key: `t:${i.id}:own`, at: i.ownedAt, kind: 'task', text: `${first(i.title, 40)} → ${name(i.owner)}`, who: [you(i.owner)], route: null, item: i.id });
     if (itemOpen(i) && i.updatedAt > Math.max(i.openedAt, i.ownedAt ?? 0)) out.push({ key: `t:${i.id}:state`, at: i.updatedAt, kind: 'task', text: `${first(i.title, 40)}: ${i.state}`, who: i.owner ? [you(i.owner)] : [], route: null, item: i.id });
-    if (!itemOpen(i) && i.closedAt) out.push({ key: `t:${i.id}:done`, at: i.closedAt, kind: 'task', text: `${first(i.title, 40)} done${i.outcome ? `: ${first(i.outcome, 40)}` : ''}`, who: i.owner ? [you(i.owner)] : [], route: null, item: i.id });
+    if (!itemOpen(i) && i.closedAt) out.push({ key: `t:${i.id}:done`, at: i.closedAt, kind: 'task', text: done(), who: i.owner ? [you(i.owner)] : [], route: null, item: i.id });
   }
   for (const sid of p.sessions) {
     const s = sessions[sid];

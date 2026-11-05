@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync } from 'node:fs';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
-import { DEFAULT_ESCALATION_AFTER, diffTeam, poolCap, groupContains, itemOpen, listWords, teamChangeLines, textChange, resolveGroup, routeAllows, seatAgentName, seatCard, seatHandle, seatsOf, type Endpoint, type Escalation, type MsgKind, type Project, type ProjectItem, type Route, type Seat, type Team, type TeamChange, type Watch } from '@cora/shared';
+import { DEFAULT_ESCALATION_AFTER, diffTeam, renamedBefore, seatRenames, poolCap, groupContains, itemOpen, listWords, teamChangeLines, textChange, resolveGroup, routeAllows, seatAgentName, seatCard, seatHandle, seatsOf, type Endpoint, type Escalation, type MsgKind, type Project, type ProjectItem, type Route, type Seat, type Team, type TeamChange, type Watch } from '@cora/shared';
 import { openItem } from './projectItems';
 import { seatFiles, teamPluginDir, writeTeamArtifacts } from './teamAgents';
 import { watchWords } from './mailWatches';
@@ -87,6 +87,11 @@ export class TeamRuntime {
    * new member of their seat takes what they held
    */
   private replacing = new Map<string, Set<string>>();
+  /**
+   * seats restarted to take a change (`${pid}|${seat}` → how many were running): their members, stopped and kept, come
+   * back as themselves on the new definition once closed (the tick resumes them), a pool at the size it had
+   */
+  private restarting = new Map<string, number>();
   /** seats whose live members run an older definition (project → seats): they need a restart (kept on the project) */
   private pending = new Map<string, Set<string>>();
   /** pools made smaller (`${pid}|${seat}`): their members above count.max close once idle, then it's over (kept on the project) */
@@ -118,6 +123,11 @@ export class TeamRuntime {
       out.push(p.id);
     }
     return out;
+  }
+
+  /** A member this runtime is stopping (asked to close, not closed yet): nothing more is given to it. */
+  stoppingNow(sid: string): boolean {
+    return this.stopping.has(sid);
   }
 
   /** Whether the team was brought up (and not stood down). */
@@ -301,7 +311,13 @@ export class TeamRuntime {
     this.replacing.get(pid)?.delete(sid);
     const heir = to ?? this.successor(pid, sid);
     if (heir) this.d.projects.handOver(pid, sid, heir);
-    else this.tellHeld(pid, sid);
+    else {
+      // nobody in its place (its seat gone: a team whose seats were renamed): what waited for it goes to the team's
+      // fallback, never nowhere; the lead and its work are said to the user
+      const fb = this.fallbackMember(pid, sid);
+      if (fb) this.d.projects.handOver(pid, sid, fb, { waitingOnly: true });
+      this.tellHeld(pid, sid);
+    }
     this.d.projects.leave(pid, sid);
     this.d.dismiss?.(sid);
   }
@@ -312,6 +328,19 @@ export class TeamRuntime {
     if (!m?.seat) return undefined;
     const others = this.members(pid, m.seat).filter((x) => x.sid !== sid).sort((a, b) => (a.instance ?? 1) - (b.instance ?? 1));
     return (others.find((x) => (x.instance ?? 1) === (m.instance ?? 1)) ?? others[0])?.sid;
+  }
+
+  /** The live member the team's fallback names (a seat's lowest-numbered, or a group's first): what waits for a member that left with nobody in its place goes there. */
+  private fallbackMember(pid: string, not: string): string | undefined {
+    const team = this.d.projects.get(pid)?.team;
+    const fb = team?.fallback;
+    if (!team || !fb || fb === 'user' || fb === 'cora') return undefined;
+    const seats = fb.startsWith('seat:') ? [fb.slice(5)] : fb.startsWith('group:') ? seatsOf(team, fb.slice(6)) : [];
+    for (const seat of seats) {
+      const m = this.members(pid, seat).filter((x) => x.sid !== not).sort((a, b) => (a.instance ?? 1) - (b.instance ?? 1))[0];
+      if (m) return m.sid;
+    }
+    return undefined;
   }
 
   /** A member leaving with nobody in its place: the user is told if it was the lead or owned open incidents. */
@@ -381,7 +410,10 @@ export class TeamRuntime {
   }
 
   private async applyEditNow(pid: string, previous: Team | undefined, next: Team): Promise<{ changes: TeamChange[]; restart: string[]; problems: string[] }> {
-    const changes = diffTeam(previous, next);
+    // a seat only renamed keeps its sessions (adopted into its new id); what else changed in it is diffed as for any seat
+    const renames = seatRenames(previous, next);
+    const before = previous ? renamedBefore(previous, renames) : previous;
+    const changes: TeamChange[] = [...renames.map((r) => ({ kind: 'seat-renamed' as const, seat: r.to.id, from: r.from.id, detail: `renamed from ${r.from.id}` })), ...diffTeam(before, next)];
     const restart: string[] = [];
     const problems: string[] = [];
     const why = this.d.pluginDir ? this.writeArtifacts(pid, next) : null;
@@ -389,15 +421,30 @@ export class TeamRuntime {
     // a new lead seat: no lead chosen before is over (the new seat leads)
     if (previous?.lead !== next.lead) this.d.projects.endLeadNone(pid);
     const p = this.d.projects.get(pid);
+    // its members (live or ended: one resumed later comes back as the new seat) are the new seat's, up or not
+    for (const r of renames) this.adopt(pid, r.from, r.to, p?.name ?? '', this.up.has(pid));
+    // a seat gone (not renamed): its ended members (stood down, or stopped before) leave now, what waited for them to
+    // the team's fallback (release); its live ones are stopped below, and leave once they close (the tick)
+    // (one stood down and already closed counts: it was being stopped, and is gone)
+    for (const c of changes) {
+      if (c.kind !== 'seat-removed') continue;
+      for (const [sid, m] of Object.entries(p?.members ?? {})) {
+        if (m.seat !== c.seat || this.d.live(sid)) continue;
+        this.stopping.delete(sid);
+        this.release(pid, sid);
+      }
+    }
     if (!p || !this.up.has(pid)) return { changes, restart, problems };
     for (const c of changes) {
       const id = c.seat ?? '';
       const seat = next.seats.find((s) => s.id === id);
+      if (c.kind === 'seat-renamed') continue;
       if (c.kind === 'seat-removed') {
         this.stopSeat(pid, id);
         this.undown(pid, id);
         this.unpend(pid, id);
         this.starts.delete(`${pid}|${id}`);
+        this.restarting.delete(`${pid}|${id}`);
         this.setTrim(pid, id, false);
       } else if (!seat) continue;
       else if (c.kind === 'seat-added' || c.kind === 'pool-resized') {
@@ -409,7 +456,7 @@ export class TeamRuntime {
       } else if (c.kind === 'seat-retasked') {
         // what changed (textChange: a long role's edit is the part that differs, not its unchanged start, with a few
         // words around it so it can be found); its whole new text is its prompt's once it restarts
-        const was = previous?.seats.find((s) => s.id === id)?.instructions;
+        const was = before?.seats.find((s) => s.id === id)?.instructions;
         const change = textChange(was, seat.instructions, 300, 4);
         // (a full stop, unless it already ends one: a quote ending `the user."`, or a cut ending `…`)
         const stop = /(…|[.!?]["”']?)$/.test(change) ? '' : '.';
@@ -429,6 +476,47 @@ export class TeamRuntime {
     }
     this.fillLead(pid, next, previous?.lead);
     return { changes, restart, problems };
+  }
+
+  /**
+   * A seat renamed (`from` → `to`): its members, live or ended, are the new seat's, with their instance numbers; what the
+   * runtime keeps by seat (stood down, waiting for a restart, a pool shrinking, its watches) moves with it. Its live
+   * members are told their new seat (`tell`: the team is up). Its files are the new seat's already (writeArtifacts).
+   */
+  private adopt(pid: string, from: Seat, to: Seat, project: string, tell: boolean): void {
+    const p = this.d.projects.get(pid);
+    if (!p) return;
+    for (const [sid, m] of Object.entries(p.members)) {
+      if (m.seat !== from.id) continue;
+      // a live one keeps the name its Claude Code started with (native messages reach it by that until it restarts)
+      if (this.d.live(sid) && !m.handle) this.d.projects.setHandle(pid, sid, seatHandle(pid, from.id, m.instance));
+      this.d.projects.setSeat(pid, sid, to.id, m.instance);
+    }
+    if (this.down.get(pid)?.has(from.id)) {
+      this.undown(pid, from.id);
+      const down = this.down.get(pid) ?? new Set<string>();
+      down.add(to.id);
+      this.down.set(pid, down);
+      this.d.projects.setTeamDown(pid, [...down]);
+    }
+    if (this.pending.get(pid)?.has(from.id)) {
+      this.unpend(pid, from.id);
+      const set = this.pending.get(pid) ?? new Set<string>();
+      set.add(to.id);
+      this.pending.set(pid, set);
+      this.d.projects.setTeamRestart(pid, [...set]);
+    }
+    if (this.trim.has(`${pid}|${from.id}`)) (this.setTrim(pid, from.id, false), this.setTrim(pid, to.id, true));
+    const st = this.starts.get(`${pid}|${from.id}`);
+    if (st) (this.starts.delete(`${pid}|${from.id}`), this.starts.set(`${pid}|${to.id}`, st));
+    // its watches are kept by seat: set again under the new one
+    if (to.startup.watches?.length || from.startup.watches?.length) {
+      this.d.watches?.drop(pid, from.id);
+      this.keepWatches(pid, to);
+    }
+    if (!tell) return;
+    const named = to.name === from.name ? `${to.name} (its id is ${to.id} now, was ${from.id})` : `${to.name} (was ${from.name})`;
+    for (const m of this.members(pid, to.id)) this.d.deliver(m.sid, `Your seat in ${project} is ${named} now: the same work under a new name. You keep this session and what it runs; your handle for messages stays ${this.d.projects.get(pid)?.members[m.sid]?.handle ?? seatHandle(pid, to.id, m.instance)} until you next restart.`);
   }
 
   /** A live member of the project (not one being stopped). */
@@ -466,7 +554,12 @@ export class TeamRuntime {
     if (next) this.d.projects.update(pid, { lead: next });
   }
 
-  /** Stands these seats down and brings them up again (their new definition), one after another. */
+  /**
+   * Restarts these seats on their new definition: each live member is stopped and kept, and once closed it's resumed as
+   * itself (its memory, its history, what it was working through), its launch rebuilt from the seat as it is now (its
+   * model, tools, permissions: resumeSeat). The tick resumes them (a pool comes back at the size it had); one that can't
+   * be resumed is replaced by a new one. A seat with nobody running starts as Bring up starts it.
+   */
   restartSeats(pid: string, seats: string[]): Promise<{ started: string[]; problems: string[] }> {
     return this.serial(pid, async () => {
       for (const id of seats) this.unpend(pid, id);
@@ -484,13 +577,23 @@ export class TeamRuntime {
           problems.push(`This team has no seat "${id}".`);
           continue;
         }
-        // as many as were running come back (at least its minimum): a pool with no minimum isn't stood down by it
-        const had = this.members(pid, id).length;
-        this.stopSeat(pid, id);
+        const live = this.members(pid, id);
         this.undown(pid, id);
-        const r = await this.startSeat(pid, seat, Math.min(seat.count.max, Math.max(seat.count.min, had)));
-        started.push(...r.started);
-        if (r.error) problems.push(r.error);
+        if (!live.length) {
+          const r = await this.startSeat(pid, seat);
+          started.push(...r.started);
+          if (r.error) problems.push(r.error);
+          continue;
+        }
+        // as many as were running come back, as themselves (at least its minimum, at most its maximum)
+        this.restarting.set(`${pid}|${id}`, Math.min(seat.count.max, Math.max(seat.count.min, live.length)));
+        this.d.watches?.drop(pid, id);
+        for (const m of live) {
+          this.parked.add(m.sid);
+          this.stopMember(m.sid);
+        }
+        // a fresh record: the resumes count as its starts
+        this.starts.set(`${pid}|${id}`, { fails: 0, recent: [] });
       }
       return { started, problems };
     });
@@ -587,6 +690,8 @@ export class TeamRuntime {
     if (!this.d.pluginDir || this.writeArtifacts(p.id, p.team!)) return null;
     // a member stopped before and live again is a member again (one stood down, back by hand, is no longer kept for Bring up)
     this.stopping.delete(sid);
+    // started again: it goes by its seat's handle now (a rename's old one is over)
+    this.d.projects.setHandle(p.id, sid, null);
     this.parked.delete(sid);
     return { seat: this.seatArgs(p.id, seat), name: seatHandle(p.id, seat.id, m.instance) };
   }
@@ -693,7 +798,7 @@ export class TeamRuntime {
         this.d.projects.setTeamDown(pid, []);
       }
       const seats = seat ? [seat] : (this.d.projects.get(pid)?.team?.seats ?? []).map((s) => s.id);
-      for (const id of seats) this.d.watches?.drop(pid, id);
+      for (const id of seats) (this.d.watches?.drop(pid, id), this.restarting.delete(`${pid}|${id}`));
       // each seat's standing members (up to count.min) are kept for Bring up to resume; pool extras leave once closed
       const team = this.d.projects.get(pid)?.team;
       for (const id of seats) {
@@ -932,16 +1037,20 @@ export class TeamRuntime {
     let artifacts: string | null | undefined;
     for (const seat of team.seats) {
       if (this.down.get(pid)?.has(seat.id)) continue;
+      const key = `${pid}|${seat.id}`;
+      // restarted to take a change: as many as were running come back, a pool with no minimum too
+      const want = Math.max(seat.count.min, this.restarting.get(key) ?? 0);
       // nothing standing to keep running: always whole, so its members that ended (not stood down) are let go
-      if (seat.count.min <= 0) {
+      if (want <= 0) {
         for (const m of this.ended(pid, seat.id)) if (!this.parked.has(m.sid)) this.release(pid, m.sid);
         continue;
       }
-      const key = `${pid}|${seat.id}`;
       const h: Starts = this.starts.get(key) ?? { fails: 0, recent: [] };
       this.starts.set(key, h);
       // ones stood down that are still closing count: they're resumed once closed, not counted as a start now
-      const missing = this.members(pid, seat.id).length + this.closingParked(pid, seat.id, now).length < seat.count.min;
+      const missing = this.members(pid, seat.id).length + this.closingParked(pid, seat.id, now).length < want;
+      // all back: the restart is over
+      if (this.members(pid, seat.id).length >= want) this.restarting.delete(key);
       // it stayed up: the back-off is over
       if (h.startedAt !== undefined && now - h.startedAt >= SETTLE) {
         h.fails = 0;
@@ -964,7 +1073,7 @@ export class TeamRuntime {
       }
       if (artifacts === undefined) artifacts = this.writeArtifacts(pid, team);
       h.recent.push(now);
-      const r = artifacts ? { error: artifacts } : await this.fill(pid, seat);
+      const r = artifacts ? { error: artifacts } : await this.fill(pid, seat, want);
       if (r.error) this.failedStart(p, seat, h, r.error, now);
       else {
         h.startedAt = now;

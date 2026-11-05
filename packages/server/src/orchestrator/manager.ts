@@ -1,26 +1,27 @@
 import type { JiraFresh } from '../jiraFeed';
 import { IssueStarts } from './issueStart';
 import type { CoraTold } from '../inboxFeeds';
-import { appendFileSync, existsSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs';
+import { appendFileSync, closeSync, existsSync, fstatSync, openSync, readdirSync, readFileSync, readSync, rmSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { FollowUps } from './followUps';
-import { AWAY_MS, FROM_CORA, bareWords, choiceOpen, highlightedOption, isShell, trustQuestion, type BriefKind, type BrainEvent, type SessionInfo, type CiMsg, type GoalState, type OrchestratorStatus, type PendingDecision, type PendingRequest, type Settings, type TerminalInfo, type UiCommand, takesTags, jiraLine, type JiraEvent, type MailHit, type GitlabTodo, type GitlabIssue, todoWhy } from '@cora/shared';
+import { AWAY_MS, CONTEXT_CAP, FROM_CORA, bareWords, choiceOpen, highlightedOption, isShell, trustQuestion, type BriefKind, type BrainEvent, type SessionInfo, type CiMsg, type GoalState, type OrchestratorStatus, type PendingDecision, type PendingRequest, type Settings, type TerminalInfo, type UiCommand, takesTags, jiraLine, type JiraEvent, type MailHit, type GitlabTodo, type GitlabIssue, todoWhy } from '@cora/shared';
 import { sendTyped, typedInput } from '../input';
 import type { PtyManager } from '../pty';
 import { Approvals, type ApprovalOutcome } from './approvals';
-import { EventFeed, type FeedMode } from './feed';
+import { EventFeed, hhmm, type FeedLine, type FeedMode } from './feed';
 import { ALLOWED_FILE, GATE_FILE, agentAllowed } from './files';
 import { Goals } from './goals';
 import { judge, type MandateContext, type MandateRequest, type Verdict } from './mandate';
 import { agentArgs, orchestratorDir, readState, writeAgentFiles, writeState } from './files';
 import { promptWhat } from './feed';
 import { Talk } from './talk';
-import { Copies, type CopyRun } from './copy';
+import { Copies, type CopyCost, type CopyRun } from './copy';
 import { JiraStarts, type JiraStartDeps } from './jiraStart';
 import { defaultClaudeCmd } from '../pty';
 import { writeFileAtomic } from '../fsx';
 import { promptReady } from './deliver';
+import { samePrompt } from '../promptLanded';
 
 export type OrchDeps = {
   dataDir: string;
@@ -51,12 +52,16 @@ export type OrchDeps = {
   usage?(sessionIds: string[], since: number): number;
   /** the agent's session is working (so events wait) */
   agentWorking?(): boolean;
+  /** Cora's hooks are in Claude Code's settings (the setup check): its prompts come back, so what's typed can be seen to land */
+  hooksSet?(): boolean;
   /** every session (to notice the stuck ones) */
   sessions?(): SessionInfo[];
   /** a session's events since then (oldest first): the replies Cora waits for */
   eventsSince?(sessionId: string, since: number): BrainEvent[];
   /** how side questions run (tests fake it) */
   copyRun?: CopyRun;
+  /** what each side question cost (the audit log) */
+  copyCost?: (c: CopyCost) => void;
   /** Slack is connected (briefs then include what's waiting there) */
   slackConnected?: () => boolean;
   /** watching Jira is on (briefs then include jira_inbox) */
@@ -69,6 +74,8 @@ export type OrchDeps = {
   mailConnected?: () => boolean;
   /** the latest "assigned to you" event for a ticket (starting work from Jira) */
   jiraAssigned?(key: string): JiraEvent | undefined;
+  /** the journal's entries about a ticket (the last 14 days, newest first): work on it in a session not named for it */
+  ticketJournal?(key: string): Array<{ sessionId: string; session: string; at: number; text: string }>;
   /** GitLab issues: a project's checkout among folders, and one issue as glab reads it */
   issueFolder?(project: string, folders: string[]): Promise<string | null>;
   gitlabIssue?(project: string, iid: number): Promise<GitlabIssue | null>;
@@ -90,6 +97,20 @@ const fmtTokens = (n: number) => (n >= 1_000_000 ? `${(n / 1_000_000).toFixed(n 
 export const AGENT_SETTLE_MS = 1000;
 /** An agent terminal that has run this long takes input as soon as its box shows (one already going when Cora started). */
 export const AGENT_UP_MS = 30_000;
+/**
+ * What it's given has this long to reach its conversation (a prompt event from its session) before Enter is pressed
+ * once more, and as long again before it's taken as not responding. Typed in isn't in: a terminal can take the keys and
+ * no prompt come of them (it went silent twice that way, and Cora never knew).
+ */
+export const LAND_MS = 20_000;
+/** Its session says it's working, but nothing has come from it this long and its box sits idle: it isn't busy, it's stuck. */
+export const SILENT_WORKING_MS = 10 * 60_000;
+/** Idle this long, its prompt cache has gone cold: the next wake writes its whole context again. */
+export const CACHE_COLD_MS = 5 * 60_000;
+/** How long what it must hear waits for its terminal (a menu open) before it's given up on. */
+const DUE_MS = 10 * 60_000;
+/** Claude Code at work: its spinner's line. */
+const screenWorking = (lines: string[]) => lines.some((l) => /esc to interrupt/i.test(l));
 const MAX_EXITS = 5;
 const EXIT_WINDOW_MS = 10 * 60_000;
 const RELAUNCH_MS = [2_000, 10_000, 60_000];
@@ -138,10 +159,13 @@ export class OrchestratorManager {
 
   constructor(private d: OrchDeps) {
     this.dir = orchestratorDir(d.dataDir);
+    this.lastHeard = this.now();
     const st = readState(this.dir);
     this.sid = st.sessionId ?? null;
     this.control = !!st.control;
     this.lastSeen = st.lastSeen;
+    this.hooksHeard = !!st.hooks;
+    this.past = Array.isArray(st.past) ? st.past.filter((x): x is string => typeof x === 'string') : [];
     this.approvals = new Approvals({
       file: join(this.dir, 'approvals.json'),
       // cards a restart couldn't keep (answering a session's question: the question went with the restart)
@@ -154,8 +178,11 @@ export class OrchestratorManager {
     });
     this.goals = new Goals(this.dir, () => this.changed());
     this.feed = new EventFeed({
-      deliver: (text, others) => {
-        const ok = this.say(text).ok;
+      deliver: (text, others, lines) => {
+        // what waits to go in already (your words, a new conversation's notice) goes first: news comes after it, once
+        // what it was given is in (news never piles up in a terminal that takes nothing)
+        if (this.due.length || this.inFlight.length) return false;
+        const ok = this.say(text, lines).ok;
         // someone else's words (a Slack reply, an email) start this turn: until it ends (or you speak), Cora acts on
         // nothing and reaches nothing outside (see othersTurn; docs/audit-2026-10-20.md S8)
         if (ok && others) this.othersSince = this.now();
@@ -194,7 +221,7 @@ export class OrchestratorManager {
       onChange: () => this.changed(),
       now: () => this.now(),
     });
-    this.copies = new Copies({ dir: join(this.dir, 'copy'), claudeCmd: () => this.d.claudeCmd ?? defaultClaudeCmd(), run: d.copyRun });
+    this.copies = new Copies({ dir: join(this.dir, 'copy'), claudeCmd: () => this.d.claudeCmd ?? defaultClaudeCmd(), run: d.copyRun, ...(d.copyCost ? { cost: d.copyCost } : {}) });
     this.issueStarts = new IssueStarts({
       mode: () => this.d.settings().gitlab.start ?? 'offer',
       sessions: () => this.d.sessions?.() ?? [],
@@ -240,6 +267,7 @@ export class OrchestratorManager {
         }
       },
       assigned: (key) => this.d.jiraAssigned?.(key),
+      ...(this.d.ticketJournal ? { journal: (key: string) => this.d.ticketJournal!(key).filter((j) => !this.isAgent(j.sessionId)) } : {}),
       ...(this.d.ticketPrompt ? { ticketPrompt: (e: JiraEvent) => this.d.ticketPrompt!(e) } : {}),
       approvals: this.approvals,
       launch: async (o) => {
@@ -287,6 +315,7 @@ export class OrchestratorManager {
 
   /** A session's event: the replies Cora waits for, then what it hears. */
   event(e: BrainEvent): void {
+    if (this.isAgent(e.sessionId)) this.heardAgent(e);
     // the turn someone else's Slack words started is over
     if (this.othersSince != null && this.isAgent(e.sessionId) && e.kind === 'turn_end' && e.ts >= this.othersSince) this.othersSince = null;
     const awaited = this.talk.event(e);
@@ -337,6 +366,19 @@ export class OrchestratorManager {
   isAgent(sessionId: string | null | undefined): boolean {
     return !!sessionId && sessionId === this.sid;
   }
+  /**
+   * Was this ever Cora's agent's session: its current one, or one before a New conversation, Start fresh or Forget?
+   * (They carry what she said to you: your Slack, mail and Jira in her briefs. A live share's guest never sees them.)
+   */
+  wasAgent(sessionId: string | null | undefined): boolean {
+    return !!sessionId && (sessionId === this.sid || this.past.includes(sessionId));
+  }
+  /** Its earlier sessions, newest last (kept in its state, a few hundred at most). */
+  private past: string[] = [];
+  private retire(sid: string | null): void {
+    if (!sid || this.past.includes(sid)) return;
+    this.past = [...this.past, sid].slice(-500);
+  }
   /** Cora's own session, or one that isn't hers to watch or act for (the team builder's) */
   ignores(sessionId: string | null | undefined): boolean {
     return this.isAgent(sessionId) || (!!sessionId && !!this.d.ignored?.(sessionId));
@@ -363,6 +405,7 @@ export class OrchestratorManager {
       talks: s.enabled ? this.talk.list() : [],
       followUps: s.enabled ? this.followUps.list() : [],
       ...(s.enabled ? { jiraStarted: this.jiraStarts.started() } : {}),
+      ...(s.enabled && this.stuck ? { stuck: { since: this.stuck.since, waiting: this.due.length, ...(this.stuck.restarted ? { restarted: true as const } : {}) } } : {}),
     };
   }
   /**
@@ -455,11 +498,74 @@ export class OrchestratorManager {
 
   /** Has Claude Code got a transcript for this session (so it can be resumed)? */
   private hasTranscript(sid: string): boolean {
+    return !!this.transcriptOf(sid);
+  }
+  private transcriptOf(sid: string): string | null {
     try {
-      return readdirSync(this.d.projectsDir).some((p) => existsSync(join(this.d.projectsDir, p, `${sid}.jsonl`)));
+      const p = readdirSync(this.d.projectsDir).find((x) => existsSync(join(this.d.projectsDir, x, `${sid}.jsonl`)));
+      return p ? join(this.d.projectsDir, p, `${sid}.jsonl`) : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Is this in its conversation since then, as its transcript has it? Words typed in during a turn are taken into that
+   * turn, and no prompt comes of them: the transcript is where they show. (Its last 512 KB, each entry's words.)
+   */
+  private inTranscript(text: string, since: number): boolean {
+    const file = this.sid ? this.transcriptOf(this.sid) : null;
+    if (!file) return false;
+    // (as samePrompt reads them: however spaced, without the zero-width mark Cora may put first)
+    const n = (s: string) => s.replace(/[​-‍﻿]/g, '').replace(/\s+/g, ' ').trim();
+    const want = n(text).slice(0, 120);
+    if (!want) return false;
+    let tail = '';
+    try {
+      const fd = openSync(file, 'r');
+      try {
+        const size = fstatSync(fd).size;
+        const len = Math.min(size, 512 * 1024);
+        const buf = Buffer.alloc(len);
+        readSync(fd, buf, 0, len, size - len);
+        tail = buf.toString('utf8');
+      } finally {
+        closeSync(fd);
+      }
     } catch {
       return false;
     }
+    type Entry = {
+      timestamp?: unknown;
+      type?: unknown;
+      isMeta?: unknown;
+      operation?: unknown;
+      content?: unknown;
+      message?: { role?: unknown; content?: unknown };
+      attachment?: { type?: unknown; prompt?: unknown };
+    };
+    // only input: a user prompt's words (never a tool's result, which can hold anything), or one queued during a turn
+    const given = (o: Entry): string[] => {
+      if (o.type === 'queue-operation') return o.operation === 'enqueue' && typeof o.content === 'string' ? [o.content] : [];
+      if (o.type === 'attachment') return o.attachment?.type === 'queued_command' && typeof o.attachment.prompt === 'string' ? [o.attachment.prompt] : [];
+      if (o.type !== 'user' || o.isMeta || o.message?.role !== 'user') return [];
+      const c = o.message.content;
+      if (typeof c === 'string') return [c];
+      return Array.isArray(c) ? c.filter((b): b is { type: 'text'; text: string } => b?.type === 'text' && typeof b.text === 'string').map((b) => b.text) : [];
+    };
+    for (const line of tail.split('\n')) {
+      let o: Entry;
+      try {
+        o = JSON.parse(line);
+      } catch {
+        continue;
+      }
+      // after it was typed (an entry with no time can't say so)
+      const at = typeof o.timestamp === 'string' ? Date.parse(o.timestamp) : NaN;
+      if (!Number.isFinite(at) || at < since - 2000) continue;
+      if (given(o).some((x) => n(x).includes(want))) return true;
+    }
+    return false;
   }
 
   start(): void {
@@ -471,7 +577,7 @@ export class OrchestratorManager {
       const resume = !!this.sid && this.hasTranscript(this.sid);
       const args = agentArgs({ port: this.d.port, hookToken: this.d.hookToken, ...(this.d.agentToken ? { agentToken: this.d.agentToken } : {}), ...(this.d.viewToken ? { viewToken: this.d.viewToken } : {}), sessionId: id, model: s.model, dir: this.dir, speak: s.speak, instructions: s.instructions, tags: takesTags(this.d.settings().voice?.model ?? ''), mcp: this.mcp() });
       this.d.ptys.launch(resume ? { mode: 'resume', cwd: this.dir, sessionId: id, args, bare: true } : { mode: 'new', cwd: this.dir, newId: id, args, bare: true });
-      if (this.sid !== id) writeState(this.dir, { sessionId: id });
+      if (this.sid !== id) writeState(this.dir, { sessionId: id, ...this.keptState() });
       this.sid = id;
       this.error = undefined;
       this.d.log?.(`orchestrator: ${resume ? 'resumed' : 'started'} (${id.slice(0, 8)})`);
@@ -489,11 +595,29 @@ export class OrchestratorManager {
     if (t) this.d.ptys.end(t.terminalId);
     this.approvals.clear();
     this.talk.endAll();
+    this.newTerminal(false);
     this.changed();
   }
 
-  /** Start again from Settings after it gave up (or to pick up a new model). */
+  /**
+   * Its terminal is going (a restart, a new conversation, an exit): what was typed and never reached it goes again, first,
+   * into the next one; what waits for it gets its full wait from now. `afterStuck`: it's going because it wasn't
+   * responding, so if the next one doesn't take what it's given either, Start fresh is offered.
+   */
+  private newTerminal(afterStuck: boolean): void {
+    this.due.unshift(...this.inFlight.map((f) => ({ text: f.text, until: 0, ...(f.lines ? { lines: f.lines } : {}) })));
+    this.inFlight = [];
+    if (this.stuck) this.restartedStuck = afterStuck;
+    this.stuck = null;
+    const until = this.now() + DUE_MS;
+    for (const x of this.due) x.until = Math.max(x.until, until);
+    if (this.due.length) this.dueEvery();
+  }
+
+  /** Start again from Settings after it gave up (or to pick up a new model), or when it isn't responding. */
   restart(): void {
+    if (this.stuck) this.d.log?.('orchestrator: restarted (it wasn\'t responding)');
+    this.newTerminal(true);
     this.exits = [];
     this.error = undefined;
     const t = this.terminal();
@@ -511,6 +635,8 @@ export class OrchestratorManager {
     // why it stopped, in the log (its last words on screen): an agent that can't start shouldn't only say "started"
     const last = (this.d.ptys.screenLines(t.terminalId) ?? []).map((l) => l.trim()).filter(Boolean).slice(-3).join(' | ');
     this.d.log?.(`orchestrator: exited (${t.exitCode ?? '?'})${last ? `: ${last.slice(0, 300)}` : ''}`);
+    // (one a restart killed has a new one already, with what it's been given since)
+    if (!this.terminal()) this.newTerminal(true);
     if (!this.enabled()) return this.changed();
     const now = this.now();
     this.exits = [...this.exits.filter((x) => now - x < EXIT_WINDOW_MS), now];
@@ -532,21 +658,37 @@ export class OrchestratorManager {
    * A new conversation: a fresh session (on the model in its settings), when the old one can't go on (flagged, too
    * long, gone strange). What it remembers, your instructions, its goals and the Slack threads it watches are kept.
    */
-  newConversation(): void {
+  newConversation(why = "the user started it fresh (the last one couldn't go on)"): void {
     const old = this.sid;
     const t = this.terminal();
     if (t) this.d.ptys.kill(t.terminalId);
     if (this.timer) clearTimeout(this.timer);
     this.timer = null;
     this.approvals.clear();
+    this.newTerminal(false);
+    this.restartedStuck = false;
+    this.retire(this.sid);
     this.sid = null;
     this.exits = [];
     this.error = undefined;
-    writeState(this.dir, {});
+    writeState(this.dir, this.keptState());
     if (!this.enabled()) return this.changed();
     this.start();
     if (old && this.sid && old !== this.sid) this.d.rehome?.(old, this.sid);
-    this.feed.note("This is a new conversation: the user started it fresh (the last one couldn't go on). What you remember is in memory.md; read it before you answer.");
+    // its first turn: the notice first, with what the last one never took in (each line with its time, a long backlog
+    // cut to its latest), then what waited for it (your words) in their own turns
+    const now = this.now();
+    // news the last one was given and never took in is backlog too (not a turn of its own after the notice)
+    const lost = this.due.flatMap((x) => x.lines ?? []);
+    this.due = this.due.filter((x) => !x.lines);
+    const back = this.feed.backlog(lost);
+    const first = [
+      `[Cora ${hhmm(now)}]`,
+      `- This is a new conversation: ${why}. What you remember is in memory.md; read it before you answer.`,
+      ...(back ? ['', `What came in for the last one, which never took it in (since ${hhmm(back.since)}; it's past now, so take it as context, not as a list to work through):`, ...back.lines.map((l) => `- ${l}`)] : []),
+    ].join('\n');
+    this.due.unshift({ text: first, until: now + DUE_MS });
+    this.dueEvery();
     this.changed();
   }
 
@@ -556,10 +698,13 @@ export class OrchestratorManager {
     const t = this.terminal();
     if (t) this.d.ptys.kill(t.terminalId);
     this.approvals.clear();
+    this.newTerminal(false);
+    this.restartedStuck = false;
+    this.retire(this.sid);
     this.sid = null;
     this.exits = [];
     this.error = undefined;
-    writeState(this.dir, {});
+    writeState(this.dir, this.keptState());
     rmSync(join(this.dir, 'memory.md'), { force: true });
     if (on) this.start();
     else this.changed();
@@ -616,11 +761,17 @@ export class OrchestratorManager {
   /** New in Jira (already told to the user): Cora knows, without a turn of its own. */
   jiraNotes(f: JiraFresh): void {
     // assigned to you, and Cora offers or starts it: a turn of its own, to pick the folder
-    for (const e of f.events) if (e.handoff) this.feed.note(this.jiraStarts.turnText(e));
+    // (asked again as it goes: someone may have taken the ticket while it waited to reach Cora)
+    for (const e of f.events) if (e.handoff) this.feed.note(this.jiraStarts.turnText(e), { recheck: () => this.jiraStarts.recheck(e) });
     const rest = f.events.filter((e) => !e.handoff);
     if (f.summary) this.feed.hold(`[Jira] ${f.summary} (jira_inbox has them)`);
-    // which ticket and what happened, never its text (that's someone else's words: jira_inbox quotes it as theirs)
-    else for (const e of rest) this.feed.hold(`[Jira] ${e.key}: ${e.who.replace(/[^\p{L}\p{N} .'-]/gu, '').slice(0, 40)} ${e.what} (jira_inbox has it)`);
+    // which ticket and what happened, never its text (that's someone else's words: jira_inbox quotes it as theirs); an
+    // assignment someone has already: who, so nothing is started for it
+    else
+      for (const e of rest) {
+        const h = e.kind === 'assigned' && this.feedMode() !== 'off' ? this.jiraStarts.holder(e.key) : null;
+        this.feed.hold(`[Jira] ${e.key}: ${e.who.replace(/[^\p{L}\p{N} .'-]/gu, '').slice(0, 40)} ${e.what} (jira_inbox has it)${h ? `; ${h}, so there's nothing to start` : ''}`);
+      }
   }
 
   /** Who its latest input came from: you (your words, typed or spoken) or itself (events, briefs, goals). */
@@ -677,16 +828,28 @@ export class OrchestratorManager {
     return false;
   }
 
-  /** Typed into the agent's input and sent. `starting`: its terminal can't take it yet (sayWhenFree gives it soon). */
-  say(text: string): { ok: boolean; error?: string; starting?: true } {
+  /**
+   * Typed into the agent's input and sent; in once its prompt comes (heardAgent: checkLanded says when it doesn't).
+   * `starting`: its terminal can't take it yet (sayWhenFree gives it soon): it's starting, or it isn't responding (it
+   * waits for a restart, never typed into a terminal that takes nothing).
+   */
+  say(text: string, news?: FeedLine[]): { ok: boolean; error?: string; starting?: true } {
     const t = this.terminal();
     if (!t) return { ok: false, error: this.enabled() ? 'Cora is starting; try again in a moment' : 'Cora is off (Settings → Cora Orchestrator)' };
+    if (this.stuck) return { ok: false, error: "Cora isn't responding; this waits for it (Restart in its console)", starting: true };
     // typed as keys, so what it hears arrives as a plain prompt, never as pasted text (input.ts typedInput)
     const input = typedInput(text);
     if ('error' in input) return { ok: false, error: input.error };
     const lines = this.d.ptys.screenLines(t.terminalId);
     if (lines && choiceOpen(lines)) return { ok: false, error: 'Cora is waiting on a choice in its terminal' };
     if (!this.takesInput(t, lines)) return { ok: false, error: 'Cora is starting; it gets this once its terminal is ready', starting: true };
+    // in once its prompt comes (before the keys: its Enter is a beat later, and the prompt can come at once); with no
+    // hooks (none of its prompts has ever come back), typed is all there is to go on
+    if (this.tracks()) this.inFlight.push({ text, at: this.now(), enter: false, terminalId: t.terminalId, ...(news ? { lines: news } : {}) });
+    else if (!this.untrackedSaid) {
+      this.untrackedSaid = true;
+      this.d.log?.("orchestrator: none of its prompts has come back (Cora's hooks aren't in Claude Code?), so what it's given can't be seen to land: typed in counts as in");
+    }
     sendTyped(this.d.ptys, t.terminalId, input);
     // its own input (sayFromUser marks yours after this)
     this.lastInput = { from: 'cora', at: Date.now() };
@@ -700,13 +863,124 @@ export class OrchestratorManager {
     return this.goals.active() ? 'autopilot' : this.d.settings().orchestrator.events;
   }
 
-  /** The agent is working, or its terminal is asking something: what it hears waits. */
+  /**
+   * The agent is working, or its terminal is asking something: what it hears waits. Working, but nothing has come from
+   * its session for SILENT_WORKING_MS and its box sits idle: a turn whose end was never heard, not work (what it hears
+   * goes in, and whether that lands says whether it's responding).
+   */
   agentBusy(): boolean {
     const t = this.terminal();
     if (!t) return true;
     const lines = this.d.ptys.screenLines(t.terminalId);
     if (lines && choiceOpen(lines)) return true;
-    return !!this.d.agentWorking?.();
+    return this.turnRunning(lines);
+  }
+  /** Its turn is running: its spinner on screen, or its session working (unless quiet that long with its box idle). */
+  private turnRunning(lines: string[] | null): boolean {
+    if (lines && screenWorking(lines)) return true;
+    if (!this.d.agentWorking?.()) return false;
+    const quiet = this.now() - this.lastHeard;
+    if (quiet < SILENT_WORKING_MS || !lines || !promptReady(lines)) return true;
+    if (!this.quietSaid) this.d.log?.(`orchestrator: its session says it's working, but nothing has come from it for ${Math.round(quiet / 60_000)} minutes and its box is idle: taken as free`);
+    this.quietSaid = true;
+    return false;
+  }
+
+  /** What it was given, oldest first, until each one's prompt comes: typed in isn't in (a terminal can take the keys and no prompt come of them). */
+  private inFlight: Array<{ text: string; at: number; enter: boolean; terminalId: string; /** the feed's lines it was made of */ lines?: FeedLine[] }> = [];
+  /** It isn't responding (what it was given never reached its conversation): since when, and whether a restart didn't help. */
+  private stuck: { since: number; restarted?: true } | null = null;
+  /** Restarted because it wasn't responding: not responding again, Start fresh is offered. Cleared once something lands. */
+  private restartedStuck = false;
+  /** A prompt of its has come by its hook (this run or before): what it's given can be seen to land. */
+  private hooksHeard = false;
+  private untrackedSaid = false;
+  /** Is what it's given followed until its prompt comes? Only when prompts come back: Cora's hooks heard from it, or set up. */
+  private tracks(): boolean {
+    return this.hooksHeard || !!this.d.hooksSet?.();
+  }
+  /** What its state keeps over a new conversation (that its hooks work, and which sessions were its: not the conversation's). */
+  private keptState(): { hooks?: true; past?: string[] } {
+    return { ...(this.hooksHeard ? { hooks: true as const } : {}), ...(this.past.length ? { past: this.past } : {}) };
+  }
+  /** When something last came from its session (or the manager started). */
+  private lastHeard = 0;
+  private quietSaid = false;
+
+  /** An event from its own session: it's alive; a prompt that's what it was given (queued, or taken) is in. */
+  private heardAgent(e: BrainEvent): void {
+    this.lastHeard = this.now();
+    this.quietSaid = false;
+    if (e.kind !== 'prompt' || e.agentId !== 'main') return;
+    if (e.source === 'hook' && !this.hooksHeard) {
+      this.hooksHeard = true;
+      writeState(this.dir, { ...readState(this.dir), hooks: true });
+    }
+    const text = e.text ?? '';
+    const i = this.inFlight.findIndex((f) => samePrompt(text, f.text));
+    if (i >= 0) this.inFlight.splice(i, 1);
+    else {
+      // it came after all, late (taken as not responding meanwhile): in, so it isn't given again
+      const j = this.due.findIndex((x) => x.again && samePrompt(text, x.text));
+      if (j < 0) return;
+      this.due.splice(j, 1);
+      this.d.log?.('orchestrator: what it was given came in late');
+    }
+    if (this.stuck) {
+      this.d.log?.('orchestrator: responding again');
+      this.stuck = null;
+      this.changed();
+    }
+    if (this.restartedStuck) this.d.log?.('orchestrator: responding again after the restart');
+    this.restartedStuck = false;
+  }
+
+  /**
+   * Did what it was given reach its conversation? After LAND_MS, Enter once more (the words may sit in its box); after
+   * as long again, it isn't responding: said in its console (Restart; after a restart that didn't help, Start fresh),
+   * in the log with its screen's last lines, and what it was given is kept, first, for when it is.
+   */
+  private checkLanded(): void {
+    const f = this.inFlight[0];
+    if (!f) return;
+    const t = this.terminal();
+    if (!t || t.terminalId !== f.terminalId) return this.newTerminal(false);
+    const lines = this.d.ptys.screenLines(t.terminalId);
+    // it's asking something (the question shows in its console): the wait starts once that's answered
+    if (lines && choiceOpen(lines)) {
+      f.at = this.now();
+      return;
+    }
+    const waited = this.now() - f.at;
+    if (waited < LAND_MS) return;
+    // taken into a turn (typed in while it worked, or a hook that never came): its transcript has it, so it's in
+    // (looked at before each step: Enter once more, and not responding)
+    if (!f.enter || waited >= 2 * LAND_MS) {
+      const was = this.inFlight.length;
+      this.inFlight = this.inFlight.filter((x) => !this.inTranscript(x.text, x.at));
+      if (this.inFlight.length < was) {
+        this.d.log?.(`orchestrator: what it was given is in its conversation (its transcript has it; no prompt came of it)`);
+        this.restartedStuck = false;
+        return;
+      }
+    }
+    if (!f.enter) {
+      // (one Enter sends whatever is in its box)
+      for (const x of this.inFlight) x.enter = true;
+      this.d.log?.(`orchestrator: what it was given hasn't reached its conversation after ${Math.round(waited / 1000)}s: Enter once more`);
+      this.d.ptys.write(t.terminalId, '\r');
+      return;
+    }
+    if (waited < 2 * LAND_MS) return;
+    // all of it waits, first, in the order given (marked: one that comes in late after all isn't given again)
+    this.due.unshift(...this.inFlight.map((x) => ({ text: x.text, until: this.now() + DUE_MS, again: true as const, ...(x.lines ? { lines: x.lines } : {}) })));
+    this.inFlight = [];
+    this.dueEvery();
+    this.stuck = { since: this.now(), ...(this.restartedStuck ? { restarted: true as const } : {}) };
+    const screen = (lines ?? []).map((l) => l.trim()).filter(Boolean).slice(-8).join(' | ');
+    this.d.log?.(`orchestrator: not responding${this.restartedStuck ? ' (after a restart)' : ''}: what it was given ${Math.round(waited / 1000)}s ago never reached its conversation, Enter again too; kept for it (${this.due.length} waiting): ${f.text.slice(0, 80).replace(/\s+/g, ' ')}${screen ? `; its screen: ${screen.slice(0, 800)}` : ''}`);
+    this.ui({ action: 'notify', text: this.restartedStuck ? "Cora still isn't responding after a restart. Start fresh from its console." : "Cora isn't responding: what it was given hasn't reached it. Restart it from its console." });
+    this.changed();
   }
 
   /** The mandate for a session (its folder and branch). */
@@ -753,27 +1027,43 @@ export class OrchestratorManager {
   }
 
   /** What it must hear that its terminal couldn't take yet (a menu was open): tried again until it does (audit B10). */
-  private due: Array<{ text: string; until: number }> = [];
+  private due: Array<{ text: string; until: number; /** typed in once already, and taken as never in */ again?: true; /** news (the feed's lines it was made of) */ lines?: FeedLine[] }> = [];
   private dueTimer: NodeJS.Timeout | null = null;
   /** Typed in now, or as soon as its terminal can take it (each once, one at a time; given up on after 10 minutes). */
   private sayWhenFree(text: string): void {
     if (!this.due.length && this.say(text).ok) return;
-    this.due.push({ text, until: this.now() + 10 * 60_000 });
+    // the same words again while the first still waits (said twice because nothing came back): once
+    if (this.due.at(-1)?.text.trim() === text.trim()) return;
+    this.due.push({ text, until: this.now() + DUE_MS });
+    this.dueEvery();
+  }
+  /** Looks every couple of seconds while something waits for it. */
+  private dueEvery(): void {
     if (this.dueTimer) return;
-    this.dueTimer = setInterval(() => {
-      const d = this.due[0];
-      if (d && this.now() > d.until) {
-        this.due.shift();
-        this.d.log?.(`orchestrator: gave up giving it: ${d.text.slice(0, 80)}`);
-        this.ui({ action: 'notify', text: "Cora's terminal stayed busy, so it didn't get what you gave it. Try again." });
-      } else if (d && this.say(d.text).ok) this.due.shift();
-      // one a tick: the next waits for this one's Enter
-      if (!this.due.length && this.dueTimer) {
-        clearInterval(this.dueTimer);
-        this.dueTimer = null;
-      }
-    }, 2000);
+    this.dueTimer = setInterval(() => this.pumpDue(), 2000);
     this.dueTimer.unref?.();
+  }
+  /**
+   * The first that waits, typed in if its terminal can take it: one at a time, each once the one before is in and its
+   * turn is over (typed in during a turn, Claude Code takes it into that turn and no prompt comes of it, so it can't be
+   * seen to land). Given up on after DUE_MS all the same (a turn that never ends).
+   */
+  private pumpDue(): void {
+    // not responding: it all waits for a restart (never given up on)
+    if (this.stuck) return;
+    const t = this.terminal();
+    const d = this.due[0];
+    // (a turn that never ends, a spinner frozen on its screen, doesn't hold it for ever: given up on, and you're told)
+    if (d && this.now() > d.until) {
+      this.due.shift();
+      this.d.log?.(`orchestrator: gave up giving it: ${d.text.slice(0, 80)}`);
+      this.ui({ action: 'notify', text: "Cora's terminal stayed busy, so it didn't get what you gave it. Try again." });
+    } else if (t && (this.inFlight.length || this.turnRunning(this.d.ptys.screenLines(t.terminalId)))) return;
+    else if (d && this.say(d.text).ok) this.due.shift();
+    if (!this.due.length && this.dueTimer) {
+      clearInterval(this.dueTimer);
+      this.dueTimer = null;
+    }
   }
 
   stopGoal(why = 'the user stopped it'): void {
@@ -930,12 +1220,47 @@ export class OrchestratorManager {
         this.ui({ action: 'notify', text: `Cora's goal reached its budget (${fmtTokens(g.budget)} tokens)` });
       }
     }
+    this.checkLanded();
+    this.checkContext();
     if (this.d.pending) this.feed.pending(this.d.pending.list(), this.verdicts);
     if (this.d.sessions && this.now() - this.lastSessionsCheck >= 30_000) {
       this.lastSessionsCheck = this.now();
       this.feed.sessions(this.d.sessions());
     }
     this.feed.tick();
+  }
+  /**
+   * Its context past its cap, and it's been idle long enough for its prompt cache to be cold (the next wake would
+   * rewrite all of it, at a quarter more than reading it): a fresh conversation, between turns only, never with
+   * anything waiting for it or on its way in. memory.md carries what it knows; the notice says why.
+   */
+  private checkContext(): void {
+    const cap = this.d.settings().orchestrator.contextCap ?? CONTEXT_CAP;
+    const sid = this.sid;
+    if (!cap || !sid || !this.enabled() || !this.terminal() || this.stuck || this.due.length || this.inFlight.length) return;
+    if (this.now() - this.lastHeard < CACHE_COLD_MS || this.agentBusy()) return;
+    const size = this.contextOf(sid);
+    if (size == null || size <= cap) return;
+    this.d.log?.(`orchestrator: its context is ${fmtTokens(size)} (past its cap, ${fmtTokens(cap)}), and it has been idle ${Math.round((this.now() - this.lastHeard) / 60_000)} minutes: a fresh conversation`);
+    this.newConversation(`Cora started it fresh between turns: the last one's context had grown to ${fmtTokens(size)}, and each wake was rewriting all of it`);
+  }
+  /** Its context as last read: for which session, as of which event from it (read again only once another comes). */
+  private ctxRead: { sid: string; heard: number; size: number | null } | null = null;
+  /** Its context now: what its latest call read and wrote (null: none seen yet). */
+  private contextOf(sid: string): number | null {
+    // nothing new from it since the last read: the same (an idle agent isn't read 600 events every tick)
+    if (this.ctxRead?.sid === sid && this.ctxRead.heard === this.lastHeard) return this.ctxRead.size;
+    const evs = this.d.eventsSince?.(sid, 0) ?? [];
+    let size: number | null = null;
+    for (let i = evs.length - 1; i >= 0; i--) {
+      const e = evs[i];
+      if (e.sessionId === sid && e.agentId === 'main' && e.tokens) {
+        size = e.tokens.in + e.tokens.out;
+        break;
+      }
+    }
+    this.ctxRead = { sid, heard: this.lastHeard, size };
+    return size;
   }
   private tickEvery(on: boolean): void {
     if (on && !this.ticker) {

@@ -44,12 +44,21 @@
 
 /* ---- the project's view: its header over its board ---- */
 .pjv { display: flex; flex-direction: column; height: 100%; min-height: 0; }
-.pjv-h { flex: none; display: flex; align-items: center; gap: 10px; height: 46px; padding: 0 14px; border-bottom: 1px solid var(--hair); }
+.pjv-h { container: pjh / inline-size; flex: none; display: flex; align-items: center; gap: 10px; height: 46px; padding: 0 14px; border-bottom: 1px solid var(--hair); min-width: 0; }
+/* the name and the buttons always show: only the sessions line gives way (cut short with …) */
+.pjv-h > * { flex: none; }
 .pjv-h .pj-sq { width: 12px; height: 12px; }
-.pjv-name { min-width: 0; max-width: 340px; padding: 2px 6px; border: 0; border-radius: 6px; outline: none; background: none; color: var(--ink); font: 600 15px var(--ui); }
+.pjv-name { min-width: 0; width: 22ch; max-width: 340px; padding: 2px 6px; border: 0; border-radius: 6px; outline: none; background: none; color: var(--ink); font: 600 15px var(--ui); }
 .pjv-name:hover, .pjv-name:focus { background: var(--raise); box-shadow: inset 0 0 0 1px var(--hair2); }
-.pjv-meta { color: var(--ink4); font: 400 11px var(--code); white-space: nowrap; }
-.pjv-h .sp { flex: 1; }
+.pjv-h > .pjv-meta { flex: 0 20 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--ink4); font: 400 11px var(--code); white-space: nowrap; }
+.pjv-h > .sp { flex: 1 1 0; min-width: 0; }
+/* the name gives way too, after the sessions line (which shrinks twenty times as fast), never below 12ch */
+.pjv-h > .pjv-name { flex: 0 1 22ch; min-width: 12ch; }
+/* as it narrows: the buttons' words go (each keeps its icon, and its name on hover), so the name, the toggles and the
+   menu always fit; the phone layout wraps instead (tablet.css) */
+@container pjh (max-width: 1240px) {
+  .pjv-h .dl-btn .bt-l { display: none; }
+}
 .pjv-sw { display: inline-flex; align-items: center; gap: 7px; height: 28px; padding: 0 10px; border: 0; border-radius: 8px; background: none; color: var(--ink3); font: 500 12px var(--ui); cursor: pointer; }
 .pjv-sw:hover { color: var(--ink); background: var(--raise); }
 .pjv-sw i { position: relative; width: 26px; height: 15px; border-radius: 8px; background: var(--raise2); box-shadow: inset 0 0 0 1px var(--hair2); transition: background .15s; }
@@ -57,6 +66,8 @@
 .pjv-sw.on { color: var(--ink); }
 .pjv-sw.on i { background: color-mix(in srgb, var(--cora) 35%, var(--raise2)); }
 .pjv-sw.on i::after { transform: translateX(11px); background: var(--cora-hi); }
+/* a project without a team: how often its sessions may wake each other */
+.pjv-limit { height: 28px; padding: 0 6px; border: 0; border-radius: 8px; background: var(--raise); box-shadow: inset 0 0 0 1px var(--hair2); color: var(--ink2); font: 500 12px var(--ui); cursor: pointer; }
 .pjv-body { flex: 1; min-height: 0; position: relative; }
 .pjv-menu { position: relative; }
 

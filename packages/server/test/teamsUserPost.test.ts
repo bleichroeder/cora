@@ -52,7 +52,7 @@ describe("your posts and direct messages on a team's board", () => {
     expect(r.json().ok).toBe(true);
     expect(await asks).toEqual([{ id: expect.any(String), kind: 'submit', text: '(from the user, in the project "Ops":) Start on encoder 3.' }]);
     const p = srv.projects.get(pid)!;
-    expect(p.thread.at(-1)!.deliveredAt).toBeGreaterThan(0);
+    expect(p.thread.at(-1)!.deliveredTo).toEqual([MON]);
     expect(p.waiting ?? []).toEqual([]);
     expect((await req('GET', '/api/projects')).json().wakes).toEqual([]);
   });

@@ -36,6 +36,8 @@
 .fh-bar { display: block; width: 40px; height: 4px; border-radius: 2px; background: var(--raise2); overflow: hidden; }
 .fh-bar i { display: block; height: 100%; border-radius: 2px; }
 .focus-h .fh-model { color: var(--ink4); }
+/* past its context nudge: the number says what each turn rereads, in amber */
+.focus-h .fh-meter.heavy { color: var(--think); }
 /* actions: the design language's buttons */
 .focus-h .web-toggle .web-n { margin-left: 2px; padding: 0 5px; border-radius: 8px; background: var(--raise2); color: var(--ink3); font: 500 10px/16px var(--code); }
 .focus-h .jump .btn { height: 28px; padding: 0 10px; border: 0; border-radius: 8px; background: var(--raise); box-shadow: inset 0 0 0 1px var(--hair2); color: var(--ink); font: 500 12px var(--ui); }

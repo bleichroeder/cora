@@ -10,6 +10,8 @@ import { BrowserTool, WEB_PARTITION, openFind } from './WebPane';
 import { BROWSER_ID, currentGroup, isBrowserGroup } from '../state/browser';
 import { SECRETS_ID, useSecrets } from '../state/secrets';
 import { SecretsPane } from './SecretsSettings';
+import { LibraryButton, LibraryPane, LibraryRow } from './Library';
+import { LIBRARY_ID } from '../state/library';
 import { openSettings } from './SettingsModal';
 import { Icon } from './Icon';
 import { FindBar } from './FindBar';
@@ -170,6 +172,7 @@ export function ToolsDock() {
           <div className="rt-sub left">Cora</div>
           <div className="rt-card">
             <NotesRow on={open === NOTES_ID} />
+            <LibraryRow on={open === LIBRARY_ID} />
             {desktop?.browser ? <BrowserRow on={open === BROWSER_ID} /> : null}
             <SecretsRow on={open === SECRETS_ID} />
           </div>
@@ -217,6 +220,7 @@ export function ToolsDock() {
           <div className="rt-sub">Cora</div>
           <div className="rt-row">
             <NotesButton on={open === NOTES_ID} />
+            <LibraryButton on={open === LIBRARY_ID} />
             {desktop?.browser ? <BrowserButton on={open === BROWSER_ID} /> : null}
             <SecretsButton on={open === SECRETS_ID} />
           </div>
@@ -511,8 +515,9 @@ export function ToolDrawer() {
   const mounted = useTools((s) => s.mounted);
   const box = useRef<HTMLDivElement>(null);
   const tool = tools.find((t) => t.id === open);
-  const builtin = open === NOTES_ID || open === BROWSER_ID || open === SECRETS_ID;
+  const builtin = open === NOTES_ID || open === BROWSER_ID || open === SECRETS_ID || open === LIBRARY_ID;
   const secrets = open === SECRETS_ID;
+  const library = open === LIBRARY_ID;
   const browser = open === BROWSER_ID;
   const at = useTools((s) => (open ? s.page[open] : undefined));
   const [dragging, setDragging] = useState(false);
@@ -581,7 +586,7 @@ export function ToolDrawer() {
     desktop?.setToolHosts?.(tools.map((t) => toolHost(t.url)).filter(Boolean));
   }, [tools]);
 
-  if (!Object.keys(mounted).length || (!desktop?.browser && !mounted[NOTES_ID] && !mounted[SECRETS_ID])) return null;
+  if (!Object.keys(mounted).length || (!desktop?.browser && !mounted[NOTES_ID] && !mounted[SECRETS_ID] && !mounted[LIBRARY_ID])) return null;
   const page = () => (open ? pages.get(open) : undefined);
   const resize = (e: React.PointerEvent) => {
     e.preventDefault();
@@ -614,10 +619,10 @@ export function ToolDrawer() {
       {builtin ? (
         <div className="td-h" style={headPad}>
           <span className="td-tile cora">
-            <Icon name={browser ? 'Globe' : secrets ? 'KeyRound' : 'NotebookPen'} size={13} />
+            <Icon name={browser ? 'Globe' : secrets ? 'KeyRound' : library ? 'LibraryBig' : 'NotebookPen'} size={13} />
           </span>
-          <b>{browser ? 'Browser' : secrets ? 'Secrets' : 'Notes'}</b>
-          <span className="td-host">{browser ? '' : secrets ? 'encrypted on this PC' : '~/.cora/notes'}</span>
+          <b>{browser ? 'Browser' : secrets ? 'Secrets' : library ? 'Library' : 'Notes'}</b>
+          <span className="td-host">{browser ? '' : secrets ? 'encrypted on this PC' : library ? 'everything your sessions made' : '~/.cora/notes'}</span>
           <span className="spacer" />
           <button className="icon-btn" title="Close (Esc)" onClick={() => useTools.getState().close()}>
             <Icon name="X" size={15} />
@@ -665,6 +670,7 @@ export function ToolDrawer() {
         {finding && open && !builtin && pages.get(open) ? <FindBar press={finding} page={pages.get(open) as never} onClose={() => setFinding(0)} /> : null}
         {mounted[NOTES_ID] ? <NotesPane visible={open === NOTES_ID} /> : null}
         {mounted[SECRETS_ID] ? <SecretsPane visible={secrets} /> : null}
+        {mounted[LIBRARY_ID] ? <LibraryPane visible={library} /> : null}
         {mounted[BROWSER_ID] && desktop?.browser ? <BrowserTool visible={browser} /> : null}
         {tools
           .filter((t) => desktop?.browser && mounted[t.id])

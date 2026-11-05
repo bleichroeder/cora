@@ -14,7 +14,7 @@ import { TeamHead, teamActOutcome, useTeamLive, type TeamAct, type TeamLive } fr
 import { TaskControls } from './WorkPanel';
 import { ago, sessionColor, sessionName } from '../../lib/format';
 import { canvasMeasure, curve, fitView, groupBoxes, ports, routeGeom, setMeasure, textWidth, union, withColors, withPositions, type Box, type RouteGeom, type View } from '../builder/geometry';
-import { FREE_H, FREE_W, HEAD_H, flowOrder, isCompact, litLines, litRoutes, mapLook, memberState, nextFade, railEvents, railOpens, railTargets, turnTime, type LitRoute, type RailEvent, popoverLeft, postEdges, routeCounts, routeLines, routePosts, seatLines, seatState, taskBadges, tileHeight, unseated, type Badge, type Edge, type MemberLine, type MemberState, type Tile, type Unseated } from './teamMapModel';
+import { FREE_H, FREE_W, HEAD_H, flowOrder, isCompact, litLabel, litLines, litRoutes, mapLook, memberState, nextFade, railEvents, railOpens, railTargets, turnTime, type LitRoute, type RailEvent, popoverLeft, postEdges, routeCounts, routeLines, routePosts, seatLines, seatState, taskBadges, tileHeight, unseated, type Badge, type Edge, type MemberLine, type MemberState, type Tile, type Unseated } from './teamMapModel';
 import '../builder/builder.css';
 import './teamMap.css';
 
@@ -801,15 +801,31 @@ function RouteEl({ r, G, cls, count, talk, onClick }: { r: Route; G: RouteGeom; 
               {l}
             </text>
           ))}
-          {talk || count ? (
+          {talk ? (
+            // lit: its last kind, how long ago and its count, on a pill under the chip (off the line, clear of tiles)
+            <LitLabel chip={chip} cs={cs} talk={talk} count={count} />
+          ) : count ? (
             <text className="tm-count" x={x0 + cs.w + 5} y={y0 + 11.5}>
-              {talk ? <tspan className="last">{`${talk.kind} · ${talk.ago}`}</tspan> : null}
-              {talk && count ? ' · ' : ''}
-              {count || ''}
+              {count}
             </text>
           ) : null}
         </g>
       ) : null}
+    </g>
+  );
+}
+
+function LitLabel({ chip, cs, talk, count }: { chip: { x: number; y: number }; cs: { h: number }; talk: LitRoute; count: number }) {
+  const last = `${talk.kind} · ${talk.ago}`;
+  const L = litLabel(chip, cs, textWidth(`${last}${count ? ` · ${count}` : ''}`, 'chip'));
+  return (
+    <g className="tm-lit">
+      <rect className="pill" x={L.x} y={L.y} width={L.w} height={L.h} rx={L.h / 2} />
+      <text className="tm-count" x={L.tx} y={L.ty} textAnchor="middle">
+        <tspan className="last">{last}</tspan>
+        {count ? ' · ' : ''}
+        {count || ''}
+      </text>
     </g>
   );
 }

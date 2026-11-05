@@ -11,6 +11,7 @@ import { isScreenError, rebuildScreens } from './screen';
 import { connectOrStartHost, HealingHostBackend, type PtyBackend } from './ptyhost/backend';
 import { computeHooksBlock, diffText, hooksAimed, isOurs, legacyHooks, mergeHooks, readSettings, removeHooks, settingsPath, shortHooks, writeSettings } from './settings';
 import { stage } from './stages';
+import { stampConsole } from './logStamp';
 
 /**
  * Setup in a simulation: a believable PC, half set up, with nothing read from this one (its Claude Code, its
@@ -63,6 +64,9 @@ function baseConfig(extra: Partial<Config> = {}): Config {
 
 async function start() {
   const sim = flag('sim');
+  // into server.log (the desktop app starts it so): each line with its time
+  const toLog = !process.stdout.isTTY || !!process.env.CORA_STAGE_FILE;
+  if (toLog) stampConsole();
   const config = baseConfig(sim ? { dbPath: ':memory:' } : {});
   // Hosted terminals run in the terminal host so they outlive this server (restarts, crashes, updates).
   // A simulation runs them in-process unless `--host` (to try restarts against a scratch CORA_HOME).
@@ -94,7 +98,6 @@ async function start() {
   const url = `http://127.0.0.1:${config.port}/auth?key=${config.uiToken}`;
   console.log(`\n  Cora ${sim ? '(simulation) ' : ''}listening on http://127.0.0.1:${config.port}`);
   // the link is the key to the dashboard: printed for you at a terminal, never into a log file (audit S11)
-  const toLog = !process.stdout.isTTY || !!process.env.CORA_STAGE_FILE;
   console.log(`  open: ${toLog ? `http://127.0.0.1:${config.port}/auth?key=<the key in ${join(config.dataDir, 'ui-token')}>` : url}\n`);
   let json: Record<string, any> = {};
   try {

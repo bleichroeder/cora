@@ -76,7 +76,7 @@ export type OrchToolDeps = {
   /** her follow-ups (the user asked her to check back) */
   followUps?: Pick<FollowUps, 'add' | 'cancel' | 'list'>;
   /** the user's projects: one by name or id, and a session into one (or out of its own: null) */
-  projects?: { find(ref: string): { id: string; name: string } | { error: string }; move(sessionId: string, projectId: string | null): string | null; /** a project's card and thread, for Cora */ read?(projectId: string): string; /** a post as Cora (null: nothing posted) */ post?(projectId: string, kind: 'note' | 'change' | 'question' | 'handoff' | 'decision' | 'report' | 'direct', text: string, to?: string[], re?: string): string | null; /** the user lets Cora route this project's work on standing orders */ routes?(projectId: string): boolean; /** its incidents and known issues */ items?(projectId: string, q: { kind?: 'incident' | 'known'; log?: boolean; owner?: string; severity?: string; words?: string }): string; /** a change to its items, as Cora */ item?(projectId: string, op: 'open' | 'change' | 'claim' | 'annotate' | 'close' | 'merge', f: Record<string, unknown>): { ok: true; text: string } | { ok: false; error: string }; /** its team: the definition (and its version) and how it's running, in words */ team?(projectId: string): { team?: Team; version: number; text: string }; /** a new definition for its team, applied to its running seats (refused when it changed since `version`) */ teamEdit?(projectId: string, team: Team, version: number): Promise<{ ok: true; text: string } | { ok: false; error: string }> };
+  projects?: { find(ref: string): { id: string; name: string } | { error: string }; move(sessionId: string, projectId: string | null): string | null; /** a project's card and thread, for Cora */ read?(projectId: string): string; /** a post as Cora (null: nothing posted) */ post?(projectId: string, kind: 'note' | 'change' | 'question' | 'handoff' | 'decision' | 'report' | 'direct', text: string, to?: string[], re?: string): string | null; /** the user lets Cora route this project's work on standing orders */ routes?(projectId: string): boolean; /** its incidents and known issues (or one, `item`, in full) */ items?(projectId: string, q: { item?: string; kind?: 'incident' | 'known'; log?: boolean; owner?: string; severity?: string; words?: string }): string; /** a change to its items, as Cora */ item?(projectId: string, op: 'open' | 'change' | 'claim' | 'annotate' | 'close' | 'merge', f: Record<string, unknown>): { ok: true; text: string } | { ok: false; error: string }; /** its team: the definition (and its version) and how it's running, in words */ team?(projectId: string): { team?: Team; version: number; text: string }; /** a new definition for its team, applied to its running seats (refused when it changed since `version`) */ teamEdit?(projectId: string, team: Team, version: number): Promise<{ ok: true; text: string } | { ok: false; error: string }> };
   /** a side question to a copy of a session (the session itself untouched) */
   askCopy(p: { sessionId: string; cwd: string; question: string; model?: string }): Promise<CopyAnswer>;
   now?(): number;
@@ -497,9 +497,10 @@ export function registerOrchestratorTools(server: McpServer, d: OrchToolDeps): v
     'project_items',
     {
       title: "A project's incidents and known issues",
-      description: "One of the user's projects (by name or id): its open incidents (most urgent first: severity, owner, state, next step, link, age, latest note) and known issues, or the incident log (log: true).",
+      description: "One of the user's projects (by name or id): its open incidents (most urgent first: severity, owner, state, next step, link, age, latest note) and known issues, or the incident log (log: true). With item (its id): that one in full, its whole body and every note.",
       inputSchema: {
         project: z.string().min(1).max(120),
+        item: z.string().max(40).optional().describe('One item by its id: all of it'),
         kind: z.enum(['incident', 'known']).optional(),
         log: z.boolean().optional(),
         owner: z.string().max(80).optional().describe('A session id, or none (unowned)'),
@@ -704,7 +705,7 @@ export function registerOrchestratorTools(server: McpServer, d: OrchToolDeps): v
     'send_to_session',
     {
       title: 'Give a session its next instruction',
-      description: "Type a prompt into a session hosted in Cora and send it, as if the user had. When the user asked you for it in their own words just now, it goes in at once; otherwise they see it and OK (or change) it first. Only for hosted sessions (see `sessions`); resume_session first otherwise.",
+      description: "Type a prompt into a session hosted in Cora and send it, as if the user had. When the user asked you for it in their own words just now, it goes in at once; otherwise they see it and OK (or change) it first. Only for hosted sessions (see `sessions`); resume_session first otherwise. Its answer stays in that session: nothing comes back to you (to hear back, ask_session).",
       inputSchema: { id: z.string().min(4).max(80), text: z.string().min(1).max(20_000).describe('What to tell it') },
     },
     async ({ id, text: msg }) => {

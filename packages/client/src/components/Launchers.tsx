@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { ArchivedProjects } from './Projects';
 import { EFFORTS, PERMISSION_MODES, coraIssuePrompt, coraTicketPrompt, issueUrl, jiraPrompt, type HistoryItem, type LaunchOptions, type LaunchPreset, type PermissionMode, type Settings } from '@cora/shared';
 import { useBrain } from '../state/store';
+import { archivedHomes, useProjects } from '../state/projects';
 import { fetchDirs, fetchHistory, launchTerminal } from '../state/ws';
 import { ago, hashColor, isDismissed, shortCwd } from '../lib/format';
 import { showSession } from './SessionMenu';
@@ -446,6 +447,8 @@ export function HistoryModal() {
   const flat = groups.flatMap((g) => g.rows);
   const at = Math.min(sel, Math.max(0, flat.length - 1));
   const known = useBrain((s) => s.sessions);
+  const allProjects = useProjects((s) => s.projects);
+  const homes = useMemo(() => archivedHomes(allProjects), [allProjects]);
   // read one Cora still has, without resuming it: it's back in the list while you look
   const view = (sid: string) => (showSession(sid), close());
   useEffect(() => setSel(0), [q]);
@@ -542,6 +545,7 @@ export function HistoryModal() {
                     <span>
                       {shortCwd(h.cwd)} · {ago(h.mtime)} ago
                       {known[h.sessionId] && isDismissed(known[h.sessionId]) ? <em className="hs-tag">removed from the list</em> : null}
+                      {homes.has(h.sessionId) ? <em className="hs-tag" title="Resuming it brings its project back too, with the rest of its sessions">in {homes.get(h.sessionId)} (archived)</em> : null}
                     </span>
                     {h.snippet ? <span className="hs-snip">…{h.snippet}…</span> : h.recap ? <span className="hs-recap" title={h.recap}>{h.recap}</span> : null}
                   </span>

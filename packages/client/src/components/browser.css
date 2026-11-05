@@ -29,6 +29,8 @@
 .web-pane .web-tab:hover { background: rgba(148, 163, 184, .05); color: var(--ink2); }
 .web-pane .web-tab.on { height: 28px; margin: 0; border: 0; background: var(--raise2); box-shadow: inset 0 0 0 1px var(--hair2); color: var(--ink); }
 .web-pane .web-tab img { width: 14px; height: 14px; border-radius: 3px; }
+/* a tab a session opened behind yours: new (and whose) until you look at it */
+.web-pane .wt-new { flex: none; max-width: 9em; overflow: hidden; padding: 0 6px; border-radius: 5px; background: color-mix(in srgb, var(--cora) 14%, transparent); color: var(--cora); font: 600 9.5px/16px var(--code); letter-spacing: .04em; text-overflow: ellipsis; white-space: nowrap; }
 .web-pane .web-tab > svg { flex: none; color: var(--ink4); }
 .web-pane .web-tab .wt-x { display: grid; place-items: center; width: 18px; height: 18px; padding: 0; border-radius: 5px; color: var(--ink4); }
 .web-pane .web-tab .wt-x:hover { background: var(--raise); color: var(--ink); }

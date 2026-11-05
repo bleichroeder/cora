@@ -54,6 +54,8 @@ export type Config = {
   /** How long a PermissionRequest/Elicitation is held waiting for the dashboard. */
   holdMs: number;
   projectsDir: string;
+  /** where sessions' journals are kept (unset: Documents\Cora\Journal); a throwaway Cora keeps its own (scripts/e2e) */
+  journalDir?: string;
   clientDir: string;
   /** The Cora checkout this server runs from (its security check runs `npm audit` there). */
   repoDir: string;
@@ -139,6 +141,7 @@ export function loadConfig(overrides: Partial<Config> = {}): Config {
     retentionDays: merged.retentionDays ?? 7,
     holdMs: merged.holdMs ?? 120_000,
     projectsDir: merged.projectsDir ?? join(homedir(), '.claude', 'projects'),
+    ...(merged.journalDir ? { journalDir: merged.journalDir } : {}),
     clientDir: merged.clientDir ?? defaultClientDir(),
     repoDir: merged.repoDir ?? resolve(defaultClientDir(), '..', '..', '..'),
     askAnswering: merged.askAnswering ?? true,

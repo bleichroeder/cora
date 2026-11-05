@@ -4,7 +4,8 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { artifactUrl } from '@cora/shared';
-import { LiveExplains, sharePrompt, slugOf, type LiveData, type LiveVersion } from '../src/liveExplains';
+import { LiveExplains, sharePrompt, slugOf, type LiveData, type LiveVersion, type SeenPages } from '../src/liveExplains';
+import { Store } from '../src/store';
 
 const SID = 'sess-live-0001';
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -37,7 +38,7 @@ describe('live explains', () => {
     writeFileSync(f.page, '<p>one</p>');
     writeFileSync(f.page, '<p>two</p>');
     await wait(400);
-    expect(versions).toEqual([{ sessionId: SID, slug: 'release-24', title: 'Release 2.4', html: '<p>two</p>' }]);
+    expect(versions).toEqual([{ sessionId: SID, slug: 'release-24', title: 'Release 2.4', html: '<p>two</p>', at: expect.any(Number) }]);
     writeFileSync(f.data, JSON.stringify({ passed: 41, total: 60 }));
     await wait(400);
     expect(data).toEqual([{ sessionId: SID, slug: 'release-24', data: { passed: 41, total: 60 } }]);
@@ -111,5 +112,47 @@ describe('live explains', () => {
     expect(artifactUrl('Published: https://claude.ai/artifact/AjNk-dh_c?sk=x (private)')).toBe('https://claude.ai/artifact/AjNk-dh_c');
     expect(artifactUrl('https://claude.ai/code/artifact/1234-ab')).toBe('https://claude.ai/code/artifact/1234-ab');
     expect(artifactUrl('https://evil.example/artifact/x')).toBeNull();
+  });
+
+  it("a page only read (a touch, or the first event after a restart) is no version; its content changed, it is, stamped when it was written", async () => {
+    // the hashes kept as Cora keeps them: in its store, across restarts
+    const store = new Store(':memory:');
+    const seen: SeenPages = { get: (k) => store.explainPage(k), set: (k, h) => store.setExplainPage(k, h) };
+    const root = mkdtempSync(join(tmpdir(), 'cora-live-'));
+    const versions: LiveVersion[] = [];
+    const boot = () => new LiveExplains({ root, onVersion: (v) => versions.push(v), onData: () => {}, settleMs: 20, seen });
+    // a page written days ago, before this Cora watched
+    const dir = join(root, SID, 'rollout');
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, 'page.html'), '<p>rollout</p>');
+    const old = new Date('2026-10-29T17:12:56Z');
+    utimesSync(join(dir, 'page.html'), old, old);
+
+    live = boot();
+    live.watch();
+    expect(store.explainPage(`${SID}/rollout`)).toMatch(/^[0-9a-f]{64}$/);
+    // read (last-access updates on: the watcher hears a change), the content the same: nothing
+    live.changed(`${SID}/rollout/page.html`);
+    await wait(150);
+    expect(versions).toEqual([]);
+
+    // Cora restarted: the first event for the unchanged page is still nothing
+    live.stop();
+    live = boot();
+    live.watch();
+    live.changed(`${SID}/rollout/page.html`);
+    await wait(150);
+    expect(versions).toEqual([]);
+
+    // the session rewrites it (its file's time set back, as a late-noticed write): a version, at the file's time
+    writeFileSync(join(dir, 'page.html'), '<p>rollout, step 2</p>');
+    utimesSync(join(dir, 'page.html'), old, old);
+    live.changed(`${SID}/rollout/page.html`);
+    await wait(150);
+    expect(versions).toEqual([{ sessionId: SID, slug: 'rollout', title: 'rollout', html: '<p>rollout, step 2</p>', at: old.getTime() }]);
+
+    // pruned: its hash goes with it
+    expect(live.prune(Date.now())).toBe(1);
+    expect(store.explainPage(`${SID}/rollout`)).toBeUndefined();
   });
 });

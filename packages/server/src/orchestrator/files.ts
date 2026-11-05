@@ -247,7 +247,7 @@ export function writeAgentFiles(dir: string, o: { name: string; /** the user's c
   if (!existsSync(mem)) writeFileAtomic(mem, MEMORY_START);
 }
 
-export type AgentState = { sessionId?: string; control?: boolean; lastSeen?: number };
+export type AgentState = { sessionId?: string; control?: boolean; lastSeen?: number; /** a prompt of its has come by its hook (so what it's given can be seen to land) */ hooks?: true; /** its earlier sessions (newest last): still Cora's own, never a guest's to see */ past?: string[] };
 
 export function readState(dir: string): AgentState {
   try {

@@ -52,7 +52,11 @@ const IGNORED = new Set([
   'attachment', 'last-prompt', 'mode', 'permission-mode', 'atis-latch', 'file-history-snapshot',
   'file-history-delta', 'frame-link', 'pr-link', 'relocated', 'worktree-state', 'artifact-autoreact-ledger',
   'cost-state', 'artifact-comment-monitor', 'summary', 'custom-title', 'tag', 'agent-name', 'fork-context-ref',
+  // Claude Code's own bookkeeping of its API calls and the tools it offered
+  'api-request', 'api-request-blob', 'api-request-shape', 'tools-used', 'agent-setting',
 ]);
+/** Line types met that Cora doesn't know yet: each said once in the log (so it's easy to add above). */
+const NEW_TYPES = new Set<string>();
 
 const SYSTEM_INJECTED = /^\s*<(task-notification|system-reminder|command-|local-command|bash-|user-memory)/;
 
@@ -135,7 +139,17 @@ export function parseLine(obj: any, ctx: ParseCtx): ParseResult {
   }
   if (IGNORED.has(type)) return { events, meta };
   if (type === 'queue-operation') return parseQueueOp(obj, ctx);
-  if (type !== 'user' && type !== 'assistant' && type !== 'system') return { events, meta: { unknown: true } };
+  if (type !== 'user' && type !== 'assistant' && type !== 'system') {
+    const name = String(type).slice(0, 60);
+    if (!NEW_TYPES.has(name) && NEW_TYPES.size < 100) {
+      NEW_TYPES.add(name);
+      console.log(`  transcript: a line type Cora doesn't know yet: "${name}"${obj.message ? ' (it carries a message: counted as not recognised)' : ' (bookkeeping: not counted)'}`);
+    }
+    // only one that carries a message may be something Cora should show: bookkeeping isn't a format change
+    return { events, meta: obj.message ? { unknown: true } : {} };
+  }
+  // a message whose shape isn't understood (no content Cora can read): that is (whatever else it says is still read)
+  if ((type === 'user' || type === 'assistant') && typeof obj.message?.content !== 'string' && !Array.isArray(obj.message?.content)) meta.unknown = true;
 
   if (obj.cwd) {
     meta.cwd = obj.cwd;

@@ -69,7 +69,7 @@ export type McpProjects = {
   post(sessionId: string, kind: import('@cora/shared').PostKind, text: string, to?: string[], re?: string, labels?: Record<string, string>): McpPostResult | Promise<McpPostResult>;
   read(sessionId: string, since?: number, filter?: { kind?: import('@cora/shared').PostKind; toMe?: boolean; by?: string; open?: boolean }): string;
   /** its project's items: a query, or one change (project_item, project_claim, project_annotate, project_close), as text for the session */
-  items?(sessionId: string, q: { kind?: 'incident' | 'known' | 'task'; log?: boolean; owner?: string; severity?: string; words?: string }): string;
+  items?(sessionId: string, q: { item?: string; kind?: 'incident' | 'known' | 'task'; log?: boolean; owner?: string; severity?: string; words?: string }): string;
   item?(sessionId: string, op: 'open' | 'change' | 'claim' | 'annotate' | 'close' | 'merge', f: Record<string, unknown>): { ok: true; text: string } | { ok: false; error: string };
   /** its writer edits a post, or withdraws it (text null) */
   edit?(sessionId: string, post: string, text: string | null): { ok: true } | { ok: false; error: string };
@@ -306,8 +306,9 @@ function buildServer(settings: Settings, sessionId: string | null, s?: McpSlack,
         'project_items',
         {
           title: "Your project's incidents, known issues and tasks",
-          description: "The project's shared state: open incidents (most urgent first: severity, owner, state, next step, link, age, latest note), known issues, and tasks (the work queue, in rank order); or the log (closed ones). Check it before any outward action: is this outage already an incident, and who owns it?",
+          description: "The project's shared state: open incidents (most urgent first: severity, owner, state, next step, link, age, latest note), known issues, and tasks (the work queue, in rank order); or the log (closed ones). The list cuts each body short: with item (its id), that one in full, its whole body and every note. Check it before any outward action: is this outage already an incident, and who owns it?",
           inputSchema: {
+            item: z.string().max(40).optional().describe('One item by its id: all of it (its whole body and its notes)'),
             kind: z.enum(['incident', 'known', 'task']).optional(),
             log: z.boolean().optional().describe('The closed ones (the log) instead'),
             owner: z.string().max(80).optional().describe('Only one owner: a session id, me, or none (unowned)'),

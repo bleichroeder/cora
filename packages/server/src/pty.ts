@@ -35,11 +35,14 @@ const SESSION_VARS = new Set(['CLAUDECODE', 'AI_AGENT', 'CLAUDE_PID', 'CLAUDE_EF
 // and a `cora start` run inside one would write its startup stages into the desktop app's splash
 const SESSION_PREFIXES = ['CLAUDE_CODE_SESSION_', 'CLAUDE_CODE_MESSAGING_', 'CORA_', 'AGENT_BRAIN_'];
 
+const KEPT = new Set(['CORA_TOKEN', 'CORA_SPAWNED_BY', 'CORA_SPAWN_WHY']);
+
 export function cleanEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const out: NodeJS.ProcessEnv = {};
   for (const [k, v] of Object.entries(env)) {
-    // CORA_TOKEN stays: hooks written in the env-token form read their token from it
-    if (k !== 'CORA_TOKEN' && (SESSION_VARS.has(k) || SESSION_PREFIXES.some((p) => k.startsWith(p)))) continue;
+    // CORA_TOKEN stays: hooks written in the env-token form read their token from it; and a spawner's marker (who
+    // started what's launched here, and why: spawned.ts), which its hooks pass on
+    if (!KEPT.has(k) && (SESSION_VARS.has(k) || SESSION_PREFIXES.some((p) => k.startsWith(p)))) continue;
     out[k] = v;
   }
   out.FORCE_COLOR = '1';

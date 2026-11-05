@@ -106,10 +106,14 @@ describe('the final fixes, through the app', () => {
       expect((await wakes()).filter((w) => w.from === M1)).toEqual([]);
       expect(srv.projects.get(pid)!.waiting).toEqual(expect.arrayContaining([expect.objectContaining({ post: quiet.id, to: FIX })]));
       expect((await tool(TRI, 'project_post', { kind: 'question', text: 'which encoder first?', to: [FIX] })).isError).toBeFalsy();
-      // a note on a route that asks: a card too (the route decides, whatever the kind)
+      // a note on a route that asks: information never wakes a team's member, so no card and nothing waiting (its
+      // next prompt has it)
       expect((await tool(TRI, 'project_post', { kind: 'note', text: 'encoder 3 is back, fyi', to: [FIX] })).isError).toBeFalsy();
+      const note = srv.projects.get(pid)!.thread.at(-1)!;
       const cards = await wakes();
-      expect(cards.filter((w) => w.from === TRI)).toHaveLength(3);
+      expect(cards.filter((w) => w.from === TRI)).toHaveLength(2);
+      expect(cards.some((w) => (w as { post?: string }).post === note.id)).toBe(false);
+      expect((srv.projects.get(pid)!.waiting ?? []).some((w) => w.post === note.id)).toBe(false);
       // the user allows one: delivered through its mod
       const allowed = await req('POST', `/api/projects/wakes/${cards.find((w) => /which encoder first/.test((w as { text?: string }).text ?? ''))!.id}`, { allow: true });
       expect(allowed.json()).toEqual({ ok: true, woke: true });

@@ -274,7 +274,27 @@ it('a model changed mid-session (/model) is the session’s model at once, not o
   it('known bookkeeping types produce nothing; unknown types are flagged', () => {
     const ctx = newParseCtx();
     expect(parseLine({ type: 'mode', mode: 'normal', sessionId: SID }, ctx)).toEqual({ events: [], meta: {} });
-    expect(parseLine({ type: 'never-seen-before', sessionId: SID }, ctx).meta?.unknown).toBe(true);
+    expect(parseLine({ type: 'never-seen-before', sessionId: SID, message: { role: 'user', content: 'x' } }, ctx).meta?.unknown).toBe(true);
+  });
+
+  it("Claude Code's bookkeeping isn't a format change: api-request, api-request-blob, api-request-shape and tools-used, or a new type with no message, aren't counted; a message in a shape Cora can't read is (said once in the log)", () => {
+    const ctx = newParseCtx();
+    for (const type of ['api-request', 'api-request-blob', 'api-request-shape', 'tools-used', 'agent-setting']) expect(parseLine({ type, sessionId: SID, requestId: 'r1', blob: 'x' }, ctx)).toEqual({ events: [], meta: {} });
+    const logged: string[] = [];
+    const log = console.log;
+    console.log = (m: string) => void logged.push(m);
+    try {
+      expect(parseLine({ type: 'brand-new-ledger', sessionId: SID, entries: [1] }, ctx).meta?.unknown).toBeUndefined();
+      expect(parseLine({ type: 'brand-new-ledger', sessionId: SID, entries: [2] }, ctx).meta?.unknown).toBeUndefined();
+    } finally {
+      console.log = log;
+    }
+    expect(logged.filter((m) => m.includes('"brand-new-ledger"'))).toHaveLength(1);
+    // a user or assistant line Cora can't read (its content isn't text or blocks)
+    expect(parseLine({ type: 'user', uuid: 'u-odd', timestamp: iso(1000), sessionId: SID, message: { role: 'user', content: { parts: ['hi'] } } }, ctx).meta?.unknown).toBe(true);
+    expect(parseLine({ type: 'assistant', uuid: 'a-odd', timestamp: iso(1000), sessionId: SID, message: { id: 'm', role: 'assistant' } }, ctx).meta?.unknown).toBe(true);
+    // one it can: not
+    expect(parseLine({ type: 'user', uuid: 'u-ok', timestamp: iso(1000), sessionId: SID, message: { role: 'user', content: 'hello' } }, ctx).meta?.unknown).toBeUndefined();
   });
 });
 

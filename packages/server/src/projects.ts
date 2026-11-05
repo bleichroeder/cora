@@ -75,7 +75,7 @@ export class Projects {
     return p;
   }
 
-  update(pid: string, patch: { name?: unknown; color?: unknown; brief?: unknown; coordination?: unknown; shade?: unknown; autoWake?: unknown; lead?: unknown; coraRoutes?: unknown }): Project | null {
+  update(pid: string, patch: { name?: unknown; color?: unknown; brief?: unknown; coordination?: unknown; shade?: unknown; autoWake?: unknown; wakeLimit?: unknown; lead?: unknown; coraRoutes?: unknown }): Project | null {
     const p = this.get(pid);
     if (!p) return null;
     if (typeof patch.name === 'string' && patch.name.trim()) p.name = patch.name.trim().slice(0, 60);
@@ -105,19 +105,30 @@ export class Projects {
     else if (patch.coraRoutes === false) delete p.coraRoutes;
     if (patch.autoWake === true) p.autoWake = true;
     else if (patch.autoWake === false) delete p.autoWake;
+    // its wake limit: 'none', a whole number 1-60, or back to the default (null)
+    if (patch.wakeLimit === 'none') p.wakeLimit = 'none';
+    else if (typeof patch.wakeLimit === 'number' && Number.isInteger(patch.wakeLimit) && patch.wakeLimit >= 1 && patch.wakeLimit <= 60) p.wakeLimit = patch.wakeLimit;
+    else if (patch.wakeLimit === null) delete p.wakeLimit;
     if (patch.shade === true) p.shade = true;
     else if (patch.shade === false) delete p.shade;
     this.changed();
     return p;
   }
 
-  archive(pid: string, on: boolean): boolean {
+  /** Archived (`teamUp`: its team was up, and archiving stands it down) or back; back, whether its team was up then. */
+  archive(pid: string, on: boolean, o: { teamUp?: boolean } = {}): { ok: boolean; wasUp?: boolean } {
     const p = this.get(pid);
-    if (!p) return false;
-    if (on) p.archivedAt = this.now();
-    else delete p.archivedAt;
+    if (!p) return { ok: false };
+    const wasUp = !!p.upWhenArchived;
+    if (on) {
+      p.archivedAt = this.now();
+      if (o.teamUp) p.upWhenArchived = true;
+    } else {
+      delete p.archivedAt;
+      delete p.upWhenArchived;
+    }
     this.changed();
-    return true;
+    return { ok: true, ...(on ? {} : { wasUp }) };
   }
 
   /** Your order for them (ids in the order you want; any left out keep their place after). */
@@ -186,15 +197,16 @@ export class Projects {
 
   /**
    * What a member held passes to another member (the session taking its seat): the lead, what was waiting for it, and
-   * the open incidents and tasks it owned. Nothing held: no change.
+   * the open incidents and tasks it owned. `waitingOnly`: only what was waiting for it (to a member of another seat, its
+   * team's fallback: the lead and its work aren't that member's to take). Nothing held: no change.
    */
-  handOver(pid: string, from: string, to: string): boolean {
+  handOver(pid: string, from: string, to: string, o: { waitingOnly?: boolean } = {}): boolean {
     const p = this.get(pid);
     if (!p || from === to || !p.sessions.includes(to)) return false;
-    this.onMember?.(pid, from, to);
+    if (!o.waitingOnly) this.onMember?.(pid, from, to);
     const now = this.now();
     let changed = false;
-    if (p.lead === from) {
+    if (p.lead === from && !o.waitingOnly) {
       p.lead = to;
       p.briefAt = now;
       changed = true;
@@ -211,7 +223,7 @@ export class Projects {
       p.waiting = keep;
       changed = true;
     }
-    for (const i of p.items ?? [])
+    for (const i of o.waitingOnly ? [] : (p.items ?? []))
       if ((i.kind === 'incident' || i.kind === 'task') && i.owner === from && itemOpen(i)) {
         i.owner = to;
         i.ownedAt = now;
@@ -342,6 +354,14 @@ export class Projects {
     this.changed();
   }
 
+  /** A wake carried it to this member (only this one: the post's other members still hear it at their next prompt). */
+  deliveredTo(pid: string, postId: string, sid: string): void {
+    const x = this.get(pid)?.thread.find((y) => y.id === postId);
+    if (!x || x.deliveredTo?.includes(sid)) return;
+    x.deliveredTo = [...(x.deliveredTo ?? []), sid];
+    this.changed();
+  }
+
   /** A native message reached its member. */
   delivered(pid: string, postId: string, at: number): void {
     const x = this.get(pid)?.thread.find((y) => y.id === postId);
@@ -370,13 +390,13 @@ export class Projects {
   }
 
   /** A post in the thread (`by`: a session, 'you' or 'cora'); a decision also goes into the decisions. */
-  post(pid: string, by: string, kind: PostKind, text: string, to?: string[], re?: string, extra: { item?: string; native?: boolean; deliveredAt?: number; labels?: Record<string, string>; blocked?: boolean } = {}): Post | null {
+  post(pid: string, by: string, kind: PostKind, text: string, to?: string[], re?: string, extra: { item?: string; ping?: Post['ping']; native?: boolean; deliveredAt?: number; labels?: Record<string, string>; blocked?: boolean } = {}): Post | null {
     const p = this.get(pid);
     const body = text.trim().slice(0, MAX_POST);
     if (!p || !body || !POST_KINDS.includes(kind)) return null;
     const who = (to ?? []).filter((s) => s === 'user' || (p.sessions.includes(s) && s !== by));
     const answers = re && p.thread.some((y) => y.id === re) ? re : undefined;
-    const post: Post = { id: id(), by, kind, text: body, at: this.now(), ...(who.length ? { to: who } : {}), ...(answers ? { re: answers } : {}), ...(extra.item ? { item: extra.item } : {}), ...(extra.native ? { native: true } : {}), ...(extra.deliveredAt ? { deliveredAt: extra.deliveredAt } : {}), ...(extra.labels && Object.keys(extra.labels).length ? { labels: extra.labels } : {}), ...(extra.blocked ? { blocked: true as const } : {}), ...(p.members[by]?.seat ? { seat: p.members[by].seat } : {}) };
+    const post: Post = { id: id(), by, kind, text: body, at: this.now(), ...(who.length ? { to: who } : {}), ...(answers ? { re: answers } : {}), ...(extra.item ? { item: extra.item } : {}), ...(extra.ping ? { ping: extra.ping } : {}), ...(extra.native ? { native: true } : {}), ...(extra.deliveredAt ? { deliveredAt: extra.deliveredAt } : {}), ...(extra.labels && Object.keys(extra.labels).length ? { labels: extra.labels } : {}), ...(extra.blocked ? { blocked: true as const } : {}), ...(p.members[by]?.seat ? { seat: p.members[by].seat } : {}) };
     p.thread.push(post);
     if (p.thread.length > MAX_POSTS) p.thread = p.thread.slice(-MAX_POSTS);
     if (kind === 'decision') {
@@ -485,6 +505,15 @@ export class Projects {
     this.changed();
     return true;
   }
+  /** The handle a member's Claude Code was started with, kept when its seat is renamed (null: it goes by its seat's again). */
+  setHandle(pid: string, sid: string, handle: string | null): void {
+    const m = this.get(pid)?.members[sid];
+    if (!m || (m.handle ?? null) === handle) return;
+    if (handle) m.handle = handle;
+    else delete m.handle;
+    this.changed();
+  }
+
   /** A member's team seat (null clears it). */
   setSeat(pid: string, sid: string, seat: string | null, instance?: number): boolean {
     const p = this.get(pid);

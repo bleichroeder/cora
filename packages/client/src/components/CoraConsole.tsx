@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import type { Approval, BrainEvent, FollowUp, Goal } from '@cora/shared';
+import { stuckWords, type Approval, type BrainEvent, type FollowUp, type Goal } from '@cora/shared';
 import { sessionEvents, useBrain } from '../state/store';
 import { composerInbox } from '../state/composer';
 import { briefMe, newCora, coraKey, decideApproval, endTalk, cancelFollowUp, goalLive, restartCora, sayToCora, setCommandOpen, setConsoleOpen, setControl, standDown, startGoal, stopGoal, useCoraState, useOrch } from '../state/orchestrator';
@@ -17,6 +17,8 @@ import { DeployCards } from './Deploys';
 import { NeedsYou } from './NeedsYou';
 import './cora.css';
 import './console.css';
+
+const NEW_CONVERSATION = 'Start a new conversation with Cora? It keeps what it remembers, your instructions, its goals and the Slack threads it watches.';
 
 const KIND_ICON: Record<Approval['kind'], string> = { start: 'Play', send: 'SendHorizontal', end: 'Square', ask: 'CircleHelp', worktree: 'GitBranchPlus', cleanup: 'Trash2' };
 
@@ -248,7 +250,7 @@ export function CoraConsole() {
                 disabled={!status.enabled}
                 onClick={() => {
                   setMenu(false);
-                  if (window.confirm('Start a new conversation with Cora? It keeps what it remembers, your instructions, its goals and the Slack threads it watches.')) void newCora().then((e) => setErr(e));
+                  if (window.confirm(NEW_CONVERSATION)) void newCora().then((e) => setErr(e));
                 }}
               >
                 <Icon name="MessageSquarePlus" size={14} /> New conversation <span className="cc-mk">fresh start</span>
@@ -269,6 +271,22 @@ export function CoraConsole() {
           <button className="btn" onClick={() => void restartCora()}>
             Start again
           </button>
+        </div>
+      ) : null}
+      {!status.error && status.stuck ? (
+        <div className="cc-err">
+          <Icon name="TriangleAlert" size={13} /> <span>{stuckWords(status.stuck)}</span>
+          <button className="btn" onClick={() => void restartCora()}>
+            Restart
+          </button>
+          {status.stuck.restarted ? (
+            <button className="btn" onClick={() => {
+                if (window.confirm(NEW_CONVERSATION)) void newCora().then((e) => setErr(e));
+              }}
+            >
+              Start fresh
+            </button>
+          ) : null}
         </div>
       ) : null}
       <GoalLine goal={status.goal} onOpen={() => setGoalOpen(true)} />

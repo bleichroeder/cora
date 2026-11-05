@@ -8,6 +8,8 @@ import { Icon } from './Icon';
 import { nudgeOrder, saveOrder } from '../lib/sessionOrder';
 // (the palette hosts the end-session confirm; it imports this file too, but only uses it when it runs)
 import { usePalette } from './Palette';
+import { comeBackTo, unflagSession } from '../lib/sessionFlag';
+import { oops } from '../state/oops';
 import './popovers.css';
 
 const post = (url: string, body: unknown) => fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
@@ -197,6 +199,15 @@ export function SessionMenu({ s, x, y, onClose }: { s: SessionInfo; x: number; y
             );
           })
         : null}
+      {/* flagged to come back to: its why and reminder, or clear it */}
+      <button className="sm-row" onClick={go(() => void comeBackTo(s.id).then((e) => e && oops("Couldn't flag it", e)))}>
+        <Icon name="Bookmark" size={14} /> {s.flag ? 'Change why, or the reminder…' : 'Come back to this…'}
+      </button>
+      {s.flag ? (
+        <button className="sm-row" onClick={go(() => void unflagSession(s.id).then((e) => e && oops("Couldn't clear the flag", e)))}>
+          <Icon name="BookmarkX" size={14} /> Clear the flag
+        </button>
+      ) : null}
       {s.ticket ? (
         <button className="sm-row" title={`It isn't about ${s.ticket.key} after all: no ticket card, not named after it`} onClick={go(() => void setSessionMeta(s.id, { ticket: null }))}>
           <Icon name="TicketX" size={14} /> Not about {s.ticket.key}

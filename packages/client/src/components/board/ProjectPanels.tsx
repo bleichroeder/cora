@@ -868,7 +868,8 @@ export function postFate(p: Project, x: Post, wakes: ProjectWake[], answered: bo
   if (waits.length) return { t: 'waits for its turn', c: 'wait' };
   if (x.deliveredAt) return { t: 'delivered', c: '' };
   if (x.native) return { t: 'sent', c: 'wait' };
-  return members.some((t) => (p.members[t]?.heardTo ?? 0) < x.at) ? { t: 'on its next prompt', c: 'wait' } : { t: 'delivered', c: '' };
+  // each member has it once a wake carried it to it, or it has heard past it
+  return members.some((t) => !x.deliveredTo?.includes(t) && (p.members[t]?.heardTo ?? 0) < x.at) ? { t: 'on its next prompt', c: 'wait' } : { t: 'delivered', c: '' };
 }
 
 function Thread({ p, compact }: { p: Project; compact?: boolean }) {

@@ -2,7 +2,8 @@ import { mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { Copies, CopyReader, copyArgs } from '../src/orchestrator/copy';
+import { Copies, CopyReader, copyArgs, type CopyCost } from '../src/orchestrator/copy';
+import { Audit } from '../src/audit';
 
 describe('side questions to a copy of a session', () => {
   it('a fork that keeps nothing, reports nothing and changes nothing', () => {
@@ -49,5 +50,34 @@ describe('side questions to a copy of a session', () => {
     await b;
     expect(runs.map((r) => r[3])).toEqual(['s1', 's2']);
     expect(runs[0][0]).toBe('claude');
+  });
+
+  it("what each run cost goes to the audit log: the session it copied, what it read and wrote, its cost (a failed run's too)", async () => {
+    // the result line's usage and cost, read from the stream
+    const r = new CopyReader();
+    r.push(JSON.stringify({ type: 'assistant', message: { content: [{ type: 'text', text: 'It is in a.ts.' }] } }) + '\n');
+    r.push(JSON.stringify({ type: 'result', is_error: false, total_cost_usd: 1.42, usage: { input_tokens: 12, cache_read_input_tokens: 458_000, cache_creation_input_tokens: 3_100, output_tokens: 640 } }) + '\n');
+    r.end();
+    expect(r.answer()).toEqual({ ok: true, text: 'It is in a.ts.', costUsd: 1.42, usage: { in: 12, cacheRead: 458_000, cacheWrite: 3_100, out: 640 } });
+
+    const costs: CopyCost[] = [];
+    let t = 1_000;
+    const answers = [
+      { ok: true as const, text: 'It is in a.ts.', costUsd: 1.42, usage: { in: 12, cacheRead: 458_000, cacheWrite: 3_100, out: 640 } },
+      { ok: false as const, error: 'it gave no answer', costUsd: 0.9 },
+    ];
+    const c = new Copies({ dir: mkdtempSync(join(tmpdir(), 'cora-copy-')), claudeCmd: () => ['claude'], run: async () => ((t += 4_000), answers.shift()!), cost: (x) => void costs.push(x), now: () => t });
+    expect(await c.ask({ sessionId: 'sess-lead', cwd: '.', question: 'where?', model: 'opus' })).toMatchObject({ ok: true, text: 'It is in a.ts.' });
+    await c.ask({ sessionId: 'sess-eng', cwd: '.', question: 'why?' });
+    expect(costs).toEqual([
+      { sessionId: 'sess-lead', model: 'opus', ok: true, ms: 4_000, costUsd: 1.42, usage: { in: 12, cacheRead: 458_000, cacheWrite: 3_100, out: 640 } },
+      { sessionId: 'sess-eng', ok: false, ms: 4_000, costUsd: 0.9 },
+    ]);
+
+    // written as a line of its own (kind copy), beside the decisions
+    const file = join(mkdtempSync(join(tmpdir(), 'cora-audit-')), 'audit.log');
+    const audit = new Audit(file);
+    audit.copy(costs[0], 5_000);
+    expect(readFileSync(file, 'utf8').trim().split('\n').map((l) => JSON.parse(l))).toEqual([{ ts: 5_000, kind: 'copy', sessionId: 'sess-lead', model: 'opus', ok: true, ms: 4_000, costUsd: 1.42, usage: { in: 12, cacheRead: 458_000, cacheWrite: 3_100, out: 640 } }]);
   });
 });

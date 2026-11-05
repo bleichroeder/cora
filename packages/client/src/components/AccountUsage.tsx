@@ -63,6 +63,8 @@ export function PlanUsage({ u, compact }: { u: AccountUsage | null; compact?: bo
           Extra usage {money(u.extra.used, u.extra.currency)} of {money(u.extra.limit, u.extra.currency)}
         </div>
       ) : null}
+      {/* the last good reading, while reading it again fails: as of when, and when it's asked again */}
+      {u.stale ? <div className="au-stale">{u.stale.message}</div> : null}
     </div>
   );
 }

@@ -85,6 +85,11 @@ export type SessionInfo = {
   autoName?: string | null;
   /** its own icon (sessionIcons.ts): picked with its auto-name, or by you; null: none (the plain swatch) */
   icon?: string | null;
+  /** another session started it (its CORA_SPAWNED_BY, spawned.ts): that session's id, and why (CORA_SPAWN_WHY) */
+  spawnedBy?: string | null;
+  spawnWhy?: string | null;
+  /** its context passed the nudge threshold (contextNudge.ts): nudged once, then */
+  contextNudge?: import('./contextNudge').ContextNudge | null;
   /** Cora started it (a session she launched, a Jira ticket she picked up): its Slack banner says so */
   startedBy?: 'cora' | null;
   /** when its current turn began (your prompt): how long it's been working */
@@ -101,6 +106,8 @@ export type SessionInfo = {
    * one of the site's projects). Null: cleared (and not looked for again).
    */
   ticket?: SessionTicket | null;
+  /** you flagged it to come back to (its nav row's bookmark): kept until you clear it, never cleared on its own */
+  flag?: SessionFlag | null;
   /** Claude Code's latest recap of it (written when you come back after a while away): where it stands, what's next */
   recap?: { text: string; at: number } | null;
   /** the GitLab issue it's about (its first message linked to it). Null: cleared. */
@@ -128,6 +135,12 @@ export const recapText = (s: string) =>
  * signed out too.
  */
 export type SessionTicket = { key: string; site: string | null; summary: string | null };
+
+/**
+ * A session flagged to come back to: when, why (one line, shown on hover), and a reminder (when it's due, the flag
+ * brightens and a notification comes: `due`).
+ */
+export type SessionFlag = { at: number; note?: string; remindAt?: number; due?: true };
 
 export type ExplainMode = 'off' | 'markdown' | 'markdown+html';
 export type ExplainFrequency = 'sparingly' | 'normal' | 'liberally';
@@ -292,6 +305,8 @@ export type Settings = {
   board?: { pages: import('./boardLayouts').BoardPageMode };
   /** each session's journal (Documents\\Cora\\Journal): its milestones, its wrap-up, recaps (on unless you turn it off) */
   journal?: { on: boolean };
+  /** a session's context past this many tokens: nudged once (0: never; contextNudge.ts) */
+  context?: { nudgeAt: number };
   /** Debrief: when sessions offer to walk you through their work, the depth, speaking as you step */
   debrief?: import('./debrief').DebriefSettings;
   /** worktrees: when a session Cora hosts moves into one of its own */
@@ -329,6 +344,7 @@ export const DEFAULT_SETTINGS: Settings = {
   memes: { mode: 'off' },
   board: { pages: 'show' },
   journal: { on: true },
+  context: { nudgeAt: 300_000 },
   orchestrator: { enabled: false, model: 'opus', speak: true, mandate: { repos: [], deploy: false, slack: [] }, budget: 5_000_000, events: 'important', briefs: 'welcome' },
   jira: { watch: DEFAULT_JIRA_WATCH, ticket: DEFAULT_TICKET_START },
   gitlab: { host: 'gitlab.com', todos: true, start: 'offer' },
@@ -401,6 +417,8 @@ export type TerminalInfo = {
   status?: string | null;
   /** a shell: which kind (its name, e.g. "Git Bash", "Ubuntu") */
   shell?: string;
+  /** resumed from an archived project: the project came back too (`resumed`: how many of its other sessions with it) */
+  broughtBack?: { project: string; resumed: number };
   /** a shell the Board's Terminal panel opened (it lives there, not among the session's terminal tabs) */
   place?: 'board';
 };

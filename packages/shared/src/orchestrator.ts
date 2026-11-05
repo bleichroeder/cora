@@ -31,7 +31,16 @@ export type OrchestratorSettings = {
    * its read-only tools, which Cora may use without asking.
    */
   workServers?: Record<string, WorkServer>;
+  /**
+   * Its context, in tokens, past which it starts a fresh conversation the next time it's idle long enough for its
+   * prompt cache to be cold (each wake then rewrites all of it); memory.md carries what it knows. 0: never. Unset:
+   * CONTEXT_CAP.
+   */
+  contextCap?: number;
 };
+
+/** The context past which Cora's agent starts fresh (between turns, its cache cold), unless its settings say. */
+export const CONTEXT_CAP = 200_000;
 
 /** A work MCP server Cora knows: what it's for (named in its instructions) and its read-only tools. */
 export type WorkServer = { about: string; read: string[] };
@@ -132,7 +141,20 @@ export type OrchestratorStatus = {
   followUps?: import('./followUps').FollowUp[];
   /** sessions it started on Jira tickets (the last 14 days, newest first) */
   jiraStarted?: JiraStarted[];
+  /**
+   * it isn't responding: what it was given never reached its conversation (typed in, Enter pressed again, and no prompt
+   * came of it). Since when; how many things wait for it (kept, given once it is); `restarted`: a restart didn't help.
+   */
+  stuck?: { since: number; waiting: number; restarted?: true };
 };
+
+/** The console's words for an agent that isn't responding (with Restart, and after a restart that didn't help, Start fresh). */
+export function stuckWords(s: { waiting: number; restarted?: true }): string {
+  const kept = s.waiting ? ` ${s.waiting === 1 ? 'What it was given waits' : `The ${s.waiting} things it was given wait`} for it: nothing is lost.` : '';
+  return s.restarted
+    ? `Cora still isn't responding after a restart: its conversation may not go on. Start fresh (it keeps what it remembers), or restart it again.${kept}`
+    : `Cora isn't responding: what it was given hasn't reached its conversation. Restart it.${kept}`;
+}
 
 export type OrchMsg = { t: 'orchestrator'; status: OrchestratorStatus };
 

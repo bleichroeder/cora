@@ -164,7 +164,9 @@ export class Hub {
 
   private hello(sock: Sock, lastSeq: number): void {
     if (!this.fed(sock)) return void this.send(sock, { t: 'elsewhere', name: this.activeName });
-    const sessions = this.store.listSessions().slice(0, 100);
+    // the latest, and any you flagged to come back to however old (a flag is never out of sight)
+    const all = this.store.listSessions();
+    const sessions = [...all.slice(0, 100), ...all.slice(100).filter((s) => s.flag)];
     const recent: Record<string, BrainEvent[]> = {};
     for (const s of sessions.slice(0, 40)) recent[s.id] = this.store.eventsForSession(s.id, { limit: RECENT_PER_SESSION });
     const current = this.store.lastSeq();
@@ -192,7 +194,20 @@ export class Hub {
     }
   }
 
+  private taps: Array<(e: BrainEvent) => void> = [];
+  /** Told of each event as it's published (the server's own watchers: a session's context growing). */
+  tap(fn: (e: BrainEvent) => void): void {
+    this.taps.push(fn);
+  }
+
   publish(e: BrainEvent): void {
+    for (const fn of this.taps) {
+      try {
+        fn(e);
+      } catch (err) {
+        console.error('[cora] event watcher', (err as Error).message);
+      }
+    }
     this.evQ.push(e);
     this.schedule();
   }

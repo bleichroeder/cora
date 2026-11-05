@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { setBuilderSessions, useBrain } from './store';
-import type { MemberSettings, PostKind, Project, ProjectWake, ProjectsMsg, Team, TeamChange } from '@cora/shared';
+import type { MemberSettings, PostKind, Project, ProjectWake, ProjectsMsg, SessionInfo, Team, TeamChange } from '@cora/shared';
 
 /** Your projects, as the server keeps them. */
 export const useProjects = create<{ projects: Project[]; wakes: ProjectWake[]; /** what each member is on now */ doing: Record<string, string>; /** a new session being started from a project's header: it joins that project */ joining: string | null; apply(m: ProjectsMsg): void }>((set) => ({
@@ -36,8 +36,25 @@ export const call = async (method: string, url: string, body?: unknown): Promise
 export const P = (id: string) => `/api/projects/${encodeURIComponent(id)}`;
 
 export const createProject = (name: string, sessionId?: string) => call('POST', '/api/projects', { name, ...(sessionId ? { sessionId } : {}) }).then((r) => (r.ok ? (r.project as Project) : null));
-export const updateProject = (id: string, patch: Partial<Pick<Project, 'name' | 'color' | 'brief' | 'coordination' | 'shade' | 'autoWake' | 'coraRoutes'>> & { lead?: string | null }) => call('PATCH', P(id), patch);
+export const updateProject = (id: string, patch: Partial<Pick<Project, 'name' | 'color' | 'brief' | 'coordination' | 'shade' | 'autoWake' | 'coraRoutes'>> & { lead?: string | null; wakeLimit?: number | 'none' | null }) => call('PATCH', P(id), patch);
 export const archiveProject = (id: string, on = true) => call('POST', `${P(id)}/archive`, { on });
+/**
+ * The sessions the nav's groups (live, Ended) leave out: a project's members show under it, and an archived project's
+ * are hidden with it (Resume says where they belong), never loose as if they had no project.
+ */
+export const projectMembers = (projects: Project[]): Set<string> => new Set(projects.flatMap((p) => p.sessions));
+/** Each session of an archived project, with its project's name (hidden in the nav; Resume says where it belongs). */
+export const archivedHomes = (projects: Project[]): Map<string, string> => new Map(projects.filter((p) => p.archivedAt).flatMap((p) => p.sessions.map((sid) => [sid, p.name] as const)));
+/** How many of its sessions are running (archiving stops them). */
+export const runningIn = (p: Pick<Project, 'sessions'>, sessions: Record<string, Pick<SessionInfo, 'state'>>) => p.sessions.filter((sid) => sessions[sid] && sessions[sid].state !== 'ended').length;
+/** What you're asked before archiving a project with sessions running (none: nothing to ask). */
+export const archiveAsk = (name: string, n: number) => (n ? `Archive "${name}"? Its ${n} running session${n === 1 ? '' : 's'} will be stopped.` : null);
+/** Archive it, asking once first when sessions of it are running: they're stopped, and hidden with it. */
+export function archiveAsking(p: Project): Promise<unknown> | void {
+  const ask = archiveAsk(p.name, runningIn(p, useBrain.getState().sessions));
+  if (ask && !window.confirm(ask)) return;
+  return archiveProject(p.id, true);
+}
 export const deleteProject = (id: string) => call('DELETE', P(id));
 export const addToProject = (id: string, sessionId: string) => call('POST', `${P(id)}/sessions`, { sessionId });
 export const orderMembers = (id: string, ids: string[]) => call('POST', `${P(id)}/sessions/order`, { ids });

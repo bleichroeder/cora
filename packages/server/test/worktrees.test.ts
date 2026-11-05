@@ -47,6 +47,24 @@ describe('worktrees', () => {
     expect(pushed.length).toBeGreaterThan(0);
   });
 
+  it("from: 'current' starts from the branch the folder has checked out (a team seat's), not the default branch", async () => {
+    const w = store();
+    git(repo, 'switch', '-q', '-c', 'feat/team-builder');
+    commit(repo, 'b.txt');
+    const tip = git(repo, 'rev-parse', 'HEAD').trim();
+    const seat = await w.make(repo, { name: 'reviewer', from: 'current' });
+    expect(git(seat.path, 'rev-parse', 'HEAD').trim()).toBe(tip);
+    expect(existsSync(join(seat.path, 'b.txt'))).toBe(true);
+    // the default (new work from the base) is unchanged: from origin/main
+    const plain = await w.make(repo, { name: 'plain' });
+    expect(existsSync(join(plain.path, 'b.txt'))).toBe(false);
+    // detached: from its commit
+    git(repo, 'switch', '-q', '--detach', tip);
+    const det = await w.make(repo, { name: 'detached', from: 'current' });
+    expect(git(det.path, 'rev-parse', 'HEAD').trim()).toBe(tip);
+    // (three worktrees made with git: slow on a busy machine)
+  }, 20_000);
+
   it('who is in it, what it holds, and its state: active, idle, done once merged', async () => {
     const w = store();
     const { path } = await w.make(repo, { name: 'feature' });

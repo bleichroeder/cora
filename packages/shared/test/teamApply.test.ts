@@ -54,6 +54,29 @@ describe('what Apply does to running sessions', () => {
     });
   });
 
+  it("seats standing down: said plainly before Apply (what they run ends with them); one only renamed keeps its sessions, said in its row", () => {
+    const seat = (id: string, name: string, instructions = `Be ${id}.`) => ({ ...drill().seats[0], id, name, instructions });
+    const v1 = { ...drill(), seats: [seat('senior-system-analyst', 'Senior System Analyst'), seat('triage', 'Triage')] };
+    // the test PC's v2: the analyst's id changed (its name kept), a monitor added, Triage kept
+    const v2 = { ...v1, seats: [seat('analyst-01', 'Senior System Analyst'), seat('triage', 'Triage'), seat('infra-monitor', 'Infrastructure Monitor')] };
+    // renamed (its name kept): nothing stands down; its row says its sessions are kept
+    const e2 = sessionEffects(v1, v2);
+    expect(e2.ending).toBeUndefined();
+    expect(e2.rows).toContainEqual({ seat: 'analyst-01', name: 'Senior System Analyst', kind: 'keep', text: 'renamed from senior-system-analyst: its sessions keep running as Senior System Analyst (and what they run and know), each told its new seat' });
+    expect(e2.rows.filter((r) => r.kind === 'stop')).toEqual([]);
+    // (its instructions name its id, so they changed too: it's told them, as any seat is)
+    expect(e2.rows.map((r) => [r.seat, r.kind])).toEqual([['analyst-01', 'keep'], ['infra-monitor', 'start'], ['analyst-01', 'tell']]);
+    // the same instructions under another name and id: renamed too (and its new name isn't a change to tell)
+    const v3 = { ...v1, seats: [seat('analyst-01', 'Analyst 01', 'Be senior-system-analyst.'), seat('triage', 'Triage')] };
+    expect(sessionEffects(v1, v3).rows).toEqual([expect.objectContaining({ seat: 'analyst-01', kind: 'keep', text: expect.stringMatching(/^renamed from senior-system-analyst: its sessions keep running as Analyst 01/) })]);
+    expect(sessionEffects(v1, v3).ending).toBeUndefined();
+    // a seat simply removed: said, nothing about a rename
+    const v4 = { ...v1, seats: [seat('triage', 'Triage')] };
+    expect(sessionEffects(v1, v4).ending).toBe('Senior System Analyst stands down: its sessions end, and with them anything they run (a /loop, a cron, a Monitor) and what they know.');
+    // nothing stands down: nothing said
+    expect(sessionEffects(v1, v1).ending).toBeUndefined();
+  });
+
   it("a proposal: a seat that starts when work arrives, one that stands down", () => {
     const e = sessionEffects(drill(), drillProposal());
     expect(e.rows).toContainEqual({ seat: 'analyst-ing', name: 'Ingest analyst', kind: 'start', text: 'starts when work first arrives (its minimum is 0)' });
@@ -207,5 +230,32 @@ describe('one meaning of "the same" everywhere (the count, the change lines, wha
       expect(teamChangeLines(u, v)).toEqual([]);
       expect(sameTeam(u, v)).toBe(true);
     }
+  });
+});
+
+describe('seats only renamed', () => {
+  it('pairs a seat gone with a new one of the same name or instructions, each once; the routes, groups and lead that named it follow', async () => {
+    const { seatRenames, renamedBefore, diffTeam } = await import('../src/index');
+    const t = drill();
+    const next = clone(t);
+    const s = next.seats.find((x) => x.id === 'triage')!;
+    s.id = 'hub';
+    for (const r of next.routes) (r.from = r.from.map((f) => (f === 'seat:triage' ? 'seat:hub' : f))), r.to === 'seat:triage' && (r.to = 'seat:hub');
+    for (const g of next.groups) g.members = g.members.map((m) => (m === 'triage' ? 'hub' : m));
+    if (next.fallback === 'seat:triage') next.fallback = 'seat:hub';
+    if (next.lead === 'triage') next.lead = 'hub';
+    const renames = seatRenames(t, next);
+    expect(renames.map((r) => [r.from.id, r.to.id])).toEqual([['triage', 'hub']]);
+    // diffed against the team before under its new id: nothing changed but the rename
+    expect(diffTeam(renamedBefore(t, renames), next)).toEqual([]);
+    // two new seats of the same name: paired once
+    const two = clone(next);
+    two.seats.push({ ...s, id: 'hub-2' });
+    expect(seatRenames(t, two).map((r) => r.to.id)).toEqual(['hub']);
+    // another name and other instructions: not a rename
+    const other = clone(t);
+    other.seats = other.seats.map((x) => (x.id === 'triage' ? { ...x, id: 'pager', name: 'Pager', instructions: 'Page people.' } : x));
+    expect(seatRenames(t, other)).toEqual([]);
+    expect(seatRenames(undefined, next)).toEqual([]);
   });
 });

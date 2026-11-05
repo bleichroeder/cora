@@ -78,6 +78,13 @@ async function setup(o: { up?: boolean } = {}) {
   return { rt, deps, projects, pid: p.id, launches, live, busy, stopped, delivered, ws, edit, member, closed, at: (ms: number) => rt.tick((clock = 1_000_000 + ms)) };
 }
 
+/** Its members resume as themselves (the app's resume: launchClaude rebuilds a seat's launch from the team): those resumed, in order. */
+const resumes = (s: { deps: TeamDeps; live: Set<string> }) => {
+  const resumed: string[] = [];
+  s.deps.resume = async (sid) => (resumed.push(sid), s.live.add(sid), { sessionId: sid });
+  return resumed;
+};
+
 describe('editing a running team', () => {
   it('a team that is not up: only the changes (and its files written)', async () => {
     const s = await setup({ up: false });
@@ -145,11 +152,21 @@ describe('editing a running team', () => {
     expect(s.rt.restarts(s.pid)).toEqual(['enc']);
     expect(s.stopped).toEqual([]);
     expect(s.launches).toEqual([]);
+    const resumed = resumes(s);
     const again = await s.rt.restartSeats(s.pid, ['enc']);
-    expect(again).toEqual({ started: ['s3'], problems: [] });
+    expect(again).toEqual({ started: [], problems: [] });
     expect(s.stopped).toEqual(['s2']);
-    expect(s.launches).toEqual(['enc-1']);
     expect(s.rt.restarts(s.pid)).toEqual([]);
+    // still closing: nothing new starts in its place
+    await s.at(1000);
+    expect(s.launches).toEqual([]);
+    expect(resumed).toEqual([]);
+    // closed: back as itself (its memory), on the new definition (resumeSeat rebuilds its launch), and told
+    s.closed();
+    await s.at(2000);
+    expect(resumed).toEqual(['s2']);
+    expect(s.launches).toEqual([]);
+    expect(s.delivered.at(-1)).toEqual(['s2', expect.stringMatching(/^You're back on duty as Encoder fixer in Ops/)]);
     // standing a seat down clears it too
     await s.edit((t) => (t.seats[0].skills = ['runbook']));
     expect(s.rt.restarts(s.pid)).toEqual(['triage']);
@@ -157,7 +174,7 @@ describe('editing a running team', () => {
     expect(s.rt.restarts(s.pid)).toEqual([]);
   });
 
-  it('restarting a pool seat with no minimum brings back as many as were running (it is not stood down)', async () => {
+  it('restarting a pool seat with no minimum brings back as many as were running, as themselves (it is not stood down)', async () => {
     const s = await setup();
     s.member('s9', 'enc', 2);
     await s.edit((t) => {
@@ -166,10 +183,26 @@ describe('editing a running team', () => {
     });
     expect(s.rt.restarts(s.pid)).toEqual(['enc']);
     s.launches.length = 0;
-    const r = await s.rt.restartSeats(s.pid, ['enc']);
+    const resumed = resumes(s);
+    await s.rt.restartSeats(s.pid, ['enc']);
     expect(s.stopped).toEqual(['s2', 's9']);
-    expect(r).toEqual({ started: ['s3', 's4'], problems: [] });
-    expect(s.launches).toEqual(['enc-1', 'enc-2']);
+    s.closed();
+    await s.at(2000);
+    expect(resumed.sort()).toEqual(['s2', 's9']);
+    expect(s.launches).toEqual([]);
+    // all back: the restart is over (a later tick resumes or starts nothing more for it)
+    await s.at(9000);
+    expect(resumed).toHaveLength(2);
+    expect(s.launches).toEqual([]);
+  });
+
+  it("a restarted member that can't be resumed: a new one starts in its place", async () => {
+    const s = await setup();
+    s.deps.resume = async () => ({ error: 'no conversation to resume' });
+    await s.rt.restartSeats(s.pid, ['enc']);
+    s.closed();
+    await s.at(2000);
+    expect(s.launches).toEqual(['enc-1']);
   });
 
   it('a pool resized: up to its new min now; members above its new max close once idle', async () => {
@@ -247,5 +280,102 @@ describe('a seat watch kept up to date', () => {
     sw.ensure('p1', s, 's1', 1, W2);
     sw.drop('p1', 'triage', 1);
     expect(ws.list().map((w) => w.id)).toEqual([id]);
+  });
+
+  describe('a seat only renamed (a new id, the same name or instructions): its sessions are kept, adopted into the new id', () => {
+    /** Encoder fixer's id becomes "fixer" (its group and routes follow) */
+    const rename = (t: Team, also: (s: Seat) => void = () => {}) => {
+      const s = t.seats.find((x) => x.id === 'enc')!;
+      s.id = 'fixer';
+      t.groups[0].members = ['fixer'];
+      also(s);
+    };
+
+    it('two live members: the same sessions, the new seat, their instances and started handles kept; no stop, no launch; each told', async () => {
+      const s = await setup();
+      s.member('s9', 'enc', 2);
+      const inst = s.projects.get(s.pid)!.members.s2.instance;
+      const r = await s.edit((t) => rename(t));
+      expect(r.changes).toEqual([{ kind: 'seat-renamed', seat: 'fixer', from: 'enc', detail: 'renamed from enc' }]);
+      expect(r.restart).toEqual([]);
+      expect(s.stopped).toEqual([]);
+      expect(s.launches).toEqual([]);
+      const m = s.projects.get(s.pid)!.members;
+      expect(m.s2).toMatchObject({ seat: 'fixer', instance: inst, handle: expect.stringMatching(/^enc-/) });
+      expect(m.s9).toMatchObject({ seat: 'fixer', instance: 2, handle: expect.stringMatching(/^enc-2-/) });
+      expect(s.delivered.map(([sid]) => sid).sort()).toEqual(['s2', 's9']);
+      expect(s.delivered.find(([sid]) => sid === 's9')![1]).toMatch(/^Your seat in Ops is Encoder fixer \(its id is fixer now, was enc\) now: the same work under a new name\. You keep this session and what it runs; your handle for messages stays enc-2-\w+ until you next restart\.$/);
+      // its standing (min 1) is met by the kept members: a tick starts nobody for it
+      await s.at(5000);
+      expect(s.launches).toEqual([]);
+      // resumed later, it comes back as the new seat, under its new handle
+      expect(s.rt.resumeSeat('s9')).toMatchObject({ name: expect.stringMatching(/^fixer-2-/) });
+      expect(s.projects.get(s.pid)!.members.s9.handle).toBeUndefined();
+    });
+
+    it('renamed with new tools: kept, and a restart is offered for the tools; new instructions: kept, and told them', async () => {
+      const s = await setup();
+      const r = await s.edit((t) => rename(t, (x) => (x.agent = { tools: ['Read'] })));
+      expect(r.changes).toEqual([{ kind: 'seat-renamed', seat: 'fixer', from: 'enc', detail: 'renamed from enc' }, { kind: 'seat-restart-needed', seat: 'fixer', detail: 'tools changed' }]);
+      expect(r.restart).toEqual(['fixer']);
+      expect(s.rt.restarts(s.pid)).toEqual(['fixer']);
+      expect(s.stopped).toEqual([]);
+      expect(s.launches).toEqual([]);
+      // the same name, new instructions under the new id: still the same seat (by its name), told its new role
+      s.delivered.length = 0;
+      const r2 = await s.edit((t) => {
+        const x = t.seats.find((y) => y.id === 'fixer')!;
+        x.id = 'encoders-fixer';
+        x.instructions = 'Fix the encoders, oldest first.';
+        t.groups[0].members = ['encoders-fixer'];
+      });
+      expect(r2.changes.map((c) => c.kind)).toEqual(['seat-renamed', 'seat-retasked']);
+      expect(s.stopped).toEqual([]);
+      expect(s.launches).toEqual([]);
+      expect(s.delivered.map(([, t]) => t)).toEqual([expect.stringMatching(/^Your seat in Ops is Encoder fixer \(its id is encoders-fixer now, was fixer\)/), expect.stringMatching(/^Your role in Ops changed: "Be enc\." → "Fix the encoders, oldest first\."/)]);
+      // a restart still waiting moves with it, and its handle is still the one it started with
+      expect(s.rt.restarts(s.pid)).toEqual(['encoders-fixer']);
+      expect(s.projects.get(s.pid)!.members.s2.handle).toMatch(/^enc-/);
+    });
+
+    it('its watches are set again under the new id', async () => {
+      const s = await setup();
+      await s.edit((t) => {
+        t.seats[0].id = 'tri';
+        t.routes[0].from = ['seat:tri'];
+      });
+      expect(s.stopped).toEqual([]);
+      expect(s.ws.list().map((w) => w.id)).toEqual([seatWatchId(s.pid, 'tri', 0), seatWatchId(s.pid, 'tri', 1)]);
+    });
+
+    it("a seat removed while it's stood down: its ended member leaves now, and what waited for it goes to the fallback", async () => {
+      const s = await setup();
+      await s.rt.standDown(s.pid, 'enc');
+      s.closed();
+      expect(s.projects.get(s.pid)!.sessions).toContain('s2');
+      const post = s.projects.post(s.pid, 's1', 'handoff', 'encoder 3 is yours', ['s2'])!;
+      s.projects.wait(s.pid, post.id, 's2');
+      await s.edit((t) => {
+        t.seats = t.seats.filter((x) => x.id !== 'enc');
+        t.groups[0].members = [];
+        t.fallback = 'seat:triage';
+      });
+      const p = s.projects.get(s.pid)!;
+      expect(p.sessions).not.toContain('s2');
+      expect(p.members.s2).toBeUndefined();
+      expect(p.waiting).toEqual([expect.objectContaining({ post: post.id, to: 's1' })]);
+    });
+
+    it('an unrelated seat gone and another new (another name and instructions) still stands one down and starts the other', async () => {
+      const s = await setup();
+      const r = await s.edit((t) => {
+        t.seats = t.seats.filter((x) => x.id !== 'enc');
+        t.seats.push(seat('pager', 'Pager'));
+        t.groups[0].members = ['pager'];
+      });
+      expect(r.changes.map((c) => c.kind)).toEqual(['seat-removed', 'seat-added', 'routes-changed']);
+      expect(s.stopped).toEqual(['s2']);
+      expect(s.launches).toEqual(['pager']);
+    });
   });
 });

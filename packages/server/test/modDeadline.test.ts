@@ -136,3 +136,103 @@ describe("a new seat's deliveries when its mod hasn't come", () => {
     expect(stuckModWords('Triage', 90_000, "it's asking whether to trust the folder.")).toBe("Triage's Cora mod hadn't connected after 90 seconds, and what Cora has for it couldn't be typed into its terminal (it's asking whether to trust the folder). It isn't lost: its mod takes it when it connects, or Cora tries typing it in again.");
   });
 });
+
+describe('typed in is not in: in is its prompt arriving', () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  const setup = (land: (sid: string, text: string) => boolean) => {
+    const queue = new Map<string, Array<{ text: string; typedAt?: number }>>();
+    const modded = new Set<string>();
+    const typed: string[] = [];
+    const told: string[] = [];
+    const stuck: Array<[string, string]> = [];
+    const done: string[] = [];
+    let clock = 1_000;
+    const d = modDeadline({
+      waitMs: 90_000,
+      now: () => clock,
+      modded: (sid) => modded.has(sid),
+      take: (sid) => {
+        const q = queue.get(sid) ?? [];
+        queue.delete(sid);
+        return q.map((x) => x.text);
+      },
+      putBack: (sid, items, typedAt) => queue.set(sid, [...items.map((text) => ({ text, ...(typedAt !== undefined ? { typedAt } : {}) })), ...(queue.get(sid) ?? [])]),
+      typeIn: async (sid, text) => (typed.push(`${sid}: ${text}`), { sent: true }),
+      landed: async (sid, text) => land(sid, text),
+      tell: (sid) => told.push(sid),
+      stuck: (sid, why) => stuck.push([sid, why]),
+      done: (sid) => done.push(sid),
+    });
+    const push = (sid: string, text: string) => {
+      queue.set(sid, [...(queue.get(sid) ?? []), { text }]);
+      d.arm(sid);
+    };
+    const tick = (ms: number) => ((clock += ms), vi.advanceTimersByTimeAsync(ms));
+    return { d, queue, modded, typed, told, stuck, done, push, tick };
+  };
+
+  it('its prompt came: in (the user is told, the seat is given things as one without a mod from now on)', async () => {
+    const s = setup(() => true);
+    s.push('s1', 'Begin.');
+    await s.tick(90_000);
+    expect(s.typed).toEqual(['s1: Begin.']);
+    expect(s.done).toEqual(['s1']);
+    expect(s.told).toEqual(['s1']);
+    expect(s.queue.get('s1')).toBeUndefined();
+  });
+
+  it("no prompt came of it (a terminal still starting took the keys): back for its mod, marked typed; its late hello takes it", async () => {
+    const s = setup(() => false);
+    s.push('s1', 'Begin.');
+    await s.tick(90_000);
+    expect(s.typed).toEqual(['s1: Begin.']);
+    // not in: nothing done, nothing told as delivered; back at the front of its queue, with when it was typed
+    expect(s.done).toEqual([]);
+    expect(s.told).toEqual([]);
+    expect(s.queue.get('s1')).toEqual([{ text: 'Begin.', typedAt: 1_000 + 90_000 }]);
+    expect(s.stuck).toEqual([['s1', 'it was typed into its terminal, but no prompt came of it']]);
+    // its mod says hello later (2½ minutes in): what waits is still there for it, and nothing is typed again
+    s.modded.add('s1');
+    await s.tick(90_000);
+    expect(s.typed).toEqual(['s1: Begin.']);
+    expect(s.queue.get('s1')?.map((x) => x.text)).toEqual(['Begin.']);
+  });
+
+  it('its mod came while it was typed in (and no prompt came of it): it waits for the mod, never typed again', async () => {
+    let s: ReturnType<typeof setup>;
+    s = setup(() => (s.modded.add('s1'), false));
+    s.push('s1', 'Begin.');
+    await s.tick(90_000);
+    expect(s.queue.get('s1')?.map((x) => x.text)).toEqual(['Begin.']);
+    // not told it's stuck: the mod has it
+    expect(s.stuck).toEqual([]);
+    await s.tick(5 * 90_000);
+    expect(s.typed).toEqual(['s1: Begin.']);
+  });
+
+  it('several seats starting at once: each is given longer for its mod (a third more for each other waiting, three times at most)', async () => {
+    const s = setup(() => true);
+    for (const sid of ['a', 'b', 'c', 'd', 'e']) s.push(sid, `Begin ${sid}.`);
+    // a: 90s; b: 120s; c: 150s; d: 180s; e: 210s capped at 270s (three times)
+    await s.tick(90_000);
+    expect(s.typed).toEqual(['a: Begin a.']);
+    await s.tick(30_000);
+    expect(s.typed).toHaveLength(2);
+    await s.tick(30_000);
+    expect(s.typed).toHaveLength(3);
+    // the mods of d and e come at 2½ minutes, as on the test PC: nothing is typed into them
+    s.modded.add('d');
+    s.modded.add('e');
+    await s.tick(120_000);
+    expect(s.typed).toHaveLength(3);
+    const many = setup(() => true);
+    for (let k = 0; k < 12; k++) many.push(`s${k}`, 'x');
+    // 90, 120 … 240 before the cap: six; then the rest at 270 (three times 90)
+    await many.tick(269_999);
+    expect(many.typed).toHaveLength(6);
+    await many.tick(1);
+    expect(many.typed).toHaveLength(12);
+  });
+});

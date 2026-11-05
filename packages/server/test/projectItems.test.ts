@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { Projects } from '../src/projects';
+import { MAX_ITEM_MOVES } from '@cora/shared';
 import { annotateItem, changeItem, claimItem, closeItem, mergeItem, openItem, queryItems } from '../src/projectItems';
 import { projectCard, projectNews } from '../src/projectCard';
 
@@ -36,7 +37,7 @@ describe('project items', () => {
     // its owner sets state and next; another member can't, but can annotate (and the owner is told)
     ok(changeItem(p, 'triage', i.id, { state: 'waiting', next: 'vendor ticket' }, t + 2));
     expect(changeItem(p, 'orch', i.id, { next: 'mine now' }, t + 3)).toMatchObject({ ok: false });
-    expect(ok(annotateItem(p, 'orch', i.id, 'recovered at 14:20', t + 4)).tell).toEqual({ to: 'triage', text: expect.stringMatching(/Noted on "Station A: no video": recovered/) });
+    expect(ok(annotateItem(p, 'orch', i.id, 'recovered at 14:20', t + 4)).tell).toEqual({ to: 'triage', text: expect.stringMatching(/Noted on "Station A: no video": recovered/), ping: 'note' });
     // closed by its owner with a cause and fix: out of the open list, into the log
     expect(closeItem(p, 'orch', i.id, 'x', 'y', t + 5)).toMatchObject({ ok: false });
     ok(closeItem(p, 'triage', i.id, 'encoder hung', 'restarted it', t + 5));
@@ -50,7 +51,7 @@ describe('project items', () => {
     expect(openItem(p, 'monitor', { title: 'Station B down' }, t)).toMatchObject({ ok: false, error: expect.stringMatching(/Only the lead/) });
     const a = ok(openItem(p, 'orch', { title: 'Station B down', owner: 'triage', severity: 'critical' }, t));
     expect(a.item.state).toBe('working');
-    expect(a.tell).toEqual({ to: 'triage', text: expect.stringMatching(/^Assigned you "Station B down" \(critical\)/) });
+    expect(a.tell).toEqual({ to: 'triage', text: expect.stringMatching(/^Assigned you "Station B down" \(critical\)/), ping: 'assign' });
     const b = ok(openItem(p, 'you', { title: 'Station B: no audio' }, t + 1)).item;
     ok(annotateItem(p, 'monitor', b.id, 'same site as B', t + 2));
     expect(changeItem(p, 'monitor', a.item.id, { owner: 'monitor' }, t + 3)).toMatchObject({ ok: false });
@@ -105,5 +106,41 @@ describe('project items', () => {
     expect(card).toMatch(/The lead \(orch\) opens incidents/);
     ps.leave(p.id, 'orch');
     expect(ps.get(p.id)!.lead).toBeUndefined();
+  });
+
+  it('a task keeps its moves (state and owner: when, by whom, from, to), each step not just the last, the last 50 of them', () => {
+    const { p, t } = setup();
+    p.lead = 'orch';
+    const i = ok(openItem(p, 'orch', { kind: 'task', title: 'Fix it', owner: 'triage' }, t)).item;
+    // opened assigned: its first move
+    expect(i.moves).toEqual([{ at: t, by: 'orch', field: 'owner', to: 'triage' }]);
+    ok(changeItem(p, 'triage', i.id, { state: 'building' }, t + 1));
+    ok(changeItem(p, 'triage', i.id, { next: 'tests', link: 'fix/it' }, t + 2));
+    ok(changeItem(p, 'triage', i.id, { state: 'review' }, t + 3));
+    ok(changeItem(p, 'orch', i.id, { owner: 'monitor', state: 'testing' }, t + 4));
+    // refused: nothing recorded
+    expect(changeItem(p, 'triage', i.id, { state: 'blocked' }, t + 5)).toMatchObject({ ok: false });
+    ok(closeItem(p, 'orch', i.id, undefined, undefined, t + 6, 'merged as abc1234'));
+    expect(i.moves).toEqual([
+      { at: t, by: 'orch', field: 'owner', to: 'triage' },
+      { at: t + 1, by: 'triage', field: 'state', from: 'queued', to: 'building' },
+      { at: t + 3, by: 'triage', field: 'state', from: 'building', to: 'review' },
+      { at: t + 4, by: 'orch', field: 'state', from: 'review', to: 'testing' },
+      { at: t + 4, by: 'orch', field: 'owner', from: 'triage', to: 'monitor' },
+      { at: t + 6, by: 'orch', field: 'state', from: 'testing', to: 'done' },
+    ]);
+    // claimed (an incident): owner and state
+    const inc = ok(openItem(p, 'orch', { title: 'Station A: no video' }, t)).item;
+    expect(inc.moves).toBeUndefined();
+    ok(claimItem(p, 'triage', inc.id, t + 1));
+    expect(inc.moves).toEqual([
+      { at: t + 1, by: 'triage', field: 'state', from: 'open', to: 'working' },
+      { at: t + 1, by: 'triage', field: 'owner', to: 'triage' },
+    ]);
+    // kept short: the newest MAX_ITEM_MOVES
+    const k = ok(openItem(p, 'orch', { kind: 'task', title: 'Busy', owner: 'triage' }, t)).item;
+    for (let n = 0; n < 60; n++) ok(changeItem(p, 'triage', k.id, { state: n % 2 ? 'review' : 'building' }, t + n + 1));
+    expect(k.moves).toHaveLength(MAX_ITEM_MOVES);
+    expect(k.moves!.at(-1)).toMatchObject({ at: t + 60, from: 'building', to: 'review' });
   });
 });

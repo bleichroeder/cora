@@ -83,8 +83,9 @@ export function projectNews(p: Project, sid: string, since: number, who: (by: st
   // a message the team's routes refused was never sent: nobody's news
   const posts = p.thread.filter((x) => (x.at > since || (x.editedAt ?? 0) > since || waiting.has(x.id)) && x.by !== sid && !x.blocked);
   if (!posts.length) return null;
-  // what Claude Code delivered to it already (a native message, or a post sent natively) it has: not again
-  const toMe = posts.filter((x) => x.to?.includes(sid) && !x.deliveredAt);
+  // what Claude Code delivered to it already (a native message, or a post sent natively), or a wake carried to it, it
+  // has: not again (a wake to another of the post's members is that one's, not this one's)
+  const toMe = posts.filter((x) => x.to?.includes(sid) && !x.deliveredAt && !x.deliveredTo?.includes(sid));
   // reports go only to their seat; posts to others aren't news here
   const general = posts.filter((x) => !x.to?.length && x.kind !== 'note' && x.kind !== 'report');
   const notes = posts.filter((x) => !x.to?.length && x.kind === 'note');

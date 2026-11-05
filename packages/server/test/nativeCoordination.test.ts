@@ -124,7 +124,7 @@ describe('native messages on the board', () => {
       expect((await srv.app.inject({ method: 'POST', url: `/api/projects/wakes/${wakes[0].id}`, headers: UI, payload: { allow: true } })).json()).toMatchObject({ woke: true });
       expect(await webAsks).toEqual([{ id: expect.any(String), kind: 'submit', text: '(from "API", in the project "Tags":) done, your turn' }]);
       post = (await projects()).projects[0].thread.at(-1);
-      expect(post.deliveredAt).toEqual(expect.any(Number));
+      expect(post.deliveredTo).toEqual([WEB]);
 
       // the project lets them wake each other: a direct message to the idle web session goes straight through
       await srv.app.inject({ method: 'PATCH', url: `/api/projects/${p.id}`, headers: UI, payload: { autoWake: true } });

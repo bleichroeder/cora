@@ -46,7 +46,7 @@ const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? o
  * changed, what it does when the team is running), opened to its lines on a click; the routes, groups and rules as one
  * row.
  */
-export function ApplySheet(p: { title: string; sub: string; banner?: string; overview: ApplyOverview; effects: { rows: SessionEffect[]; atOnce: string[] } | null; note: string; tag: 'Apply' | 'Approve'; colorOf(id: string): string; busy: boolean; error?: string; onCancel(): void; onApply(bringUp: boolean): void }) {
+export function ApplySheet(p: { title: string; sub: string; banner?: string; overview: ApplyOverview; effects: { rows: SessionEffect[]; atOnce: string[]; ending?: string } | null; note: string; tag: 'Apply' | 'Approve'; colorOf(id: string): string; busy: boolean; error?: string; onCancel(): void; onApply(bringUp: boolean): void }) {
   const o = p.overview;
   const [openSeat, setOpenSeat] = useState<Record<string, boolean>>({});
   const [restOpen, setRestOpen] = useState(false);
@@ -155,6 +155,8 @@ export function ApplySheet(p: { title: string; sub: string; banner?: string; ove
           </div>
         ) : null}
 
+        {/* seats standing down end their sessions (and what they run): said before Apply, with a renamed seat named */}
+        {p.effects?.ending ? <div className="ap-note warn">{p.effects.ending}</div> : null}
         {p.effects?.atOnce.length ? (
           <div className="ap-note">
             The team's {listWords(p.effects.atOnce)} {p.effects.atOnce.length > 1 ? 'take' : 'takes'} effect at once; nobody restarts for {p.effects.atOnce.length > 1 ? 'them' : 'it'}.

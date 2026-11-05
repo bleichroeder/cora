@@ -312,9 +312,9 @@ export function Toasts() {
   return (
     <div className="toasts">
       {oopses.map((o) => (
-        <div key={o.id} className="toast ask oops" role="alert">
+        <div key={o.id} className={`toast ask${o.info ? '' : ' oops'}`} role={o.info ? 'status' : 'alert'}>
           <span className="dl-tile">
-            <Icon name="TriangleAlert" size={14} />
+            <Icon name={o.info ? 'Info' : 'TriangleAlert'} size={14} />
           </span>
           <span className="toast-t">
             <b>{o.title}</b>

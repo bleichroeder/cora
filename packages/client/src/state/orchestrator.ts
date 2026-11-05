@@ -48,7 +48,7 @@ export const goalLive = (s: OrchestratorStatus | null) => !!s?.goal && (s.goal.s
 
 export function coraState(status: OrchestratorStatus | null, agent: SessionInfo | null, o: { listening: boolean; pending: number }): CoraState {
   if (!status?.enabled) return 'off';
-  if (status.error) return 'error';
+  if (status.error || status.stuck) return 'error';
   if (!status.running) return 'starting';
   if (status.approvals.length || status.asking?.length || o.pending || status.goal?.state === 'blocked') return 'needs-you';
   if (o.listening) return 'listening';

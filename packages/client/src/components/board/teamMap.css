@@ -139,6 +139,8 @@
 .tb.tm .route.talking .ln.on { stroke: var(--ink2); stroke-width: 1.8; stroke-dasharray: none; opacity: 1; }
 .tb.tm .route.talking .ah { stroke: var(--ink2); stroke-width: 1.8; }
 .tb.tm .route .tm-count .last { fill: var(--ink3); }
+/* a lit route's label: on a pill under its chip, so its line never runs through the text */
+.tb.tm .route .tm-lit .pill { fill: var(--raise2); stroke: var(--hair2); stroke-width: 1; vector-effect: non-scaling-stroke; }
 .tb.tm .tm-line.talk { stroke: var(--ink3); stroke-dasharray: none; opacity: .55; animation: none; }
 .tb.tm .tm-rl.talking { color: var(--ink3); box-shadow: inset 2px 0 0 var(--ink3); }
 .tb.tm .tm-rl .last { color: var(--ink3); }

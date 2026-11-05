@@ -6,6 +6,7 @@ import { DEFAULT_SETTINGS, type OrchestratorStatus, type Settings, type Terminal
 import { agentArgs, agentInstructions, orchestratorDir, readState, setWorkServers, workReadTools, workToolsNote, writeAgentFiles } from '../src/orchestrator/files';
 import { Approvals } from '../src/orchestrator/approvals';
 import { OrchestratorManager, questionOf } from '../src/orchestrator/manager';
+import { promptEvent, promptsOnEnter } from './agentPrompts';
 
 const tmp = () => mkdtempSync(join(tmpdir(), 'orch-'));
 
@@ -123,6 +124,9 @@ function fakePtys() {
   const launches: any[] = [];
   const writes: string[] = [];
   let n = 0;
+  /** what's sent comes back as its session's prompt (set to the manager's event) */
+  const on: { prompt: ((sessionId: string, text: string) => void) | null } = { prompt: null };
+  const claude = promptsOnEnter((id, text) => on.prompt?.(terms.find((t) => t.terminalId === id)?.sessionId ?? '', text));
   const ptys = {
     launch: (req: any) => {
       launches.push(req);
@@ -131,7 +135,7 @@ function fakePtys() {
       return t;
     },
     list: () => terms,
-    write: (_id: string, d: string) => (writes.push(d), true),
+    write: (id: string, d: string) => (writes.push(d), claude.write(id, d), true),
     screenLines: () => ['', '─'.repeat(40), '❯ ', '─'.repeat(40)],
     end: (id: string) => {
       const t = terms.find((x) => x.terminalId === id);
@@ -144,7 +148,7 @@ function fakePtys() {
       return true;
     },
   };
-  return { ptys, terms, launches, writes };
+  return { ptys, terms, launches, writes, on, claude };
 }
 
 describe('the orchestrator manager', () => {
@@ -158,6 +162,7 @@ describe('the orchestrator manager', () => {
     const ui: UiCommand[] = [];
     const f = fakePtys();
     const m = new OrchestratorManager({ dataDir, projectsDir, port: 4317, hookToken: 't', ptys: f.ptys as any, settings: () => settings, publish: (s) => statuses.push(s), publishUi: (c) => ui.push(c) });
+    f.on.prompt = (sid, text) => m.event(promptEvent(sid, text));
     const set = (o: Partial<Settings['orchestrator']>) => {
       settings = { ...settings, orchestrator: { ...settings.orchestrator, ...o } };
       m.apply();

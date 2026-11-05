@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { INCIDENT_STATES, MAX_ITEM_NOTES, MAX_ITEMS, SEVERITIES, TASK_STATES, byRank, groupContains, itemOpen, type ItemKind, type ItemSeverity, type Project, type ProjectItem } from '@cora/shared';
+import { INCIDENT_STATES, MAX_ITEM_MOVES, MAX_ITEM_NOTES, MAX_ITEMS, SEVERITIES, TASK_STATES, byRank, groupContains, itemOpen, type ItemKind, type ItemSeverity, type Project, type ProjectItem } from '@cora/shared';
 
 /**
  * A project's items: incidents, known
@@ -9,7 +9,9 @@ import { INCIDENT_STATES, MAX_ITEM_NOTES, MAX_ITEMS, SEVERITIES, TASK_STATES, by
  * them on), and never take the incident-only paths (severity, merging, escalation).
  */
 
-export type ItemResult = { ok: true; item: ProjectItem; /** to tell: who, what */ tell?: { to: string; text: string } } | { ok: false; error: string };
+/** A change's ping: who, what, and which it is (work handed over, or a note on it: only the first wakes a team's member). */
+export type ItemTell = { to: string; text: string; ping: 'assign' | 'note' };
+export type ItemResult = { ok: true; item: ProjectItem; /** to tell: who, what */ tell?: ItemTell } | { ok: false; error: string };
 
 const id = () => randomBytes(4).toString('hex');
 const clip = (s: unknown, n: number) => (typeof s === 'string' ? s.trim().slice(0, n) : '');
@@ -36,6 +38,20 @@ const lastRank = (p: Project) => Math.max(0, ...(p.items ?? []).filter((i) => i.
 
 export function findItem(p: Project, ref: string): ProjectItem | undefined {
   return p.items?.find((i) => i.id === ref);
+}
+
+/**
+ * Its moves kept: a change that went through records each of state and owner that it changed (from, to), so the team
+ * map's rail shows every step (building, review, testing), not just the last; the last MAX_ITEM_MOVES of them.
+ */
+function logged(p: Project, ref: string, actor: string, now: number, change: () => ItemResult): ItemResult {
+  const i = findItem(p, ref);
+  const before = i && { state: i.state, owner: i.owner };
+  const r = change();
+  if (!r.ok || !i || !before) return r;
+  const moves = (['state', 'owner'] as const).filter((f) => i[f] !== before[f]).map((field) => ({ at: now, by: actor, field, ...(before[field] ? { from: before[field] } : {}), ...(i[field] ? { to: i[field] } : {}) }));
+  if (moves.length) i.moves = [...(i.moves ?? []), ...moves].slice(-MAX_ITEM_MOVES);
+  return r;
 }
 
 /**
@@ -69,6 +85,8 @@ export function openItem(p: Project, actor: string, f: { kind?: unknown; title?:
     updatedBy: actor,
     updatedAt: now,
     notes: [],
+    // opened already assigned: its first move (the rail's "→ owner"), as an assignment later would be
+    ...(owner ? { moves: [{ at: now, by: actor, field: 'owner' as const, to: owner }] } : {}),
   };
   p.items = [...(p.items ?? []), item];
   // the log keeps the newest closed ones
@@ -78,7 +96,7 @@ export function openItem(p: Project, actor: string, f: { kind?: unknown; title?:
     p.items = p.items.filter((i) => !drop.has(i.id));
   }
   // (a task offered to a group: nobody is told by name; its members see it on the board and claim it)
-  return { ok: true, item, ...(owner && owner !== actor && member(p, owner) ? { tell: { to: owner, text: `Assigned you ${kind === 'task' ? 'the task ' : ''}"${title}"${item.severity ? ` (${item.severity})` : ''}${item.next ? `. Next: ${item.next}` : ''}` } } : {}) };
+  return { ok: true, item, ...(owner && owner !== actor && member(p, owner) ? { tell: { to: owner, text: `Assigned you ${kind === 'task' ? 'the task ' : ''}"${title}"${item.severity ? ` (${item.severity})` : ''}${item.next ? `. Next: ${item.next}` : ''}`, ping: 'assign' as const } } : {}) };
 }
 
 /**
@@ -93,7 +111,7 @@ function changeTask(p: Project, i: ProjectItem, actor: string, patch: { title?: 
   if ((patch.state !== undefined || patch.next !== undefined || patch.link !== undefined) && !owner && !lead) return fail(i.owner ? `It's ${i.owner}'s: only its owner (or the lead) changes its state, next step or link. Annotate it instead.` : 'Nobody owns it: the lead assigns it first.');
   if (patch.state !== undefined && !(TASK_STATES as readonly string[]).includes(patch.state as string)) return fail(`A task is ${TASK_STATES.join(', ')} (close it with project_close when it's done).`);
   if (patch.rank !== undefined && rankOf(patch.rank) === undefined) return fail('Rank is a number (lower comes first).');
-  let tell: { to: string; text: string } | undefined;
+  let tell: ItemTell | undefined;
   if (patch.owner !== undefined) {
     const o = typeof patch.owner === 'string' && patch.owner ? patch.owner : undefined;
     if (o && !member(p, o) && !teamGroup(p, o)) return fail(`${o} isn't in this project.`);
@@ -101,7 +119,7 @@ function changeTask(p: Project, i: ProjectItem, actor: string, patch: { title?: 
       const before = i.owner;
       i.owner = o;
       i.ownedAt = o ? now : undefined;
-      if (o && o !== actor && member(p, o)) tell = { to: o, text: `${before ? 'Reassigned' : 'Assigned'} you the task "${i.title}"${i.next ? `. Next: ${i.next}` : ''}` };
+      if (o && o !== actor && member(p, o)) tell = { to: o, text: `${before ? 'Reassigned' : 'Assigned'} you the task "${i.title}"${i.next ? `. Next: ${i.next}` : ''}`, ping: 'assign' };
     }
   }
   if (clip(patch.title, 160)) i.title = clip(patch.title, 160);
@@ -120,6 +138,9 @@ function changeTask(p: Project, i: ProjectItem, actor: string, patch: { title?: 
  * step its owner's; you change anything. Known issues: you approve and retire them; their proposer edits them.
  */
 export function changeItem(p: Project, actor: string, ref: string, patch: { title?: unknown; severity?: unknown; owner?: unknown; state?: unknown; next?: unknown; link?: unknown; body?: unknown; rule?: unknown; rank?: unknown }, now: number): ItemResult {
+  return logged(p, ref, actor, now, () => changeItemNow(p, actor, ref, patch, now));
+}
+function changeItemNow(p: Project, actor: string, ref: string, patch: { title?: unknown; severity?: unknown; owner?: unknown; state?: unknown; next?: unknown; link?: unknown; body?: unknown; rule?: unknown; rank?: unknown }, now: number): ItemResult {
   const i = findItem(p, ref);
   if (!i) return fail(`No item ${ref}.`);
   if (i.kind === 'task') {
@@ -128,7 +149,7 @@ export function changeItem(p: Project, actor: string, ref: string, patch: { titl
   }
   const lead = runs(p, actor, i);
   const owner = actor === 'you' || i.owner === actor || actor === 'cora';
-  let tell: { to: string; text: string } | undefined;
+  let tell: ItemTell | undefined;
   if (i.kind === 'known') {
     if (patch.state !== undefined) {
       if (actor !== 'you') return fail('Only the user approves or retires a known issue.');
@@ -160,7 +181,7 @@ export function changeItem(p: Project, actor: string, ref: string, patch: { titl
         i.ownedAt = o ? now : undefined;
         if (o && i.state === 'open') i.state = 'working';
         if (!o && i.state === 'working') i.state = 'open';
-        if (o && o !== actor) tell = { to: o, text: `${before ? 'Reassigned' : 'Assigned'} you "${i.title}"${i.severity ? ` (${i.severity})` : ''}${i.next ? `. Next: ${i.next}` : ''}` };
+        if (o && o !== actor) tell = { to: o, text: `${before ? 'Reassigned' : 'Assigned'} you "${i.title}"${i.severity ? ` (${i.severity})` : ''}${i.next ? `. Next: ${i.next}` : ''}`, ping: 'assign' };
       }
     }
     if (patch.state !== undefined) {
@@ -180,6 +201,9 @@ export function changeItem(p: Project, actor: string, ref: string, patch: { titl
  * only while it's offered to a group the claimer's seat is in (the lead assigns the rest).
  */
 export function claimItem(p: Project, actor: string, ref: string, now: number): ItemResult {
+  return logged(p, ref, actor, now, () => claimItemNow(p, actor, ref, now));
+}
+function claimItemNow(p: Project, actor: string, ref: string, now: number): ItemResult {
   const i = findItem(p, ref);
   if (!i) return fail(`No item ${ref}.`);
   if (i.kind === 'known') return fail('Only an incident, or a task offered to your group, can be claimed.');
@@ -204,7 +228,7 @@ export function annotateItem(p: Project, actor: string, ref: string, text: unkno
   if (!t) return fail('Nothing to note.');
   i.notes = [...i.notes, { by: actor, at: now, text: t }].slice(-MAX_ITEM_NOTES);
   i.updatedAt = now;
-  return { ok: true, item: i, ...(i.owner && i.owner !== actor && member(p, i.owner) ? { tell: { to: i.owner, text: `Noted on "${i.title}": ${t}` } } : {}) };
+  return { ok: true, item: i, ...(i.owner && i.owner !== actor && member(p, i.owner) ? { tell: { to: i.owner, text: `Noted on "${i.title}": ${t}`, ping: 'note' as const } } : {}) };
 }
 
 /**
@@ -212,6 +236,9 @@ export function annotateItem(p: Project, actor: string, ref: string, text: unkno
  * the lead (or you) with its outcome in a line.
  */
 export function closeItem(p: Project, actor: string, ref: string, cause: unknown, fix: unknown, now: number, outcome?: unknown): ItemResult {
+  return logged(p, ref, actor, now, () => closeItemNow(p, actor, ref, cause, fix, now, outcome));
+}
+function closeItemNow(p: Project, actor: string, ref: string, cause: unknown, fix: unknown, now: number, outcome?: unknown): ItemResult {
   const i = findItem(p, ref);
   if (!i) return fail(`No item ${ref}.`);
   if (i.kind === 'known') return fail('A known issue is retired by the user, not closed.');
@@ -272,6 +299,22 @@ export function queryItems(p: Project, q: { kind?: ItemKind; open?: boolean; own
   // tasks in the queue's order (rank), after the incidents
   const order = (a: ProjectItem, b: ProjectItem) => (a.kind === 'task' ? 1 : 0) - (b.kind === 'task' ? 1 : 0) || (a.kind === 'task' && b.kind === 'task' ? byRank(a, b) : (rank[a.severity ?? 'medium'] ?? 2) - (rank[b.severity ?? 'medium'] ?? 2) || a.openedAt - b.openedAt);
   return open ? list.sort(order) : list.sort((a, b) => (b.closedAt ?? b.updatedAt) - (a.closedAt ?? a.updatedAt));
+}
+
+/**
+ * One item in full (project_items with its id): its line, then its whole body and every note, dated and signed. The
+ * listing cuts a body short; this is where a seat reads what it was given.
+ */
+export function itemFull(i: ProjectItem, who: (by: string) => string, now = Date.now(), p?: Pick<Project, 'team'>): string {
+  const when = (t: number) => new Date(t).toISOString().slice(0, 16).replace('T', ' ') + 'Z';
+  // the line without the body (it follows, whole) or the latest note (they all follow)
+  const line = itemLine({ ...i, body: undefined, notes: [] }, who, now, p);
+  return [
+    line,
+    ...(i.kind === 'known' && i.rule ? [`Rule: ${i.rule}`] : []),
+    ...(i.body ? ['', 'Body:', i.body] : []),
+    ...(i.notes.length ? ['', `Notes (${i.notes.length}, oldest first):`, ...i.notes.map((n) => `- ${when(n.at)}, ${who(n.by)}: ${n.text}`)] : []),
+  ].join('\n');
 }
 
 /** One line for an item, as sessions read it (`p`: its project, to name a team group a task is offered to). */

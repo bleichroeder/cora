@@ -5,7 +5,7 @@ import { basename } from 'node:path';
 // emits its ExperimentalWarning.
 const { DatabaseSync } = createRequire(import.meta.url)('node:sqlite') as typeof import('node:sqlite');
 type DatabaseSync = import('node:sqlite').DatabaseSync;
-import { PRESENT_TOOLS, recapText, type AgentInfo, type BrainEvent, type NewEvent, type Recap, type SessionInfo } from '@cora/shared';
+import { PRESENT_TOOLS, recapText, type AgentInfo, type BrainEvent, type NewEvent, type Recap, type SessionFlag, type SessionInfo } from '@cora/shared';
 
 const MAX_FIELD = 8 * 1024;
 /** Tools whose input is the payload itself and is kept whole: an explain's document (the tool caps it at 2 MB). */
@@ -56,6 +56,7 @@ export class Store {
         PRIMARY KEY (session_id, agent_id));
       CREATE TABLE IF NOT EXISTS recaps (id TEXT PRIMARY KEY, session_id TEXT NOT NULL, ts INTEGER NOT NULL, text TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS transcript_reads (file TEXT PRIMARY KEY, offset INTEGER NOT NULL);
+      CREATE TABLE IF NOT EXISTS explain_pages (key TEXT PRIMARY KEY, hash TEXT NOT NULL);
       CREATE INDEX IF NOT EXISTS recap_ts ON recaps(ts);
       CREATE INDEX IF NOT EXISTS recap_session ON recaps(session_id, ts);
     `);
@@ -122,6 +123,35 @@ export class Store {
       ? this.db.prepare("SELECT json FROM events WHERE session_id = ? AND kind = 'tool' AND id LIKE 'tool:%:start' AND (json LIKE ? OR json LIKE ?) ORDER BY ts DESC LIMIT ?").all(sessionId, like, legacy, limit)
       : this.db.prepare("SELECT json FROM events WHERE kind = 'tool' AND id LIKE 'tool:%:start' AND (json LIKE ? OR json LIKE ?) ORDER BY ts DESC LIMIT ?").all(like, legacy, limit)) as { json: string }[];
     return rows.map((r) => JSON.parse(r.json));
+  }
+
+  /**
+   * What the Library gathers from the events stored after `from` up to `to` (a range of seqs, so each read is
+   * bounded however sparse they are: the seq index walks just those rows), oldest first: explains (live ones too:
+   * they're presented the same way) and Cora's briefs and wrap-ups asked of its agent (their reply comes after).
+   */
+  libraryEvents(from: number, to: number): BrainEvent[] {
+    const [like, legacy] = PRESENT_TOOLS.map((t) => `%"name":"${t}"%`);
+    return (
+      this.db
+        .prepare(
+          `SELECT json FROM events WHERE seq > ? AND seq <= ? AND ((kind = 'tool' AND id LIKE 'tool:%:start' AND (json LIKE ? OR json LIKE ?)) OR (kind = 'prompt' AND agent_id = 'main' AND (json LIKE '%"text":"[Cora brief]%' OR json LIKE '%"text":"[Cora wrap-up]%'))) ORDER BY seq`,
+        )
+        .all(from, to, like, legacy) as { json: string }[]
+    ).map((r) => JSON.parse(r.json));
+  }
+
+  /**
+   * The main agent's answer to a prompt at `ts`: its last words before its turn ended (or its next prompt came). Null
+   * while that turn is still going (or never had words).
+   */
+  replyAfter(sessionId: string, ts: number): BrainEvent | null {
+    const end = this.db
+      .prepare("SELECT MIN(ts) AS t FROM events WHERE session_id = ? AND agent_id = 'main' AND ts > ? AND (kind = 'turn_end' OR (kind = 'prompt' AND json_extract(json, '$.queue') IS NULL))")
+      .get(sessionId, ts) as { t: number | null };
+    if (end.t == null) return null;
+    const r = this.db.prepare("SELECT json FROM events WHERE session_id = ? AND agent_id = 'main' AND kind = 'say' AND ts > ? AND ts <= ? ORDER BY ts DESC, seq DESC LIMIT 1").get(sessionId, ts, end.t) as { json: string } | undefined;
+    return r ? JSON.parse(r.json) : null;
   }
 
   /** Events that matter for usage (model calls with token counts, finished turns) since `ts`. */
@@ -195,6 +225,20 @@ export class Store {
     return next;
   }
 
+  /** A session's flag, set whole (a new one doesn't keep the old one's note) or cleared (null). */
+  setFlag(id: string, flag: SessionFlag | null): SessionInfo | undefined {
+    const s = this.getSession(id);
+    if (!s) return undefined;
+    const next: SessionInfo = { ...s, flag };
+    this.db.prepare('UPDATE sessions SET json = ? WHERE id = ?').run(JSON.stringify(next), id);
+    return next;
+  }
+
+  /** Sessions whose flag's reminder is due by `now` and hasn't come yet. */
+  dueFlags(now: number): SessionInfo[] {
+    return (this.db.prepare("SELECT json FROM sessions WHERE json_extract(json, '$.flag.remindAt') <= ? AND json_extract(json, '$.flag.due') IS NULL").all(now) as { json: string }[]).map((r) => JSON.parse(r.json));
+  }
+
   listSessions(): SessionInfo[] {
     return (this.db.prepare('SELECT json FROM sessions ORDER BY last_ts DESC').all() as { json: string }[]).map((r) => JSON.parse(r.json));
   }
@@ -258,6 +302,19 @@ export class Store {
   }
   setReadOffset(file: string, offset: number): void {
     this.db.prepare('INSERT INTO transcript_reads (file, offset) VALUES (?, ?) ON CONFLICT(file) DO UPDATE SET offset = excluded.offset').run(file, offset);
+  }
+
+  /**
+   * The content hash of each live explain's page as last seen (`<session>/<slug>`): a page that's only read (its file
+   * touched, Cora restarted) is no new version. Kept here so a restart doesn't forget.
+   */
+  explainPage(key: string): string | undefined {
+    const r = this.db.prepare('SELECT hash FROM explain_pages WHERE key = ?').get(key) as { hash: string } | undefined;
+    return r?.hash;
+  }
+  setExplainPage(key: string, hash: string | null): void {
+    if (hash == null) this.db.prepare('DELETE FROM explain_pages WHERE key = ?').run(key);
+    else this.db.prepare('INSERT INTO explain_pages (key, hash) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET hash = excluded.hash').run(key, hash);
   }
 
   addRecap(r: Recap): boolean {

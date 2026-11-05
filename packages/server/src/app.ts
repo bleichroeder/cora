@@ -6,6 +6,8 @@ import type { MailOutbox } from './mailOutbox';
 import { GitlabIssues } from './gitlabIssues';
 import type { Memes } from './memes';
 import { SessionNames } from './sessionNames';
+import { dueReminders, flagFrom, remindText } from './sessionFlags';
+import { LIBRARY_KINDS, Library, type LibraryKind, type LibraryWhen } from './library';
 import { appendFileSync, createReadStream, existsSync, readFileSync, statSync } from 'node:fs';
 import { writeFileAtomic } from './fsx';
 import { envLine, signature, type EnvLabel, type Environments } from './environments';
@@ -18,7 +20,7 @@ import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest }
 import cookie from '@fastify/cookie';
 import fastifyStatic from '@fastify/static';
 import websocket from '@fastify/websocket';
-import { INBOX_SOURCES, teamInboxWhy, MAX_DRAFT_ASKS, parseSlackLink, headline, firstSentence, isOpenQuestion, ticketInPrompt, type TicketFacts, type PendingDecision, type LiveState, type LiveAsk, type ProjectWake, type ServerMsg, type SessionInfo, type SessionTicket, JIRA_EVENT_KINDS, type JiraEvent, type JiraEventKind, type JiraWatchStatus, HELLO_PREFIX, artifactUrl, debriefMarkdown, debriefSpan, gateDecision, recapText, inScope, mask, BROWSER_PROFILE_ID, CORA_RELEASES, displayName, shadesOf, sessionIcon, proposalSkipsPrompts, resolveGroup, routeAllows, sameTeam, seatHandle, teamChangeDetails, teamChangeLines, validateTeam, draftView, teamShaped, type BuilderDraft } from '@cora/shared';
+import { INBOX_SOURCES, teamInboxWhy, teamInfoPost, WAKE_LIMIT, MAX_DRAFT_ASKS, parseSlackLink, headline, firstSentence, isOpenQuestion, ticketInPrompt, type TicketFacts, type PendingDecision, type LiveState, type LiveAsk, type ProjectWake, type ServerMsg, type SessionInfo, type SessionTicket, JIRA_EVENT_KINDS, type JiraEvent, type JiraEventKind, type JiraWatchStatus, HELLO_PREFIX, artifactUrl, debriefMarkdown, debriefSpan, gateDecision, recapText, inScope, mask, BROWSER_PROFILE_ID, CORA_RELEASES, displayName, shadesOf, sessionIcon, proposalSkipsPrompts, resolveGroup, routeAllows, sameTeam, seatHandle, teamChangeDetails, teamChangeLines, validateTeam, draftView, teamShaped, type BuilderDraft } from '@cora/shared';
 import { checkOptions, checkPrompt, launchArgs } from './launch';
 import { checkSummary, checkTicket, type Tickets } from './tickets';
 import { summarizeUsage } from './usage';
@@ -41,9 +43,9 @@ import { gate as teamGate, parseLabels } from './teamGate';
 import { removeTeamArtifacts } from './teamAgents';
 import { runSeatWatch } from './mailWatchRun';
 import { cardKey, itemsSummary, offeredWords, projectCard, projectNews, wakeText } from './projectCard';
-import { annotateItem, changeItem, claimItem, closeItem, itemLine, mergeItem, openItem, queryItems } from './projectItems';
+import { annotateItem, changeItem, claimItem, closeItem, findItem, itemFull, itemLine, mergeItem, openItem, queryItems } from './projectItems';
 import { gitBranch, repoName } from './journal';
-import { BuilderSessions, builderTools, hasTranscript, inBuilderFolder, isBuilderSlug } from './builder';
+import { BuilderSessions, builderTools, hasTranscript, inBuilderFolder, isBuilderSlug, normDir } from './builder';
 import { registerMcp, type McpSlack , type McpJournal, type McpSecrets, type McpProjects } from './mcp';
 import type { Debriefs } from './debriefs';
 import { deviceName, type Devices } from './devices';
@@ -54,6 +56,9 @@ import { RemoteBrowser } from './remoteBrowser';
 import type { Banners } from './banner';
 import { fileName, type Videos } from './videos';
 import type { VideoPlan } from '@cora/shared';
+import { spawnMarker, spawnedGone } from '@cora/shared';
+import { nudgeAt, rereads, NUDGE_ADVICE } from '@cora/shared';
+import { ContextNudges } from './contextNudge';
 import type { Worktrees } from './worktrees';
 import { runWithSecrets, type Vault } from './vault';
 import { SlackError, slackManifest } from './slack';
@@ -62,9 +67,17 @@ import type { SecurityWatch } from './security';
 import type { OrchestratorManager } from './orchestrator/manager';
 import type { OrchToolDeps } from './orchestrator/tools';
 import { answerTrust, deliverWhenReady } from './orchestrator/deliver';
+import { PromptLog } from './promptLanded';
 import { lateModWords, modDeadline, stuckModWords } from './modDeadline';
 /** How long a seat Cora started has for its mod to come and take what waits for it (else it's typed in). */
 const MOD_FIRST_WAIT_MS = 90_000;
+/** How long a prompt Cora typed in has to arrive (its UserPromptSubmit hook) before it's taken as not in. */
+const PROMPT_LAND_MS = 45_000;
+/** A queued item in the mod-events trace: its first few words (never the whole of it). */
+export const modPreview = (text: string) => {
+  const t = text.replace(/\s+/g, ' ').trim();
+  return t.length > 32 ? `${t.slice(0, 31)}…` : t;
+};
 import { sharePrompt } from './liveExplains';
 import { OTHERS_REFUSAL, nameOf } from './orchestrator/tools';
 import { repoOf } from './orchestrator/mandate';
@@ -107,6 +120,8 @@ const LAUNCH_PROMPT_WAIT_MS = 10 * 60_000;
 export type AppDeps = {
   /** how long a seat Cora started has for its mod to come (tests: shorter) */
   modFirstWaitMs?: number;
+  /** how long a prompt Cora typed in has to arrive before it counts as not in (tests: shorter) */
+  promptLandMs?: number;
   /** Cora's Slack banner: the desktop app's link that makes them */
   banners?: Banners;
   /** debrief videos */
@@ -203,6 +218,8 @@ export type AppDeps = {
   inbox?: Inbox;
   /** setting Cora up: Claude Code's settings file (tests: a scratch one), and checks to fake */
   claudeSettingsFile?: string;
+  /** how often flags' reminders are looked at (tests: shorter) */
+  flagCheckMs?: number;
   setupChecks?: Partial<SetupDeps>;
   /** team seats' turns and cost, against their limits (the team runtime shares it) */
   teamUsage?: TeamUsage;
@@ -223,7 +240,7 @@ const GUEST_COOKIE = 'cora_guest';
  * What a guest's screen may read: the sessions (transcripts, changes, terminals), explains, recaps, debriefs, memes.
  * Everything else is yours (Settings, Secrets, devices, history, Gmail...): 403. A private area you open adds its own.
  */
-const GUEST_GETS = new Set(['/api/me', '/api/live', '/api/synced', '/api/sessions', '/api/recaps', '/api/sessions/:id/events', '/api/sessions/:id/tool/:toolUseId', '/api/sessions/:id/changes/net', '/api/sessions/:id/changes/git', '/api/sessions/:id/changes/git-diff', '/api/sessions/:id/commands', '/api/sessions/:id/running', '/api/sessions/:id/tasks/:task/tail', '/api/terminals', '/api/explains', '/api/explains/live/:sid/:slug/data', '/api/ci/log', '/api/memes', '/api/usage', '/api/settings', '/api/debriefs/:sid', '/api/debriefs/:sid/:id', '/api/debriefs/:sid/:id/markdown', '/api/worktrees', '/api/journal/:id']);
+const GUEST_GETS = new Set(['/api/me', '/api/live', '/api/synced', '/api/sessions', '/api/recaps', '/api/sessions/:id/events', '/api/sessions/:id/tool/:toolUseId', '/api/sessions/:id/changes/net', '/api/sessions/:id/changes/git', '/api/sessions/:id/changes/git-diff', '/api/sessions/:id/commands', '/api/sessions/:id/running', '/api/sessions/:id/tasks/:task/tail', '/api/terminals', '/api/explains', '/api/explains/live/:sid/:slug/data', '/api/ci/log', '/api/memes', '/api/usage', '/api/settings', '/api/debriefs/:sid', '/api/debriefs/:sid/:id', '/api/debriefs/:sid/:id/markdown', '/api/worktrees', '/api/journal/:id', '/api/library']);
 const GUEST_AREA_GETS: Record<LiveArea, string[]> = {
   inbox: ['/api/inbox', '/api/inbox/:id/thread', '/api/jira/watch'],
   notes: ['/api/notes', '/api/notes/search', '/api/notes/:id'],
@@ -267,8 +284,20 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
   const app = Fastify({ bodyLimit: 20 * 1024 * 1024, logger: false });
   /** The team builder's own session (its draft's, or in a builder folder): Cora's, nobody else's to list, hear or resume. */
   const isBuilder = (sid: string, /** a hook's own cwd (before Cora has the session) */ cwd?: unknown) => !!d.projects?.builderOf(sid) || inBuilderFolder(config.dataDir, store.getSession(sid)?.cwd) || (typeof cwd === 'string' && inBuilderFolder(config.dataDir, cwd));
-  /** Go live: sessions a guest never sees, hears or steers (the builder's; Cora's own unless you opened her console) */
-  const isPrivate = (sid: string) => isBuilder(sid) || (!!d.orchestrator?.isAgent(sid) && !d.shares?.isOpen('console'));
+  /**
+   * Every session that was ever Cora's agent's: its current one, the ones before (each New conversation, Start fresh,
+   * Forget), and any working in its folder (one from before Cora kept that list).
+   */
+  const agentDir = typeof d.orchestrator?.dir === 'string' ? normDir(d.orchestrator.dir) : null;
+  const wasAgent = (sid: string) => !!d.orchestrator && (d.orchestrator.wasAgent(sid) || (!!agentDir && (() => {
+    const cwd = store.getSession(sid)?.cwd;
+    return !!cwd && normDir(cwd) === agentDir;
+  })()));
+  /**
+   * Go live: sessions a guest never sees, hears or steers: the builder's, Cora's earlier conversations (her briefs to
+   * you are in them), and her current one unless you opened her console.
+   */
+  const isPrivate = (sid: string) => isBuilder(sid) || (d.orchestrator?.isAgent(sid) ? !d.shares?.isOpen('console') : wasAgent(sid));
   hub.isPrivate = isPrivate;
   await app.register(cookie);
   await app.register(websocket);
@@ -357,13 +386,16 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
   const toldEnv = new Map<string, string>();
   /** When each session was last told the time. */
   const toldTime = new Map<string, number>();
-  /** The time now (clock.ts nowLine): on a session's first prompt, then again once TIME_EVERY_MS has passed. */
+  /**
+   * The time now (clock.ts nowLine): on a session's first prompt, then again once TIME_EVERY_MS has passed. Cora's
+   * agent hears it on every one: what it's given can have waited hours, and "now" is what it acts on.
+   */
   function timeForPrompt(body: any): string | null {
     const sid = typeof body?.session_id === 'string' ? body.session_id : '';
     // the team builder's own session has no use for it (it hears nothing extra)
     if (sid && isBuilder(sid, body?.cwd)) return null;
     const now = Date.now();
-    if (sid && now - (toldTime.get(sid) ?? -Infinity) < TIME_EVERY_MS) return null;
+    if (sid && !d.orchestrator?.isAgent(sid) && now - (toldTime.get(sid) ?? -Infinity) < TIME_EVERY_MS) return null;
     if (sid) toldTime.set(sid, now);
     return nowLine(new Date(now));
   }
@@ -439,7 +471,8 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
   function handleOf(sid: string): string {
     const p = d.projects?.projectOf(sid);
     const m = p?.members[sid];
-    if (p && m?.seat && p.team?.seats.some((x) => x.id === m.seat)) return seatHandle(p.id, m.seat, m.instance);
+    // (the name its Claude Code started with, when its seat was renamed since: it answers to that until it restarts)
+    if (p && m?.seat && p.team?.seats.some((x) => x.id === m.seat)) return m.handle ?? seatHandle(p.id, m.seat, m.instance);
     return nativeName(store.getSession(sid)?.cwd ?? '', sid);
   }
   /**
@@ -482,7 +515,18 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
       const m = p.members[sid];
       return m?.seat ? seatHandle(p.id, m.seat, m.instance) : null;
     };
-    return p.sessions.find((sid) => sid === ref || handle(sid) === ref || seatName(sid) === ref || (() => {
+    // the name it started with, its seat renamed since
+    const started = (sid: string) => p.members[sid]?.handle?.toLowerCase() ?? null;
+    // a pool's member by the name the card shows it as ("Engineer 2"), its seat's name or id and its number, however
+    // written ("engineer 2", "Engineer_2")
+    const key = (x: string) => x.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+    const k = key(ref);
+    const shown = (sid: string) => {
+      const m = p.members[sid];
+      const seat = m?.instance !== undefined ? p.team?.seats.find((x) => x.id === m.seat) : undefined;
+      return !!seat && !!k && (key(`${seat.name} ${m!.instance}`) === k || key(`${seat.id} ${m!.instance}`) === k);
+    };
+    return p.sessions.find((sid) => sid === ref || handle(sid) === ref || started(sid) === ref || seatName(sid) === ref || shown(sid) || (() => {
       const s = store.getSession(sid);
       return !!s && nativeName(s.cwd, sid) === ref;
     })()) ?? null;
@@ -533,12 +577,64 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
       ...(r.problems?.length ? [`Problems: ${r.problems.join(' ')}`] : []),
     ].join('\n');
   }
+  /** A post's `to` with each group it names as that group's members (a note to a group: to its members, not offered as work). */
+  const expandGroups = (p: import('@cora/shared').Project, to?: string[]): string[] | undefined => {
+    if (!to || !p.team) return to;
+    const out: string[] = [];
+    for (const t of to) {
+      const g = groupByRef(p, t);
+      if (!g) {
+        if (!out.includes(t)) out.push(t);
+        continue;
+      }
+      const seats = new Set(resolveGroup(p.team, g.id).seats);
+      for (const sid of p.sessions) if (seats.has(p.members[sid]?.seat ?? '') && store.getSession(sid)?.state !== 'ended' && !out.includes(sid)) out.push(sid);
+    }
+    return out;
+  };
   /** The team's groups a post's `to` names, each once (by id or name, however often). */
   const groupsIn = (p: import('@cora/shared').Project, to?: string[]) => {
     const out: import('@cora/shared').Group[] = [];
     for (const t of to ?? []) {
       const g = groupByRef(p, t);
       if (g && !out.some((x) => x.id === g.id)) out.push(g);
+    }
+    return out;
+  };
+  /**
+   * A seat a post's `to` (or an item's owner) names: its id or its name, however written ("Analyst 01", "analyst-01",
+   * "Infrastructure Monitor"), and the members it means: its live ones (all of a pool's), else whoever it has. Null:
+   * not a seat of this team (a group's name is a group's, first).
+   */
+  const seatRef = (p: import('@cora/shared').Project, ref: string): { seat: import('@cora/shared').Seat; sids: string[] } | null => {
+    const key = (x: string) => x.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+    const r = key(ref);
+    if (!p.team || !r || groupByRef(p, ref)) return null;
+    const seat = p.team.seats.find((x) => key(x.id) === r || key(x.name) === r);
+    if (!seat) return null;
+    const all = p.sessions.filter((sid) => p.members[sid]?.seat === seat.id);
+    const live = all.filter((sid) => store.getSession(sid)?.state !== 'ended');
+    return { seat, sids: live.length ? live : all };
+  };
+  /**
+   * A post's `to` as members, groups and the user: a seat (by id or name) is its live members, a member by what a native
+   * message calls it (its handle, its seat and number) is that member; anything else is left as it is (and refused or
+   * dropped as before).
+   */
+  const resolveTo = (p: import('@cora/shared').Project, to?: string[]): string[] | undefined => {
+    if (!to) return to;
+    const out: string[] = [];
+    const add = (x: string) => !out.includes(x) && out.push(x);
+    for (const t of to) {
+      if (t === 'user' || t === 'you') add('user');
+      else if (p.sessions.includes(t) || groupByRef(p, t)) add(t);
+      else {
+        const one = memberByPeer(p, t);
+        const seat = one ? null : seatRef(p, t);
+        if (one) add(one);
+        else if (seat?.sids.length) seat.sids.forEach(add);
+        else add(t);
+      }
     }
     return out;
   };
@@ -618,17 +714,27 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
    * start (a message from you, Cora, or a member's post that waited for it). The mod asks every second or two, and a
    * request waits up to 20 seconds for something.
    */
-  type ModNew = { kind: 'submit'; text: string };
-  type ModItem = ModNew & { id: string };
+  /** `src`: what it is, for the trace (a team's delivery, a wake); `typedAt`: typed into its terminal then, and no prompt came of it */
+  type ModNew = { kind: 'submit'; text: string; src?: 'team' | 'wake' };
+  type ModItem = ModNew & { id: string; typedAt?: number };
   const modOut = new Map<string, ModItem[]>();
   const modWaiting = new Map<string, () => void>();
   const modSeen = new Map<string, number>();
   /** Its mod is here now (asked within the last minute). */
   const modLive = (sid: string) => Date.now() - (modSeen.get(sid) ?? 0) < 60_000;
   const modPush = (sid: string, item: ModNew) => {
+    // a member being stopped is given nothing (it would start a turn as it closes, and the new member never gets it)
+    if (teams?.stoppingNow(sid)) return void console.warn(`[cora] team: ${sid.slice(0, 8)} is being stopped; nothing submitted to it`);
     modOut.set(sid, [...(modOut.get(sid) ?? []), { ...item, id: randomUUID().slice(0, 8) }]);
     modWaiting.get(sid)?.();
   };
+  /**
+   * The prompts each session received (its UserPromptSubmit hook): what Cora types in counts as in only when its prompt
+   * comes (promptLanded.ts), once prompts come back at all (a hook heard, or Cora's hooks set up: hooksIn, below).
+   */
+  const prompts = new PromptLog(Date.now, { hooksSet: () => hooksIn() === true, log: (m) => console.log(`[cora] ${m}`) });
+  /** What's still worth giving a session's mod: not what was typed in and arrived after all. */
+  const stillDue = (sid: string, items: ModItem[]) => items.filter((x) => !(x.typedAt !== undefined && prompts.since(sid, x.typedAt, x.text)));
   /** Set by the projects' routes: whether a member's message to an idle member waits for the user's OK (its reason), else null. */
   let modHold: (pid: string, post: import('@cora/shared').Post, from: string, to: string, idle?: boolean) => string | null = () => null;
   /**
@@ -699,6 +805,10 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
       items: (pid, q) => {
         const p = projects.get(pid);
         if (!p) return 'No such project.';
+        if (q.item) {
+          const one = findItem(p, q.item.trim());
+          return one ? itemFull(one, whoIs, undefined, p) : `No item ${q.item} in ${p.name}.`;
+        }
         const found = queryItems(p, { ...(q.kind ? { kind: q.kind } : {}), open: !q.log, ...(q.owner ? { owner: q.owner } : {}), ...(q.severity ? { severity: q.severity as never } : {}), ...(q.words ? { words: q.words } : {}) });
         return found.length ? found.slice(0, 60).map((i) => `- ${itemLine(i, whoIs, undefined, p)}`).join('\n') : q.log ? 'Nothing in the log that matches.' : 'Nothing open that matches.';
       },
@@ -746,9 +856,13 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
         const x = mine(sid);
         return x ? { name: x.p.name, canPost: x.m.canPost, hears: x.m.hears, members: x.p.sessions.filter((s) => s !== sid).map((id) => ({ id, name: whoIs(id).replace(/"/g, '') })) } : null;
       },
-      post: async (sid, kind, text, to, re, labels) => {
+      post: async (sid, kind, text, toAsked, re, labels) => {
         const x = mine(sid);
         if (!x?.m.canPost) return false;
+        // a seat named by its id or its name is its members; a note (a change, a decision) to a group is a post to its
+        // members, never work offered to it: only handoffs, questions, reports and directs are dispatched
+        const work = kind === 'handoff' || kind === 'question' || kind === 'report' || kind === 'direct';
+        const to = resolveTo(x.p, work ? toAsked : expandGroups(x.p, toAsked));
         // a report goes to one seat
         if (kind === 'report' && !to?.length) return false;
         // a team's routes say who may message whom
@@ -798,8 +912,12 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
       items: (sid, q) => {
         const x = mine(sid);
         if (!x || x.m.hears === 'nothing') return 'Not in a project you can read.';
-        const found = queryItems(x.p, { ...(q.kind ? { kind: q.kind } : {}), open: !q.log, ...(q.owner ? { owner: q.owner === 'me' ? sid : q.owner } : {}), ...(q.severity ? { severity: q.severity as never } : {}), ...(q.words ? { words: q.words } : {}) });
         const who = (by: string) => (by === sid ? 'you' : whoIs(by));
+        if (q.item) {
+          const one = findItem(x.p, q.item.trim());
+          return one ? itemFull(one, who, undefined, x.p) : `No item ${q.item} in this project.`;
+        }
+        const found = queryItems(x.p, { ...(q.kind ? { kind: q.kind } : {}), open: !q.log, ...(q.owner ? { owner: q.owner === 'me' ? sid : q.owner } : {}), ...(q.severity ? { severity: q.severity as never } : {}), ...(q.words ? { words: q.words } : {}) });
         return found.length ? found.slice(0, 60).map((i) => `- ${itemLine(i, who, undefined, x.p)}`).join('\n') : q.log ? 'Nothing in the log that matches.' : 'Nothing open that matches.';
       },
       item: (sid, op, f) => {
@@ -964,17 +1082,17 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
       modSeen.set(sid, Date.now());
     }
     if (modWaiting.get(sid)) modWaiting.delete(sid);
-    const items = modOut.get(sid) ?? [];
+    const items = stillDue(sid, modOut.get(sid) ?? []);
     modOut.delete(sid);
-    // handed to its mod (traced, never the text)
+    // handed to its mod: traced with what each is (its source, and its first few words, to tell them apart)
     if (items.length && config.dbPath !== ':memory:') {
       try {
-        appendFileSync(join(config.dataDir, 'mod-events.log'), JSON.stringify({ at: new Date().toISOString(), sid: sid.slice(0, 8), kind: 'inbox', items: items.map((x) => `${x.kind} ${x.id}`) }) + '\n');
+        appendFileSync(join(config.dataDir, 'mod-events.log'), JSON.stringify({ at: new Date().toISOString(), sid: sid.slice(0, 8), kind: 'inbox', items: items.map((x) => `${x.kind} ${x.id}${x.src ? ` ${x.src}` : ''}${x.typedAt !== undefined ? ' (typed in before)' : ''}: ${modPreview(x.text)}`) }) + '\n');
       } catch {
         /* tracing only */
       }
     }
-    return reply.send({ items });
+    return reply.send({ items: items.map(({ typedAt: _t, src: _s, ...x }) => x) });
   });
   app.post('/edit-gate', async (req, reply) => {
     if (!sameSecret(hookToken(req), config.hookToken)) return reply.code(401).send({ error: 'bad token' });
@@ -1051,11 +1169,21 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
       const held = heldPeerPrompt(body);
       if (held) return reply.code(200).send({ decision: 'block', reason: held });
     }
+    // a prompt came: what Cora typed in has arrived
+    if (event === 'UserPromptSubmit' && typeof body.session_id === 'string' && typeof body.prompt === 'string') prompts.heard(body.session_id, body.prompt);
     try {
       pipeline.ingestHook(event, body);
     } catch (e) {
       req.log.warn(e);
     }
+    // a session another one started: who and why (its spawner's marker, which its hooks carry as headers)
+    const mark = typeof body.session_id === 'string' ? spawnMarker((h) => [req.headers[h]].flat()[0]) : null;
+    if (mark && mark.by !== body.session_id) {
+      const s = store.getSession(body.session_id);
+      if (s && (s.spawnedBy !== mark.by || (s.spawnWhy ?? null) !== mark.why)) hub.publishSession(store.upsertSession({ id: s.id, spawnedBy: mark.by, spawnWhy: mark.why }));
+    }
+    // a session ended: spawned ones whose folder is gone leave the list
+    if (event === 'SessionEnd') sweepSpawned();
     // a session ran git: its repo's worktrees again, shortly
     if (event === 'PostToolUse' && body.tool_name === 'Bash' && typeof body.cwd === 'string' && /\bgit\b/.test(String(body.tool_input?.command ?? ''))) d.worktrees?.poke(body.cwd);
     if (event === 'UserPromptSubmit') {
@@ -1111,6 +1239,21 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
 
   // --- MCP (the `present` tool for hosted sessions) ---------------------------------
   const prefs = d.prefs ?? new Prefs(null);
+  // a session whose context has grown huge: nudged once (its chip, a notice; a team seat's lead hears it). Never acted on.
+  const nudges = new ContextNudges({
+    threshold: () => nudgeAt(prefs.get()),
+    nudged: (sid) => !!store.getSession(sid)?.contextNudge,
+    nudge: (sid, tokens, over) => {
+      const s = store.getSession(sid);
+      if (!s) return;
+      hub.publishSession(store.upsertSession({ id: sid, contextNudge: { at: Date.now(), tokens, over } }));
+      const p = d.projects?.projectOf(sid);
+      const m = p?.members[sid];
+      if (!p || p.archivedAt || !p.team || !m?.seat || !p.lead || p.lead === sid || !p.sessions.includes(p.lead)) return;
+      d.projects!.post(p.id, 'cora', 'note', `${displayName(s) || sid} (${m.seat}) has ~${Math.round(tokens / 1000)}k of context: ${rereads(tokens)}. ${NUDGE_ADVICE} Yours to suggest; Cora won't do it.`, [p.lead]);
+    },
+  });
+  hub.tap((e) => nudges.event(e));
   // the orchestrator's tools act through the same code as the dashboard's routes (helpers further down)
   const orchDeps = (): OrchToolDeps => {
     const o = d.orchestrator!;
@@ -1723,7 +1866,7 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
     // a guest: the totals, never the private sessions by name
     return guestOf(req) ? { ...u, sessions: u.sessions.filter((x) => !isPrivate(x.sessionId)) } : u;
   });
-  // your plan's limits, as /usage shows them (read with Claude Code's own login, at most once a minute)
+  // your plan's limits, as /usage shows them (read with Claude Code's own login, every five minutes at most; the last good reading stays while it is refused)
   const plan = accountUsage();
   app.get('/api/account-usage', { preHandler: requireUi }, async () => plan.get());
   app.post<{ Body: any }>('/api/settings', { preHandler: requireAction }, async (req, reply) => {
@@ -2169,6 +2312,32 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
     hub.publishSession(next);
     return next;
   });
+  // flagged to come back to (its nav row's bookmark): set, or its note and reminder changed (null clears one), and
+  // cleared: only by you
+  app.post<{ Params: { id: string }; Body: { note?: unknown; remindAt?: unknown } }>('/api/sessions/:id/flag', { preHandler: requireAction }, async (req, reply) => {
+    const s = store.getSession(req.params.id);
+    if (!s) return reply.code(404).send({ error: 'unknown session' });
+    const r = flagFrom(s.flag, req.body, Date.now());
+    if ('error' in r) return reply.code(400).send({ error: r.error });
+    const next = store.setFlag(s.id, r.flag)!;
+    hub.publishSession(next);
+    return next;
+  });
+  app.delete<{ Params: { id: string } }>('/api/sessions/:id/flag', { preHandler: requireAction }, async (req, reply) => {
+    if (!store.getSession(req.params.id)) return reply.code(404).send({ error: 'unknown session' });
+    const next = store.setFlag(req.params.id, null)!;
+    hub.publishSession(next);
+    return next;
+  });
+  // a flag's reminder, when it's due: the flag brightens (due) and a notification comes, once
+  const flagReminders = setInterval(() => {
+    for (const f of dueReminders(store, Date.now())) {
+      hub.publishSession(f);
+      hub.publishUi({ t: 'ui', cmd: { action: 'notify', text: remindText(nameOf(f), f.flag!) } });
+    }
+  }, d.flagCheckMs ?? 30_000);
+  flagReminders.unref?.();
+  app.addHook('onClose', async () => clearInterval(flagReminders));
   // The Jira site's project keys, from the UI (signed in to Jira): bare keys of these in a first prompt are tickets.
   app.get('/api/jira/watch', { preHandler: requireUi }, async () => ({ status: d.jira?.status() ?? { state: 'off' }, recent: d.jira?.recent(KEEP_MS).slice(0, 50) ?? [] }));
   app.get('/api/jira/projects', { preHandler: requireUi }, async () => ({ projects: d.tickets?.knownProjects() ?? [] }));
@@ -2366,6 +2535,21 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
     hub.publishSession(next);
     return next;
   };
+  // a spawned session that ended, its folder cleaned up (a throwaway Cora's root deleted): off the list (its creator's
+  // transcript keeps what it found); looked for as sessions end, and every minute
+  function sweepSpawned(): void {
+    for (const s of spawnedGone(store.listSessions(), existsSync)) dismiss(s.id);
+  }
+  // a sweep that fails (the store closed under it, a folder it can't read) never throws out of a timer: said once
+  let sweepFailed = false;
+  setInterval(() => {
+    try {
+      sweepSpawned();
+    } catch (e) {
+      if (!sweepFailed) app.log.warn(`spawned sessions not swept: ${(e as Error).message}`);
+      sweepFailed = true;
+    }
+  }, 60_000).unref?.();
   app.post<{ Params: { id: string }; Body: { undo?: boolean; closeShells?: boolean } }>('/api/sessions/:id/dismiss', { preHandler: requireAction }, async (req, reply) => {
     if (req.body?.undo) {
       const s = store.getSession(req.params.id);
@@ -2421,6 +2605,40 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
     return { ok: true, file };
   });
   // (a guest: never the private sessions')
+  // the Library: everything sessions made (explains, debriefs and videos, artifacts, recaps, Cora's briefs), ended
+  // sessions' too, searched and filtered here; stars kept with it
+  const library = new Library({
+    store,
+    ...(d.debriefs ? { debriefs: d.debriefs } : {}),
+    ...(d.videos ? { videos: d.videos } : {}),
+    ...(d.journal ? { journal: d.journal } : {}),
+    sessionName: (sid) => {
+      const s = store.getSession(sid);
+      return s ? nameOf(s) : 'a session';
+    },
+    projectOf: (sid) => {
+      const all = d.projects?.list().filter((p) => p.sessions.includes(sid)) ?? [];
+      const p = all.find((x) => !x.archivedAt) ?? all[0];
+      return p ? { id: p.id, name: p.name } : null;
+    },
+    file: config.dbPath === ':memory:' ? null : joinPath(config.dataDir, 'library-stars.json'),
+  });
+  app.get<{ Querystring: { q?: string; kind?: string; when?: string; starred?: string; sessionId?: string; limit?: string } }>('/api/library', { preHandler: requireUi }, async (req, reply) => {
+    const { q, kind, when, starred, sessionId, limit } = req.query;
+    if (kind && !LIBRARY_KINDS.includes(kind as LibraryKind)) return reply.code(400).send({ error: `kind is one of ${LIBRARY_KINDS.join(', ')}` });
+    if (when && !['today', 'week', 'older'].includes(when)) return reply.code(400).send({ error: 'when is today, week or older' });
+    return library.query(
+      { ...(q ? { q: q.slice(0, 200) } : {}), ...(kind ? { kind: kind as LibraryKind } : {}), ...(when ? { when: when as LibraryWhen } : {}), ...(starred === '1' || starred === 'true' ? { starred: true } : {}), ...(sessionId ? { sessionId } : {}), ...(limit ? { limit: Number(limit) || 500 } : {}) },
+      // a guest: never the private sessions', nor what only this PC can open (a file by its path, a video)
+      guestOf(req) ? (sid) => isPrivate(sid) : undefined,
+      !!guestOf(req),
+    );
+  });
+  app.post<{ Body: { id?: unknown; on?: unknown } }>('/api/library/star', { preHandler: requireAction }, async (req, reply) => {
+    const { id, on } = req.body ?? {};
+    if (typeof id !== 'string' || typeof on !== 'boolean') return reply.code(400).send({ error: 'id (an entry) and on (true or false)' });
+    return library.star(id, on) ? { ok: true } : reply.code(404).send({ error: 'no such entry in the Library' });
+  });
   app.get<{ Querystring: { sessionId?: string; limit?: string } }>('/api/explains', { preHandler: requireUi }, async (req) => {
     const explains = store.listExplains(req.query.sessionId, Math.min(Number(req.query.limit ?? 200), 1000));
     return { explains: guestOf(req) ? explains.filter((e) => !isPrivate(e.sessionId)) : explains };
@@ -2571,8 +2789,18 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
    * One change to a project's items by someone (a session, 'you' or 'cora'), with its ping: an owner assigned, reassigned
    * or annotated hears it as a report (it waits for, or wakes, them).
    */
-  const itemOp = (pid: string, actor: string, op: 'open' | 'change' | 'claim' | 'annotate' | 'close' | 'merge', f: Record<string, unknown>) => {
+  const itemOp = (pid: string, actor: string, op: 'open' | 'change' | 'claim' | 'annotate' | 'close' | 'merge', fAsked: Record<string, unknown>) => {
     const projects = d.projects!;
+    // an owner named by its seat (its id or its name) is that seat's member; a pool's several: say which
+    let f = fAsked;
+    const named = projects.get(pid);
+    if (named && typeof f.owner === 'string' && f.owner && f.owner !== 'you' && !named.sessions.includes(f.owner) && !named.team?.groups.some((g) => g.id === f.owner)) {
+      const one = memberByPeer(named, f.owner);
+      const seat = one ? null : seatRef(named, f.owner);
+      if (one) f = { ...f, owner: one };
+      else if (seat?.sids.length === 1) f = { ...f, owner: seat.sids[0] };
+      else if (seat && seat.sids.length > 1) return { ok: false as const, error: `${seat.seat.name} has ${seat.sids.length} members: name one (${seat.sids.map((m) => `${whoIs(m)} (${m})`).join(', ')}).` };
+    }
     // in a team project, an incident (or a task) opened for another member is a handoff to it: its routes say whether it may
     const tp = projects.get(pid);
     if (tp && op === 'open' && typeof f.owner === 'string' && f.owner && f.owner !== actor) {
@@ -2601,7 +2829,7 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
       }
     });
     if (r.ok && 'tell' in r && r.tell) {
-      const post = projects.post(pid, actor, 'report', r.tell.text, [r.tell.to === 'you' ? 'user' : r.tell.to], undefined, { item: r.item.id });
+      const post = projects.post(pid, actor, 'report', r.tell.text, [r.tell.to === 'you' ? 'user' : r.tell.to], undefined, { item: r.item.id, ping: r.tell.ping });
       if (post) projectPosted(pid, post);
     }
     return r;
@@ -2624,15 +2852,18 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
     waitMs: modWaitMs,
     modded: (sid) => modded.has(sid) || modLive(sid),
     take: (sid) => {
-      const items = (modOut.get(sid) ?? []).map((x) => x.text);
+      // (one typed in before, whose prompt came after all, isn't typed in again)
+      const items = stillDue(sid, modOut.get(sid) ?? []).map((x) => x.text);
       modOut.delete(sid);
       return items;
     },
-    // what wasn't typed in waits for its mod again, first, in order
-    putBack: (sid, items) => {
-      modOut.set(sid, [...items.map((text) => ({ kind: 'submit' as const, text, id: randomUUID().slice(0, 8) })), ...(modOut.get(sid) ?? [])]);
+    // what didn't go in waits for its mod again, first, in order (a late hello takes it)
+    putBack: (sid, items, typedAt) => {
+      modOut.set(sid, [...items.map((text) => ({ kind: 'submit' as const, text, src: 'team' as const, id: randomUUID().slice(0, 8), ...(typedAt !== undefined ? { typedAt } : {}) })), ...(modOut.get(sid) ?? [])]);
       modWaiting.get(sid)?.();
     },
+    // in is its prompt arriving, within a while of being typed
+    landed: (sid, text, typedAt) => prompts.landed(sid, typedAt, text, d.promptLandMs ?? PROMPT_LAND_MS),
     // (the seat stays one that waits until this is in: what comes meanwhile goes in after it)
     typeIn: async (sid, text) => {
       const t = seatTerminal(sid);
@@ -2686,9 +2917,10 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
   function teamDeliver(sid: string, text: string): void {
     // what waited for its mod is being typed in: this goes in after it (even if its mod has just come)
     if (firstDelivery.typing(sid)) return firstDelivery.add(sid, text);
-    if (modLive(sid)) return modPush(sid, { kind: 'submit', text });
+    if (teams?.stoppingNow(sid)) return void console.warn(`[cora] team: ${sid.slice(0, 8)} is being stopped; not delivered`);
+    if (modLive(sid)) return modPush(sid, { kind: 'submit', text, src: 'team' });
     if (d.pluginDir && teamStarted.has(sid) && !modded.has(sid)) {
-      modPush(sid, { kind: 'submit', text });
+      modPush(sid, { kind: 'submit', text, src: 'team' });
       // its mod gets a while to come; it doesn't: typed into its terminal instead
       return firstDelivery.arm(sid);
     }
@@ -2743,7 +2975,8 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
         // its folder made when it isn't there yet; a worktree of it, or the folder itself when it isn't a git repository
         const wt = d.worktrees;
         const f = await seatFolder(cwd, !!worktree, wt ? async (c) => {
-          const path = (await wt.make(c, { name })).path;
+          // on the code its folder is on (the checkout's branch), not the repo's default branch
+          const path = (await wt.make(c, { name, from: 'current' })).path;
           wt.poke(c);
           return path;
         } : undefined);
@@ -2777,7 +3010,10 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
           return { error: (e as Error).message };
         }
       },
-      stop: (sid) => void endHow(sid).catch(() => {}),
+      stop: (sid) => {
+        modOut.delete(sid);
+        void endHow(sid).catch(() => {});
+      },
       dismiss: (sid) => void (!claudeHosted(sid) && dismiss(sid)),
       live: claudeHosted,
       idle: (sid) => store.getSession(sid)?.state === 'idle',
@@ -3003,7 +3239,7 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
         return { ...it, name: s ? displayName(s) : names.get(it.sessionId) ?? it.cwd.split(/[\\/]/).pop() ?? it.sessionId.slice(0, 8) };
       });
   // sessions' journals: where they're kept (Documents\Cora\Journal)
-  app.get('/api/journal', { preHandler: requireUi }, async () => ({ dir: journalDir() }));
+  app.get('/api/journal', { preHandler: requireUi }, async () => ({ dir: config.journalDir ?? journalDir() }));
   // one session's journal (the Board's Journal panel)
   app.get<{ Params: { id: string } }>('/api/journal/:id', { preHandler: requireUi }, async (req) => {
     const j = d.journal?.read?.(req.params.id) ?? null;
@@ -3089,6 +3325,12 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
           { trust: true },
         ).then((r) => !r.sent && app.log.warn(`a new session's brief wasn't sent: ${r.why}`));
       }
+      // one of an archived project's sessions resumed: its project comes back too, with the rest of its sessions
+      const home = mode === 'resume' && sessionId ? d.projects?.projectOf(sessionId) : undefined;
+      if (home?.archivedAt) {
+        const r = await bringBackProject(home.id, sessionId);
+        return { ...t, broughtBack: { project: home.name, resumed: r.resumed.length } };
+      }
       return t;
     } catch (e) {
       return reply.code(400).send({ error: (e as Error).message });
@@ -3151,6 +3393,50 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
     }
     d.registry?.sessionExited(id, Date.now());
     return { how: 'process', pids: pids.length };
+  }
+  /** Running: hosted here and up, or a session not ended (running elsewhere). */
+  const isLive = (sid: string) => !!ptys?.forSession(sid)?.alive || (store.getSession(sid)?.state ?? 'ended') !== 'ended';
+  /**
+   * A project archived: its live sessions end (you're asked once first, in the app), and they're hidden with it. A team
+   * that's up stands down (it's brought up again with the project); the rest end as their End session would. How many
+   * were running.
+   */
+  async function archiveProjectNow(pid: string): Promise<number> {
+    const p = d.projects?.get(pid);
+    if (!p) return 0;
+    const up = !!(teams && p.team && p.teamUp);
+    const live = p.sessions.filter(isLive);
+    d.projects!.archive(pid, true, { teamUp: up });
+    if (up) await teams!.standDown(pid);
+    await Promise.all(live.filter((sid) => !(up && p.members[sid]?.seat)).map((sid) => endHow(sid).catch(() => null)));
+    return live.length;
+  }
+  /**
+   * A project back from the archive: what archiving stopped comes back, in it. Its sessions are resumed (a team's seats
+   * through Bring up, when its team was up then; else they wait for it). `except`: one being resumed already.
+   */
+  async function bringBackProject(pid: string, except?: string): Promise<{ resumed: string[]; problems: string[] }> {
+    const p = d.projects?.get(pid);
+    if (!p?.archivedAt) return { resumed: [], problems: [] };
+    const { wasUp } = d.projects!.archive(pid, false);
+    const resumed: string[] = [];
+    const problems: string[] = [];
+    for (const sid of p.sessions) {
+      const s = store.getSession(sid);
+      if (!s || sid === except || isLive(sid) || (p.team && p.members[sid]?.seat)) continue;
+      try {
+        launchClaude({ mode: 'resume', cwd: s.wd || s.cwd, sessionId: sid });
+        resumed.push(sid);
+      } catch (e) {
+        problems.push(`${displayName(s)}: ${(e as Error).message}`);
+      }
+    }
+    if (wasUp && teams) {
+      const r = await teams.bringUp(pid);
+      resumed.push(...r.started);
+      problems.push(...r.problems);
+    }
+    return { resumed, problems };
   }
   const endSession = async (id: string) => {
     const r = await endHow(id);
@@ -3567,7 +3853,8 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
     projectWakes = (pid, post) => {
       const p = projects.get(pid);
       // handoffs, questions and reports to a seat (an assignment, an alert stream) reach it: waiting, or waking it; in a
-      // team, seat to seat, whatever its kind does as its route says (a note on a route that wakes, too)
+      // team, seat to seat, as its route says. What's information never wakes a team's member (teamInfoPost: a note, a
+      // change, a decision, an item's ping): it reads it at its next prompt
       if (!p?.coordination) return;
       // yours, to members that may be woken (Crew): each gets it as a turn from you, now if it's idle, else when its turn
       // ends (routes are for the sessions' messages, not yours; no card asks you to OK your own words). One that may not
@@ -3577,6 +3864,7 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
         return checkWaiting();
       }
       const wakesByKind = post.kind === 'handoff' || post.kind === 'question' || post.kind === 'report' || post.kind === 'direct';
+      if (p.team && teamInfoPost(post)) return checkWaiting();
       for (const to of post.to ?? []) {
         // (not sent natively as its writer: Claude Code lets a session send a message only when its own turn decides
         // to, never a plugin in the background; it waits, then reaches its member through the member's mod)
@@ -3592,11 +3880,8 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
       const p0 = projects.get(w.project);
       // its mod takes it: a turn once it's idle, named as from Cora (nothing typed into its terminal)
       if (modLive(w.to)) {
-        modPush(w.to, { kind: 'submit', text: wakeText(w, whoIs, p0?.name ?? '') });
-        if (p0) {
-          if (w.post) projects.delivered(p0.id, w.post, Date.now());
-          projects.heard(p0.id, w.to, Date.now(), p0.members[w.to]?.heardBriefAt ?? 0);
-        }
+        modPush(w.to, { kind: 'submit', text: wakeText(w, whoIs, p0?.name ?? ''), src: 'wake' });
+        if (p0) carried(p0.id, w);
         return { ok: true };
       }
       const t = ptys?.list().find((x) => x.sessionId === w.to && x.alive && x.mode !== 'shell');
@@ -3607,21 +3892,33 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
       const lines = ptys.screenLines(t.terminalId);
       if (lines && choiceOpen(lines)) return { ok: false, code: 409, error: 'It is showing a choice: answer that first.' };
       sendTyped(ptys, t.terminalId, input);
-      // what it now has, it has heard
-      if (p) projects.heard(p.id, w.to, Date.now(), p.members[w.to]?.heardBriefAt ?? 0);
+      if (p) carried(p.id, w);
       return { ok: true };
     };
     /**
-     * A project that lets its sessions wake each other: is this one still within its rails? Six wakes an hour per
-     * session, and back to asking you when two sessions keep waking each other (more than four in ten minutes).
+     * What a wake carried, its member has: that post (delivered to it, so its news doesn't say it again; the post's other
+     * members still hear it at their next prompt) and no longer waiting. Never "heard up to now": what it hasn't been
+     * shown (a note that didn't wake it, a note on its item) is its news at the prompt this wake starts.
+     */
+    const carried = (pid: string, w: ProjectWake) => {
+      if (!w.post) return;
+      projects.deliveredTo(pid, w.post, w.to);
+      projects.unwait(pid, w.post, w.to);
+    };
+    /**
+     * A project that lets its sessions wake each other: is this one still within its rails? Its wake limit an hour per
+     * session (WAKE_LIMIT unless it sets one), and back to asking you when two sessions keep waking each other (more
+     * than four in ten minutes). A project with no limit has no rails; a team has none either (its routes decide, and
+     * its seats' own limits hold it back).
      */
     const woke: Array<{ to: string; from: string; at: number }> = [];
-    const mayWake = (from: string, to: string) => {
+    const mayWake = (p: import('@cora/shared').Project, from: string, to: string) => {
+      if (p.team || p.wakeLimit === 'none') return true;
       const now = Date.now();
       while (woke.length && now - woke[0].at > 3_600_000) woke.shift();
       const perHour = woke.filter((x) => x.to === to).length;
       const pair = woke.filter((x) => now - x.at < 600_000 && ((x.to === to && x.from === from) || (x.to === from && x.from === to))).length;
-      return perHour < 6 && pair < 4;
+      return perHour < (p.wakeLimit ?? WAKE_LIMIT) && pair < 4;
     };
     /**
      * A member's native message reaching an idle member (its mod asks): busy, it reads it at its next tool round;
@@ -3632,14 +3929,15 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
       const p = projects.get(pid);
       if (!p || (!idle && store.getSession(to)?.state !== 'idle')) return null;
       if (!p.members[to]?.wakes) return 'Held by Cora: the user has this session hear the project on its next prompt, not woken.';
+      if (p.team && !post.native && teamInfoPost(post)) return "Held by Cora: information doesn't wake a team's member; it hears it on its next prompt.";
       const rw = routeWake(p, post, from, to);
       if (rw === 'never') return "Held by Cora: the team's route doesn't wake this session for it; it hears it on its next prompt.";
       const auto = rw ? rw === 'auto' : !!p.autoWake;
-      if (auto && mayWake(from, to)) {
+      if (auto && mayWake(p, from, to)) {
         woke.push({ from, to, at: Date.now() });
         return null;
       }
-      const why = rw === 'ask' ? "the team's route between these seats asks first, so" : auto ? 'these two sessions have woken each other a lot in the last few minutes (or this one has been woken six times this hour), so' : 'Wake each other is off for this project:';
+      const why = rw === 'ask' ? "the team's route between these seats asks first, so" : auto ? `these two sessions have woken each other a lot in the last few minutes (or this one has been woken ${p.wakeLimit ?? WAKE_LIMIT} times this hour), so` : 'Wake each other is off for this project:';
       const wake: ProjectWake = { id: randomUUID().slice(0, 8), project: p.id, from, to, text: post.text, at: post.at, post: post.id };
       wakes.set(wake.id, wake);
       publish();
@@ -3701,13 +3999,15 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
             }
             continue;
           }
+          // information in a team (one that waited from before): its next prompt, never a wake or a card
+          if (p.team && teamInfoPost(post)) continue;
           asked.add(k);
           // seat to seat: its route says; 'never' waits for the member's next prompt (no card)
           const rw = routeWake(p, post, post.by, w.to);
           if (rw === 'never') continue;
           const wake: ProjectWake = { id: randomUUID().slice(0, 8), project: p.id, from: post.by, to: w.to, text: post.text, at: post.at, post: post.id };
           // the project (or the route) lets them, within its rails: delivered now (else the card)
-          if ((rw ? rw === 'auto' : p.autoWake) && mayWake(post.by, w.to) && deliverWake(wake).ok) {
+          if ((rw ? rw === 'auto' : p.autoWake) && mayWake(p, post.by, w.to) && deliverWake(wake).ok) {
             woke.push({ from: post.by, to: w.to, at: Date.now() });
             changed = true;
             continue;
@@ -3778,9 +4078,15 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
       const bad = pidOk(req, reply);
       if (bad) return bad;
       const on = req.body?.on !== false;
-      projects.archive(req.params.id, on);
-      if (on) builders?.rest(req.params.id);
-      return { ok: true };
+      if (on) {
+        // its live sessions end with it (how many: the app asked you first)
+        const ended = await archiveProjectNow(req.params.id);
+        builders?.rest(req.params.id);
+        return { ok: true, ...(ended ? { ended } : {}) };
+      }
+      // back: its sessions are resumed in it
+      const r = await bringBackProject(req.params.id);
+      return { ok: true, ...(r.resumed.length ? { resumed: r.resumed } : {}), ...(r.problems.length ? { problems: r.problems } : {}) };
     });
     app.delete<{ Params: { id: string } }>('/api/projects/:id', { preHandler: requireAction }, async (req, reply) => {
       const p = projects.get(req.params.id);

@@ -206,3 +206,16 @@
 .sm-icon { display: grid; place-items: center; width: 30px; height: 30px; padding: 0; border: 0; border-radius: 7px; background: var(--raise2); color: var(--ink2); cursor: pointer; }
 .sm-icon:hover { color: var(--ink); background: color-mix(in srgb, var(--sc) 18%, var(--raise2)); }
 .sm-icon.on { color: color-mix(in srgb, var(--sc) 88%, white); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--sc) 60%, transparent); background: color-mix(in srgb, var(--sc) 14%, var(--raise2)); }
+
+/* a session's flag (come back to it): its why, a reminder, clear it */
+/* over everything it may open from, the nav's drawer (400) too */
+.session-menu.flag-pop { z-index: 450; }
+.flag-pop .fp-mark { color: var(--cora); }
+.fp-when { display: flex; flex-wrap: wrap; gap: 6px; }
+.fp-chip { height: 26px; padding: 0 10px; border: 0; border-radius: 7px; background: var(--raise2); box-shadow: inset 0 0 0 1px var(--hair2); color: var(--ink2); font: 500 11.5px var(--ui); cursor: pointer; }
+.fp-chip:hover { color: var(--ink); }
+.fp-chip.on { background: color-mix(in srgb, var(--cora) 14%, var(--raise2)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cora) 40%, transparent); color: var(--ink); }
+.fp-now { display: flex; align-items: center; gap: 8px; height: 26px; margin-bottom: 6px; color: var(--ink2); font: 500 12px var(--ui); }
+.fp-now span { flex: 1; font: 500 10.5px var(--code); }
+.fp-now.due { color: var(--cora); }
+.fp-pick { width: 100%; height: 30px; margin-top: 8px; box-sizing: border-box; padding: 0 10px; border: 0; border-radius: 8px; outline: none; background: var(--nav); box-shadow: inset 0 0 0 1px var(--hair2); color: var(--ink); font: 400 12px var(--code); color-scheme: dark; }

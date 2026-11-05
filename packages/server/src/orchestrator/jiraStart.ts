@@ -15,6 +15,8 @@ export type JiraStartDeps = {
   isDir(p: string): boolean;
   /** the latest `assigned` event for a ticket (the last 14 days) */
   assigned(key: string): JiraEvent | undefined;
+  /** the journal's entries about a ticket (the last 14 days, newest first): work on it that no session is named for */
+  journal?(key: string): Array<{ sessionId: string; session: string; at: number; text: string }>;
   approvals: Pick<Approvals, 'request' | 'decide' | 'list'>;
   /** `plan`: open it in plan mode (it can read and plan, not change anything, until the user approves) */
   launch(o: { cwd: string; prompt: string; trust: boolean; plan?: boolean }): Promise<{ terminal: { sessionId: string }; sent: boolean; why?: string; pending?: boolean }>;
@@ -91,9 +93,34 @@ export class JiraStarts {
     return out;
   }
 
-  /** Is this event Cora's to offer or start (its card and voice then are Cora's)? */
+  /**
+   * Who has this ticket already, in a few words: a session on it (its ticket, or a live one its name says is on it), or
+   * the journal's latest entry about it (work done in a session nobody named for it). Null: nobody.
+   */
+  holder(key: string): string | null {
+    const s = this.session(key);
+    if (s) return `${nameOf(s)} (${s.id}) has it`;
+    const named = new RegExp(`(^|[^A-Za-z0-9])${key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}($|[^0-9])`, 'i');
+    const live = this.d.sessions().find((x) => x.state !== 'ended' && [x.alias, x.autoName, x.title].some((t) => !!t && named.test(t)));
+    if (live) return `${nameOf(live)} (${live.id}) has it`;
+    const j = this.d.journal?.(key)?.[0];
+    if (!j) return null;
+    const words = j.text.replace(/\s+/g, ' ').trim();
+    return `"${j.session}" (${j.sessionId}) worked on it (its journal, ${new Date(j.at).toLocaleString('en-US', { weekday: 'short', hour: 'numeric', minute: '2-digit' })}: ${words.length > 160 ? `${words.slice(0, 159)}…` : words})`;
+  }
+
+  /** Is this event Cora's to offer or start (its card and voice then are Cora's)? Not when someone has it already. */
   handoff(e: Pick<JiraEvent, 'kind' | 'key'>): boolean {
-    return e.kind === 'assigned' && this.d.mode() !== 'tell' && this.d.listening() && !this.session(e.key);
+    return e.kind === 'assigned' && this.d.mode() !== 'tell' && this.d.listening() && !this.holder(e.key);
+  }
+
+  /**
+   * An assignment's turn, asked again as it goes (it may have waited hours to reach Cora): someone took the ticket
+   * meanwhile, so it says who, and that there's nothing to start.
+   */
+  recheck(e: JiraEvent): string {
+    const h = this.holder(e.key);
+    return h ? `[Jira] ${e.key} was assigned to the user, but ${h}: nothing to start (don't call jira_start; say who has it if the user asks).` : this.turnText(e);
   }
 
   /** The agent's turn for an assignment: the ticket, where it could go, and what to do. */
@@ -114,6 +141,9 @@ export class JiraStarts {
     if (!e) return { ok: false, text: `${key} isn't a ticket assigned to the user lately (see jira_inbox).` };
     const has = this.session(key);
     if (has) return { ok: false, text: `${key} already has a session: ${nameOf(has)} (${has.id}).` };
+    // work on it elsewhere (a session named for it, or the journal): not started again unless the user asks in their own words
+    const h = this.d.userTurn() ? null : this.holder(key);
+    if (h) return { ok: false, text: `${key}: ${h}. Don't start it again; tell the user who has it.` };
     const cands = this.candidates(key);
     let cwd = p.cwd;
     let swapped = '';

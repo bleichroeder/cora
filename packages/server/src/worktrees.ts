@@ -214,6 +214,13 @@ export class Worktrees {
     return 'HEAD';
   }
 
+  /** What a checkout has checked out: its branch, or its commit (detached), else HEAD. */
+  private async current(root: string): Promise<string> {
+    const branch = (await this.git(root, ['symbolic-ref', '--quiet', '--short', 'HEAD'])).out.trim();
+    if (branch) return branch;
+    return (await this.git(root, ['rev-parse', '--verify', '--quiet', 'HEAD'])).out.trim() || 'HEAD';
+  }
+
   private async fetch(root: string): Promise<void> {
     if (this.now() - (this.fetched.get(key(root)) ?? 0) < FETCH_EVERY) return;
     this.fetched.set(key(root), this.now());
@@ -358,12 +365,16 @@ export class Worktrees {
     return repo && tree ? { root: repo.root, tree } : null;
   }
 
-  /** New work: a worktree fresh from the base, with a branch for it, in <repo>/.claude/worktrees. */
-  async make(root: string, o: { name?: string | null; ticket?: string | null; title?: string | null } = {}): Promise<{ path: string; branch: string }> {
+  /**
+   * New work: a worktree fresh from the base, with a branch for it, in <repo>/.claude/worktrees. `from: 'current'`: from
+   * what the folder has checked out instead (its branch, or its commit when detached): a team seat's worktree starts on
+   * the code its folder is on, not the repo's default branch.
+   */
+  async make(root: string, o: { name?: string | null; ticket?: string | null; title?: string | null; from?: 'base' | 'current' } = {}): Promise<{ path: string; branch: string }> {
     const main = await this.root(root);
     if (!main) throw new Error(`${root} isn't a git repo`);
     await this.fetch(main);
-    const base = await this.base(main);
+    const base = o.from === 'current' ? await this.current(main) : await this.base(main);
     const taken = (await this.git(main, ['for-each-ref', '--format=%(refname:short)', 'refs/heads'])).out.split('\n').map((s) => s.trim()).filter(Boolean);
     const branch = branchFor({ ...o, taken });
     const dir = join(main, ...WORKTREE_DIR.split('/'));

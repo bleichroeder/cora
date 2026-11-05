@@ -11,7 +11,7 @@ export type PostKind = 'note' | 'change' | 'question' | 'handoff' | 'decision' |
 export const POST_KINDS: PostKind[] = ['note', 'change', 'question', 'handoff', 'decision', 'report', 'direct'];
 
 /** What one session in a project hears, and may do (all off until you say). */
-export type MemberSettings = { hears: ProjectHears; canPost: boolean; wakes: boolean; /** what it has heard up to (a post's time; the brief's change) */ heardTo?: number; heardBriefAt?: number; /** the project card it last had (what's on it: brief, decisions, pins, members) */ heardCard?: string; /** its seat, as you name it (Triage, Monitor, Analyst 01) */ role?: string; /** its team seat id (a team's definition; not the free-text role) */ seat?: string; /** which instance of that seat (1-based) */ instance?: number };
+export type MemberSettings = { hears: ProjectHears; canPost: boolean; wakes: boolean; /** what it has heard up to (a post's time; the brief's change) */ heardTo?: number; heardBriefAt?: number; /** the project card it last had (what's on it: brief, decisions, pins, members) */ heardCard?: string; /** its seat, as you name it (Triage, Monitor, Analyst 01) */ role?: string; /** its team seat id (a team's definition; not the free-text role) */ seat?: string; /** which instance of that seat (1-based) */ instance?: number; /** the handle its Claude Code was started with, its seat renamed since (it answers to that until it restarts) */ handle?: string };
 /** A member of a project that doesn't coordinate (organisation only): hears nothing, can't post. */
 export const MEMBER_DEFAULTS: MemberSettings = { hears: 'nothing', canPost: false, wakes: false };
 /** A member of a project that coordinates: hears it, posts, may ask to wake another (you OK each wake). */
@@ -20,7 +20,7 @@ export const MEMBER_ON: MemberSettings = { hears: 'everything', canPost: true, w
 /** `by`: a session's id, 'you', or 'cora' */
 export type Decision = { id: string; text: string; by: string; at: number };
 /** `to`: members, or 'user' (you); `re`: the post it answers; a note may be pinned (it joins every member's card); a question you closed. */
-export type Post = { id: string; by: string; kind: PostKind; text: string; at: number; to?: string[]; re?: string; pinned?: boolean; closed?: boolean; /** its writer changed it (when) */ editedAt?: number; /** its writer took it back (it stays, struck through) */ withdrawn?: boolean; /** the item it's about (an assignment, an annotation) */ item?: string; /** a cross-session message Claude Code delivered itself (Cora records it; it never delivers it again) */ native?: boolean; /** when its member received it (a native message) */ deliveredAt?: number; /** a project post Cora sent natively, as its writer (the receiver's report finds it) */ sentNative?: boolean; /** team labels it carries */ labels?: Record<string, string>; /** its writer's team seat when it wrote it (its route still applies once the writer has left) */ seat?: string; /** a message the team's routes refused: kept quietly on the board, never delivered, nobody's news */ blocked?: true };
+export type Post = { id: string; by: string; kind: PostKind; text: string; at: number; to?: string[]; re?: string; pinned?: boolean; closed?: boolean; /** its writer changed it (when) */ editedAt?: number; /** its writer took it back (it stays, struck through) */ withdrawn?: boolean; /** the item it's about (an assignment, an annotation) */ item?: string; /** an item's ping: work handed over ('assign'), or a note on it ('note') */ ping?: 'assign' | 'note'; /** a cross-session message Claude Code delivered itself (Cora records it; it never delivers it again) */ native?: boolean; /** when its member received it (a native message) */ deliveredAt?: number; /** the members a wake carried it to (each has it; the rest hear it at their next prompt) */ deliveredTo?: string[]; /** a project post Cora sent natively, as its writer (the receiver's report finds it) */ sentNative?: boolean; /** team labels it carries */ labels?: Record<string, string>; /** its writer's team seat when it wrote it (its route still applies once the writer has left) */ seat?: string; /** a message the team's routes refused: kept quietly on the board, never delivered, nobody's news */ blocked?: true };
 /** A handoff or question to a member that hasn't reached it yet (busy, or idle and not woken). */
 export type Waiting = { post: string; to: string; since: number; /** when Cora found it couldn't reach its member (not hosted here, nothing of it asking for messages) and told its sender */ undelivered?: number };
 
@@ -31,6 +31,8 @@ export type Project = {
   color: string;
   createdAt: number;
   archivedAt?: number;
+  /** its team was up when it was archived (archiving stood it down): bringing the project back brings it up again */
+  upWhenArchived?: true;
   /** member sessions, in the order you added them */
   sessions: string[];
   /** its team definition, when it has one */
@@ -72,8 +74,14 @@ export type Project = {
   shade?: boolean;
   /** handoffs and questions to members not delivered yet */
   waiting?: Waiting[];
-  /** its sessions wake each other without asking you (a few times an hour each; back to asking if two keep at it) */
+  /** its sessions wake each other without asking you (within wakeLimit; a team's routes say for its seats) */
   autoWake?: boolean;
+  /**
+   * A project without a team: how many times an hour each session may be woken by the others before it's back to
+   * asking you (and two that keep waking each other are too); 'none': no limit, no pair guard. Unset: WAKE_LIMIT. A team
+   * has none: its routes decide, and its seats' own limits (turns an hour, cost a day, quiet hours) hold it back.
+   */
+  wakeLimit?: number | 'none';
   /** shared state, updated in place: incidents and known issues */
   items?: ProjectItem[];
   /** the lead seat (a member's id): it opens incidents, assigns and merges them */
@@ -107,6 +115,8 @@ export const TASK_STATES = ['queued', 'building', 'review', 'testing', 'blocked'
 export type TaskState = (typeof TASK_STATES)[number];
 /** A dated, signed note on an item (`by`: a session, 'you' or 'cora'). */
 export type ItemNote = { by: string; at: number; text: string };
+/** One move of an item: its state or owner changed, when and by whom (`from`/`to` absent: none, e.g. unowned). */
+export type ItemMove = { at: number; by: string; field: 'state' | 'owner'; from?: string; to?: string };
 /**
  * One row of shared state: an incident
  * (owned, with a state and a next step; closed with a cause and fix into the log) or a known issue (proposed, approved
@@ -149,9 +159,12 @@ export type ProjectItem = {
   updatedAt: number;
   closedAt?: number;
   notes: ItemNote[];
+  /** its moves, oldest first (the last MAX_ITEM_MOVES): the steps between its opening and now (building, review, testing) */
+  moves?: ItemMove[];
 };
 export const MAX_ITEMS = 1000;
 export const MAX_ITEM_NOTES = 100;
+export const MAX_ITEM_MOVES = 50;
 /** Open: an incident not resolved, a known issue proposed or approved, a task not done. */
 export const itemOpen = (i: ProjectItem) => (i.kind === 'incident' ? i.state !== 'resolved' : i.kind === 'task' ? i.state !== 'done' : i.state !== 'retired');
 /** Tasks in the queue's order: rank, then the oldest first. */
@@ -162,6 +175,16 @@ export const bySeverity = (a: ProjectItem, b: ProjectItem) => SEV_RANK[a.severit
 
 /** A question is open until a post answers it (`re`) or you close it. */
 export const isOpenQuestion = (p: Project, x: Post) => x.kind === 'question' && !x.closed && !p.thread.some((y) => y.re === x.id);
+
+/** A project's wake limit when it sets none (per session, per hour). */
+export const WAKE_LIMIT = 6;
+
+/**
+ * In a team project, what's information never wakes a member (it reads it at its next prompt): a note, a change or a
+ * decision, and an item's note ping ("Noted on …"). Handoffs, questions, direct messages, reports, and an item assigned
+ * or reassigned to it (work handed over, as a handoff is) wake as their routes say.
+ */
+export const teamInfoPost = (post: Pick<Post, 'kind' | 'ping'>): boolean => post.kind === 'note' || post.kind === 'change' || post.kind === 'decision' || (post.kind === 'report' && post.ping === 'note');
 
 /** A session asking to wake another (a handoff or a question to an idle member that wakes): yours to allow. */
 export type ProjectWake = { id: string; project: string; from: string; to: string; text: string; at: number; /** the post it carries */ post?: string; /** a team's offer that Cora carries (its text names its real sender) */ offer?: true };

@@ -1,7 +1,7 @@
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
-import { LEGACY_TOKEN_HEADER, TOKEN_HEADER } from '@cora/shared';
+import { LEGACY_TOKEN_HEADER, SPAWN_ENV, SPAWN_WHY_HEADER, SPAWNED_BY_HEADER, TOKEN_HEADER } from '@cora/shared';
 import { writeFileAtomic } from './fsx';
 
 // SessionEnd prints a one-line failure on exit when the server is down (spike S3); accepted now that the
@@ -38,8 +38,9 @@ export function computeHooksBlock(o: { port: number; token: string; envToken?: b
   const hook = (ev: string, blocking: boolean): HttpHook => ({
     type: 'http',
     url: `http://127.0.0.1:${o.port}/hook/${ev}`,
-    headers: { [TOKEN_HEADER]: o.envToken ? '$CORA_TOKEN' : o.token },
-    ...(o.envToken ? { allowedEnvVars: ['CORA_TOKEN'] } : {}),
+    // a session another one started says so (who, why) from its environment (spawned.ts)
+    headers: { [TOKEN_HEADER]: o.envToken ? '$CORA_TOKEN' : o.token, [SPAWNED_BY_HEADER]: `$${SPAWN_ENV.by}`, [SPAWN_WHY_HEADER]: `$${SPAWN_ENV.why}` },
+    allowedEnvVars: [...(o.envToken ? ['CORA_TOKEN'] : []), SPAWN_ENV.by, SPAWN_ENV.why],
     ...(blocking ? { timeout: BLOCKING_TIMEOUT_S } : { async: true }),
   });
   const out: Record<string, HookMatcher[]> = {};

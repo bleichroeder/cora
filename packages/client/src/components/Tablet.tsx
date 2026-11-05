@@ -11,6 +11,7 @@ import { sortedSessions, SessionRail } from './SessionRail';
 import { SessionMenu } from './SessionMenu';
 import { Icon } from './Icon';
 import { usePalette } from './Palette';
+import { useTools } from '../state/tools';
 import { useState } from 'react';
 import './tablet.css';
 import './projects.css';
@@ -101,8 +102,9 @@ function SessionTile({ s, on, onMenu }: { s: SessionInfo; on: boolean; onMenu(x:
 }
 
 /**
- * The drawer closes on a choice made in it: a session, the board, a project or the Inbox opened, a modal, or a session's
- * End confirm asked for (it shows above the page, never under the drawer's dim). Its unsubscribe.
+ * The drawer closes on a choice made in it: a session, the board, a project or the Inbox opened, a modal, a session's
+ * End confirm asked for (it shows above the page, never under the drawer's dim), or a tool opened (Library, Notes, a
+ * site: its pane opens beside where the nav sits, and the drawer over it would cover half of it). Its unsubscribe.
  */
 export function closeOnChoice(): () => void {
   const close = () => useTabletUi.setState({ drawer: false });
@@ -112,8 +114,22 @@ export function closeOnChoice(): () => void {
   const b = usePalette.subscribe((s, p) => {
     if (s.ending && s.ending !== p.ending) close();
   });
-  return () => (a(), b());
+  // (a tool closing, or one already open, leaves it be)
+  const c = useTools.subscribe((s, p) => {
+    if (s.open && s.open !== p.open) close();
+  });
+  return () => (a(), b(), c());
 }
+
+/** What, clicked in the drawer, is a choice that closes it: a session, a project, the board, the Inbox, a new session. */
+const DRAWER_CHOICES = '.ses, .pj-row, .inbox-row, .ses-new, .rf-ib';
+/**
+ * What isn't, though it's in one of those: a row's own buttons (end it, its bookmark), a project's fold and menu, and
+ * the flag's popover (its why and reminder are asked for there, with the drawer still open behind it).
+ */
+export const DRAWER_KEEPS = '.ses-x, .ses-fl, .pj-chev, .pj-more, .flag-pop';
+/** Does this click in the drawer close it? */
+export const drawerCloses = (target: Pick<Element, 'closest'>) => !!target.closest(DRAWER_CHOICES) && !target.closest(DRAWER_KEEPS);
 
 /** The full nav, sliding over from the left (☰, or a swipe in from the left edge); a choice in it closes it. */
 export function TabletDrawer() {
@@ -148,7 +164,7 @@ export function TabletDrawer() {
         onClickCapture={(e) => {
           // a choice made in it (a session, a project, the board, the Inbox, a new session): it closes, even when that
           // choice is what's already open
-          if ((e.target as Element).closest('.ses:not(.ses-x), .pj-row, .inbox-row, .ses-new, .rf-ib') && !(e.target as Element).closest('.ses-x, .pj-chev, .pj-more')) setTimeout(close, 0);
+          if (drawerCloses(e.target as Element)) setTimeout(close, 0);
         }}
       >
         {open ? <SessionRail /> : null}

@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -213,6 +213,52 @@ describe('Go live, through the server', () => {
       expect((await get('/api/recaps', pc)).recaps).toHaveLength(2);
       expect((await get('/api/explains', pc)).explains).toHaveLength(2);
       expect((await get('/api/usage', pc)).sessions).toHaveLength(2);
+    } finally {
+      await srv.close();
+    }
+  });
+
+  it("Cora's earlier conversations are never a guest's (her briefs to you are in them), whatever the console share; her current one follows it", async () => {
+    // her state, as a few New conversations leave it: the current session, and the ones before
+    mkdirSync(join(dir, 'orchestrator'), { recursive: true });
+    writeFileSync(join(dir, 'orchestrator', 'state.json'), JSON.stringify({ sessionId: 'cora-now', past: ['cora-old1'] }));
+    const srv = await startServer(loadConfig({ dataDir: dir, dbPath: ':memory:', hookToken: 'hooktok', uiToken: 'u' }), { tail: false, listen: false, ci: false, security: false, remoteRun: tailnet, door: fakeDoor0() });
+    try {
+      const pc = { cookie: 'ab_session=u', origin: 'http://127.0.0.1:4317' };
+      const now = Date.now();
+      // (cora-older: from before the list was kept, found by its folder, Cora's own)
+      const all: Array<[string, string]> = [['cora-now', join(dir, 'orchestrator')], ['cora-old1', 'C:/work'], ['cora-older', join(dir, 'orchestrator')], ['plain-0001', 'C:/work']];
+      for (const [id, cwd] of all) {
+        srv.store.upsertSession({ id, cwd, state: 'idle', startedAt: now, lastTs: now } as never);
+        srv.store.addRecap({ id: `r-${id}`, sessionId: id, at: now, text: `What ${id} did.` });
+        srv.store.upsertEvent({ id: `tool:x-${id}:start`, sessionId: id, agentId: 'main', ts: now, kind: 'tool', phase: 'start', toolUseId: `x-${id}`, tool: { name: 'mcp__cora__present', input: { title: 'Doc' } }, icon: 'tool' } as never);
+        srv.store.upsertEvent({ id: `call-${id}`, sessionId: id, agentId: 'main', ts: now, kind: 'say', tokens: { in: 10, out: 5 }, icon: 'say' } as never);
+      }
+      const started = (await srv.app.inject({ method: 'POST', url: '/api/live/start', headers: pc, payload: { reach: 'tailnet' } })).json();
+      const r = await srv.app.inject({ url: new URL(started.live.link).pathname, headers: { 'tailscale-user-name': 'Ana Ruiz', 'tailscale-user-login': 'ana@example.com', 'x-forwarded-proto': 'https' } });
+      const ana = { cookie: String(r.headers['set-cookie']).split(';')[0], origin: 'https://pc.tail1.ts.net' };
+      const ids = async (url: string, key: string, field: string) => ((await srv.app.inject({ url, headers: ana })).json()[key] as Array<Record<string, string>>).map((x) => x[field]).sort();
+      const seen = async () => ({
+        sessions: await ids('/api/sessions', 'sessions', 'id'),
+        recaps: await ids('/api/recaps', 'recaps', 'sessionId'),
+        explains: await ids('/api/explains', 'explains', 'sessionId'),
+        usage: await ids('/api/usage', 'sessions', 'sessionId'),
+      });
+      const asked = async () => {
+        const out: Record<string, number> = {};
+        for (const sid of ['cora-old1', 'cora-older', 'cora-now']) for (const url of [`/api/sessions/${sid}/events`, `/api/recaps?session=${sid}`, `/api/explains?sessionId=${sid}`]) out[url] = (await srv.app.inject({ url, headers: ana })).statusCode;
+        return out;
+      };
+      // her console closed: none of hers
+      expect(await seen()).toEqual({ sessions: ['plain-0001'], recaps: ['plain-0001'], explains: ['plain-0001'], usage: ['plain-0001'] });
+      expect(Object.values(await asked()).every((c) => c === 403)).toBe(true);
+      // opened: her current conversation, never the earlier ones
+      await srv.app.inject({ method: 'POST', url: '/api/live/area', headers: pc, payload: { area: 'console', open: true } });
+      expect(await seen()).toEqual({ sessions: ['cora-now', 'plain-0001'], recaps: ['cora-now', 'plain-0001'], explains: ['cora-now', 'plain-0001'], usage: ['cora-now', 'plain-0001'] });
+      const open = await asked();
+      for (const [url, code] of Object.entries(open)) expect(code, url).toBe(url.includes('cora-now') ? 200 : 403);
+      // you see them all
+      expect((await srv.app.inject({ url: '/api/recaps', headers: pc })).json().recaps).toHaveLength(4);
     } finally {
       await srv.close();
     }

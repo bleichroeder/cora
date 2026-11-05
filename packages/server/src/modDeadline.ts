@@ -7,14 +7,28 @@
  */
 export type ModDeadlineDeps = {
   waitMs: number;
+  /**
+   * more wait for each other seat still waiting for its mod (several starting at once start slowly: each mod took 2½
+   * minutes with five starting together); the whole wait is never more than three times `waitMs`. Default: a third of it.
+   */
+  extraMs?: number;
   /** its mod has asked (it takes what waits itself) */
   modded(sid: string): boolean;
   /** what waits for its mod, taken off the queue (nothing: nothing to do) */
   take(sid: string): string[];
-  /** what wasn't typed in, back at the front of the queue for its mod, in order */
-  putBack(sid: string, items: string[]): void;
+  /**
+   * what didn't go in, back at the front of the queue for its mod, in order. `typedAt`: it was typed in then, and no
+   * prompt came of it: should one come after all, before its mod takes it, it isn't given again
+   */
+  putBack(sid: string, items: string[], typedAt?: number): void;
   /** typed into its terminal as one prompt, once it's ready for one: whether it went in, and why not */
   typeIn(sid: string, text: string): Promise<{ sent: boolean; why?: string }>;
+  /**
+   * what was typed in reached it as a prompt (its UserPromptSubmit hook said so), waited for a while: only then is it
+   * in. Absent: typed counts as in (the old way).
+   */
+  landed?(sid: string, text: string, typedAt: number): Promise<boolean>;
+  now?(): number;
   /** the user hears that its mod hadn't come, once what waited is in */
   tell(sid: string): void;
   /** the user hears (once) that what waits couldn't be typed in, and why: it's tried again */
@@ -30,9 +44,12 @@ export function modDeadline(o: ModDeadlineDeps): { arm(sid: string): void; armed
   const typing = new Map<string, string[]>();
   /** sessions the user was told couldn't be typed into (said once) */
   const toldStuck = new Set<string>();
+  const now = () => o.now?.() ?? Date.now();
+  /** How long a seat's mod is given: more when others are waiting for theirs too (they start slowly together). */
+  const waitFor = () => Math.min(3 * o.waitMs, o.waitMs + (o.extraMs ?? o.waitMs / 3) * timers.size);
   const arm = (sid: string) => {
     if (timers.has(sid) || typing.has(sid)) return;
-    const t = setTimeout(() => void fire(sid), o.waitMs);
+    const t = setTimeout(() => void fire(sid), waitFor());
     t.unref?.();
     timers.set(sid, t);
   };
@@ -45,16 +62,27 @@ export function modDeadline(o: ModDeadlineDeps): { arm(sid: string): void; armed
     let told = false;
     for (let next = items; next.length; next = typing.get(sid)!.splice(0)) {
       let r: { sent: boolean; why?: string };
+      const text = next.join('\n\n');
+      const typedAt = now();
       try {
-        r = await o.typeIn(sid, next.join('\n\n'));
+        r = await o.typeIn(sid, text);
       } catch (e) {
         r = { sent: false, why: (e as Error)?.message ?? String(e) };
         o.log?.(`team: typing into ${sid.slice(0, 8)} failed: ${r.why}`);
       }
+      // typed is not in: in is its prompt arriving (a terminal still starting takes the keys and nothing comes of them)
+      let typed = false;
+      if (r.sent && o.landed && !(await o.landed(sid, text, typedAt))) {
+        typed = true;
+        r = { sent: false, why: o.modded(sid) ? 'its mod came while it was typed in' : 'it was typed into its terminal, but no prompt came of it' };
+        o.log?.(`team: ${sid.slice(0, 8)}: ${r.why}; back for its mod`);
+      }
       if (!r.sent) {
         // never lost: back for its mod (or the next try), in order, with what came behind it
-        o.putBack(sid, [...next, ...typing.get(sid)!]);
+        o.putBack(sid, [...next, ...typing.get(sid)!], typed ? typedAt : undefined);
         typing.delete(sid);
+        // its mod is here now: it takes them (nothing more to type)
+        if (o.modded(sid)) return;
         if (!toldStuck.has(sid)) {
           toldStuck.add(sid);
           o.stuck(sid, r.why ?? 'it was not ready for a prompt');

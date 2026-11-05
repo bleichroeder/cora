@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { create } from 'zustand';
 import type { AccountUsage } from '@cora/shared';
 
-/** Your plan's usage (the server reads it at most once a minute), and whether the usage view is open. */
+/** Your plan's usage (the server reads it at most every five minutes, less often while it's refused), and whether the usage view is open. */
 export const useAccountUsage = create<{ u: AccountUsage | null; open: boolean }>(() => ({ u: null, open: false }));
 
 let watchers = 0;

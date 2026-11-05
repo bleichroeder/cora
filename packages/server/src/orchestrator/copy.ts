@@ -32,14 +32,28 @@ export function copyArgs(dir: string, sessionId: string, model?: string): string
   ];
 }
 
-export type CopyAnswer = { ok: true; text: string; costUsd?: number } | { ok: false; error: string };
+/** What a copy's run read and wrote (its result line's usage): fresh input, cache reads, cache writes, output. */
+export type CopyUsage = { in: number; cacheRead: number; cacheWrite: number; out: number };
+/** What a run cost, when it said (a failed run costs too). */
+type Spent = { costUsd?: number; usage?: CopyUsage };
+export type CopyAnswer = ({ ok: true; text: string } & Spent) | ({ ok: false; error: string } & Spent);
+/**
+ * One side question's cost, for the audit log: each copy pays its session's whole context, and leaves no transcript
+ * to count it from (--no-session-persistence), so this is the only record of it.
+ */
+export type CopyCost = { sessionId: string; model?: string; ok: boolean; ms: number } & Spent;
+
+const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
+/** The result line's usage, when it has one. */
+export const usageOf = (u: any): CopyUsage | undefined =>
+  u && typeof u === 'object' ? { in: num(u.input_tokens), cacheRead: num(u.cache_read_input_tokens), cacheWrite: num(u.cache_creation_input_tokens), out: num(u.output_tokens) } : undefined;
 
 /** Pull the copy's answer out of its stream-json lines: every text it wrote (not only the last), and the run's cost. */
 export class CopyReader {
   private buf = '';
   private texts: string[] = [];
   private size = 0;
-  result: { error?: string; costUsd?: number } | null = null;
+  result: ({ error?: string } & Spent) | null = null;
 
   push(chunk: string): void {
     this.buf += chunk;
@@ -70,15 +84,17 @@ export class CopyReader {
         this.size += b.text.length;
       }
     } else if (x?.type === 'result') {
-      this.result = { costUsd: typeof x.total_cost_usd === 'number' ? x.total_cost_usd : undefined, ...(x.is_error ? { error: String(x.result ?? x.subtype ?? 'it failed') } : {}) };
+      const usage = usageOf(x.usage);
+      this.result = { costUsd: typeof x.total_cost_usd === 'number' ? x.total_cost_usd : undefined, ...(usage ? { usage } : {}), ...(x.is_error ? { error: String(x.result ?? x.subtype ?? 'it failed') } : {}) };
     }
   }
 
   answer(): CopyAnswer {
     const text = this.texts.join('\n\n').slice(0, MAX_ANSWER);
-    if (this.result?.error) return { ok: false, error: this.result.error.slice(0, 400) };
-    if (!text) return { ok: false, error: this.result ? 'it gave no answer' : 'it stopped without answering' };
-    return { ok: true, text, ...(this.result?.costUsd !== undefined ? { costUsd: this.result.costUsd } : {}) };
+    const spent: Spent = { ...(this.result?.costUsd !== undefined ? { costUsd: this.result.costUsd } : {}), ...(this.result?.usage ? { usage: this.result.usage } : {}) };
+    if (this.result?.error) return { ok: false, error: this.result.error.slice(0, 400), ...spent };
+    if (!text) return { ok: false, error: this.result ? 'it gave no answer' : 'it stopped without answering', ...spent };
+    return { ok: true, text, ...spent };
   }
 }
 
@@ -109,7 +125,7 @@ export const runCopy: CopyRun = (cmd, o) =>
       reader.end();
       const a = reader.answer();
       if (timedOut) resolve(a.ok ? a : { ok: false, error: `no answer within ${Math.round(o.timeoutMs / 60_000)} minutes` });
-      else if (!a.ok && code !== 0 && err.trim()) resolve({ ok: false, error: err.trim().split('\n').pop()!.slice(0, 400) });
+      else if (!a.ok && code !== 0 && err.trim()) resolve({ ...a, error: err.trim().split('\n').pop()!.slice(0, 400) });
       else resolve(a);
     });
     child.stdin.on('error', () => {});
@@ -121,16 +137,25 @@ export class Copies {
   private running = 0;
   readonly dir: string;
 
-  constructor(private o: { dir: string; claudeCmd: () => string[]; run?: CopyRun; timeoutMs?: number; max?: number }) {
+  /** `cost`: told what each run cost (the audit log keeps it) */
+  constructor(private o: { dir: string; claudeCmd: () => string[]; run?: CopyRun; timeoutMs?: number; max?: number; cost?: (c: CopyCost) => void; now?: () => number }) {
     this.dir = o.dir;
   }
 
   async ask(p: { sessionId: string; cwd: string; question: string; model?: string }): Promise<CopyAnswer> {
     if (this.running >= (this.o.max ?? 2)) return { ok: false, error: 'two side questions are already running; ask again when one has answered' };
     this.running++;
+    const now = this.o.now ?? Date.now;
+    const t0 = now();
     try {
       const cmd = [...this.o.claudeCmd(), ...copyArgs(this.dir, p.sessionId, p.model)];
-      return await (this.o.run ?? runCopy)(cmd, { cwd: p.cwd, input: p.question, timeoutMs: this.o.timeoutMs ?? COPY_TIMEOUT_MS });
+      const a = await (this.o.run ?? runCopy)(cmd, { cwd: p.cwd, input: p.question, timeoutMs: this.o.timeoutMs ?? COPY_TIMEOUT_MS });
+      try {
+        this.o.cost?.({ sessionId: p.sessionId, ...(p.model ? { model: p.model } : {}), ok: a.ok, ms: now() - t0, ...(a.costUsd !== undefined ? { costUsd: a.costUsd } : {}), ...(a.usage ? { usage: a.usage } : {}) });
+      } catch {
+        /* the record never costs the answer */
+      }
+      return a;
     } finally {
       this.running--;
     }

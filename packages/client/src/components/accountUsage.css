@@ -13,6 +13,7 @@
 .au-l.big .bar { height: 8px; border-radius: 4px; }
 .au-x { color: var(--ink4); font: 400 10.5px var(--code); }
 .au-msg { color: var(--ink4); font: 400 11.5px var(--ui); }
+.au-stale { color: var(--ink4); font: 400 10.5px var(--code); }
 
 /* on the session's usage card: a section under its own */
 .fh-card .au-sec { display: flex; flex-direction: column; gap: 8px; width: 100%; margin-top: 4px; padding: 10px 0 0; border: 0; border-top: 1px solid var(--hair); background: none; text-align: left; cursor: pointer; }

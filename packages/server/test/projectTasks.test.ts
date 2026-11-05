@@ -47,7 +47,7 @@ describe('tasks: who may do what', () => {
     const a = ok(openItem(p, 'lead', { kind: 'task', title: 'Work panel', body: 'A Work panel on the board.', owner: 'eng', link: 'feat/work-items' }, t));
     expect(a.item).toMatchObject({ kind: 'task', state: 'queued', rank: 1, owner: 'eng', link: 'feat/work-items', body: 'A Work panel on the board.' });
     expect(a.item.severity).toBeUndefined();
-    expect(a.tell).toEqual({ to: 'eng', text: 'Assigned you the task "Work panel"' });
+    expect(a.tell).toEqual({ to: 'eng', text: 'Assigned you the task "Work panel"', ping: 'assign' });
     expect(ok(openItem(p, 'you', { kind: 'task', title: 'Team map' }, t)).item.rank).toBe(2);
     expect(bad(openItem(p, 'eng', { kind: 'task', title: 'My own idea' }, t))).toBe('Only the lead (lead) opens tasks in this project: post it to the lead instead.');
     // no severity: its rank is its order
@@ -77,11 +77,11 @@ describe('tasks: who may do what', () => {
     expect(bad(changeItem(p, 'rev', a.id, { state: 'review' }, t))).toMatch(/It's eng's: only its owner \(or the lead\)/);
     expect(bad(changeItem(p, 'rev', a.id, { link: 'x' }, t))).toMatch(/only its owner/);
     // the lead reassigns it: the new owner is told
-    expect(ok(changeItem(p, 'lead', a.id, { owner: 'rev' }, t)).tell).toEqual({ to: 'rev', text: 'Reassigned you the task "Work panel". Next: server first' });
+    expect(ok(changeItem(p, 'lead', a.id, { owner: 'rev' }, t)).tell).toEqual({ to: 'rev', text: 'Reassigned you the task "Work panel". Next: server first', ping: 'assign' });
     expect(bad(changeItem(p, 'lead', a.id, { severity: 'high' }, t))).toMatch(/no severity/);
     expect(bad(changeItem(p, 'lead', a.id, { rank: 'first' }, t))).toMatch(/Rank is a number/);
     // anyone annotates; its owner hears
-    expect(ok(annotateItem(p, 'eng', a.id, 'the panel needs a Done toggle', t)).tell).toEqual({ to: 'rev', text: 'Noted on "Work panel": the panel needs a Done toggle' });
+    expect(ok(annotateItem(p, 'eng', a.id, 'the panel needs a Done toggle', t)).tell).toEqual({ to: 'rev', text: 'Noted on "Work panel": the panel needs a Done toggle', ping: 'note' });
   });
 
   it('closed as done by the lead (or you) with its outcome; never by its owner, never without one; then nothing changes it', () => {
@@ -223,5 +223,32 @@ describe('tasks through the MCP tools', () => {
     expect((await tool(ENG, 'project_close', { item: id, outcome: 'merged' })).isError).toBe(true);
     expect((await tool(LEAD, 'project_close', { item: id, outcome: 'merged as abc1234' })).content[0].text).toMatch(/^\[task · done\] Work panel .* outcome: merged as abc1234$/);
     expect((await tool(ENG, 'project_items', { kind: 'task', log: true })).content[0].text).toContain('outcome: merged as abc1234');
+  });
+
+  it('project_items with an item id: that one in full, its whole body and every note (the list cuts a body short)', async () => {
+    srv = await startServer(loadConfig({ dataDir: dir, dbPath: ':memory:', hookToken: 'hooktok', uiToken: 'u', clientDir: join(tmpdir(), 'nope') }), { tail: false, listen: false, ci: false, security: false });
+    const LEAD = 'llll0000-0000-0000-0000-000000000001';
+    const DOCS = 'dddd0000-0000-0000-0000-000000000003';
+    const now = Date.now();
+    for (const [id, alias] of [[LEAD, 'Lead'], [DOCS, 'Docs']]) srv.store.upsertSession({ id, alias, cwd: 'C:/work', state: 'idle', startedAt: now, lastTs: now } as never);
+    const p = srv.projects.create('Dev');
+    srv.projects.add(p.id, LEAD);
+    srv.projects.add(p.id, DOCS);
+    srv.projects.update(p.id, { coordination: true, lead: LEAD });
+    const tool = async (sid: string, name: string, args: object) =>
+      (await srv.app.inject({ method: 'POST', url: '/mcp', headers: { 'x-cora-token': 'hooktok', 'x-cora-session': sid, accept: 'application/json, text/event-stream', 'content-type': 'application/json' }, payload: { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } } })).json().result as { isError?: boolean; content: Array<{ text: string }> };
+    const body = ['Token audit.', 'Count the cache writes per session. '.repeat(20).trim(), 'Write a script in your own scratch folder, not the repo: THE END'].join('\n');
+    expect((await tool(LEAD, 'project_item', { kind: 'task', title: 'Token audit', owner: DOCS, body })).isError).toBeFalsy();
+    const id = srv.projects.get(p.id)!.items![0].id;
+    expect((await tool(LEAD, 'project_annotate', { item: id, text: 'Use the last 30 days.' })).isError).toBeFalsy();
+    // the list: short
+    const list = (await tool(DOCS, 'project_items', { kind: 'task' })).content[0].text;
+    expect(list).not.toContain('THE END');
+    // by its id: all of it
+    const full = (await tool(DOCS, 'project_items', { item: id })).content[0].text;
+    expect(full.startsWith(`[task · queued · rank 1] Token audit (item ${id}) · owner you`)).toBe(true);
+    expect(full).toContain(['Body:', body].join('\n'));
+    expect(full).toMatch(/Notes \(1, oldest first\):\n- \d{4}-\d\d-\d\d \d\d:\d\dZ, "Lead": Use the last 30 days\.$/);
+    expect((await tool(DOCS, 'project_items', { item: 'nope1234' })).content[0].text).toBe('No item nope1234 in this project.');
   });
 });

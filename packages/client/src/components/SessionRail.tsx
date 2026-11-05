@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { SessionsMute } from './ReadAloudToggle';
 import { ProjectsSection } from './Projects';
 import { orderMembers } from '../state/projects';
-import { useProjects } from '../state/projects';
+import { projectMembers, useProjects } from '../state/projects';
 import { GuestCard } from './Live';
 import { useLive, usePrivate } from '../state/live';
 import { useCoraLinks } from '../lib/coraLinks';
@@ -18,6 +18,7 @@ import { RecapPeek } from './Recap';
 import { IssueChip } from './IssuePicker';
 import { JiraChip } from './JiraChip';
 import { GROUPS, dropOrder, inList, sameGroup, saveOrder, sortedSessions } from '../lib/sessionOrder';
+import { spawnTree, spawnedLine } from '../lib/spawnedNav';
 import { askEnd, openPalette } from './Palette';
 import { CiGlyph } from './CiStrip';
 import { ToolsDock } from './Tools';
@@ -31,6 +32,8 @@ import { useOrch } from '../state/orchestrator';
 import { useVoice } from '../lib/voice';
 import { oops } from '../state/oops';
 import { NAV_DEFAULT, NAV_RESIZED, applyNavWidth, navWidthNow, saveNavWidth } from '../lib/navWidth';
+import { FlagCount, FlagMark } from './SessionFlag';
+import { flaggedCount } from '../lib/sessionFlag';
 import './nav.css';
 
 export { sortedSessions };
@@ -150,6 +153,8 @@ function Entry({ s, onMenu, drag, setDrag, project }: { s: SessionInfo; onMenu(e
           <span className="ses-ci">
             <CiGlyph sessionId={s.id} quiet />
           </span>
+          {/* flagged to come back to: its bookmark (a slot of its own, so nothing slides) */}
+          {isDismissed(s) ? null : <FlagMark id={s.id} flag={s.flag} now={now} />}
         </span>
         {/* ended: off the list; live: end it (after asking how, since that depends on where it runs) */}
         {!isDismissed(s) ? (
@@ -215,6 +220,25 @@ function NavEdge() {
   );
 }
 
+/**
+ * What a session started (a test harness's sessions, a tool's), under its row: folded to one quiet line (how many, and
+ * why), open on a click to their own rows, set in. They leave once they've ended and their folder is cleaned up.
+ */
+export function SpawnedRows({ creator, kids, open, onToggle, entry }: { creator: string; kids: SessionInfo[]; open: boolean; onToggle(): void; entry(s: SessionInfo): React.ReactNode }) {
+  const line = spawnedLine(kids);
+  const need = kids.some((s) => s.state === 'needs-you');
+  return (
+    <div className={`ses-spawn${open ? ' open' : ''}`} data-spawned-by={creator}>
+      <button className={`ses-sub${need ? ' need' : ''}`} onClick={onToggle} title={open ? 'Fold them away' : `Show what it started${line.why ? `: ${line.why}` : ''}`}>
+        <Icon name="ChevronDown" size={11} className="ses-chev" />
+        <span className="ses-sub-n">{line.count}</span>
+        {line.why ? <span className="ses-sub-why">{line.why}</span> : null}
+      </button>
+      {open ? <div className="ses-kids">{kids.map(entry)}</div> : null}
+    </div>
+  );
+}
+
 /** Folded groups (Idle, Ended), remembered. */
 function useFolded(): [Record<string, boolean>, (g: string) => void] {
   const [f, setF] = useState<Record<string, boolean>>(() => {
@@ -252,10 +276,13 @@ export function SessionRail() {
   const [folded, toggleFold] = useFolded();
   const focus = useBrain((s) => s.focus);
   // what's live, and what ended in the last few hours; removed ones and older ones are in Resume
-  // a project's members show under it, not again in the groups below
+  // a project's members show under it, not again in the groups below; an archived project's are hidden with it
   const members = useProjects((p) => p.projects);
-  const inProject = useMemo(() => new Set(members.filter((p) => !p.archivedAt).flatMap((p) => p.sessions)), [members]);
-  const list = sortedSessions(sessions).filter((s) => inList(s, now, focus) && !inProject.has(s.id));
+  const inProject = useMemo(() => projectMembers(members), [members]);
+  const listed = sortedSessions(sessions).filter((s) => inList(s, now, focus));
+  // the sessions another one started: under their creator (folded), or in a folded group of their own
+  const spawn = spawnTree(listed, inProject);
+  const list = listed.filter((s) => !inProject.has(s.id) && !spawn.ids.has(s.id));
   const setModal = useBrain((s) => s.setModal);
   const guest = useLive((s) => s.role === 'guest');
   const privateConsole = usePrivate('console');
@@ -264,6 +291,16 @@ export function SessionRail() {
     e.preventDefault();
     if (guest) return;
     setMenu({ s, x: e.clientX, y: e.clientY });
+  };
+  // a session's row, and under it what it spawned: one folded sub-row, open on a click
+  const row = (s: SessionInfo, project?: { id: string; members: string[] }) => {
+    const kids = spawn.under.get(s.id);
+    return (
+      <Fragment key={s.id}>
+        <Entry s={s} onMenu={onMenu} drag={drag} setDrag={setDrag} project={project} />
+        {kids ? <SpawnedRows creator={s.id} kids={kids} open={!!folded[`spawn:${s.id}`]} onToggle={() => toggleFold(`spawn:${s.id}`)} entry={(k) => <Entry key={k.id} s={k} onMenu={onMenu} drag={drag} setDrag={setDrag} />} /> : null}
+      </Fragment>
+    );
   };
   return (
     <nav className="rail">
@@ -301,7 +338,7 @@ export function SessionRail() {
         )}
       </div>
       <div className="rail-scroll">
-      {guest ? null : <ProjectsSection entry={(s, pj) => <Entry key={s.id} s={s} onMenu={onMenu} drag={drag} setDrag={setDrag} project={pj} />} dragging={drag?.id ?? null} onDropped={() => setDrag(null)} />}
+      {guest ? null : <ProjectsSection entry={(s, pj) => row(s, pj)} dragging={drag?.id ?? null} onDropped={() => setDrag(null)} />}
       {GROUPS.map((g) => {
         const all = list.filter((s) => g.states.includes(s.state));
         if (!all.length) return null;
@@ -326,17 +363,30 @@ export function SessionRail() {
                   {freshOnes.length}
                 </button>
               ) : null}
+              {closed && flaggedCount(all) ? <FlagCount n={flaggedCount(all)} /> : null}
               {g.title === 'ended' ? (
                 <button className="ses-clear" onClick={(e) => (e.stopPropagation(), void clearEnded())} title="Take the ended sessions off the list (Resume still has them)">
                   clear
                 </button>
               ) : null}
             </div>
-            {closed ? null : all.map((s) => <Entry key={s.id} s={s} onMenu={onMenu} drag={drag} setDrag={setDrag} />)}
+            {closed ? null : all.map((s) => row(s))}
           </section>
         );
       })}
-      {!list.length && !inProject.size && ready ? <div className="empty">Nothing open. Start a new session, or pick up an earlier one from Resume.</div> : null}
+      {/* spawned by a session the nav doesn't show (or by one unknown): folded, apart */}
+      {spawn.loose.length ? (
+        <section className="ses-group">
+          <div className={`ses-h fold${folded['spawned-open'] ? '' : ' closed'}`} onClick={() => toggleFold('spawned-open')} title="Sessions other sessions started (a test harness's, a tool's)">
+            <Icon name="ChevronDown" size={11} className="ses-chev" />
+            <span>spawned</span>
+            <span className="ses-n">{spawn.loose.length}</span>
+            <span className="ses-rule" />
+          </div>
+          {folded['spawned-open'] ? spawn.loose.map((s) => <Entry key={s.id} s={s} onMenu={onMenu} drag={drag} setDrag={setDrag} />) : null}
+        </section>
+      ) : null}
+      {!list.length && !inProject.size && !spawn.loose.length && ready ? <div className="empty">Nothing open. Start a new session, or pick up an earlier one from Resume.</div> : null}
       </div>
       {guest ? null : <ToolsDock />}
       {guest ? null : <RailFooter />}

@@ -215,5 +215,9 @@ describe("a post's fate on the board", () => {
     // held for your OK still says so
     expect(postFate(proj({ waiting: [{ post: 'x1', to: 'b', since: 1, undelivered: 5 }] }), post(), [{ id: 'w', project: 'p1', from: 'a', to: 'b', text: '', at: 1, post: 'x1' }], false)?.c).toBe('held');
     expect(postFate(proj(), post({ deliveredAt: 20 }), [], false)).toEqual({ t: 'delivered', c: '' });
+    // a wake carried it to one of its two members: the other still gets it on its next prompt
+    const two = proj({ members: { b: { heardTo: 0 }, c: { heardTo: 0 } } as never });
+    expect(postFate(two, post({ to: ['b', 'c'], deliveredTo: ['b'] }), [], false)).toEqual({ t: 'on its next prompt', c: 'wait' });
+    expect(postFate(two, post({ to: ['b', 'c'], deliveredTo: ['b', 'c'] }), [], false)).toEqual({ t: 'delivered', c: '' });
   });
 });

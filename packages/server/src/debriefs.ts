@@ -54,6 +54,11 @@ type Before = (o: { transcript: string; sessionId: string; path: string; from: n
 export class Debriefs {
   constructor(private o: { dir: string; onChange?: (sessionId: string) => void; before?: Before }) {}
 
+  /** Where they're kept: a folder for each session (the Library looks at which changed). */
+  get root(): string {
+    return this.o.dir;
+  }
+
   make(sessionId: string, cwd: string, transcript: string | null | undefined, raw: unknown, o: { from?: number; covers?: DebriefCovers } = {}): { ok: true; debrief: Debrief } | { ok: false; errors: string[] } {
     const from = o.from ?? 0;
     if (!okId(sessionId)) return { ok: false, errors: ['not a session'] };

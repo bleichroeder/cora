@@ -32,6 +32,7 @@ import { oops } from '../state/oops';
 import { Icon } from './Icon';
 import { lockNow } from '../state/lock';
 import { useThaw } from './Thaw';
+import { comeBackTo, unflagSession } from '../lib/sessionFlag';
 import './dialogs.css';
 import './palette.css';
 
@@ -321,6 +322,8 @@ function useEntries(): PEntry[] {
       cmd('tab:explains', 'Show this session’s explains', 'Presentation', () => st().setRightTab('explains'), { keywords: 'documents tab' });
       cmd('tab:changes', 'Show the changes', 'FileDiff', () => st().setRightTab('changes'), { keywords: 'diff files edits tab' });
       cmd('secret:add', 'Stash a secret', 'KeyRound', () => (wantAdd(), useTools.getState().show(SECRETS_ID)), { keywords: 'token key jwt pat password credential vault secrets' });
+      if (cur.flag) cmd('unflag', `Clear the flag on “${sessionName(cur)}”`, 'BookmarkX', async () => (await unflagSession(cur.id)) ?? undefined, { keywords: 'come back to this bookmark flag reminder remove' });
+      else cmd('flag', 'Come back to this', 'Bookmark', async () => (await comeBackTo(cur.id)) ?? undefined, { keywords: 'flag bookmark remind later return mark' });
       cmd('name', 'Suggest a name for this session', 'Sparkles', async () => (await suggestName(cur.id)) ?? undefined, { keywords: 'rename auto name' });
       cmd('copy-folder', 'Copy this session’s folder', 'Copy', () => (desktop?.writeClipboard ? desktop.writeClipboard(cur.cwd) : void navigator.clipboard?.writeText(cur.cwd).catch(() => {})), { keywords: 'path cwd clipboard' });
       cmd('expand', st().expanded ? 'Narrow the right column' : 'Widen the right column', 'Columns2', () => st().toggleExpanded(), { keywords: 'expand layout' });

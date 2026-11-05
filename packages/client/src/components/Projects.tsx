@@ -2,12 +2,14 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Project, SessionInfo } from '@cora/shared';
 import { useBrain } from '../state/store';
 import { PROJECT_COLORS } from '@cora/shared';
-import { addToProject, archiveProject, createProject, deleteProject, leaveProject, reorderProjects, shadesOf, updateProject, useProjects } from '../state/projects';
+import { addToProject, archiveAsking, archiveProject, createProject, deleteProject, leaveProject, reorderProjects, shadesOf, updateProject, useProjects } from '../state/projects';
 import { MAIN_COLORS, isDismissed, sessionName } from '../lib/format';
 import { Icon } from './Icon';
 import { createWithTeam } from '../state/builder';
 import './projects.css';
 import { useOnScreen } from '../lib/onScreen';
+import { FlagCount } from './SessionFlag';
+import { flaggedCount } from '../lib/sessionFlag';
 
 /**
  * Projects in the nav: a section above Working / Idle / Ended.
@@ -144,6 +146,7 @@ function ProjectRow({ p, folded, onFold, entry, dragging, onDropped, moving, set
           ))}
         </span>
         {needs ? <b className="pj-need">{needs}</b> : null}
+        {folded && flaggedCount(members) ? <FlagCount n={flaggedCount(members)} /> : null}
         <span className="pj-more pj-add" role="button" aria-label="New session in this project" title="Start a new session in this project" onClick={(e) => (e.stopPropagation(), newIn(p.id))}>
           <Icon name="Plus" size={13} />
         </span>
@@ -252,7 +255,7 @@ function ProjectMenu({ p, x, y, index, all, onClose }: { p: Project; x: number; 
         <Icon name="LayoutDashboard" size={14} /> Open its board
       </button>
       <div className="sm-sep" />
-      <button className="sm-row bad" onClick={() => (void archiveProject(p.id, true), onClose())}>
+      <button className="sm-row bad" onClick={() => (void archiveAsking(p), onClose())}>
         <Icon name="Archive" size={14} /> Archive project
       </button>
     </div>
@@ -288,7 +291,7 @@ export function ArchivedProjects({ q, onDone }: { q: string; onDone(): void }) {
                 onDone();
               })
             }
-            title="Back in the nav, with its sessions, brief, decisions and thread"
+            title="Back in the nav, with its brief, decisions and thread, and its sessions resumed in it"
           >
             <Icon name="ArchiveRestore" size={12} /> Bring back
           </button>

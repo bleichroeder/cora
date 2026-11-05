@@ -251,6 +251,10 @@ describe('voice settings', () => {
     expect(() => applyPatch(DEFAULT_SETTINGS, { orchestrator: { mandate: { repos: ['relative/path'] } } })).toThrow(/absolute/);
     expect(() => applyPatch(DEFAULT_SETTINGS, { orchestrator: { mandate: { repos: Array.from({ length: 31 }, (_, i) => `${repo}${i}`) } } })).toThrow(/30/);
     expect(() => applyPatch(DEFAULT_SETTINGS, { orchestrator: { budget: 10 } })).toThrow(/budget/);
+    // its context cap: 0 (never), or from 50k to 2M
+    expect(applyPatch(DEFAULT_SETTINGS, { orchestrator: { contextCap: 300_000 } }).orchestrator.contextCap).toBe(300_000);
+    expect(applyPatch(DEFAULT_SETTINGS, { orchestrator: { contextCap: 0 } }).orchestrator.contextCap).toBe(0);
+    expect(() => applyPatch(DEFAULT_SETTINGS, { orchestrator: { contextCap: 1000 } })).toThrow(/contextCap/);
     expect(() => applyPatch(DEFAULT_SETTINGS, { orchestrator: { events: 'loud' as any } })).toThrow(/events/);
   });
 

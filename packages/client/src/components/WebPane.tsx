@@ -12,6 +12,8 @@ import { desktop } from '../lib/desktop';
 import { addRecent, loadRecent, saveRecent, toUrl, type Recent } from '../lib/web';
 import { Icon } from './Icon';
 import { FindBar } from './FindBar';
+import { noteWebInput } from '../lib/webInput';
+import { sessionName } from '../lib/format';
 import './browser.css';
 
 /** Electron's <webview> (desktop app only): a real browser page in its own process. */
@@ -341,6 +343,7 @@ function BrowserView({ group, shown, keys, buttons, intro }: { group: string; sh
             >
               {ts.loading ? <span className="wt-spin" /> : ts.icon ? <img src={ts.icon} alt="" onError={(e) => (e.currentTarget.style.display = 'none')} /> : <Icon name="Globe" size={12} />}
               <span className="wt-t">{t.title || (t.url ? host(t.url) : 'New tab')}</span>
+              {t.fresh ? <FreshChip sessionId={t.sessionId} /> : null}
               <button
                 className="wt-x"
                 title="Close tab (Ctrl+W)"
@@ -565,6 +568,16 @@ function MarksBar({ bar, icon, onGo, onNewTab }: { bar: Array<{ url: string; tit
   );
 }
 
+/** A tab a session opened behind the one you're on: "new", and whose, until you look at it. */
+export function FreshChip({ sessionId }: { sessionId: string }) {
+  const s = useBrain((st) => st.sessions[sessionId]);
+  return (
+    <span className="wt-new" title="A session opened this while you were on another tab">
+      new{s ? ` · ${sessionName(s)}` : ''}
+    </span>
+  );
+}
+
 /**
  * The built-in browser for a session: its own tabs (a GitLab and a Jira tab per piece of work), laid over the scene
  * or the whole focus area when wide. Every session's pages stay loaded while you're elsewhere; logins are shared.
@@ -632,7 +645,15 @@ export function WebPane({ view, sessionId }: { view: React.RefObject<HTMLDivElem
   };
 
   return (
-    <div className={`web-pane${shown ? '' : ' hidden'}${web.wide ? ' wide' : ''}${dragging ? ' dragging' : ''}${over && !web.wide ? ' over' : ''}`} style={web.wide ? { inset: 0 } : rect}>
+    <div
+      className={`web-pane${shown ? '' : ' hidden'}${web.wide ? ' wide' : ''}${dragging ? ' dragging' : ''}${over && !web.wide ? ' over' : ''}`}
+      style={web.wide ? { inset: 0 } : rect}
+      // you're using it (its tabs, address bar, buttons; a click into its page): a session's change waits behind it
+      onPointerDownCapture={() => noteWebInput(sessionId)}
+      onKeyDownCapture={() => noteWebInput(sessionId)}
+      onWheelCapture={() => noteWebInput(sessionId)}
+      onFocusCapture={() => noteWebInput(sessionId)}
+    >
       {!web.wide ? (
         <div
           className="web-resize"

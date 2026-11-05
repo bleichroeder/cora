@@ -435,8 +435,9 @@ export function seatCard(t: Team, seatId: string): string {
 
 /** What an edit to a team changes for its running seats (diffTeam). */
 export type TeamChange = {
-  kind: 'seat-added' | 'seat-removed' | 'seat-retasked' | 'seat-restart-needed' | 'pool-resized' | 'routes-changed' | 'watches-changed';
-  seat?: string; detail?: string;
+  kind: 'seat-added' | 'seat-removed' | 'seat-renamed' | 'seat-retasked' | 'seat-restart-needed' | 'pool-resized' | 'routes-changed' | 'watches-changed';
+  /** seat-renamed: the new id (`from`: the old) */
+  seat?: string; detail?: string; from?: string;
 };
 
 /**
@@ -470,6 +471,41 @@ const AGENT_FIELDS = ['tools', 'disallowedTools', 'model', 'effort', 'permission
  * What changed between two versions of a team, for its running seats: seats removed, added, then each remaining seat
  * (in the team's order: retasked, restart needed, pool resized, watches changed), then its routes. No change: [].
  */
+/**
+ * Seats an edit only renamed: a seat gone and a seat new with the same name, or the same instructions (each paired once,
+ * in order). Apply keeps their sessions (adopted into the new id) instead of ending them and starting new ones.
+ */
+export function seatRenames(old: Team | undefined, next: Team): Array<{ from: Seat; to: Seat }> {
+  if (!old) return [];
+  const key = (x: string | undefined) => (x ?? '').trim().toLowerCase();
+  const added = next.seats.filter((s) => !old.seats.some((o) => o.id === s.id));
+  const out: Array<{ from: Seat; to: Seat }> = [];
+  for (const g of old.seats) {
+    if (next.seats.some((s) => s.id === g.id)) continue;
+    const to = added.find((a) => !out.some((r) => r.to === a) && ((!!key(g.name) && key(a.name) === key(g.name)) || (!!key(g.instructions) && key(a.instructions) === key(g.instructions))));
+    if (to) out.push({ from: g, to });
+  }
+  return out;
+}
+
+/**
+ * The team before an edit, its renamed seats under their new ids (and every route, group, fallback and lead that named
+ * them): diffed against the new team, what's left is what really changed in them (new instructions, tools).
+ */
+export function renamedBefore(old: Team, renames: Array<{ from: Seat; to: Seat }>): Team {
+  if (!renames.length) return old;
+  const id = new Map(renames.map((r) => [r.from.id, r.to.id]));
+  const ep = <E extends string>(e: E): E => (e.startsWith('seat:') && id.has(e.slice(5)) ? (`seat:${id.get(e.slice(5))}` as E) : e);
+  return {
+    ...old,
+    seats: old.seats.map((s) => (id.has(s.id) ? { ...s, id: id.get(s.id)! } : s)),
+    groups: old.groups.map((g) => ({ ...g, members: g.members.map((m) => id.get(m) ?? m), ...(g.grow ? { grow: { ...g.grow, seat: id.get(g.grow.seat) ?? g.grow.seat } } : {}) })),
+    routes: old.routes.map((r) => ({ ...r, from: r.from.map(ep), to: ep(r.to) })),
+    fallback: ep(old.fallback),
+    ...(old.lead ? { lead: id.get(old.lead) ?? old.lead } : {}),
+  };
+}
+
 export function diffTeam(old: Team | undefined, next: Team): TeamChange[] {
   const prev: Team = old ?? { version: 0, seats: [], groups: [], labels: [], routes: [], fallback: next.fallback, escalation: [] };
   const out: TeamChange[] = [];

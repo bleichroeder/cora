@@ -36,7 +36,7 @@ import { lockNow } from './state/lock';
 import { RecapBar } from './components/Recap';
 import { IssueChip } from './components/IssuePicker';
 import { loadSetup, useSetup } from './state/setup';
-import { isShell, setupFirstRun } from '@cora/shared';
+import { isShell, setupFirstRun, NUDGE_ADVICE } from '@cora/shared';
 import { Galaxy } from './galaxy/Galaxy';
 import { UsageStrip } from './components/UsageStrip';
 import { Scene } from './scene/Scene';
@@ -44,6 +44,7 @@ import { LiveBoard } from './components/LiveBoard';
 import { hasNewDebrief, useDebrief } from './state/debrief';
 import { ago, isDismissed, plainName, prettyModel, sessionColor, sessionName, tokens } from './lib/format';
 import { contextMax } from './scene/derive';
+import { heavyContext } from './lib/contextNudge';
 import { Icon } from './components/Icon';
 import { PlanUsage, UsageView } from './components/AccountUsage';
 import { openUsage, useAccountUsage, useWatchUsage } from './state/accountUsage';
@@ -65,10 +66,12 @@ import { ChangesPane } from './components/ChangesPane';
 import { WebPane, openFind, stepTab, tabOfPage } from './components/WebPane';
 import { openInBrowser } from './state/browser';
 import { useWeb } from './state/web';
+import { noteWebInput } from './lib/webInput';
 import { useBoardDock } from './state/boardDock';
 import { JiraText } from './components/JiraChip';
 import { backgroundTasks } from './lib/background';
 import { PaletteHost } from './components/Palette';
+import { FlagPop } from './components/SessionFlag';
 import { CiHeader, useFollowed } from './components/CiStrip';
 import { DeployHeader, DeploysView } from './components/Deploys';
 import { MailWatchChip } from './components/MailWatchChip';
@@ -567,13 +570,15 @@ export function App() {
     // a page asking for a new tab (a target=_blank link) or a tab shortcut: it belongs to whichever session owns the page
     // the key in a page's login field: a session's tab, or a Tool in the drawer when 1Password is on there
     const offField = desktop.onOpField?.((m) => onField(m, tabOfPage.has(m.from) || (toolOfPage.has(m.from) && useOp.getState().settings.tools)));
-    const offTab = desktop.onWebTab?.(({ from, url, background, key }) => {
+    const offTab = desktop.onWebTab?.(({ from, url, background, key, used }) => {
       // Esc in a page: its find bar closes (the page still gets the key)
       if (key === 'esc') return void window.dispatchEvent(new CustomEvent('cora:find-esc', { detail: from }));
       // Ctrl+\ in a page (a session's tab, or a Tool in the drawer when it's allowed there): 1Password's menu
       if (key === 'fill') return void ((tabOfPage.has(from) || (toolOfPage.has(from) && useOp.getState().settings.tools)) && openOpMenu(from));
       const w = useWeb.getState();
       const t = w.tabs[tabOfPage.get(from) ?? ''];
+      // you're using a session's page (reading it, typing in it): a change that session makes waits behind it
+      if (used) return void (t && noteWebInput(t.sessionId));
       if (!t) {
         // a tool's page (Slack): its links open in the session you're looking at (else Cora's Browser); Ctrl+W closes the drawer
         if (!toolOfPage.has(from)) return;
@@ -724,6 +729,8 @@ export function App() {
       <OpMenu />
       {guest ? null : <CoraFloat />}
       <PaletteHost />
+      {/* a session flag's why and reminder: always here, over the nav's drawer too (never inside it, so a drawer closing can't take it) */}
+      <FlagPop />
       <SessionSwitcher />
       {guest ? null : <LockSetup />}
       {guest ? null : <ThawCard />}
@@ -792,17 +799,19 @@ function SessionMeter({ s }: { s: SessionInfo }) {
   }, [s.id, version, s.model]);
   const m = prettyModel(s.model);
   const drift = s.totalLines && s.unknownLines ? s.unknownLines / s.totalLines : 0;
-  // your plan's usage under the session's: read while you look at the card (about once a minute at most)
+  // your plan's usage under the session's: read while you look at the card (every five minutes at most)
   const [hover, setHover] = useState(false);
   useWatchUsage(hover);
   const plan = useAccountUsage((a) => a.u);
   if (!u.out && u.pct == null && !m) return null;
   const pct = u.pct ?? 0;
-  const col = u.pct == null ? 'var(--ink4)' : pct < 0.6 ? 'var(--work)' : pct < 0.8 ? 'var(--think)' : 'var(--need)';
+  // past its nudge: amber, and what each turn rereads (a handover or /compact brings it back)
+  const heavy = heavyContext(s, u.ctx, u.compactedAt != null);
+  const col = u.pct == null ? 'var(--ink4)' : heavy ? 'var(--think)' : pct < 0.6 ? 'var(--work)' : pct < 0.8 ? 'var(--think)' : 'var(--need)';
   return (
-    <span className="fh-meter clickable" onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)} onClick={() => openUsage()} title="">
+    <span className={`fh-meter clickable${heavy ? ' heavy' : ''}`} onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)} onClick={() => openUsage()} title="">
       <span className="fh-bar"><i style={{ width: `${Math.min(100, pct * 100)}%`, background: col }} /></span>
-      <span>{u.compactedAt != null ? 'fresh' : u.pct != null ? `${Math.round(pct * 100)}%` : '–'}</span>
+      <span>{heavy ?? (u.compactedAt != null ? 'fresh' : u.pct != null ? `${Math.round(pct * 100)}%` : '–')}</span>
       {m ? <span className="fh-model">{m.name}</span> : null}
       {drift > 0.05 ? <span className="fh-flag" /> : null}
       <span className="fh-card">
@@ -814,6 +823,7 @@ function SessionMeter({ s }: { s: SessionInfo }) {
         {m ? <span className="r"><span className="k">model</span><span>{m.name}{m.ctx ? ` · ${m.ctx} context` : ''}</span></span> : null}
         <span className="r"><span className="k">output this session</span><span>{tokens(u.out)} tokens</span></span>
         <span className="r"><span className="k">compactions</span><span>{u.compactions || 'none'}</span></span>
+        {heavy ? <span className="w">{`Its context is ${Math.round(pct * 100)}% (${tokens(u.ctx)}), and every turn reads all of it again. ${NUDGE_ADVICE}`}</span> : null}
         <button className="au-sec" onClick={(e) => (e.stopPropagation(), openUsage())}>
           <span className="k">
             Your plan<span>All usage ›</span>

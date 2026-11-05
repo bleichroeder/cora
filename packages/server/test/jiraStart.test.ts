@@ -56,6 +56,30 @@ describe('starting work from Jira', () => {
     expect(t).toMatch(/C:\/g\/ts \(2 ACME tickets\)/);
   });
 
+  it('someone has the ticket already (a live session named for it, or the journal): no handoff, no start, and a waiting turn says who', async () => {
+    const named = make({ sessions: () => [ses('a', 'C:/g/ts'), { ...ses('f', 'C:/g/ts'), alias: 'fix acme-5301 dedupe' }] });
+    expect(named.s.holder('ACME-5301')).toBe('fix acme-5301 dedupe (f) has it');
+    expect(named.s.handoff(EV)).toBe(false);
+    // an ended one isn't on it; ACME-53010 isn't ACME-5301
+    expect(make({ sessions: () => [{ ...ses('f', 'C:/g/ts', undefined, 1, 'ended'), alias: 'ACME-5301' }] }).s.holder('ACME-5301')).toBeNull();
+    expect(make({ sessions: () => [{ ...ses('f', 'C:/g/ts'), alias: 'ACME-53010' }] }).s.holder('ACME-5301')).toBeNull();
+    // the journal: work done in a session no one named for it
+    const journal = (k: string) => (k === 'ACME-5301' ? [{ sessionId: 'w9', session: 'Dedupe work', at: Date.UTC(2026, 10, 3, 15, 0), text: 'Fixed the dedupe;\n  MR !412 merged' }] : []);
+    const j = make({ journal });
+    expect(j.s.holder('ACME-5301')).toMatch(/^"Dedupe work" \(w9\) worked on it \(its journal, .+: Fixed the dedupe; MR !412 merged\)$/);
+    expect(j.s.handoff(EV)).toBe(false);
+    const r = await j.s.start({ key: 'ACME-5301', cwd: 'C:/g/ts' });
+    expect(r).toMatchObject({ ok: false, text: expect.stringMatching(/^ACME-5301: "Dedupe work" \(w9\) worked on it .*Don't start it again/) });
+    expect(j.launched).toEqual([]);
+    // the user asks for it in their own words: it starts
+    const asked = make({ journal, userTurn: () => true });
+    expect((await asked.s.start({ key: 'ACME-5301', cwd: 'C:/g/ts' })).ok).toBe(true);
+    expect(asked.launched).toHaveLength(1);
+    // its turn, asked again as it goes: as it was, or who took it meanwhile
+    expect(make().s.recheck(EV)).toBe(make().s.turnText(EV));
+    expect(j.s.recheck(EV)).toMatch(/^\[Jira\] ACME-5301 was assigned to the user, but "Dedupe work" \(w9\) worked on it .*nothing to start \(don't call jira_start/);
+  });
+
   it('refuses tell, unknown tickets and tickets with a session', async () => {
     expect((await make({ mode: () => 'tell' }).s.start({ key: 'ACME-5301', cwd: 'C:/g/ts' })).ok).toBe(false);
     expect((await make().s.start({ key: 'ACME-9', cwd: 'C:/g/ts' })).ok).toBe(false);

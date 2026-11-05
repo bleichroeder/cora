@@ -4,8 +4,11 @@ import type { Verdict } from './mandate';
 export type FeedMode = 'off' | 'important' | 'autopilot';
 
 export type FeedDeps = {
-  /** type the lines into the agent (false: it couldn't take them now); `others`: someone else's words are in them */
-  deliver(text: string, others: boolean): boolean;
+  /**
+   * type the lines into the agent (false: it couldn't take them now); `others`: someone else's words are in them;
+   * `lines`: what they're made of (a new conversation takes them back as its backlog if they never reached this one)
+   */
+  deliver(text: string, others: boolean, lines: FeedLine[]): boolean;
   /** the agent is working (or asking something): lines wait */
   agentBusy(): boolean;
   /** autopilot (a goal is live), important (the default otherwise), or off */
@@ -36,6 +39,20 @@ const FOLLOWERS = new Set(['Read', 'Glob', 'Grep', 'LS', 'NotebookRead']);
 const SEEN_MAX = 5000;
 const MAX_LINES = 20;
 
+/** A clock time, as the header says it (local, 24h). */
+export const hhmm = (at: number) => {
+  const t = new Date(at);
+  return `${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}`;
+};
+
+/**
+ * What a line says when it goes, asked again then (it may have waited hours for a conversation that could take it):
+ * still news (null: as it was; or reworded), or too late (`gone`: what it was, in a few words, for one "too late" line).
+ */
+export type Recheck = () => string | null | { gone: string };
+export type FeedLine = { text: string; at: number; recheck?: Recheck };
+type Line = FeedLine;
+
 const clip = (s: string | undefined, n: number) => {
   const t = (s ?? '').replace(/\s+/g, ' ').trim();
   return t.length > n ? `${t.slice(0, n - 1)}…` : t;
@@ -55,7 +72,7 @@ export function promptWhat(p: Pick<PendingRequest, 'toolName' | 'toolInput'>): s
  * while. Off: nothing.
  */
 export class EventFeed {
-  private q: string[] = [];
+  private q: Line[] = [];
   private firstAt = 0;
   private seenPending = new Set<string>();
   private toldWaiting = new Set<string>();
@@ -73,7 +90,7 @@ export class EventFeed {
   private seen = new Set<string>();
 
   /** Things to know but not worth a turn of their own (Jira): they go with the next delivery, or before your next words. */
-  private held: string[] = [];
+  private held: Line[] = [];
   /** someone else's words (a Slack reply, an email) are among the gathered lines: the turn they start acts on nothing */
   private qOthers = false;
 
@@ -81,34 +98,81 @@ export class EventFeed {
 
   /** Something to know, but not worth a turn: with the next delivery, or before the user's next words. */
   hold(line: string): void {
-    if (this.d.mode() === 'off' || this.held.includes(line)) return;
+    if (this.d.mode() === 'off' || this.held.some((l) => l.text === line)) return;
     // what's reachable now is all that matters: a newer network line replaces the one held before
-    if (line.startsWith('[Network] ')) this.held = this.held.filter((l) => !l.startsWith('[Network] '));
-    this.held.push(line);
+    if (line.startsWith('[Network] ')) this.held = this.held.filter((l) => !l.text.startsWith('[Network] '));
+    this.held.push({ text: line, at: this.now() });
     if (this.held.length > 30) this.held.shift();
   }
-  /** What it was holding (taken: it goes with your words). */
+  /** What it was holding (taken: it goes with your words), each with its time when it's from before this minute. */
   takeHeld(): string[] {
     const h = this.held;
     this.held = [];
-    return h;
+    return this.lines(h).lines;
   }
 
   private now = () => this.d.now?.() ?? Date.now();
-  private push(line: string): void {
-    if (this.d.mode() === 'off' || this.q.includes(line)) return;
-    this.q.push(line);
+  private push(line: string, recheck?: Recheck): void {
+    if (this.d.mode() === 'off' || this.q.some((l) => l.text === line)) return;
+    this.q.push({ text: line, at: this.now(), ...(recheck ? { recheck } : {}) });
     if (!this.firstAt) this.firstAt = this.now();
   }
   queued(): string[] {
-    return [...this.q];
+    return this.q.map((l) => l.text);
   }
 
-  /** Something to tell it in so many words (a budget reached, the user stood it down, …). */
-  note(line: string, o: { others?: boolean; /** comes even with the feed off (a follow-up the user asked for) */ always?: boolean } = {}): void {
+  /**
+   * Something to tell it in so many words (a budget reached, the user stood it down, …). `recheck`: asked again when
+   * it goes (a call's heads-up is too late once the call has started; a ticket to start may have been taken meanwhile).
+   */
+  note(line: string, o: { others?: boolean; /** comes even with the feed off (a follow-up the user asked for) */ always?: boolean; recheck?: Recheck } = {}): void {
     if (this.d.mode() === 'off' && !o.always) return;
-    this.push(line);
+    this.push(line, o.recheck);
     if (o.others) this.qOthers = true;
+  }
+
+  /**
+   * Lines as they go: each asked again (too late ones become one line at the end), each with its own time when it's
+   * from before this minute (a line that waited hours says when it happened, not when it went in), and a long backlog
+   * cut to its latest MAX_LINES with what came before counted (the rest is in sessions, recaps and pipelines).
+   */
+  private lines(items: Line[]): { lines: string[]; earliest: number | null } {
+    const now = this.now();
+    const minute = hhmm(now);
+    const live: Line[] = [];
+    const gone: string[] = [];
+    for (const l of items) {
+      const r = l.recheck?.() ?? null;
+      if (r === null) live.push(l);
+      else if (typeof r === 'string') live.push({ ...l, text: r });
+      else gone.push(r.gone);
+    }
+    const stamp = (l: Line) => (hhmm(l.at) === minute ? l.text : `(${hhmm(l.at)}) ${l.text}`);
+    const cut = live.length - MAX_LINES;
+    const shown = cut > 0 ? live.slice(cut) : live;
+    return {
+      lines: [
+        ...(cut > 0 ? [`${cut} earlier, from ${hhmm(live[0].at)} on, not repeated here (sessions, recaps and pipelines have them)`] : []),
+        ...shown.map(stamp),
+        ...(gone.length ? [`Too late to act on now (they waited to reach you): ${gone.join('; ')}`] : []),
+      ],
+      earliest: items.length ? Math.min(...items.map((l) => l.at)) : null,
+    };
+  }
+
+  /**
+   * Everything gathered and held, taken, as lines (for a new conversation's first turn: it goes with the notice, not
+   * as a turn of its own after it), with `before`: what was delivered to the last one and never reached it. Null when
+   * there's nothing.
+   */
+  backlog(before: Line[] = []): { lines: string[]; since: number } | null {
+    const items = [...before, ...this.held, ...this.q].sort((a, b) => a.at - b.at);
+    this.held = [];
+    this.q = [];
+    this.qOthers = false;
+    this.firstAt = 0;
+    const { lines, earliest } = this.lines(items);
+    return lines.length && earliest != null ? { lines, since: earliest } : null;
   }
 
   /** Mute a session's alerts (failures, stuck, ended) for a while; 0 hours unmutes. Returns until when. */
@@ -255,13 +319,11 @@ export class EventFeed {
   /** Deliver what's gathered, if it's had a moment to gather and the agent is free. */
   tick(): boolean {
     if (!this.q.length || this.now() - this.firstAt < (this.d.flushMs ?? 4000) || this.d.agentBusy()) return false;
-    const t = new Date(this.now());
-    const hhmm = `${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}`;
     // what it was holding goes first (it's older), with what's gathered
-    const lines = [...this.held, ...this.q];
-    const more = lines.length - MAX_LINES;
-    const text = [`[Cora ${hhmm}]`, ...lines.slice(0, MAX_LINES).map((l) => `- ${l}`), ...(more > 0 ? [`- …and ${more} more`] : [])].join('\n');
-    if (!this.d.deliver(text, this.qOthers)) return false;
+    const items = [...this.held, ...this.q];
+    const { lines } = this.lines(items);
+    const text = [`[Cora ${hhmm(this.now())}]`, ...lines.map((l) => `- ${l}`)].join('\n');
+    if (!this.d.deliver(text, this.qOthers, items)) return false;
     this.qOthers = false;
     this.q = [];
     this.held = [];

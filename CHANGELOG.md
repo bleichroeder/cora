@@ -2,6 +2,84 @@
 
 What changed in each release. Cora updates itself; each update's notes are on its release page too.
 
+## 0.1.24
+
+- **Library: everything your sessions made, in one place.** Tools › Cora › Library gathers explains, debriefs and
+  their videos, journal artifacts, recaps and Cora's briefs, ended sessions' too. Grouped by project and session,
+  with search, kind and time filters, and stars that stay on top. A click opens each one where Cora shows it, with a
+  link back to its session.
+- **Flag a session to come back to.** A bookmark at the end of a nav row (or its right-click menu, or the palette's
+  "Come back to this") flags it, with an optional note of why and a reminder: later today, tomorrow at 9:00, or a time
+  you pick. A reminder that's come brightens the bookmark and tells you once. A folded group shows how many it holds,
+  and a flagged session stays in the list until you clear it.
+- **Wakes in a team follow its routes.** A team has no wake limit of its own: its routes decide who may wake whom
+  (on its own, with your OK, or never), and each seat's own limits hold it back. Information never wakes anyone: a
+  note, a change, a decision or an item's ping. Work handed over does, and so does a task assigned or reassigned to a
+  member, which wakes its new owner. A note on a task still doesn't. A project without a team gets a **Wake limit**
+  setting instead (6 an hour by default, or none, which drops the pair guard too). Pings say which they are, an
+  assignment or a note.
+- **A wake carries only what it's for.** It marks just its own post as delivered, so a note that didn't wake its
+  member is still news at the prompt that wake starts. A post to two members that a wake carried to one is still news
+  for the other, and the board says delivered once every member has it.
+- **Seats by their names.** A post's recipient or an item's owner can be a seat's id or its name however it's written,
+  or its handle (a pool's `seat-2`); a pool's several members ask you to name one. A note, change or decision to a
+  group goes to its members on the group's route (only work is offered to a group). What waited for a member who left
+  with nobody in their place (a seat renamed away) goes to the team's fallback, never nowhere.
+- **A renamed seat keeps its running sessions.** A seat given a new id, with the same name or instructions, is
+  renamed, not replaced: its members stay running with what they run and know, and are told their new seat. Anything
+  else that changed in it is a notice or a restart, as for any seat.
+- **A seat restarted to take a change comes back as itself.** Its members resume with their memory on the seat's new
+  definition, a pool at the size it had; only one that can't be resumed is replaced. A seat's new worktree starts from
+  the branch its folder has checked out, not the repo's default.
+- **Apply warns before it ends sessions.** Its sheet says that seats standing down end their sessions, and what those
+  run (a `/loop`, a cron, a Monitor) and know, and which seats it keeps as renamed. A seat removed while it's stood down
+  lets its members go at once, and what waited for them goes to the team's fallback.
+- **A seat's first prompt waits until it lands.** It counts only once the prompt arrives. Typed into a terminal still
+  starting and lost, it waits for the seat's mod to take it, and isn't given twice if it turns up after all. Several
+  seats starting at once wait longer, and nothing is sent to a member being stopped.
+- **Cora's agent never goes quiet unnoticed.** What it's given counts only once it's in its conversation. If it isn't,
+  Enter is pressed once more, and then its console says it isn't responding, with Restart (and Start fresh after a
+  restart that didn't help). What it was given waits for it and is never given twice. Each item goes in once the turn
+  before is over. Without Cora's hooks it works as before.
+- **A fresh start of Cora's agent starts in order.** Its first turn is the new-conversation notice with what the last
+  one missed, as context: the latest lines, each with its own time, and the rest counted. Your words follow, each once.
+  A call that has already started is "too late", and an assignment someone else took says who has it. `jira_start`
+  sees a ticket already worked on in a session named for it or in the journal.
+- **Live share keeps all of Cora's conversations private.** Guests never see an earlier conversation of Cora's agent,
+  only its current one, and only when you share the console.
+- **Team map: lit route labels sit on a pill** under their chip, clear of the route's line and of the tiles.
+- **Tasks keep their history.** The team map's rail shows every step a task went through and who had it at each.
+- **A task read in full.** `project_items` with an item's id gives its whole body and every note; the listing stays
+  short.
+- **A pool's member by its shown name.** "Engineer 2" works as an item's owner or a post's recipient.
+- **An archived project takes its sessions with it.** Archiving ends its running sessions (asking once first, if there
+  are any) and hides them all: none show under Ended. Bringing it back resumes them in it, with its team back up if it
+  was. Resuming one of its sessions brings the whole project back.
+- **Usage panels keep their numbers.** Your plan's usage is read every 5 minutes. If Anthropic turns it away (HTTP
+  429), the last reading stays on show with when it was taken, and Cora waits before asking again. A test Cora never
+  asks.
+- **Cora's agent keeps its context small.** Once its context passes its cap (200k by default) and it has been idle
+  for 5 minutes, it starts a fresh conversation between turns. What it remembers carries over, and each wake stops
+  rewriting a huge context.
+- **A session with a huge context is pointed out.** Past **Big context** (Settings, 300k by default), its header's
+  context chip turns amber and says what each turn rereads, and one notice suggests a handover or `/compact`. A team
+  seat's lead hears it on the board. Cora never acts on it herself.
+- **A session's web change shows when you're watching.** In "Load it in the background", a change is shown if you're
+  looking at that session's browser and haven't used it (clicked, typed or scrolled) for 30 seconds. Otherwise it
+  loads behind your tab, marked "new · <session>" until you look.
+- **Sessions another session started nest under it.** A folded line under the creator says how many and why, and opens
+  on a click. Once one has ended and its folder is gone, it leaves the nav. Test Coras mark theirs. Rerun Setup to pass
+  the new markers from your hooks.
+- **Old sessions stop reappearing in the nav.** A live explain's page that was only read (a session searching the
+  explains folder) no longer counts as a new version, which made an old session look active.
+- **No false "transcript lines weren't recognised" warning.** Claude Code's newer bookkeeping lines are known, and only
+  a message Cora can't read counts.
+- **Project header:** the sessions line names the first three folders and +N (all of them on hover) and only it gives
+  way, so the name and buttons keep their size however many members. In a narrow window the buttons keep their icons
+  and lose their words, and the name, toggles and ⋯ menu always fit.
+- **Narrow windows:** a tool (Library, Notes) opened from the nav's drawer closes the drawer, so nothing covers it.
+- **Electron 44.10.2.**
+
 ## 0.1.23
 
 - **The team builder.** Build a project's team on a canvas instead of writing it out: seats, groups and the routes

@@ -8,7 +8,7 @@ import { SessionNames } from './sessionNames';
 import { Lock } from './lock';
 import { Freeze } from './freeze';
 import { Journal, gitBranch, journalDir } from './journal';
-import { Calendar, withWhom } from './calendar';
+import { Calendar, callRecheck, withWhom } from './calendar';
 import { draftPrep, journalTrail, trailLines } from './calendarPrep';
 import { displayName, findRefs, mergeRefs, recapText, DEFAULT_VIDEO, DEFAULT_VOICE, type JournalRefs, type JournalTag, type VideosMsg, CALENDAR_SCOPE, type CalEvent, headline, firstSentence, CALL_STATUS } from '@cora/shared';
 import { LiveExplains } from './liveExplains';
@@ -26,6 +26,7 @@ import { homedir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import type { FastifyInstance } from 'fastify';
 import { buildApp } from './app';
+import { hooksAimed, readSettings, settingsPath } from './settings';
 import { inBuilderFolder } from './builder';
 import { Audit } from './audit';
 import type { Config } from './config';
@@ -52,6 +53,7 @@ import { claudeVersion, hasMods, nativeName, writeCoraPlugin } from './coraPlugi
 import type { PtyBackend } from './ptyhost/backend';
 import { hostedArgs } from './hosted';
 import { JiraFeed, KEEP_MS, type JiraFresh } from './jiraFeed';
+
 import { Outbox, Slack, filesLine, filesOf, slackPlain, type SlackApi } from './slack';
 import { MyThreads, slackKey, slackWhy, type SlackSeen } from './slackInbox';
 import { SlackLive, replyLine, type SlackReply, type SlackWatch, type WsLike } from './slackLive';
@@ -74,6 +76,9 @@ import { Tickets } from './tickets';
 import { Inbox } from './inbox';
 import { fromBump, fromCora, fromGitlabTodo, fromJira, fromMail, fromPipeline, fromWatch } from './inboxFeeds';
 import { GitlabTodos } from './gitlabTodos';
+
+/** "Starting now" is true for this long after a call starts. */
+const STARTING_NOW_MS = 10 * 60_000;
 
 export type Running = {
   app: FastifyInstance;
@@ -99,7 +104,7 @@ export type Running = {
 };
 
 /** Compose and start the whole server. */
-export async function startServer(config: Config, opts: { tail?: boolean; listen?: boolean; spawn?: SpawnFn; ptyBackend?: PtyBackend; onShutdown?: (o: { endTerminals: boolean }) => void; voiceFetch?: Fetch; namerRun?: RunFn; /** Cora's note drafts' `claude -p` (a fake in tests) */ draftRun?: RunFn; /** GitLab pipelines (off in tests) */ ci?: boolean; /** the security check (off in tests and simulations) */ security?: boolean; /** Tailscale's command line (a fake in tests) */ remoteRun?: import('./remote').Run; /** Go live's public door (a fake in tests) */ door?: Pick<Door, 'start' | 'stop' | 'open' | 'port'>; /** Slack's Web API and Socket Mode (fakes in tests) */ slackApi?: (token: string) => SlackApi; slackSocket?: (url: string) => WsLike; /** environments: where kubeconfigs are, and how reachability is checked (fakes in tests) */ kubeDir?: string; envProbe?: (url: string) => Promise<boolean>; /** setting Cora up: a scratch Claude settings file, and checks to fake (tests) */ claudeSettingsFile?: string; setupChecks?: Partial<import('./setup').SetupDeps>; /** Cora's plugin folder, as if Claude Code had mods (tests) */ pluginDir?: string; /** how long a new seat's mod is waited for (tests: shorter) */ modFirstWaitMs?: number } = {}): Promise<Running> {
+export async function startServer(config: Config, opts: { tail?: boolean; listen?: boolean; spawn?: SpawnFn; ptyBackend?: PtyBackend; onShutdown?: (o: { endTerminals: boolean }) => void; voiceFetch?: Fetch; namerRun?: RunFn; /** Cora's note drafts' `claude -p` (a fake in tests) */ draftRun?: RunFn; /** GitLab pipelines (off in tests) */ ci?: boolean; /** the security check (off in tests and simulations) */ security?: boolean; /** Tailscale's command line (a fake in tests) */ remoteRun?: import('./remote').Run; /** Go live's public door (a fake in tests) */ door?: Pick<Door, 'start' | 'stop' | 'open' | 'port'>; /** Slack's Web API and Socket Mode (fakes in tests) */ slackApi?: (token: string) => SlackApi; slackSocket?: (url: string) => WsLike; /** environments: where kubeconfigs are, and how reachability is checked (fakes in tests) */ kubeDir?: string; envProbe?: (url: string) => Promise<boolean>; /** setting Cora up: a scratch Claude settings file, and checks to fake (tests) */ claudeSettingsFile?: string; setupChecks?: Partial<import('./setup').SetupDeps>; /** Cora's plugin folder, as if Claude Code had mods (tests) */ pluginDir?: string; /** how long a new seat's mod is waited for (tests: shorter) */ modFirstWaitMs?: number; /** how long a typed prompt has to arrive (tests: shorter) */ promptLandMs?: number; /** how often flags' reminders are looked at (tests: shorter) */ flagCheckMs?: number } = {}): Promise<Running> {
   const store = new Store(config.dbPath);
   let hub: Hub | undefined;
   let ci: CiWatcher | undefined;
@@ -179,7 +184,7 @@ export async function startServer(config: Config, opts: { tail?: boolean; listen
   // deep freeze: the terminals open, kept current, so they can be brought back after the PC restarts
   const freeze = new Freeze(config.dbPath === ':memory:' ? null : config.dataDir);
   // each session's journal (Documents\\Cora\\Journal): its milestones, its wrap-up, recaps
-  const journal = new Journal({ dir: journalDir, dataDir: config.dbPath === ':memory:' ? null : config.dataDir, projects: () => tickets.knownProjects() });
+  const journal = new Journal({ dir: config.journalDir ? () => config.journalDir! : journalDir, dataDir: config.dbPath === ':memory:' ? null : config.dataDir, projects: () => tickets.knownProjects() });
   // an entry with what it points at (Journal 2): its session's ticket and issue, the explains it wrote since its last
   // entry, what its text names, and what the session said about it; its repo and branch
   const journalAdd = (sid: string, kind: 'entry' | 'wrapup' | 'recap', text: string, at?: number, more: { refs?: JournalRefs; tag?: JournalTag } = {}) => {
@@ -375,6 +380,8 @@ export async function startServer(config: Config, opts: { tail?: boolean; listen
     ignored: (sid) => isBuilder(sid),
     teamSeat: (sid) => isTeamSeat(sid),
     rehome: (from, to) => live.rehome(from, to),
+    // what each side question to a copy of a session cost: the audit log keeps it (a copy leaves no transcript)
+    copyCost: (c) => audit.copy(c),
     slackConnected: () => slack.status().connected,
     jiraWatching: () => prefs.get().jira.watch.on,
     mailConnected: () => !!gmail?.connected(),
@@ -386,6 +393,7 @@ export async function startServer(config: Config, opts: { tail?: boolean; listen
       return ticketFirstPrompt(use, { key: e.key, summary: e.summary, url: e.link, ...jira.ticket(e.key) }, true);
     },
     jiraAssigned: (key) => jira.recent(KEEP_MS, ['assigned']).find((e) => e.key === key),
+    ticketJournal: (key) => journal.query({ ticket: key, since: Date.now() - KEEP_MS, limit: 3 }),
     issueFolder: (project, folders) => gitlabIssues.folderFor(project, folders),
     gitlabIssue: async (project, iid) => {
       const r = await gitlabIssues.one(project, iid);
@@ -431,6 +439,14 @@ export async function startServer(config: Config, opts: { tail?: boolean; listen
       const id = orch?.sessionId();
       const s = id ? store.getSession(id) : null;
       return s?.state === 'working' || s?.state === 'thinking';
+    },
+    // its prompts come back when Cora's hooks are set up (the setup check's own test)
+    hooksSet: () => {
+      try {
+        return hooksAimed(readSettings(opts.claudeSettingsFile ?? settingsPath()).json, { port: config.port, token: config.hookToken }).state === 'here';
+      } catch {
+        return false;
+      }
     },
   }));
   hub.orchestratorSnapshot = () => ({ t: 'orchestrator', status: simCora ?? o.status() });
@@ -592,12 +608,15 @@ export async function startServer(config: Config, opts: { tail?: boolean; listen
   // live explains: a session's page and data files (its new page is a version of the explain; its data goes to the open page)
   const liveExplains = new LiveExplains({
     root: join(config.dataDir, 'explains'),
+    // each page's content as last seen, kept across restarts: a page only read isn't a new version
+    seen: { get: (k) => store.explainPage(k), set: (k, h) => store.setExplainPage(k, h) },
     onVersion: (v) => {
       const id = `live-${v.slug}-${Date.now().toString(36)}`;
       const input = { title: v.title, format: 'html', content: v.html, live: v.slug };
       const s = summarizeTool(PRESENT_TOOL, input);
       const tool = { name: PRESENT_TOOL, input, summary: s.summary, resource: s.resource };
-      const base = { sessionId: v.sessionId, agentId: 'main', ts: Date.now(), icon: iconFor(PRESENT_TOOL, input), source: 'transcript' as const };
+      // stamped when the page was written: a version noticed late doesn't make an old session look active
+      const base = { sessionId: v.sessionId, agentId: 'main', ts: v.at, icon: iconFor(PRESENT_TOOL, input), source: 'transcript' as const };
       pipeline.ingestEvents([
         { ...base, id: `tool:${id}:start`, kind: 'tool', phase: 'start', toolUseId: id, tool },
         { ...base, id: `tool:${id}:end`, kind: 'tool', phase: 'end', toolUseId: id, durationMs: 0, tool: { ...tool, resultSummary: 'shown in Cora' } },
@@ -681,7 +700,8 @@ export async function startServer(config: Config, opts: { tail?: boolean; listen
           ...(e.about ? [`The invite says: ${defuse(e.about.replace(/\s+/g, ' ').slice(0, 800))}`] : []),
           ...(trail.length ? ['Journal entries about what the invite names:', ...trailLines(trail).map(defuse)] : []),
         ].join('\n'),
-        { others: true },
+        // a heads-up that waited past the call's start (Cora's agent couldn't take it) is no use: one "too late" line
+        { others: true, recheck: callRecheck(e, at, e.start) },
       );
     }
     if (e.standup && c.standupDraft && !calendar?.get(e.id)?.prep) {
@@ -701,8 +721,14 @@ export async function startServer(config: Config, opts: { tail?: boolean; listen
       const at = new Date(e.start).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
       inbox.add({ source: 'cora', key: `cal:${e.id}`, title: `${e.title} · ${at}`, why: `starting now${who ? `, with ${who}` : ''}`, ...(e.link || e.url ? { link: e.link ?? e.url } : {}), entry: { id: `start:${e.id}@${e.start}`, who: 'Calendar', text: 'Starting now.', at: Date.now() } });
     }
-    if (c.brief !== 'off' && orch?.status().enabled)
-      orch.feed.note(`[Calendar] Starting now: "${defuse(e.title)}"${who ? ` with ${defuse(who)}` : ''}${e.link ? ' · has a video link' : ''} · ${c.brief === 'spoken' ? 'say one short line that it is starting now (no brief)' : 'written only: one short line in your console, not spoken'}`, { others: true });
+    if (c.brief !== 'off' && orch?.status().enabled) {
+      const at = new Date(e.start).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+      // "starting now" is only true for a few minutes
+      orch.feed.note(`[Calendar] Starting now: "${defuse(e.title)}"${who ? ` with ${defuse(who)}` : ''}${e.link ? ' · has a video link' : ''} · ${c.brief === 'spoken' ? 'say one short line that it is starting now (no brief)' : 'written only: one short line in your console, not spoken'}`, {
+        others: true,
+        recheck: callRecheck(e, at, Math.min(e.end, e.start + STARTING_NOW_MS)),
+      });
+    }
     if (bot?.away()) void bot.dm(`📞 *${e.title}* is starting now${e.link ? `: <${e.link}|join it>` : ''}`);
   };
   calendar = gmail
@@ -818,7 +844,7 @@ export async function startServer(config: Config, opts: { tail?: boolean; listen
         });
   const videosMsg = (): VideosMsg => ({ t: 'videos', jobs: videos?.list() ?? [], ffmpeg: videos?.ffmpeg() ?? { state: 'missing', canDownload: false } });
   hub.videosSnapshot = videosMsg;
-  const app = await buildApp({ ...(opts.modFirstWaitMs !== undefined ? { modFirstWaitMs: opts.modFirstWaitMs } : {}), config, store, hub, pipeline, pending, ptys, pluginDir, teamHooks, live: liveExplains, registry, prefs, voice, voiceFront, gmail, mailWatches, mailOutbox, ide, ideBridge, namer, tickets, jira, environments, deploys, notes, drafts, bot, inbox, ...(calendarApi ? { calendar: calendarApi } : {}), ...(opts.claudeSettingsFile ? { claudeSettingsFile: opts.claudeSettingsFile } : {}), ...(opts.setupChecks ? { setupChecks: opts.setupChecks } : {}), onShutdown: opts.onShutdown, ci: () => ci, slack: {
+  const app = await buildApp({ ...(opts.modFirstWaitMs !== undefined ? { modFirstWaitMs: opts.modFirstWaitMs } : {}), ...(opts.promptLandMs !== undefined ? { promptLandMs: opts.promptLandMs } : {}), ...(opts.flagCheckMs !== undefined ? { flagCheckMs: opts.flagCheckMs } : {}), config, store, hub, pipeline, pending, ptys, pluginDir, teamHooks, live: liveExplains, registry, prefs, voice, voiceFront, gmail, mailWatches, mailOutbox, ide, ideBridge, namer, tickets, jira, environments, deploys, notes, drafts, bot, inbox, ...(calendarApi ? { calendar: calendarApi } : {}), ...(opts.claudeSettingsFile ? { claudeSettingsFile: opts.claudeSettingsFile } : {}), ...(opts.setupChecks ? { setupChecks: opts.setupChecks } : {}), onShutdown: opts.onShutdown, ci: () => ci, slack: {
       slack,
       outbox,
       live,

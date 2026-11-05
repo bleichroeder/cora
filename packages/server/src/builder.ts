@@ -193,7 +193,7 @@ export function hasTranscript(projectsDir: string, sid: string): boolean {
 /** The builder's folders: one per project, Cora's own (only the files she wrote are in them). */
 export const builderRoot = (dataDir: string) => join(dataDir, 'builder');
 
-const normDir = (p: string) => p.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
+export const normDir = (p: string) => p.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
 
 /** Is this folder one of the builder's own (a builder session's cwd)? */
 export function inBuilderFolder(dataDir: string, cwd: string | null | undefined): boolean {

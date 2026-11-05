@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { looksLikeStandup, type CalAttendee, type CalEvent, type CalendarMsg, type CalendarStatus } from '@cora/shared';
 import { writeFileAtomic } from './fsx';
+import type { Recheck } from './orchestrator/feed';
 
 /**
  * Cora knows your day: your primary Google calendar, read only,
@@ -102,6 +103,17 @@ export function startingNow(events: CalEvent[], now: number, told: Record<string
 }
 
 /** The people on a call (not you): names, else addresses. */
+/**
+ * A call's line for Cora's agent, asked again as it goes (it can wait hours for a conversation that takes it in): past
+ * `until` (the call has started, or been on a while), too late, as one "too late" line; until then, as it was.
+ */
+export const callRecheck =
+  (e: Pick<CalEvent, 'title' | 'end'>, at: string, until: number, now: () => number = Date.now): Recheck =>
+  () => {
+    const t = now();
+    return t < until ? null : { gone: `"${e.title.replace(/\[/g, '(').replace(/\]/g, ')')}" at ${at} (${t >= e.end ? 'it has ended' : 'it has started'})` };
+  };
+
 export const withWhom = (e: CalEvent, max = 4): string => {
   const others = e.attendees.filter((a) => !a.self).map((a) => a.name ?? a.email);
   return others.length > max ? `${others.slice(0, max).join(', ')} and ${others.length - max} more` : others.join(', ');

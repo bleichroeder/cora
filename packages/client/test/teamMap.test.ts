@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { TeamMap, drawerPosts, drawerWork, layoutOf, litSids, nextChange, outsidePop, ownEscape, pathOf, unassigned } from '../src/components/board/TeamMap';
 import { endKey } from '../src/components/EndSession';
 import type { TeamLive } from '../src/components/board/TeamPanel';
-import { EMPTY_H, HEAD_H, LIT_MS, ROW_H, TILE_W, flowOrder, litLines, litRoutes, nextFade, railEvents, railOpens, railTargets, turnTime, isCompact, mapLook, memberState, popoverLeft, postEdges, routeCounts, routeLines, routePosts, seatLines, seatState, taskBadges, tileHeight, tileOf, unseated } from '../src/components/board/teamMapModel';
+import { EMPTY_H, HEAD_H, LIT_MS, ROW_H, TILE_W, flowOrder, litLabel, litLines, litRoutes, nextFade, railEvents, railOpens, railTargets, turnTime, isCompact, mapLook, memberState, popoverLeft, postEdges, routeCounts, routeLines, routePosts, seatLines, seatState, taskBadges, tileHeight, tileOf, unseated } from '../src/components/board/teamMapModel';
 
 const S = (id: string, alias: string, more: Partial<SessionInfo> = {}) => ({ id, alias, state: 'idle', needsYou: 0, startedAt: 1, lastTs: 10, cwd: 'C:/w', ...more }) as SessionInfo;
 const seat = (id: string, name: string, count = { min: 1, max: 1 }) => ({ id, name, instructions: '', agent: {}, skills: [], folder: { path: 'C:/w' }, count, startup: {} });
@@ -211,8 +211,24 @@ describe('the wide map: HTML tiles, a row per member', () => {
     expect(slice(h, 'data-sid="e2"', 'data-tile="seat:rev"')).toMatch(/class="tm-badge"[^>]*>1</);
     // a route that carried a message in the last five minutes: its last kind and how long ago, then its count
     expect(h).toMatch(/class="tm-count"[^>]*><tspan class="last">handoff · \d+s<\/tspan> · (<!-- -->)?1<\/text>/);
+    // on a pill under its chip, its text centred there: off the route's line (which runs through the chip), clear of tiles
+    const lit = h.slice(h.indexOf('talking"')).match(/<g class="chip"><rect x="([\d.-]+)" y="([\d.-]+)" width="([\d.]+)" height="([\d.]+)"[\s\S]*?<g class="tm-lit"><rect class="pill" x="([\d.-]+)" y="([\d.-]+)" width="([\d.]+)"[\s\S]*?<text class="tm-count" x="([\d.-]+)" y="([\d.-]+)" text-anchor="middle">/)!;
+    expect(lit).not.toBeNull();
+    const [cx, cy, cw, ch, px, py, pw, tx] = lit.slice(1, 9).map(Number);
+    expect(py).toBeGreaterThan(cy + ch);
+    expect(px + pw / 2).toBeCloseTo(cx + cw / 2);
+    expect(tx).toBeCloseTo(cx + cw / 2);
     // nothing travels until a post arrives after it's drawn
     expect(h).not.toContain('tdot');
+  });
+});
+
+describe("a lit route's label", () => {
+  it('a pill centred just under its chip, as wide as its words and a little more', () => {
+    const L = litLabel({ x: 200, y: 100 }, { h: 16 }, 80.4);
+    expect(L).toEqual({ x: 200 - 93 / 2, y: 111, w: 93, h: 14, tx: 200, ty: 121 });
+    // off the chip, so off the line through it
+    expect(L.y).toBeGreaterThan(100 + 16 / 2);
   });
 });
 
@@ -473,6 +489,25 @@ describe('pass 3: the activity rail', () => {
     const many = project({ thread: Array.from({ length: 40 }, (_, k) => post(`m${k}`, 'e1', ['r'], { at: now - k * 1000 })), sessions: [] } as never);
     expect(railEvents(many, TEAM, {}, name)).toHaveLength(30);
     expect(railEvents(many, TEAM, {}, name)[0].key).toBe('p:m0');
+  });
+
+  it('a task that kept its moves shows every step (each assignment and state, done), each lighting its owner then', () => {
+    const moved = task('c', { rank: 3, openedAt: now - 9 * MIN, owner: 'r', ownedAt: now - 4 * MIN, state: 'done', closedAt: now - MIN, outcome: 'merged', moves: [
+      { at: now - 8 * MIN, by: 'lead', field: 'owner', to: 'e1' },
+      { at: now - 7 * MIN, by: 'e1', field: 'state', from: 'queued', to: 'building' },
+      { at: now - 5 * MIN, by: 'e1', field: 'state', from: 'building', to: 'review' },
+      { at: now - 4 * MIN, by: 'lead', field: 'owner', from: 'e1', to: 'r' },
+      { at: now - MIN, by: 'lead', field: 'state', from: 'review', to: 'done' },
+    ] });
+    const ev = railEvents(project({ items: [moved], thread: [], sessions: [] } as never), TEAM, {}, name);
+    expect(ev.map((e) => [e.text, e.who])).toEqual([
+      ['Task c done: merged', ['r']],
+      ['Task c → Reviewer', ['r']],
+      ['Task c: review', ['e1']],
+      ['Task c: building', ['e1']],
+      ['Task c → Engineer 1', ['e1']],
+      ['Task opened: Task c', ['you']],
+    ]);
   });
 
   it("an entry lights its members and its route while hovered; a click opens its route's popover, else its first member's drawer (never You's)", () => {

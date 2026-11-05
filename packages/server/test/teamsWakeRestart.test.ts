@@ -68,9 +68,9 @@ describe('held for your OK, across a restart', () => {
     return p.id as string;
   };
 
-  it('a note on a route that asks gets its card again after a restart, never delivered on its own', async () => {
+  it('a question on a route that asks gets its card again after a restart, never delivered on its own', async () => {
     const pid = await setUp();
-    expect((await tool(FIX1, 'project_post', { kind: 'note', text: 'fixed encoder 3', to: [TRI] })).isError).toBeFalsy();
+    expect((await tool(FIX1, 'project_post', { kind: 'question', text: 'fixed encoder 3', to: [TRI] })).isError).toBeFalsy();
     expect((await wakes()).filter((w) => w.to === TRI)).toHaveLength(1);
     await srv.close();
 
@@ -91,7 +91,7 @@ describe('held for your OK, across a restart', () => {
 
   it('its writer gone from the project (a pool shrank): still the route that asks, not the project setting', async () => {
     const pid = await setUp();
-    expect((await tool(FIX2, 'project_post', { kind: 'note', text: 'fixed encoder 4', to: [TRI] })).isError).toBeFalsy();
+    expect((await tool(FIX2, 'project_post', { kind: 'question', text: 'fixed encoder 4', to: [TRI] })).isError).toBeFalsy();
     expect((await wakes()).filter((w) => w.to === TRI)).toHaveLength(1);
     // the pool closes its extra, then Cora restarts
     srv.projects.leave(pid, FIX2);

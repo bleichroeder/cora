@@ -1,6 +1,8 @@
 import { applyJira } from './jiraWatch';
+import { noticeNudge } from '../lib/contextNudge';
 import { applyRBrowse } from '../components/RemoteBrowser';
 import { addToProject, useProjects } from './projects';
+import { notice } from './oops';
 import { useBuilder } from './builder';
 import { useVideos } from './videos';
 import { useDebrief } from './debrief';
@@ -79,6 +81,8 @@ function open() {
         break;
       case 'session':
         s.upsertSession(msg.session);
+        // its context just passed the nudge: said once
+        noticeNudge(msg.session);
         break;
       case 'agent':
         s.upsertAgent(msg.agent);
@@ -254,6 +258,8 @@ export async function launchTerminal(body: { mode: ClaudeMode; cwd?: string; ses
   const j = await r.json().catch(() => ({ error: `HTTP ${r.status}` }));
   if (!r.ok) return { ok: false, error: j.error ?? `HTTP ${r.status}` };
   const t = j as TerminalInfo;
+  // one of an archived project's sessions: its project came back too, with the rest of its sessions
+  if (t.broughtBack) notice(`"${t.broughtBack.project}" is back from the archive`, t.broughtBack.resumed ? `Its other ${t.broughtBack.resumed} session${t.broughtBack.resumed === 1 ? ' is' : 's are'} resuming in it too.` : 'This session is back in it.');
   const st = useBrain.getState();
   st.setTerminals([...st.terminals.filter((x) => x.terminalId !== t.terminalId), t, ...st.shells]);
   const now = Date.now();

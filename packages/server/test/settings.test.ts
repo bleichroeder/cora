@@ -10,7 +10,7 @@ describe('settings hooks block', () => {
       'SessionEnd', 'SessionStart', 'Stop', 'SubagentStart', 'SubagentStop', 'UserPromptSubmit',
     ]);
     const pre = block.PreToolUse[0].hooks[0];
-    expect(pre).toEqual({ type: 'http', url: 'http://127.0.0.1:4317/hook/PreToolUse', headers: { 'x-cora-token': 'tok' }, async: true });
+    expect(pre).toEqual({ type: 'http', url: 'http://127.0.0.1:4317/hook/PreToolUse', headers: { 'x-cora-token': 'tok', 'x-cora-spawned-by': '$CORA_SPAWNED_BY', 'x-cora-spawn-why': '$CORA_SPAWN_WHY' }, allowedEnvVars: ['CORA_SPAWNED_BY', 'CORA_SPAWN_WHY'], async: true });
     const perm = block.PermissionRequest[0].hooks[0];
     expect(perm.async).toBeUndefined();
     expect(perm.timeout).toBe(3600);
@@ -18,7 +18,7 @@ describe('settings hooks block', () => {
 
   it('env-token mode uses interpolation + allowedEnvVars', () => {
     const b = computeHooksBlock({ port: 4317, token: 'tok', envToken: true });
-    expect(b.Stop[0].hooks[0]).toMatchObject({ headers: { 'x-cora-token': '$CORA_TOKEN' }, allowedEnvVars: ['CORA_TOKEN'] });
+    expect(b.Stop[0].hooks[0]).toMatchObject({ headers: { 'x-cora-token': '$CORA_TOKEN' }, allowedEnvVars: ['CORA_TOKEN', 'CORA_SPAWNED_BY', 'CORA_SPAWN_WHY'] });
   });
 
   it('hooks written before the rename are still ours, are found, and merging replaces them', () => {

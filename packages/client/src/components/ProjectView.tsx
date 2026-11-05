@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import { PROJECT_COLORS, type SessionInfo } from '@cora/shared';
+import { PROJECT_COLORS, WAKE_LIMIT, type Project, type SessionInfo } from '@cora/shared';
 import { useBrain } from '../state/store';
-import { answerWake, archiveProject, projectBoard, updateProject, useProject, useProjects, wrapUpProject } from '../state/projects';
+import { answerWake, archiveAsking, projectBoard, updateProject, useProject, useProjects, wrapUpProject } from '../state/projects';
 import { launchTerminal } from '../state/ws';
 import { sessionName } from '../lib/format';
 import { LiveBoard } from './LiveBoard';
@@ -9,6 +9,29 @@ import { builderEntry } from './board/TeamPanel';
 import { draftInProgress, openBuilder, useProjectDraft } from '../state/builder';
 import { Icon } from './Icon';
 import './projects.css';
+
+/** The wake limits a project without a team may choose (per session, per hour), and none. */
+export const WAKE_LIMITS: Array<number | 'none'> = [3, 6, 12, 30, 'none'];
+/** The choice as the project keeps it: the default is unset (WAKE_LIMIT, as before). */
+export const wakeLimitOf = (v: string): number | 'none' | null => (v === 'none' ? 'none' : Number(v) === WAKE_LIMIT ? null : Number(v));
+/** Wake each other, in words: what it does here (a team's routes, or the project's limit). */
+export function wakeTitle(p: Pick<Project, 'autoWake' | 'wakeLimit' | 'team'>): string {
+  if (!p.autoWake) return 'A handoff or question to an idle session asks you first. On: they wake each other on their own';
+  if (p.team) return "Its sessions wake each other on their own: for its seats, the team's routes say (auto, ask or never), and their own limits hold them back";
+  const n = p.wakeLimit ?? WAKE_LIMIT;
+  return n === 'none' ? 'Its sessions wake each other on their own, as often as they like' : `Its sessions wake each other on their own (${n} times an hour each at most; back to asking you if two keep at it)`;
+}
+
+/**
+ * The header's line after the name: how many sessions, and the folders they work in, the first few and "+N" (all of
+ * them in its title). A project with many members never pushes its name and buttons out of view.
+ */
+export function headerMeta(members: Array<{ cwd: string }>, most = 3): { text: string; title: string } {
+  const repos = [...new Set(members.map((s) => s.cwd.split(/[\\/]/).filter(Boolean).pop()))].filter((x): x is string => !!x);
+  const count = `${members.length} session${members.length === 1 ? '' : 's'}`;
+  const shown = repos.length > most ? `${repos.slice(0, most).join(', ')} +${repos.length - most}` : repos.join(', ');
+  return { text: shown ? `${count} · ${shown}` : count, title: repos.length ? `${count} · ${repos.join(', ')}` : count };
+}
 
 /**
  * A project open in the main area: its header (name, colour, coordination, a new session in it, Resume all, Wrap up,
@@ -31,7 +54,7 @@ export function ProjectView({ id }: { id: string }) {
   const members = p.sessions.map((sid) => sessions[sid]).filter((s): s is SessionInfo => !!s);
   const ended = members.filter((s) => s.state === 'ended');
   const live = members.filter((s) => s.state !== 'ended');
-  const repos = [...new Set(members.map((s) => s.cwd.split(/[\\/]/).filter(Boolean).pop()))].filter(Boolean);
+  const meta = headerMeta(members);
   const rename = () => {
     if (name.trim() && name.trim() !== p.name) void updateProject(p.id, { name: name.trim() });
     else setName(p.name);
@@ -61,18 +84,27 @@ export function ProjectView({ id }: { id: string }) {
       <div className="pjv-h">
         <button className="pj-sq" style={{ border: 0, cursor: 'pointer', padding: 0 }} title="Its colour (click for the next)" onClick={nextColor} />
         <input className="pjv-name" value={name} onChange={(e) => setName(e.target.value)} onBlur={rename} onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()} aria-label="Project name" />
-        <span className="pjv-meta">
-          {members.length} session{members.length === 1 ? '' : 's'}
-          {repos.length ? ` · ${repos.join(', ')}` : ''}
+        <span className="pjv-meta" title={meta.title}>
+          {meta.text}
         </span>
         <span className="sp" />
         <button className={`pjv-sw${p.coordination ? ' on' : ''}`} onClick={() => void updateProject(p.id, { coordination: !p.coordination })} title={p.coordination ? 'Its sessions hear what you set for each (Members)' : 'Off: organisation only (no tokens spent). On: its sessions can share the brief, decisions and thread'}>
           <i /> Coordination
         </button>
         {p.coordination ? (
-          <button className={`pjv-sw${p.autoWake ? ' on' : ''}`} onClick={() => void updateProject(p.id, { autoWake: !p.autoWake })} title={p.autoWake ? 'Its sessions wake each other on their own (six times an hour each at most; back to asking you if two keep at it)' : 'A handoff or question to an idle session asks you first. On: they wake each other on their own'}>
+          <button className={`pjv-sw${p.autoWake ? ' on' : ''}`} onClick={() => void updateProject(p.id, { autoWake: !p.autoWake })} title={wakeTitle(p)}>
             <i /> Wake each other
           </button>
+        ) : null}
+        {/* a project without a team: how often each may be woken (a team's routes decide for its seats) */}
+        {p.coordination && p.autoWake && !p.team ? (
+          <select className="pjv-limit" value={String(p.wakeLimit ?? WAKE_LIMIT)} onChange={(e) => void updateProject(p.id, { wakeLimit: wakeLimitOf(e.target.value) })} title="Wake limit: how many times an hour each session may be woken by the others before it asks you again" aria-label="Wake limit">
+            {WAKE_LIMITS.map((n) => (
+              <option key={n} value={String(n)}>
+                {n === 'none' ? 'No wake limit' : `Wake limit: ${n} an hour`}
+              </option>
+            ))}
+          </select>
         ) : null}
         {p.coordination ? (
           <button className={`pjv-sw${p.coraRoutes ? ' on' : ''}`} onClick={() => void updateProject(p.id, { coraRoutes: !p.coraRoutes })} title={p.coraRoutes ? 'Cora routes its work on standing orders: she posts, opens and assigns incidents within its brief and decisions without asking you' : 'Cora asks you (a card) before she posts or changes its incidents. On: she routes its work on standing orders'}>
@@ -103,7 +135,7 @@ export function ProjectView({ id }: { id: string }) {
           </button>
           {menu ? (
             <div className="session-menu" style={{ position: 'absolute', right: 0, top: 34, zIndex: 90, width: 220 }} onMouseLeave={() => setMenu(false)}>
-              <button className="sm-row" onClick={() => (setMenu(false), void archiveProject(p.id, true))}>
+              <button className="sm-row" onClick={() => (setMenu(false), void archiveAsking(p))}>
                 <Icon name="Archive" size={14} /> Archive project
               </button>
             </div>

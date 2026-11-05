@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { watch, type FSWatcher } from 'node:fs';
 import { lstatSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
@@ -32,17 +33,28 @@ export function sharePrompt(title: string, file: string, url?: string): string {
     : `Share the explain "${name}" (asked from Cora): publish ${file} as a private claude.ai artifact titled "${name}". ${asIs}`;
 }
 
-export type LiveVersion ={ sessionId: string; slug: string; title: string; html: string };
+/** A page's new version: `at` is when its file was written (never when Cora noticed). */
+export type LiveVersion = { sessionId: string; slug: string; title: string; html: string; at: number };
+/** Where each page's content hash as last seen is kept (`<session>/<slug>`; null forgets it): Cora's store. */
+export type SeenPages = { get(key: string): string | undefined; set(key: string, hash: string | null): void };
+const hashOf = (html: string) => createHash('sha256').update(html).digest('hex');
 export type LiveData = { sessionId: string; slug: string; data: unknown };
 
 export class LiveExplains {
   private watcher: FSWatcher | null = null;
   private timers = new Map<string, NodeJS.Timeout>();
   private latest = new Map<string, unknown>();
-  /** the page last sent for each explain, so a save that changes nothing isn't a new version */
-  private pages = new Map<string, string>();
+  /**
+   * each explain's page as last seen (its content's hash), so only a page whose content changed is a new version: not a
+   * save that changes nothing, nor a file only read (with last-access updates on, a read is a change to the watcher),
+   * nor the first such event after a restart
+   */
+  private seen: SeenPages;
 
-  constructor(private o: { root: string; onVersion(v: LiveVersion): void; onData(d: LiveData): void; log?(m: string): void; settleMs?: number }) {}
+  constructor(private o: { root: string; onVersion(v: LiveVersion): void; onData(d: LiveData): void; log?(m: string): void; settleMs?: number; seen?: SeenPages }) {
+    const mem = new Map<string, string>();
+    this.seen = o.seen ?? { get: (k) => mem.get(k), set: (k, h) => void (h == null ? mem.delete(k) : mem.set(k, h)) };
+  }
 
   /** An explain's folder (made if missing), and the two files the session writes. The same title, the same folder. */
   start(sessionId: string, title: string): { slug: string; dir: string; page: string; data: string } {
@@ -86,6 +98,8 @@ export class LiveExplains {
 
   watch(): void {
     mkdirSync(this.o.root, { recursive: true });
+    // the pages already there are known as they are (one Cora hasn't seen yet too): only a change from now is a version
+    this.seed();
     try {
       this.watcher = watch(this.o.root, { recursive: true }, (_ev, name) => name && this.changed(String(name)));
     } catch (e) {
@@ -100,6 +114,19 @@ export class LiveExplains {
     this.timers.clear();
   }
 
+  /** Each page there now that has no hash yet gets its current one (no version: it was there before). */
+  seed(): void {
+    for (const sid of this.dirs(this.o.root)) {
+      if (!SID.test(sid)) continue;
+      for (const slug of this.dirs(join(this.o.root, sid))) {
+        const key = `${sid}/${slug}`;
+        if (this.seen.get(key) !== undefined) continue;
+        const html = this.read(sid, slug, PAGE, PAGE_MAX);
+        if (html?.trim()) this.seen.set(key, hashOf(html));
+      }
+    }
+  }
+
   /** Remove explains not touched since `cutoff` (their events are pruned on the same schedule). */
   prune(cutoff: number): number {
     let n = 0;
@@ -109,6 +136,7 @@ export class LiveExplains {
         const newest = Math.max(0, ...this.files(dir).map((f) => this.mtime(join(dir, f))));
         if (newest < cutoff) {
           rmSync(dir, { recursive: true, force: true });
+          this.seen.set(`${sid}/${slug}`, null);
           n++;
         }
       }
@@ -139,9 +167,12 @@ export class LiveExplains {
     const html = this.read(sessionId, slug, PAGE, PAGE_MAX);
     if (html == null || !html.trim()) return;
     const key = `${sessionId}/${slug}`;
-    if (this.pages.get(key) === html) return;
-    this.pages.set(key, html);
-    this.o.onVersion({ sessionId, slug, title: this.title(sessionId, slug), html });
+    const hash = hashOf(html);
+    if (this.seen.get(key) === hash) return;
+    this.seen.set(key, hash);
+    // when the session wrote it: a version noticed late never makes its session look active now
+    const at = Math.round(this.mtime(join(this.o.root, sessionId, slug, PAGE))) || Date.now();
+    this.o.onVersion({ sessionId, slug, title: this.title(sessionId, slug), html, at });
   }
 
   private data(sessionId: string, slug: string): void {
