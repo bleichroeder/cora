@@ -13,6 +13,8 @@ import { agentColor, clock, dur } from '../lib/format';
 import { Icon, Tile } from './Icon';
 import { CommandRow, RanRow, SaidLine, ToolRow } from './ToolRow';
 import { Markdown } from './Markdown';
+import { PromptImages } from './FilePeek';
+import { splitPrompt } from '../lib/filePaths';
 import { LiveActivity } from './LiveActivity';
 import { TaskPanel } from './TaskPanel';
 import { speak, stopSpeaking, useVoice } from '../lib/voice';
@@ -62,13 +64,13 @@ function ReadingLine({ id }: { id: string }) {
 }
 
 /** Narration as markdown. In hosted sessions main's text is also in the terminal below, so it starts collapsed. */
-function Say({ text, clamp }: { text: string; clamp: boolean }) {
+function Say({ text, clamp, sessionId }: { text: string; clamp: boolean; /** its session: file paths in its `code` can be looked at */ sessionId?: string }) {
   const [open, setOpen] = useState(false);
   const long = text.length > 240 || text.split(/\n/).length > 3;
   const collapsed = clamp && long && !open;
   return (
     <div className={`say${collapsed ? ' clamped' : ''}`}>
-      <Markdown text={text} />
+      <Markdown text={text} {...(sessionId ? { files: sessionId } : {})} />
       {/* the whole reply as its markdown and as rich text (the HTML is rendered only when copied) */}
       <span className="say-copy">
         <CopyButton text={text} title="Copy the reply (markdown + formatted)" getHtml={() => markdownHtml(text)} />
@@ -119,6 +121,17 @@ function FoldView({ step, sessionId, hosted }: { step: Step; sessionId: string; 
   );
 }
 
+/** Your prompt: its words (file paths in them clickable), and the pictures you attached as thumbnails under them. */
+function PromptText({ text, sessionId }: { text: string; sessionId: string }) {
+  const p = splitPrompt(text);
+  return (
+    <>
+      {p.text ? <Linkify text={p.text} jira files sessionId={sessionId} /> : null}
+      {p.images.length ? <PromptImages sessionId={sessionId} paths={p.images} /> : null}
+    </>
+  );
+}
+
 /** One step: who, when, what it said, then what it did. `bare`: only what it did (inside a folded row). */
 function StepView({ step, sessionId, hosted, bare }: { step: Step; sessionId: string; hosted: boolean; bare?: boolean }) {
   // its own agent only (a change to any other agent, in any session, isn't this row's business)
@@ -141,7 +154,7 @@ function StepView({ step, sessionId, hosted, bare }: { step: Step; sessionId: st
       {step.prompt ? (
         <div className={step.agentId === 'main' ? 'prompt' : 'task'}>
           <span className="pl">{step.agentId === 'main' ? (step.mid ? 'you · while it worked' : 'you') : 'its task'}</span>
-          <Linkify text={step.prompt} jira sessionId={sessionId} />
+          <PromptText text={step.prompt} sessionId={sessionId} />
         </div>
       ) : null}
       <div className="sh">
@@ -154,7 +167,7 @@ function StepView({ step, sessionId, hosted, bare }: { step: Step; sessionId: st
         <span className="ts">{clock(step.ts)}</span>
         {step.text ? <SpeakBtn id={step.key} text={step.text} sessionId={sessionId} /> : null}
       </div>
-      {step.text ? <Say text={step.text} clamp={hosted && step.agentId === 'main'} /> : null}
+      {step.text ? <Say text={step.text} clamp={hosted && step.agentId === 'main'} sessionId={sessionId} /> : null}
       {step.text ? <ReadingLine id={step.key} /> : null}
       {step.said ? <SaidLine id={step.said.id} text={step.said.text} sessionId={sessionId} /> : null}
       <div className="body">{body()}</div>
@@ -171,7 +184,7 @@ function StepView({ step, sessionId, hosted, bare }: { step: Step; sessionId: st
               if (it.e.text)
                 return (
                   <div key={it.key} className="think-note">
-                    <Say text={it.e.text} clamp={false} />
+                    <Say text={it.e.text} clamp={false} sessionId={sessionId} />
                   </div>
                 );
               if (it.e.durationMs == null && !it.e.tokens?.thinking) return null;
@@ -198,7 +211,7 @@ function StepView({ step, sessionId, hosted, bare }: { step: Step; sessionId: st
                   <Linkify text={it.e.text ?? ''} jira sessionId={sessionId} />
                 </div>
               ) : (
-                <Say key={it.key} text={it.e.text ?? ''} clamp={false} />
+                <Say key={it.key} text={it.e.text ?? ''} clamp={false} sessionId={sessionId} />
               );
             case 'report':
               return (

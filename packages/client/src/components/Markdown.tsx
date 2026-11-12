@@ -7,6 +7,8 @@ import { CHIP_TAG, remarkJira } from '../lib/remarkJira';
 import { jiraAvailable, jiraSite, useJira, useKnownKey } from '../state/jira';
 import { JiraChip } from './JiraChip';
 import { linkifyNotes } from '@cora/shared';
+import { asFileRef } from '../lib/filePaths';
+import { openPeek } from './FilePeek';
 
 /** A link's text, flattened (to tell a bare address, autolinked, from a link with words of its own). */
 const textOf = (c: React.ReactNode): string => (typeof c === 'string' || typeof c === 'number' ? String(c) : Array.isArray(c) ? c.map(textOf).join('') : '');
@@ -15,7 +17,7 @@ const textOf = (c: React.ReactNode): string => (typeof c === 'string' || typeof 
  * GitHub-flavoured markdown. Raw HTML in the source is NOT rendered (react-markdown default). Ticket keys and bare
  * Jira links become chips (not in code); `chips={false}` for a static copy where chips can't work.
  */
-export const Markdown = memo(function Markdown({ text, className = '', chips = true, onTask, notes }: { text: string; className?: string; chips?: boolean; /** task boxes (`- [ ]`) can be ticked: the line (1-based) clicked */ onTask?: (line: number) => void; /** `[[Title]]` links between notes: open one, and whether there's a note by that name */ notes?: { open(title: string): void; has(title: string): boolean } }) {
+export const Markdown = memo(function Markdown({ text, className = '', chips = true, onTask, notes, files }: { text: string; className?: string; chips?: boolean; /** a session's transcript: `code` that is a file path looks at it on a click (FilePeek), not copies */ files?: string; /** task boxes (`- [ ]`) can be ticked: the line (1-based) clicked */ onTask?: (line: number) => void; /** `[[Title]]` links between notes: open one, and whether there's a note by that name */ notes?: { open(title: string): void; has(title: string): boolean } }) {
   const known = useKnownKey();
   const site = useJira((st) => jiraSite(st));
   const on = chips && jiraAvailable();
@@ -42,6 +44,21 @@ export const Markdown = memo(function Markdown({ text, className = '', chips = t
         );
       },
       pre: ({ children }) => <CodeBlock>{children}</CodeBlock>,
+      // a path in `code` (a session's reply): marked, so a click looks at it
+      ...(files
+        ? {
+            code: ({ className: cls, children }: { className?: string; children?: React.ReactNode }) => {
+              const path = !cls ? asFileRef(textOf(children)) : null;
+              return path ? (
+                <code className="md-path" title={`${path.path}: look at it`}>
+                  {children}
+                </code>
+              ) : (
+                <code className={cls}>{children}</code>
+              );
+            },
+          }
+        : {}),
       // tickable tasks: the box says where its line is (the innermost item takes the click)
       ...(onTask
         ? {
@@ -63,7 +80,7 @@ export const Markdown = memo(function Markdown({ text, className = '', chips = t
       // the element remarkJira turns a key into
       ...({ [CHIP_TAG]: ({ node }: { node?: { properties?: { dataKey?: unknown } } }) => <JiraChip jref={{ key: String(node?.properties?.dataKey ?? '') }} /> } as Components),
     }),
-    [on, site, onTask, notes],
+    [on, site, onTask, notes, files],
   );
   return (
     <div
@@ -72,6 +89,8 @@ export const Markdown = memo(function Markdown({ text, className = '', chips = t
         // inline `code` (a command, a path) copies on click
         const el = e.target as HTMLElement;
         if (el.tagName !== 'CODE' || el.parentElement?.tagName === 'PRE') return;
+        const ref = files && el.classList.contains('md-path') ? asFileRef(el.textContent ?? '') : null;
+        if (ref && files) return openPeek(files, ref, el);
         copyText(el.textContent ?? '');
         el.classList.add('copied');
         setTimeout(() => el.classList.remove('copied'), 900);

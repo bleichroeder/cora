@@ -1,6 +1,6 @@
 import { app, BrowserWindow, clipboard, ClipboardItem, dialog, globalShortcut, ipcMain, Menu, nativeImage, Notification, session, shell, Tray, type NativeImage } from 'electron';
 import { execFile, spawn } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { orbPng } from './icons';
@@ -500,6 +500,30 @@ function wireIpc() {
     const f = typeof file === 'string' ? resolve(file) : null;
     if (f && f.toLowerCase().startsWith(resolve(dir).toLowerCase() + '\\') && f.toLowerCase().endsWith('.md') && existsSync(f)) void shell.openPath(f);
     else void shell.openPath(dir);
+  });
+  // a file a transcript names, opened: a picture in your image viewer, text in Notepad, or shown in Explorer. Never
+  // anything else (a path to a script or an .exe is never opened: opening is running, for those)
+  ipcMain.handle('ab:open-file', (e, m: { path?: unknown; how?: unknown }) => {
+    if (!win || e.sender !== win.webContents || typeof m?.path !== 'string') return { error: 'not allowed' };
+    const f = resolve(m.path);
+    try {
+      if (!statSync(f).isFile()) return { error: 'not a file' };
+    } catch {
+      return { error: "It isn't there (moved, or deleted)." };
+    }
+    if (m.how === 'folder') return (shell.showItemInFolder(f), { ok: true });
+    if (m.how === 'viewer') {
+      if (!/\.(png|jpe?g|gif|webp|bmp)$/i.test(f)) return { error: 'only pictures open in the viewer' };
+      return shell.openPath(f).then((err) => (err ? { error: err } : { ok: true }));
+    }
+    if (m.how === 'text') {
+      // Notepad, given the path as its argument: the file is read, never run
+      const p = spawn(join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'notepad.exe'), [f], { detached: true, stdio: 'ignore', windowsHide: false });
+      p.on('error', () => {});
+      p.unref();
+      return { ok: true };
+    }
+    return { error: 'open how?' };
   });
   ipcMain.on('ab:restart', (e) => {
     if (fromOurWindow(e)) restartKeeping();

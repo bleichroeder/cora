@@ -539,6 +539,9 @@ export type ServerMsg =
   | import('./calendar').CalendarMsg
   | import('./calendar').CalendarDueMsg
   | import('./deploys').DeploysMsg
+  | import('./vpn').VpnMsg
+  | import('./boards').BoardsMsg
+  | import('./boards').BoardDrawMsg
   | import('./notes').NotesMsg
   | import('./slack').SlackMsg
   | import('./jiraWatch').JiraMsg

@@ -73,9 +73,8 @@ describe('the Library tool', () => {
     expect(html).toMatch(/k-artifact starred[\s\S]*?class="lib-ses">Login fix</);
   });
 
-  it("is one of Cora's tools: a row and a button in Tools, its pane in the tool drawer", () => {
+  it("is one of Cora's tools: a tile in Tools (either view), its pane in the tool drawer", () => {
     const tools = readFileSync(join(__dirname, '../src/components/Tools.tsx'), 'utf8');
-    expect(tools).toMatch(/<LibraryRow on=\{open === LIBRARY_ID\} \/>/);
     expect(tools).toMatch(/<LibraryButton on=\{open === LIBRARY_ID\} \/>/);
     expect(tools).toMatch(/<LibraryPane visible=\{library\} \/>/);
   });

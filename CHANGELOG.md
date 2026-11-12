@@ -2,6 +2,38 @@
 
 What changed in each release. Cora updates itself; each update's notes are on its release page too.
 
+## 0.1.26
+
+- **Whiteboard.** A new Cora tool: sketch on a board in the Tools drawer (Excalidraw, in Cora's colours), and Send a
+  picture of it, or of what you've selected, to a session's composer. Scratch is always there, and you can keep named
+  boards, pin them, and tie one to a session. Sessions can look at a board (a picture and an outline of what's on it)
+  and draw on one themselves: a Mermaid diagram or simple boxes and arrows, in a frame of their own beside what you
+  drew, never on top of it. Ctrl+Z takes it back, and a session can only ever remove what it drew. Boards are
+  standard `.excalidraw` files in `~/.cora/boards`, so they open on excalidraw.com too. The expand button widens the
+  drawer while you draw.
+- **Switch your VPN from Cora.** With OpenVPN Connect on this PC, a pill at the bottom of the sessions list shows
+  which profile is connected; click it to switch or disconnect. Sessions can't switch it: they ask (a card with
+  Switch and Not now, telling you who a switch would cut off), and their commands that would drive OpenVPN are
+  refused. Cora learns which environments each profile reaches. Settings › Environments turns it on or off.
+- **Sessions that want you say so in the list.** One that needs you breathes red, with a red bar on its left; one
+  that finished since you looked gets a blue dot that pings as it lands. When they're scrolled out of sight, a chip on
+  the list's top or bottom edge says so ("↑ 2 need you · 1 done") and takes you to the nearest. Folded projects show
+  finished ones in blue too.
+- **Pictures in your prompts show as thumbnails** in the transcript, and **file paths you can look at**: a path in
+  your prompt, or in a reply's `code`, opens a card with the picture, or a text file's first lines at the line named.
+  Open puts a picture in your image viewer and text in VS Code (at its line, when the IDE panel has its folder) or
+  Notepad; nothing else is ever opened. Show in folder, and Copy path.
+- **A prompt with a picture sends on its own.** Pressing Enter in the composer with an image attached left it waiting
+  in the terminal; now it goes once Claude Code has taken the picture in.
+- **Tools take less room.** Your tools' names are on one line each, and Cora's own (Notes, Library, Whiteboard,
+  Browser, Secrets) are a row of tiles in both views, each in its own colour made from yours. Security updates are a
+  dot on the Settings gear, and the gear opens on them.
+- **Secrets: find one, see what needs you.** Expired secrets, and ones expiring within a day, come first in a strip
+  of their own, each a click from pasting a fresh one. With more than a few: search (`/` goes there), a kind filter,
+  grouping by who may use them (all sessions, then each folder), and sorting by name, last used or newest. A row
+  opens for the rest: how commands get it, a login's username to copy, its folders, and the session that last used it.
+- Electron 44.11.2.
+
 ## 0.1.25
 
 - **A session's Playwright works in Cora's browser.** When you use Playwright's MCP server, the sessions Cora hosts

@@ -1,6 +1,6 @@
 import { mkdirSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import { BOARD_TOOL, DEBRIEF_TOOL, DEFAULT_WORKTREES, SECRETS_TOOLS, DEFAULT_DEBRIEF, type DebriefSettings, JOURNAL_TOOL, JOURNAL_SEARCH_TOOL, TELL_CORA_TOOL, FROM_CORA, type BoardPageMode, MEME_TOOL, type MemeMode, DEPLOYS_TOOL, ENV_TOOL, LIVE_EXPLAIN_TOOL, NOTES_TOOLS, MCP_SERVER, OPEN_TAB_TOOL, SEAT_MESSAGING_TOOLS, SPOTLIGHT_TOOL, SESSION_HEADER, SLACK_FIND_TOOL, SLACK_READ_TOOL, SLACK_SEND_TOOL, SPEAK_TOOL, TOKEN_HEADER, speaksSummaries, type Settings, type VoiceSettings, takesTags } from '@cora/shared';
+import { BOARD_TOOL, VPN_REQUEST_TOOL, DEBRIEF_TOOL, DEFAULT_WORKTREES, SECRETS_TOOLS, DEFAULT_DEBRIEF, type DebriefSettings, JOURNAL_TOOL, JOURNAL_SEARCH_TOOL, TELL_CORA_TOOL, FROM_CORA, type BoardPageMode, MEME_TOOL, type MemeMode, DEPLOYS_TOOL, ENV_TOOL, LIVE_EXPLAIN_TOOL, NOTES_TOOLS, BOARDS_TOOLS, MCP_SERVER, OPEN_TAB_TOOL, SEAT_MESSAGING_TOOLS, SPOTLIGHT_TOOL, SESSION_HEADER, SLACK_FIND_TOOL, SLACK_READ_TOOL, SLACK_SEND_TOOL, SPEAK_TOOL, TOKEN_HEADER, speaksSummaries, type Settings, type VoiceSettings, takesTags } from '@cora/shared';
 import type { Config } from './config';
 import { attachmentsDir } from './attachments';
 import { writeFileAtomic } from './fsx';
@@ -163,16 +163,19 @@ ${OTHERS}${settings.orchestrator?.enabled ? `\n\n${CORA_NUDGE}` : ''}${(settings
   const explains = join(config.dataDir, 'explains');
   const live = settings.explains.mode === 'markdown+html';
   if (live) mkdirSync(explains, { recursive: true });
-  const allowed = [OPEN_TAB_TOOL, SPOTLIGHT_TOOL, ...((settings.board?.pages ?? 'show') !== 'off' ? [BOARD_TOOL] : []), ...(settings.journal?.on !== false ? [JOURNAL_TOOL, JOURNAL_SEARCH_TOOL] : []), ...(settings.orchestrator?.enabled ? [TELL_CORA_TOOL] : []), DEBRIEF_TOOL, ...SECRETS_TOOLS, 'EnterWorktree', ...((settings.memes?.mode ?? 'off') !== 'off' ? [MEME_TOOL] : []), ENV_TOOL, DEPLOYS_TOOL, ...NOTES_TOOLS.map((t) => `mcp__${MCP_SERVER}__${t}`), SLACK_FIND_TOOL, SLACK_READ_TOOL, SLACK_SEND_TOOL, ...(speaksSummaries(settings.voice) ? [SPEAK_TOOL] : []), ...(live ? [LIVE_EXPLAIN_TOOL, `Edit(${ruleFor(explains)}/**)`] : [])].join(',');
+  const allowed = [OPEN_TAB_TOOL, SPOTLIGHT_TOOL, ...((settings.board?.pages ?? 'show') !== 'off' ? [BOARD_TOOL] : []), ...(settings.journal?.on !== false ? [JOURNAL_TOOL, JOURNAL_SEARCH_TOOL] : []), ...(settings.orchestrator?.enabled ? [TELL_CORA_TOOL] : []), DEBRIEF_TOOL, ...SECRETS_TOOLS, 'EnterWorktree', ...((settings.memes?.mode ?? 'off') !== 'off' ? [MEME_TOOL] : []), ENV_TOOL, VPN_REQUEST_TOOL, DEPLOYS_TOOL, ...NOTES_TOOLS.map((t) => `mcp__${MCP_SERVER}__${t}`), ...BOARDS_TOOLS.map((t) => `mcp__${MCP_SERVER}__${t}`), SLACK_FIND_TOOL, SLACK_READ_TOOL, SLACK_SEND_TOOL, ...(speaksSummaries(settings.voice) ? [SPEAK_TOOL] : []), ...(live ? [LIVE_EXPLAIN_TOOL, `Edit(${ruleFor(explains)}/**)`] : [])].join(',');
   const attachments = attachmentsDir(config.dataDir);
   mkdirSync(attachments, { recursive: true });
   // --ide: connect to the IDE open on its folder (the IDE panel's VS Code, with Claude Code's extension) by itself
   // --add-dir takes several folders: an option must follow it
   // its edits wait for Cora's word (another session changing the same checkout: it moves into a worktree first);
   // only sessions Cora hosts, in their own settings (yours stay as they are)
+  // and its commands never drive the VPN: only the user switches it (a switch cuts off other sessions' work)
   const gatePath = join(config.dataDir, 'hosted-gate.json');
-  if ((settings.worktrees?.move ?? DEFAULT_WORKTREES.move) !== 'ask') writeFileAtomic(gatePath, JSON.stringify({ hooks: { PreToolUse: [{ matcher: 'Edit|Write|MultiEdit|NotebookEdit', hooks: [{ type: 'http', url: `http://127.0.0.1:${config.port}/edit-gate`, headers: { [TOKEN_HEADER]: config.hookToken }, timeout: 30 }] }] } }), { mode: 0o600 });
-  const gate = (settings.worktrees?.move ?? DEFAULT_WORKTREES.move) !== 'ask' ? ['--settings', gatePath] : [];
+  const hook = (path: string, timeout: number) => [{ type: 'http', url: `http://127.0.0.1:${config.port}/${path}`, headers: { [TOKEN_HEADER]: config.hookToken }, timeout }];
+  const editGate = (settings.worktrees?.move ?? DEFAULT_WORKTREES.move) !== 'ask' ? [{ matcher: 'Edit|Write|MultiEdit|NotebookEdit', hooks: hook('edit-gate', 30) }] : [];
+  writeFileAtomic(gatePath, JSON.stringify({ hooks: { PreToolUse: [...editGate, { matcher: 'Bash|PowerShell', hooks: hook('vpn-gate', 10) }] } }), { mode: 0o600 });
+  const gate = ['--settings', gatePath];
   // Claude Code with mods: the Cora plugin, and a name its project's other sessions can message it by
   const own = native ? ['--plugin-dir', native.pluginDir, '--name', seat?.name ?? native.name] : [];
   if (!seat) return ['--ide', ...gate, ...own, '--add-dir', attachments, ...(live ? [explains] : []), '--mcp-config', mcpPath, '--allowedTools', allowed, '--append-system-prompt-file', promptPath];

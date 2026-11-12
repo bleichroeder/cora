@@ -106,6 +106,29 @@ describe('composer routes', () => {
   afterEach(async () => srv?.close());
   const H = { cookie: 'ab_session=uitok', origin: 'http://127.0.0.1:4317' };
 
+  it("a file the transcript names: a text file's first lines (relative to the session's folder), a picture's bytes, a folder's contents", async () => {
+    const spawn = () => ({ onData() {}, onExit() {}, write() {}, resize() {}, kill() {} });
+    const dataDir = mkdtempSync(join(tmpdir(), 'cora-peek-'));
+    mkdirSync(join(dataDir, 'src'));
+    writeFileSync(join(dataDir, 'src', 'app.ts'), 'one\ntwo\nthree');
+    writeFileSync(join(dataDir, 'shot.png'), Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+    writeFileSync(join(dataDir, 'blob.bin'), Buffer.from([1, 0, 2]));
+    srv = await startServer(loadConfig({ dataDir, dbPath: ':memory:', hookToken: 'hooktok', uiToken: 'uitok', clientDir: join(tmpdir(), 'nope-client') }), { tail: false, listen: false, spawn });
+    const t = (await srv.app.inject({ method: 'POST', url: '/api/terminals', headers: H, payload: { mode: 'new', cwd: dataDir } })).json();
+    const peek = (p: string) => srv.app.inject({ url: `/api/sessions/${t.sessionId}/file?path=${encodeURIComponent(p)}`, headers: { cookie: H.cookie } });
+    expect((await peek('src/app.ts')).json()).toMatchObject({ kind: 'text', path: join(dataDir, 'src', 'app.ts'), text: 'one\ntwo\nthree', truncated: false });
+    expect((await peek(join(dataDir, 'shot.png'))).json()).toMatchObject({ kind: 'image', size: 4 });
+    expect((await peek('src')).json()).toMatchObject({ kind: 'dir', entries: ['app.ts'] });
+    expect((await peek('blob.bin')).json()).toMatchObject({ kind: 'binary' });
+    expect((await peek('gone.txt')).statusCode).toBe(404);
+    const raw = await srv.app.inject({ url: `/api/sessions/${t.sessionId}/file/raw?path=${encodeURIComponent('shot.png')}`, headers: { cookie: H.cookie } });
+    expect(raw.headers['content-type']).toBe('image/png');
+    expect(raw.rawPayload.length).toBe(4);
+    // only pictures come raw; and it's yours (no key, no file)
+    expect((await srv.app.inject({ url: `/api/sessions/${t.sessionId}/file/raw?path=src/app.ts`, headers: { cookie: H.cookie } })).statusCode).toBe(400);
+    expect((await srv.app.inject({ url: `/api/sessions/${t.sessionId}/file?path=src/app.ts` })).statusCode).toBe(401);
+  });
+
   it('types a prompt (several lines as a paste, then Enter) into a live terminal only', async () => {
     const writes: string[] = [];
     const spawn = () => ({ onData() {}, onExit() {}, write: (d: string) => void writes.push(d), resize() {}, kill() {} });

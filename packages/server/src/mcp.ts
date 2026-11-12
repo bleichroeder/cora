@@ -8,11 +8,12 @@ import { envLine, type Environments } from './environments';
 import type { Deploys } from './deploys';
 import { matchTemplate, type Memes } from './memes';
 import { NoteError, type Notes } from './notes';
+import type { Boards } from './boards';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { z } from 'zod';
 import { BUILDER_HEADER, TEAM_JSON_MAX } from './builder';
-import { noteLinks, BOARD_LAYOUTS, BOARD_LAYOUT_INFO, SVG_MAX, svgProblem, AGENT_HEADER, MCP_SERVER, SESSION_HEADER, deploysText, parseSlackLink, speaksSummaries, type Settings, ATTACH_MAX, type SlackAttachment, type UiCommand } from '@cora/shared';
+import { noteLinks, outlineBoard, type BoardShape, BOARD_LAYOUTS, BOARD_LAYOUT_INFO, SVG_MAX, svgProblem, AGENT_HEADER, MCP_SERVER, SESSION_HEADER, deploysText, parseSlackLink, speaksSummaries, type Settings, ATTACH_MAX, type SlackAttachment, type UiCommand } from '@cora/shared';
 import { hookToken, sameSecret } from './config';
 import { SlackError, type Outbox, type Slack, hitLine, isImage } from './slack';
 import type { SlackLive } from './slackLive';
@@ -47,6 +48,11 @@ const knownHosts = (settings: Settings) => ['github.com', settings.gitlab?.host,
 
 /** Cora's tools here that act, reach out, or let it act later (slack_allow: only stopping is let through). */
 const OTHERS_LOCKED = new Set(['open_tab', 'notes_add', 'gmail_watch', 'gmail_unwatch', 'slack_allow']);
+
+/** The VPN, as a session's tools need it: asking the user to switch (never switching). */
+/** The Whiteboard, as the MCP server needs it. */
+export type McpBoards = { boards: Boards; nameOf(sessionId: string): string };
+export type McpVpn = { available(): boolean; request(sessionId: string, asked: string, why: string): Promise<import('./vpn').VpnOutcome> };
 
 /** Live explains, as the MCP server needs them. */
 export type McpLive = { start(sessionId: string, title: string): { slug: string; dir: string; page: string; data: string } };
@@ -137,7 +143,7 @@ function noTools(): McpServer {
   return server;
 }
 
-function buildServer(settings: Settings, sessionId: string | null, s?: McpSlack, orch?: McpOrchestrator, env?: Environments, deploys?: Deploys, notes?: McpNotes, mail?: McpGmail, /** the caller proved it's Cora's agent */ proven = false, /** drives the dashboards (open_tab) */ ui?: (cmd: UiCommand) => void, live?: McpLive, memes?: Memes, journal?: McpJournal, debrief?: McpDebrief, secrets?: McpSecrets, projects?: McpProjects, calendar?: CalendarApi, builder?: McpBuilder): McpServer {
+function buildServer(settings: Settings, sessionId: string | null, s?: McpSlack, orch?: McpOrchestrator, env?: Environments, deploys?: Deploys, notes?: McpNotes, mail?: McpGmail, /** the caller proved it's Cora's agent */ proven = false, /** drives the dashboards (open_tab) */ ui?: (cmd: UiCommand) => void, live?: McpLive, memes?: Memes, journal?: McpJournal, debrief?: McpDebrief, secrets?: McpSecrets, projects?: McpProjects, calendar?: CalendarApi, builder?: McpBuilder, /** the VPN (asking the user to switch) */ vpn?: McpVpn, /** the Whiteboard */ boards?: McpBoards): McpServer {
   // a session id alone says nothing: only Cora's own agent (with its own key) is Cora (docs/audit-2026-10-20.md S3)
   const asCora = (sid: string | null): sid is string => !!(proven && orch && sid && orch.isAgent(sid));
   const mode = settings.explains.mode;
@@ -714,7 +720,7 @@ function buildServer(settings: Settings, sessionId: string | null, s?: McpSlack,
       title: 'Which environment is reachable',
       description: [
         "Which of the user's environments this PC can reach right now (dev, staging, prod: each behind its own VPN, usually only one at a time), with the kubeconfig to use for each.",
-        'Check it before running kubectl, curl or deploys against an environment, and when something times out. It is read-only: it cannot change the VPN; ask the user to switch if you need another one.',
+        'Check it before running kubectl, curl or deploys against an environment, and when something times out. It is read-only: it cannot change the VPN. If you need another one, ask the user to switch it (the vpn_request tool shows them a card, when Cora has their VPN); never switch it yourself.',
       ].join(' '),
       inputSchema: {},
     },
@@ -724,9 +730,31 @@ function buildServer(settings: Settings, sessionId: string | null, s?: McpSlack,
       if (!states.length) return fail('No environments are set up in Cora (it finds them from ~/.kube kubeconfig files).');
       const ago = (t?: number) => (t ? `${Math.max(0, Math.round((Date.now() - t) / 1000))}s ago` : 'not yet');
       const lines = states.map((x) => `- ${x.label} (${x.name}): ${x.reachable ? 'REACHABLE' : x.reachable === false ? 'not reachable' : 'unknown'}, checked ${ago(x.checkedAt)}${x.kubeconfig ? `; KUBECONFIG=${x.kubeconfig}${x.context ? ` (context ${x.context})` : ''}` : ''}`);
-      return { content: [{ type: 'text' as const, text: `${envLine(states)}\n${lines.join('\n')}\nOnly the user can switch the VPN.` }] };
+      return { content: [{ type: 'text' as const, text: `${envLine(states)}\n${lines.join('\n')}\nOnly the user can switch the VPN${vpn?.available() ? ' (ask with vpn_request)' : ''}.` }] };
     },
   );
+  // Ask the user to switch the VPN: a card with their Switch and Not now. Only the user switches it (a switch cuts off
+  // what other sessions are doing on the VPN that's up); nothing here can, and a session's shell can't (the VPN gate).
+  if (vpn?.available() && sessionId)
+    server.registerTool(
+      'vpn_request',
+      {
+        title: 'Ask the user to switch the VPN',
+        description: [
+          "Ask the user to switch their VPN (OpenVPN Connect) to the one you need: Cora shows them a card with Switch and Not now. Use it when the environment tool says what you need isn't reachable.",
+          "Only the user switches the VPN: a switch cuts off whatever other sessions are doing on the VPN that's up, so never start, stop or script OpenVPN Connect, or change the network, yourself.",
+          'The call waits for their answer (up to 10 minutes) and says what happened: switched (with what is reachable now), not now, or still waiting (then Cora types a message into this session when they answer).',
+        ].join(' '),
+        inputSchema: {
+          to: z.string().min(1).max(80).describe("What you need: an environment (dev, staging, prod, or a name the environment tool shows) or a VPN profile's name"),
+          why: z.string().min(1).max(400).describe('Why, in a sentence the user reads on the card (what you want to do there)'),
+        },
+      },
+      async ({ to, why }) => {
+        const o = await vpn.request(sessionId, to, why);
+        return { ...(o.kind === 'unavailable' ? { isError: true } : {}), content: [{ type: 'text' as const, text: o.text }] };
+      },
+    );
   // What each environment runs (Cora reads the clusters the VPN reaches, and keeps the last listing of the rest).
   server.registerTool(
     'deploys',
@@ -822,6 +850,105 @@ function buildServer(settings: Settings, sessionId: string | null, s?: McpSlack,
         }
       },
     );
+  }
+  // The Whiteboard: read any board (its picture and an outline); draw on one in a frame of this session's own; take
+  // back only what this session drew. The user's own drawing is never moved, changed or removed.
+  if (boards) {
+    const text = (t: string) => ({ content: [{ type: 'text' as const, text: t }] });
+    const when = (t: number) => (t ? new Date(t).toISOString().slice(0, 16).replace('T', ' ') : 'never');
+    const me = sessionId ? { sessionId, name: boards.nameOf(sessionId) } : null;
+    server.registerTool(
+      'boards_list',
+      {
+        title: "The user's whiteboards",
+        description: "The user's whiteboards in Cora: Scratch (always there), then their named boards, with how many things are on each, what each is tied to, and when it changed.",
+        inputSchema: {},
+      },
+      async () =>
+        text(
+          boards.boards
+            .list()
+            .map((b) => `- ${b.title} (id ${b.id}) · ${b.count} thing${b.count === 1 ? '' : 's'}${b.link?.sessionId ? (b.link.sessionId === sessionId ? ' · tied to you' : ` · tied to ${boards.nameOf(b.link.sessionId)}`) : ''}${b.pinned && b.id !== 'scratch' ? ' [pinned]' : ''} · changed ${when(b.updatedAt)}`)
+            .join('\n'),
+        ),
+    );
+    server.registerTool(
+      'board_read',
+      {
+        title: 'Look at a whiteboard',
+        description: "Look at one of the user's whiteboards: a picture of it, and an outline of what's on it (frames and who drew them, shapes and their labels, what's joined to what). Use it when they say \"look at my whiteboard\" or before drawing beside their sketch.",
+        inputSchema: { board: z.string().max(120).optional().describe("The board's name or id (default: the one tied to you, else Scratch)") },
+      },
+      async ({ board }) => {
+        const id = board?.trim() ? boards.boards.find(board) : ((me && boards.boards.forSession(me.sessionId)) ?? 'scratch');
+        if (!id) return fail(`No board called "${board}". boards_list shows them.`);
+        const d = boards.boards.read(id);
+        const outline = outlineBoard(d.title, d.scene.elements);
+        const png = d.count ? boards.boards.preview(id) : null;
+        return {
+          content: [
+            ...(png ? [{ type: 'image' as const, data: png.toString('base64'), mimeType: 'image/png' }] : []),
+            { type: 'text' as const, text: `${outline}${d.count && !png ? '\n\n(No picture of it yet: it renders when the user opens it in Cora.)' : ''}` },
+          ],
+        };
+      },
+    );
+    if (me) {
+      const shape = z.object({
+        type: z.enum(['rect', 'ellipse', 'diamond', 'note', 'text', 'arrow', 'line']),
+        id: z.string().max(60).optional().describe('Your name for it, for arrows to join (default: its label)'),
+        label: z.string().max(500).optional(),
+        x: z.number().optional(),
+        y: z.number().optional(),
+        w: z.number().min(10).max(4000).optional(),
+        h: z.number().min(10).max(4000).optional(),
+        from: z.string().max(500).optional().describe('arrow/line: the id or label of the shape it starts at'),
+        to: z.string().max(500).optional().describe('arrow/line: the id or label of the shape it ends at'),
+        color: z.enum(['gray', 'red', 'orange', 'yellow', 'green', 'teal', 'blue', 'violet', 'pink']).optional(),
+      });
+      server.registerTool(
+        'board_draw',
+        {
+          title: 'Draw on a whiteboard',
+          description: [
+            "Draw on one of the user's whiteboards in Cora, in a frame of your own placed beside what's there (never on top of it): a diagram, a flow, an architecture, a plan to point at.",
+            'Give either `mermaid` (a Mermaid flowchart, sequence or class diagram: it becomes real boxes and arrows they can edit) or `shapes` (rect, ellipse, diamond, note (a sticky), text, and arrow/line joining two shapes by id or label; positions optional: unplaced shapes are laid out in rows).',
+            'With no board named it goes on the board tied to you, else a new one named for you. They see it at once; Ctrl+Z takes it off. Only when it helps them (or they asked).',
+          ].join(' '),
+          inputSchema: {
+            board: z.string().max(120).optional().describe("The board's name or id (a new name makes a new board)"),
+            title: z.string().max(120).optional().describe("Your frame's name (default: your session's)"),
+            mermaid: z.string().max(20_000).optional().describe('A Mermaid diagram'),
+            shapes: z.array(shape).max(300).optional().describe('Simple shapes'),
+          },
+        },
+        async ({ board, title, mermaid, shapes }) => {
+          if (!!mermaid === !!shapes?.length) return fail('Give either `mermaid` or `shapes` (one of them).');
+          const r = await boards.boards.draw({ ...(board ? { board } : {}), by: me, ...(title ? { title } : {}), ...(mermaid ? { mermaid } : {}), ...(shapes?.length ? { shapes: shapes as BoardShape[] } : {}) });
+          if (!r.ok) return fail(r.error);
+          return text(`Drew ${r.count} thing${r.count === 1 ? '' : 's'} in the frame "${r.frame}" on the board "${r.title}" (id ${r.boardId}). board_read shows it; board_erase takes it back.`);
+        },
+      );
+      server.registerTool(
+        'board_erase',
+        {
+          title: 'Take back your drawing',
+          description: "Remove what you drew on a whiteboard: your frames (all of them, or the one named) and what's in them. It never touches what the user (or another session) drew. To redraw, erase then board_draw again.",
+          inputSchema: {
+            board: z.string().min(1).max(120).describe("The board's name or id"),
+            frame: z.string().max(120).optional().describe("Your frame's name (default: all of yours on that board)"),
+          },
+        },
+        async ({ board, frame }) => {
+          try {
+            const r = boards.boards.erase(board, me.sessionId, frame);
+            return text(r.removed ? `Took back ${r.frames.map((f) => `"${f}"`).join(', ')} (${r.removed} thing${r.removed === 1 ? '' : 's'}).` : `Nothing of yours${frame ? ` called "${frame}"` : ''} on that board.`);
+          } catch (e) {
+            return fail((e as Error).message);
+          }
+        },
+      );
+    }
   }
   // Same again: the app hears the call in the transcript and says the text with the user's voice.
   server.registerTool(
@@ -1297,7 +1424,7 @@ ${out.text}` : ''}` }] };
  * Streamable-HTTP MCP endpoint (stateless: a fresh server per request). The tool itself has no side effects:
  * the document travels in the tool call, which lands in the transcript, and the UI renders it from there.
  */
-export function registerMcp(app: FastifyInstance, token: string, getSettings: () => Settings, slack?: McpSlack, orch?: McpOrchestrator, env?: Environments, deploys?: Deploys, notes?: McpNotes, mail?: McpGmail, /** Cora's agent's own key (Cora passes its own; tests use the hook token) */ agentToken: string = token, /** drives the dashboards (open_tab) */ ui?: (cmd: UiCommand) => void, /** live explains */ live?: McpLive, /** the Vibes panel */ memes?: Memes, /** sessions' journals */ journal?: McpJournal, /** Cora Secrets */ secrets?: McpSecrets, /** debriefs */ debrief?: McpDebrief, /** projects */ projects?: McpProjects, /** your Google calendar (Cora's agent) */ calendar?: CalendarApi, /** told the tools a session was given (its tools/list) */ listed?: (sid: string, names: string[]) => void, /** the team builder's session */ builder?: McpBuilder): { toolsFor(sid: string): string[] } {
+export function registerMcp(app: FastifyInstance, token: string, getSettings: () => Settings, slack?: McpSlack, orch?: McpOrchestrator, env?: Environments, deploys?: Deploys, notes?: McpNotes, mail?: McpGmail, /** Cora's agent's own key (Cora passes its own; tests use the hook token) */ agentToken: string = token, /** drives the dashboards (open_tab) */ ui?: (cmd: UiCommand) => void, /** live explains */ live?: McpLive, /** the Vibes panel */ memes?: Memes, /** sessions' journals */ journal?: McpJournal, /** Cora Secrets */ secrets?: McpSecrets, /** debriefs */ debrief?: McpDebrief, /** projects */ projects?: McpProjects, /** your Google calendar (Cora's agent) */ calendar?: CalendarApi, /** told the tools a session was given (its tools/list) */ listed?: (sid: string, names: string[]) => void, /** the team builder's session */ builder?: McpBuilder, /** the VPN (asking the user to switch) */ vpn?: McpVpn, /** the Whiteboard */ boards?: McpBoards): { toolsFor(sid: string): string[] } {
   app.post('/mcp', async (req, reply) => {
     if (!sameSecret(hookToken(req), token)) return reply.code(401).send({ error: 'bad token' });
     // sessions launched here say who they are (older ones don't: their drafts are matched to them by their events)
@@ -1306,7 +1433,7 @@ export function registerMcp(app: FastifyInstance, token: string, getSettings: ()
     // the builder's tools need its own proof beside the session id (the hook token is shared by every session)
     const proved = builder && typeof sid === 'string' && builder.proves(sid, req.headers[BUILDER_HEADER]) ? builder : undefined;
     // a proven builder session that is no project's builder now (its draft applied or thrown away): nothing
-    const server = proved && !proved.projectOf(sid as string) ? noTools() : buildServer(getSettings(), typeof sid === 'string' && /^[\w-]{8,80}$/.test(sid) ? sid : null, slack, orch, env, deploys, notes, mail, proven, ui, live, memes, journal, debrief, secrets, projects, calendar, proved);
+    const server = proved && !proved.projectOf(sid as string) ? noTools() : buildServer(getSettings(), typeof sid === 'string' && /^[\w-]{8,80}$/.test(sid) ? sid : null, slack, orch, env, deploys, notes, mail, proven, ui, live, memes, journal, debrief, secrets, projects, calendar, proved, vpn, boards);
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
     // what it was given: Claude Code asks once, when it connects, and keeps that list (a newer Cora's tools it lacks)
     const asked = ([] as Array<{ method?: unknown }>).concat((req.body ?? []) as never);
@@ -1323,7 +1450,7 @@ export function registerMcp(app: FastifyInstance, token: string, getSettings: ()
   app.get('/mcp', notAllowed);
   app.delete('/mcp', notAllowed);
   // the tools a session would be given now (a session launched here; not Cora's own agent)
-  return { toolsFor: (sid) => toolNames(buildServer(getSettings(), sid, slack, orch, env, deploys, notes, mail, false, ui, live, memes, journal, debrief, secrets, projects, calendar, builder)) };
+  return { toolsFor: (sid) => toolNames(buildServer(getSettings(), sid, slack, orch, env, deploys, notes, mail, false, ui, live, memes, journal, debrief, secrets, projects, calendar, builder, vpn, boards)) };
 }
 
 /** A built server's tools, by name (the ones it lists). */

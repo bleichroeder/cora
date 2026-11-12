@@ -1,0 +1,40 @@
+/* ---------- the VPN control: the rail's pill, and its menu (the session menu's language) ---------- */
+.rf-vpn { display: inline-flex; align-items: center; gap: 7px; min-width: 0; max-width: 150px; height: 26px; padding: 0 9px 0 8px; border: 0; border-radius: 13px; background: none; box-shadow: inset 0 0 0 1px var(--hair); color: var(--ink2); font: 500 11.5px var(--ui); white-space: nowrap; cursor: pointer; }
+.rf-vpn:hover, .rf-vpn.on { background: var(--raise); color: var(--ink); }
+.rf-vpn .dl-glyph { width: 8px; height: 8px; }
+.rf-vpn-n { overflow: hidden; text-overflow: ellipsis; }
+.rf-vpn-ask { display: grid; place-items: center; flex: none; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; background: var(--cora); color: #fff; font: 700 10px var(--ui); }
+.rf-vpn.asks { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cora) 55%, transparent); animation: vpn-ask 2.4s ease-in-out infinite; }
+@keyframes vpn-ask { 50% { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cora) 25%, transparent), 0 0 12px color-mix(in srgb, var(--cora) 30%, transparent); } }
+@media (prefers-reduced-motion: reduce) { .rf-vpn.asks { animation: none; } }
+/* the pill takes the line's left; what's wrong (rf-say) still comes first */
+.rail-foot .rf-say + .rf-vpn { max-width: 34px; padding: 0 9px; }
+.rail-foot .rf-say + .rf-vpn .rf-vpn-n { display: none; }
+
+.vpn-menu { z-index: 60; width: 320px; max-height: min(78vh, 620px); overflow-y: auto; }
+.vpn-tile { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 8px; background: var(--nav); box-shadow: inset 0 0 0 1px var(--hair2); color: var(--cora-hi); }
+.vpn-err, .vpn-note { display: flex; gap: 7px; align-items: flex-start; margin: 10px 2px 0; font: 400 11.5px/16px var(--ui); }
+.vpn-err { color: #ffb3b3; }
+.vpn-err svg { flex: none; margin-top: 2px; color: var(--need); }
+.vpn-note { color: var(--ink4); }
+.vpn-note svg { flex: none; margin-top: 2px; }
+
+.vpn-p .dl-glyph { width: 8px; height: 8px; }
+.vpn-pn { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vpn-env { flex: none; padding: 1px 6px; border-radius: 6px; background: var(--nav); color: var(--ink3); font: 500 10px var(--code); }
+.vpn-key { flex: none; color: var(--ink4); }
+.vpn-act { margin-left: auto; color: var(--ink4); font: 500 11px var(--ui); opacity: 0; }
+.vpn-p:hover:not(:disabled) .vpn-act { opacity: 1; color: var(--cora-hi); }
+.vpn-p.cur { color: var(--ink); }
+.vpn-p.cur:disabled { opacity: 1; cursor: default; }
+.vpn-p.cur .vpn-act { opacity: 1; color: var(--work); }
+
+.vpn-ask { display: flex; flex-direction: column; gap: 6px; margin-bottom: 6px; padding: 10px; border-radius: 10px; background: color-mix(in srgb, var(--cora) 7%, var(--nav)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cora) 30%, transparent); }
+.vpn-ask-h { display: flex; align-items: center; gap: 8px; color: var(--ink2); font: 400 12px/16px var(--ui); }
+.vpn-ask-h .dl-tile { --tile-bg: var(--raise); flex: none; }
+.vpn-ask-h b { color: var(--ink); font-weight: 600; }
+.vpn-ask-h select { max-width: 150px; height: 22px; border: 0; border-radius: 6px; background: var(--raise2); color: var(--ink); font: 500 11.5px var(--ui); }
+.vpn-when { margin-left: auto; color: var(--ink4); font: 400 10.5px var(--code); }
+.vpn-why { color: var(--ink2); font: 400 12px/17px var(--ui); overflow-wrap: anywhere; }
+.vpn-cut { color: var(--think); font: 400 11px/15px var(--ui); }
+.vpn-btns { display: flex; justify-content: flex-end; gap: 6px; }

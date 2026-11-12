@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { Suspense, lazy, useEffect, useRef, useState } from 'react';
 import { useBrain } from '../state/store';
 import { useTools } from '../state/tools';
 import { useWeb } from '../state/web';
@@ -10,8 +10,11 @@ import { BrowserTool, WEB_PARTITION, openFind } from './WebPane';
 import { BROWSER_ID, currentGroup, isBrowserGroup } from '../state/browser';
 import { SECRETS_ID, useSecrets } from '../state/secrets';
 import { SecretsPane } from './SecretsSettings';
-import { LibraryButton, LibraryPane, LibraryRow } from './Library';
+import { LibraryButton, LibraryPane } from './Library';
 import { LIBRARY_ID } from '../state/library';
+import { WHITEBOARD_ID, boardsUnseen, useBoards } from '../state/boards';
+// the Whiteboard (Excalidraw): loaded only when it's first opened
+const WhiteboardPane = lazy(() => import('./whiteboard/WhiteboardPane'));
 import { openSettings } from './SettingsModal';
 import { Icon } from './Icon';
 import { FindBar } from './FindBar';
@@ -207,26 +210,18 @@ export function ToolsDock() {
       {expanded ? (
         <div className="rt-card rt-list" ref={list} style={height ? { maxHeight: height } : undefined}>
           {entries.map((e) => (e.kind === 'tool' ? <ToolRow key={e.t.id} t={e.t} n={e.n} on={open === e.t.id} u={unread[e.t.id]} /> : <FolderRows key={`f:${e.name}`} name={e.name} tools={e.tools} open={open} unread={unread} />))}
-          <button className="rt-r rt-more" onClick={() => openSettings('tools')}>
-            <span className="rt-plus">
-              <Icon name="Plus" size={12} />
-            </span>
-            <span className="rt-nm">
-              <b>Add a tool</b>
-            </span>
-          </button>
+          {/* the heading's + adds one; this row only while there are none */}
+          {entries.length ? null : (
+            <button className="rt-r rt-more" onClick={() => openSettings('tools')}>
+              <span className="rt-plus">
+                <Icon name="Plus" size={12} />
+              </span>
+              <span className="rt-nm">
+                <b>Add a tool</b>
+              </span>
+            </button>
+          )}
         </div>
-      ) : null}
-      {expanded ? (
-        <>
-          <div className="rt-sub left">Cora</div>
-          <div className="rt-card">
-            <NotesRow on={open === NOTES_ID} />
-            <LibraryRow on={open === LIBRARY_ID} />
-            {desktop?.browser ? <BrowserRow on={open === BROWSER_ID} /> : null}
-            <SecretsRow on={open === SECRETS_ID} />
-          </div>
-        </>
       ) : null}
       {expanded ? null : (
         <div className="rt-row">
@@ -265,17 +260,15 @@ export function ToolsDock() {
           {pop ? <FolderPop name={pop} entry={entries.find((e) => e.kind === 'folder' && e.name === pop) as Extract<ToolEntry, { kind: 'folder' }> | undefined} open={open} unread={unread} onClose={() => setPop(null)} /> : null}
         </div>
       )}
-      {expanded ? null : (
-        <>
-          <div className="rt-sub">Cora</div>
-          <div className="rt-row">
-            <NotesButton on={open === NOTES_ID} />
-            <LibraryButton on={open === LIBRARY_ID} />
-            {desktop?.browser ? <BrowserButton on={open === BROWSER_ID} /> : null}
-            <SecretsButton on={open === SECRETS_ID} />
-          </div>
-        </>
-      )}
+      {/* Cora's own: a row of tiles under yours in either view, told apart by their colours (it wraps as Cora gains more); what each holds is in its tooltip */}
+      <div className="rt-sep" aria-hidden />
+      <div className="rt-row rt-cora-row">
+        <NotesButton on={open === NOTES_ID} />
+        <LibraryButton on={open === LIBRARY_ID} />
+        <WhiteboardButton on={open === WHITEBOARD_ID} />
+        {desktop?.browser ? <BrowserButton on={open === BROWSER_ID} /> : null}
+        <SecretsButton on={open === SECRETS_ID} />
+      </div>
     </div>
   );
 }
@@ -283,60 +276,44 @@ export function ToolsDock() {
 const openNotes = () => useTools.getState().toggle(NOTES_ID);
 const openBrowser = () => (useBrain.getState().setInbox(false), useTools.getState().toggle(BROWSER_ID));
 
+const openWhiteboard = () => useTools.getState().toggle(WHITEBOARD_ID);
+/** Cora's Whiteboard in the icon row: a dot while a session has drawn on a board you haven't opened since. */
+function WhiteboardButton({ on }: { on: boolean }) {
+  const list = useBoards((b) => b.list);
+  const drew = list.find((b) => b.unseen);
+  return (
+    <button className={`rt-b rt-cora cc-whiteboard${on ? ' on' : ''}`} title={`Whiteboard: sketch, and hand it to a session (sessions can draw too) · ${list.length} board${list.length === 1 ? '' : 's'}${drew ? ` · ${drew.unseen} drew on ${drew.title}` : ''}`} onClick={openWhiteboard}>
+      <Icon name="Presentation" size={18} />
+      {boardsUnseen(list) ? <span className="rt-badge dot cora" /> : null}
+    </button>
+  );
+}
+
 const openSecrets = () => useTools.getState().toggle(SECRETS_ID);
 /** Cora's Secrets in the icon row: amber while one of them has expired. */
 function SecretsButton({ on }: { on: boolean }) {
-  const expired = useSecrets((s) => (s.list ?? []).some((x) => !!x.expiresAt && x.expiresAt < Date.now()));
+  const list = useSecrets((s) => s.list);
+  const n = list?.length ?? 0;
+  const expired = (list ?? []).filter((x) => !!x.expiresAt && x.expiresAt < Date.now()).length;
   return (
-    <button className={`rt-b rt-cora${on ? ' on' : ''}`} title={expired ? 'Secrets: one has expired' : 'Secrets: tokens and keys your sessions use by name'} onClick={openSecrets}>
+    <button
+      className={`rt-b rt-cora cc-secrets${on ? ' on' : ''}`}
+      title={`Secrets: tokens and keys your sessions use by name · ${expired ? `${expired} expired` : n ? `${n} kept` : 'none yet'}`}
+      onClick={openSecrets}
+    >
       <Icon name="KeyRound" size={18} />
       {expired ? <span className="rt-badge dot" /> : null}
     </button>
   );
 }
-/** Cora's Secrets as a named row: how many, and whether one has expired. */
-function SecretsRow({ on }: { on: boolean }) {
-  const list = useSecrets((s) => s.list);
-  const n = list?.length ?? 0;
-  const expired = (list ?? []).filter((x) => !!x.expiresAt && x.expiresAt < Date.now()).length;
-  return (
-    <button className={`rt-r${on ? ' on' : ''}`} title="Secrets: tokens and keys your sessions use by name" onClick={openSecrets}>
-      <span className="rt-cora-ico">
-        <Icon name="KeyRound" size={14} />
-      </span>
-      <span className="rt-nm">
-        <b>Secrets</b>
-        <i>{expired ? `${expired} expired` : n ? `${n} kept` : 'None yet'}</i>
-      </span>
-    </button>
-  );
-}
 
-/** Cora's Browser in the icon row. */
+/** Cora's Browser in the icon row: how many tabs it has open, in its tooltip. */
 function BrowserButton({ on }: { on: boolean }) {
-  return (
-    <button className={`rt-b rt-cora${on ? ' on' : ''}`} title="Browser (Ctrl+Shift+B)" onClick={openBrowser}>
-      <Icon name="Globe" size={18} />
-    </button>
-  );
-}
-
-/** Cora's Browser as a named row: how many tabs it has open. */
-function BrowserRow({ on }: { on: boolean }) {
   // every profile's tabs
   const n = useWeb((w) => Object.entries(w.sessions).reduce((k, [g, sw]) => k + (isBrowserGroup(g) ? sw.tabs.filter((id) => w.tabs[id]?.url).length : 0), 0));
   return (
-    <button className={`rt-r${on ? ' on' : ''}`} title="Browser (Ctrl+Shift+B)" onClick={openBrowser}>
-      <span className="rt-cora-ico">
-        <Icon name="Globe" size={14} />
-      </span>
-      <span className="rt-nm">
-        <b>Browser</b>
-        <i>{n ? `${n} tab${n === 1 ? '' : 's'}` : 'No tabs open'}</i>
-      </span>
-      <span className="rt-rr">
-        <span className="rt-k">^⇧B</span>
-      </span>
+    <button className={`rt-b rt-cora cc-browser${on ? ' on' : ''}`} title={`Browser (Ctrl+Shift+B) · ${n ? `${n} tab${n === 1 ? '' : 's'}` : 'no tabs open'}`} onClick={openBrowser}>
+      <Icon name="Globe" size={18} />
     </button>
   );
 }
@@ -344,6 +321,7 @@ function BrowserRow({ on }: { on: boolean }) {
 /** Cora's Notes in the icon row: Cora's colour, a dot while a session's addition is unseen. */
 function NotesButton({ on }: { on: boolean }) {
   const unseen = useNotes((s) => notesUnseen(s.list));
+  const jots = useNotes((s) => s.list.find((x) => x.kind === 'scratch')?.count ?? 0);
   const flash = useNotes((s) => s.flash);
   const [lit, setLit] = useState(false);
   useEffect(() => {
@@ -353,27 +331,13 @@ function NotesButton({ on }: { on: boolean }) {
     return () => clearTimeout(t);
   }, [flash]);
   return (
-    <button className={`rt-b rt-cora${on ? ' on' : ''}${lit ? ' flash' : ''}`} title="Notes (Ctrl+Shift+N) · jot from anywhere: Ctrl+Alt+N" onClick={openNotes}>
+    <button
+      className={`rt-b rt-cora cc-notes${on ? ' on' : ''}${lit ? ' flash' : ''}`}
+      title={`Notes (Ctrl+Shift+N) · Scratch: ${jots} jot${jots === 1 ? '' : 's'}${unseen ? ' · a session added something' : ''} · jot from anywhere: Ctrl+Alt+N`}
+      onClick={openNotes}
+    >
       <Icon name="NotebookPen" size={18} />
       {unseen ? <span className="rt-badge dot cora" /> : null}
-    </button>
-  );
-}
-
-/** Cora's Notes as a named row. */
-function NotesRow({ on }: { on: boolean }) {
-  const unseen = useNotes((s) => notesUnseen(s.list));
-  const n = useNotes((s) => s.list.find((x) => x.kind === 'scratch')?.count ?? 0);
-  return (
-    <button className={`rt-r${on ? ' on' : ''}`} title="Notes (Ctrl+Shift+N) · jot from anywhere: Ctrl+Alt+N" onClick={openNotes}>
-      <span className="rt-cora-ico">
-        <Icon name="NotebookPen" size={14} />
-      </span>
-      <span className="rt-nm">
-        <b>Notes</b>
-        <i>Scratch · {n} jot{n === 1 ? '' : 's'}</i>
-      </span>
-      <span className="rt-rr">{unseen ? <span className="rt-pdot" title="A session added something" /> : <span className="rt-k">^⇧N</span>}</span>
     </button>
   );
 }
@@ -594,7 +558,10 @@ export function ToolDrawer() {
   const mounted = useTools((s) => s.mounted);
   const box = useRef<HTMLDivElement>(null);
   const tool = tools.find((t) => t.id === open);
-  const builtin = open === NOTES_ID || open === BROWSER_ID || open === SECRETS_ID || open === LIBRARY_ID;
+  const builtin = open === NOTES_ID || open === BROWSER_ID || open === SECRETS_ID || open === LIBRARY_ID || open === WHITEBOARD_ID;
+  const whiteboard = open === WHITEBOARD_ID;
+  // the Whiteboard can take nearly the whole width while you draw
+  const [wide, setWide] = useState(false);
   const secrets = open === SECRETS_ID;
   const library = open === LIBRARY_ID;
   const browser = open === BROWSER_ID;
@@ -665,7 +632,7 @@ export function ToolDrawer() {
     desktop?.setToolHosts?.(tools.map((t) => toolHost(t.url)).filter(Boolean));
   }, [tools]);
 
-  if (!Object.keys(mounted).length || (!desktop?.browser && !mounted[NOTES_ID] && !mounted[SECRETS_ID] && !mounted[LIBRARY_ID])) return null;
+  if (!Object.keys(mounted).length || (!desktop?.browser && !mounted[NOTES_ID] && !mounted[SECRETS_ID] && !mounted[LIBRARY_ID] && !mounted[WHITEBOARD_ID])) return null;
   const page = () => (open ? pages.get(open) : undefined);
   const resize = (e: React.PointerEvent) => {
     e.preventDefault();
@@ -694,15 +661,20 @@ export function ToolDrawer() {
   };
 
   return (
-    <div className={`tool-drawer${open ? ' on' : ''}${dragging ? ' dragging' : ''}`} ref={box} style={{ width }} aria-hidden={!open}>
+    <div className={`tool-drawer${open ? ' on' : ''}${dragging ? ' dragging' : ''}${whiteboard && wide ? ' wide' : ''}`} ref={box} style={{ width }} aria-hidden={!open}>
       {builtin ? (
         <div className="td-h" style={headPad}>
           <span className="td-tile cora">
-            <Icon name={browser ? 'Globe' : secrets ? 'KeyRound' : library ? 'LibraryBig' : 'NotebookPen'} size={13} />
+            <Icon name={browser ? 'Globe' : secrets ? 'KeyRound' : library ? 'LibraryBig' : whiteboard ? 'Presentation' : 'NotebookPen'} size={13} />
           </span>
-          <b>{browser ? 'Browser' : secrets ? 'Secrets' : library ? 'Library' : 'Notes'}</b>
-          <span className="td-host">{browser ? '' : secrets ? 'encrypted on this PC' : library ? 'everything your sessions made' : '~/.cora/notes'}</span>
+          <b>{browser ? 'Browser' : secrets ? 'Secrets' : library ? 'Library' : whiteboard ? 'Whiteboard' : 'Notes'}</b>
+          <span className="td-host">{browser ? '' : secrets ? 'encrypted on this PC' : library ? 'everything your sessions made' : whiteboard ? '~/.cora/boards' : '~/.cora/notes'}</span>
           <span className="spacer" />
+          {whiteboard ? (
+            <button className="icon-btn" title={wide ? 'Back to the drawer’s width' : 'Wider, for drawing'} onClick={() => setWide(!wide)}>
+              <Icon name={wide ? 'Minimize2' : 'Maximize2'} size={14} />
+            </button>
+          ) : null}
           <button className="icon-btn" title="Close (Esc)" onClick={() => useTools.getState().close()}>
             <Icon name="X" size={15} />
           </button>
@@ -750,6 +722,11 @@ export function ToolDrawer() {
         {mounted[NOTES_ID] ? <NotesPane visible={open === NOTES_ID} /> : null}
         {mounted[SECRETS_ID] ? <SecretsPane visible={secrets} /> : null}
         {mounted[LIBRARY_ID] ? <LibraryPane visible={library} /> : null}
+        {mounted[WHITEBOARD_ID] ? (
+          <Suspense fallback={<div className="wb-empty">Opening the whiteboard…</div>}>
+            <WhiteboardPane visible={whiteboard} />
+          </Suspense>
+        ) : null}
         {mounted[BROWSER_ID] && desktop?.browser ? <BrowserTool visible={browser} /> : null}
         {tools
           .filter((t) => desktop?.browser && mounted[t.id])

@@ -24,6 +24,8 @@ import { CiGlyph } from './CiStrip';
 import { ToolsDock } from './Tools';
 import { securityLevel } from '@cora/shared';
 import { useSecurity } from '../state/security';
+import { VpnControl } from './VpnControl';
+import { AttentionEdge, attnData, useAttentionEdges } from './AttentionEdges';
 import { openSettings } from './SettingsModal';
 import { lockNow } from '../state/lock';
 import { CoraEye } from './CoraEye';
@@ -101,6 +103,8 @@ function Entry({ s, onMenu, drag, setDrag, project }: { s: SessionInfo; onMenu(e
       <button
         ref={ref}
         data-ping={`ses:${s.id}`}
+        // wanting you (needs you, or finished since you looked): counted by the rail's chips when it's out of sight
+        {...attnData(st === ' need' ? 1 : 0, fresh ? 1 : 0)}
         className={`ses${st}${fresh ? ' fresh' : ''}${speaking ? ' speaking' : ''}${focus === s.id ? ' on' : ''}${byCora || fromJira ? ' cora' : ''}${isDismissed(s) ? ' dismissed' : ''}${s.compacting && !ended ? ' compacting' : ''}${drag?.id === s.id ? ' dragging' : ''}${reached ? ' reached' : ''}${hint}`}
         style={{ ['--sc' as any]: sessionColor(s) }}
         onClick={() => (unpeek(), setFocus(s.id))}
@@ -277,6 +281,9 @@ export function SessionRail() {
   const [drag, setDrag] = useState<Drag | null>(null);
   const [folded, toggleFold] = useFolded();
   const focus = useBrain((s) => s.focus);
+  // what wants you, scrolled out of sight: a chip on the list's edge
+  const scroller = useRef<HTMLDivElement>(null);
+  const edges = useAttentionEdges(scroller);
   // what's live, and what ended in the last few hours; removed ones and older ones are in Resume
   // a project's members show under it, not again in the groups below; an archived project's are hidden with it
   const members = useProjects((p) => p.projects);
@@ -339,7 +346,8 @@ export function SessionRail() {
           </button>
         )}
       </div>
-      <div className="rail-scroll">
+      <div className="rail-scroll" ref={scroller}>
+      <AttentionEdge root={scroller} dir="up" side={edges.up} />
       {guest ? null : <ProjectsSection entry={(s, pj) => row(s, pj)} dragging={drag?.id ?? null} onDropped={() => setDrag(null)} />}
       {GROUPS.map((g) => {
         const all = list.filter((s) => g.states.includes(s.state));
@@ -350,7 +358,7 @@ export function SessionRail() {
         const freshOnes = all.filter((s) => s.state === 'idle' && unseen[s.id]);
         return (
           <section key={g.title} className="ses-group">
-            <div className={`ses-h${foldable ? ' fold' : ''}${closed ? ' closed' : ''}`} onClick={foldable ? () => toggleFold(g.title) : undefined}>
+            <div className={`ses-h${foldable ? ' fold' : ''}${closed ? ' closed' : ''}`} {...attnData(closed ? needing.length : 0, closed ? freshOnes.length : 0)} onClick={foldable ? () => toggleFold(g.title) : undefined}>
               {foldable ? <Icon name="ChevronDown" size={11} className="ses-chev" /> : null}
               <span>{g.title}</span>
               <span className="ses-n">{all.length}</span>
@@ -389,6 +397,7 @@ export function SessionRail() {
         </section>
       ) : null}
       {!list.length && !inProject.size && !spawn.loose.length && ready ? <div className="empty">Nothing open. Start a new session, or pick up an earlier one from Resume.</div> : null}
+      <AttentionEdge root={scroller} dir="down" side={edges.down} />
       </div>
       {guest ? null : <ToolsDock />}
       {guest ? null : <RailFooter />}
@@ -437,18 +446,22 @@ function RailFooter() {
         <i />
         Restart to update <small>v{update}</small>
       </button>
-    ) : level ? (
-      <button className={`rf-say ${level === 'high' ? 'bad' : 'warn'}`} onClick={() => openSettings('security')} title="Settings › Updates & security">
-        <i />
-        {level === 'high' ? 'Security updates needed' : 'Security updates available'}
-      </button>
     ) : null;
+  // security updates: a pip on Settings (it opens on them), not words on the line
+  const security = level === 'high' ? 'Security updates needed' : level ? 'Security updates available' : null;
   return (
     <div className="rail-foot rf-line">
       {say}
+      <VpnControl />
       <span className="rf-icons">
-        <button className="rf-ib" title="Settings" aria-label="Settings" onClick={() => useBrain.getState().setModal('settings')}>
+        <button
+          className="rf-ib"
+          title={security ? `Settings · ${security}` : 'Settings'}
+          aria-label={security ? `Settings: ${security}` : 'Settings'}
+          onClick={() => (security ? openSettings('security') : useBrain.getState().setModal('settings'))}
+        >
           <Icon name="Settings" size={15} />
+          {security ? <span className={`rf-pip ${level === 'high' ? 'bad' : 'warn'}`} /> : null}
         </button>
         <button className="rf-ib" title="Lock Cora (Ctrl+Alt+L)" aria-label="Lock Cora" onClick={() => void lockNow()}>
           <Icon name="Lock" size={15} />

@@ -66,6 +66,42 @@
 .ses.need:hover { background: rgba(255, 107, 107, .085); }
 .ses.need .ses-nm { color: #ffc9c9; }
 .ses.idle .ses-nm { color: var(--ink2); }
+/* wanting you, beyond the word: a bar on its left edge (where the selected row's is), and its swatch says it too.
+   Needs you: the swatch breathes in red until you answer. Finished since you looked: a blue dot on the swatch's
+   corner, which pings twice as it lands, then stays until you open it. */
+.ses.need::before, .ses.fresh::before { content: ''; position: absolute; left: 0; top: 13px; bottom: 13px; width: 2px; border-radius: 0 2px 2px 0; }
+.ses.need::before { background: var(--need); box-shadow: 0 0 8px color-mix(in srgb, var(--need) 70%, transparent); }
+.ses.fresh::before { background: var(--run); }
+.ses.need .ses-tile { animation: ses-need 2.4s ease-in-out infinite; }
+@keyframes ses-need {
+  0%, 100% { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--need) 40%, transparent); }
+  50% { box-shadow: inset 0 0 0 1px var(--need), 0 0 12px color-mix(in srgb, var(--need) 55%, transparent); }
+}
+.ses.fresh .ses-tile { position: relative; }
+.ses.fresh .ses-tile::after { content: ''; position: absolute; top: -3px; right: -3px; width: 8px; height: 8px; border-radius: 50%; background: var(--run); box-shadow: 0 0 0 2px var(--nav); animation: ses-ping 1.1s ease-out 2; }
+.ses.fresh.on .ses-tile::after { box-shadow: 0 0 0 2px var(--raise); }
+@keyframes ses-ping { 0% { box-shadow: 0 0 0 2px var(--nav), 0 0 0 2px color-mix(in srgb, var(--run) 75%, transparent); } 100% { box-shadow: 0 0 0 2px var(--nav), 0 0 0 10px transparent; } }
+/* taken to it from an edge chip: a moment's glow in Cora's colour, so your eye lands on it */
+.attn-flash { animation: attn-flash 1.5s ease-out 1; }
+@keyframes attn-flash { 0%, 30% { background: color-mix(in srgb, var(--cora) 14%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cora) 55%, transparent); } }
+@media (prefers-reduced-motion: reduce) { .ses.need .ses-tile, .ses.fresh .ses-tile::after, .attn-flash { animation: none; } }
+
+/* what wants you, scrolled out of sight: a chip stuck to the list's top or bottom edge, on a click to the nearest */
+.attn-edge { position: sticky; z-index: 4; flex: none; display: flex; justify-content: center; height: 0; pointer-events: none; }
+.attn-edge.up { top: 0; --attn-dy: -4px; }
+.attn-edge.down { bottom: 0; --attn-dy: 4px; }
+.attn-chip { position: absolute; display: inline-flex; align-items: center; gap: 8px; height: 24px; padding: 0 10px 0 8px; border: 0; border-radius: 12px; background: color-mix(in srgb, var(--raise) 90%, transparent); backdrop-filter: blur(8px); box-shadow: inset 0 0 0 1px var(--hair2), 0 6px 18px rgba(0, 0, 0, .55); color: var(--ink3); font: 600 10.5px var(--code); letter-spacing: .02em; white-space: nowrap; cursor: pointer; pointer-events: auto; animation: attn-in .18s ease-out; }
+.attn-edge.up .attn-chip { top: 2px; }
+.attn-edge.down .attn-chip { bottom: 6px; }
+.attn-chip:hover { background: var(--raise2); color: var(--ink2); }
+.attn-chip.need { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--need) 45%, transparent), 0 6px 18px rgba(0, 0, 0, .55), 0 0 14px color-mix(in srgb, var(--need) 22%, transparent); }
+.attn-n { display: inline-flex; align-items: center; gap: 5px; }
+.attn-n i { flex: none; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.attn-n.need { color: var(--need); }
+.attn-n.need i { box-shadow: 0 0 6px var(--need); animation: rf-pulse 2.4s ease-in-out infinite; }
+.attn-n.done { color: var(--run); }
+@keyframes attn-in { from { opacity: 0; transform: translateY(var(--attn-dy)); } }
+@media (prefers-reduced-motion: reduce) { .attn-chip, .attn-n.need i { animation: none; } }
 .ses.done { opacity: .5; }
 .ses.dismissed { opacity: .35; }
 .ses.dragging { opacity: .35; }
@@ -131,6 +167,11 @@
 .rail .rt-n { min-width: 18px; height: 18px; padding: 0 5px; box-sizing: border-box; border-radius: 9px; background: #e11d48; color: #fff; font: 600 9.5px/18px var(--code); text-align: center; }
 .rail .rt-dot { width: 8px; height: 8px; border-radius: 50%; background: #e11d48; }
 .rail .rt-k { color: var(--ink4); font: 500 10px var(--code); }
+/* the names view: one line a tool (its name, then its site, quieter), so the list holds more in its height */
+.rail .rt-list .rt-r { height: 30px; }
+.rail .rt-list .rt-nm { display: flex; align-items: baseline; gap: 8px; }
+.rail .rt-list .rt-nm b { flex: 0 1 auto; min-width: 0; }
+.rail .rt-list .rt-nm i { flex: 1 1 0; min-width: 0; }
 .rail .rt-more { height: 34px; }
 .rail .rt-more .rt-nm b { color: var(--ink4); font-weight: 500; }
 .rail .rt-plus { display: grid; place-items: center; width: 22px; height: 22px; justify-self: center; border: 1px dashed var(--hair2); border-radius: 6px; color: var(--ink4); }
@@ -197,6 +238,12 @@ span.rf-say { cursor: default; }
 .rf-icons { display: flex; gap: 2px; margin-left: auto; }
 .rf-ib { display: grid; place-items: center; width: 30px; height: 30px; padding: 0; border: 0; border-radius: 8px; background: none; color: var(--ink3); cursor: pointer; }
 .rf-ib:hover { background: var(--raise); color: var(--ink); }
+.rf-ib { position: relative; }
+/* something on Settings wants you (security updates): a pip on its corner */
+.rf-pip { position: absolute; top: 5px; right: 5px; width: 7px; height: 7px; border-radius: 50%; box-shadow: 0 0 0 2px var(--nav); }
+.rf-pip.warn { background: var(--think); }
+.rf-pip.bad { background: var(--need); animation: rf-pulse 2.4s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .rf-pip.bad { animation: none; } }
 
 /* its right edge: drag to resize (a hairline that lights in Cora's colour), double-click for the default */
 .nav-edge { position: absolute; top: 0; right: 0; z-index: 6; width: 6px; height: 100%; cursor: col-resize; touch-action: none; }

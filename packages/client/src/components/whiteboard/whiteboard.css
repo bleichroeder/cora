@@ -1,0 +1,56 @@
+/* ---------- the Whiteboard (Tools drawer): its bar, then Excalidraw in Cora's colours ---------- */
+.wb { display: flex; flex-direction: column; height: 100%; min-height: 0; background: var(--nav); }
+.wb-empty { display: grid; place-items: center; flex: 1; color: var(--ink4); font: 400 12.5px var(--ui); }
+
+.wb-bar { position: relative; display: flex; align-items: center; gap: 8px; flex: none; height: 40px; padding: 0 8px 0 10px; border-bottom: 1px solid var(--hair); }
+.wb-bar .spacer { flex: 1; }
+.wb-pick { display: inline-flex; align-items: center; gap: 7px; min-width: 0; max-width: 55%; height: 28px; padding: 0 8px; border: 0; border-radius: 8px; background: none; color: var(--ink2); cursor: pointer; }
+.wb-pick:hover, .wb-pick.on { background: var(--raise); color: var(--ink); }
+.wb-pick b { overflow: hidden; color: var(--ink); font: 600 12.5px var(--ui); white-space: nowrap; text-overflow: ellipsis; }
+.wb-pick svg { flex: none; color: var(--ink3); }
+.wb-name { width: 180px; height: 22px; padding: 0 6px; border: 0; border-radius: 6px; background: var(--nav); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cora) 55%, transparent); color: var(--ink); font: 600 12.5px var(--ui); outline: none; }
+.wb-tie { display: inline-flex; align-items: center; gap: 5px; min-width: 0; max-width: 30%; padding: 2px 8px; border-radius: 6px; background: var(--raise); color: var(--ink3); font: 500 11px var(--ui); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wb-new { color: var(--cora-hi); font: 500 11px var(--ui); white-space: nowrap; }
+.wb-send { height: 26px; gap: 6px; }
+.wb-bar .icon-btn.on { background: var(--raise); color: var(--ink); }
+
+.wb-menu { position: absolute; top: 38px; z-index: 30; width: 260px; max-height: 60vh; overflow-y: auto; }
+.wb-menu.left { left: 8px; }
+.wb-menu.right { right: 8px; }
+.wb-menu .sm-row.cur { background: var(--raise2); color: var(--ink); }
+.wb-menu .sm-row.danger { color: #ffb3b3; }
+.wb-mn { flex: 1; min-width: 0; overflow: hidden; text-align: left; white-space: nowrap; text-overflow: ellipsis; }
+.wb-mc { flex: none; color: var(--ink4); font: 500 10.5px var(--code); }
+.wb-dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--cora); }
+
+.wb-canvas { position: relative; flex: 1; min-height: 0; }
+/* Excalidraw's dark theme, in Cora's colours: its islands Cora's panels, its accent yours */
+.wb .excalidraw.theme--dark {
+  --ui-font: var(--ui);
+  --island-bg-color: var(--raise);
+  --popup-bg-color: var(--raise);
+  --sidebar-bg-color: var(--raise);
+  --default-bg-color: var(--nav);
+  --input-bg-color: var(--nav);
+  --input-border-color: var(--hair2);
+  --color-surface-lowest: var(--nav);
+  --color-surface-low: var(--raise);
+  --color-surface-mid: var(--nav);
+  --color-surface-high: var(--raise2);
+  --default-border-color: var(--hair2);
+  --color-on-surface: var(--ink);
+  --color-primary: var(--cora);
+  --color-primary-darker: color-mix(in srgb, var(--cora) 85%, #fff);
+  --color-primary-darkest: color-mix(in srgb, var(--cora) 70%, #fff);
+  --color-primary-hover: color-mix(in srgb, var(--cora) 80%, #fff);
+  --color-brand-hover: color-mix(in srgb, var(--cora) 80%, #fff);
+  --color-primary-light: color-mix(in srgb, var(--cora) 28%, var(--raise));
+  --color-primary-light-darker: color-mix(in srgb, var(--cora) 40%, var(--raise));
+  --color-selection: var(--cora);
+}
+.wb .excalidraw .Island { box-shadow: inset 0 0 0 1px var(--hair2), 0 6px 18px rgba(0, 0, 0, .35); }
+/* links out to Excalidraw's own site and its sign-up: not here */
+.wb .excalidraw .welcome-screen-center__heading, .wb .excalidraw .dropdown-menu-item[href*='plus.excalidraw'], .wb .excalidraw .plus-banner { display: none; }
+
+/* the drawer, widened for drawing (the Whiteboard's expand button) */
+.tool-drawer.wide { width: calc(100% - 24px) !important; }

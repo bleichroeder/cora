@@ -22,6 +22,7 @@ import { Synced } from './synced';
 import { Projects } from './projects';
 import { Door } from './door';
 import { Environments, envLine } from './environments';
+import { Vpn, findOpenVpnConnect } from './vpn';
 import { homedir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import type { FastifyInstance } from 'fastify';
@@ -69,6 +70,7 @@ import { Tailer } from './transcript/tailer';
 import { CiWatcher } from './ci';
 import { Deploys } from './deploys';
 import { Notes } from './notes';
+import { Boards } from './boards';
 import { Drafts } from './drafts';
 import { CoraBot } from './slackBot';
 import { ciRef, ciRepoName } from '@cora/shared';
@@ -655,9 +657,28 @@ export async function startServer(config: Config, opts: { tail?: boolean; listen
     log: (m) => console.log(`  ${m}`),
   });
   hub.deploysSnapshot = () => deploys.snapshot();
+  // the user's VPN (OpenVPN Connect): what's connected, switched only from the dashboard; sessions ask (vpn_request)
+  const vpn = new Vpn({
+    ovpn: config.dbPath === ':memory:' ? null : findOpenVpnConnect(),
+    envs: () => environments.list(),
+    recheck: async () => {
+      environments.refresh();
+      await environments.check();
+      return environments.list();
+    },
+    file: config.dbPath === ':memory:' ? undefined : join(config.dataDir, 'vpn.json'),
+    onChange: (s) => hub?.publishVpn({ t: 'vpn', ...s }),
+    tell: (sid, text) => void typeIntoSession(sid, text),
+    onRequest: (r, profile) => orch?.feed.hold(`[VPN] ${r.session} asks the user to switch the VPN to ${profile ?? r.asked}: ${r.why} (only the user switches it, from Cora's VPN control)`),
+  });
+  vpn.start();
+  hub.vpnSnapshot = () => ({ t: 'vpn', ...vpn.state() });
   // your notes (Scratch and named notes); every dashboard hears the list when it changes
   const notes = new Notes({ dir: join(config.dataDir, 'notes'), onChange: () => hub?.publishNotes({ t: 'notes', list: notes.list() }) });
   hub.notesSnapshot = () => ({ t: 'notes', list: notes.list() });
+  // the Whiteboard's boards; a session's drawing is asked of the app (Excalidraw draws it there)
+  const boards = new Boards({ dir: join(config.dataDir, 'boards'), onChange: () => hub?.publishBoards({ t: 'boards', list: boards.list() }), askApp: (m) => hub.askBoardDraw(m) });
+  hub.boardsSnapshot = () => ({ t: 'boards', list: boards.list() });
   // notes Cora drafts from templates: what it saw you do over a window, written up by a quick claude -p
   const drafts = new Drafts({
     sessions: () => store.listSessions(),
@@ -844,7 +865,7 @@ export async function startServer(config: Config, opts: { tail?: boolean; listen
         });
   const videosMsg = (): VideosMsg => ({ t: 'videos', jobs: videos?.list() ?? [], ffmpeg: videos?.ffmpeg() ?? { state: 'missing', canDownload: false } });
   hub.videosSnapshot = videosMsg;
-  const app = await buildApp({ ...(opts.modFirstWaitMs !== undefined ? { modFirstWaitMs: opts.modFirstWaitMs } : {}), ...(opts.promptLandMs !== undefined ? { promptLandMs: opts.promptLandMs } : {}), ...(opts.flagCheckMs !== undefined ? { flagCheckMs: opts.flagCheckMs } : {}), config, store, hub, pipeline, pending, ptys, pluginDir, teamHooks, live: liveExplains, registry, prefs, voice, voiceFront, gmail, mailWatches, mailOutbox, ide, ideBridge, namer, tickets, jira, environments, deploys, notes, drafts, bot, inbox, ...(calendarApi ? { calendar: calendarApi } : {}), ...(opts.claudeSettingsFile ? { claudeSettingsFile: opts.claudeSettingsFile } : {}), ...(opts.setupChecks ? { setupChecks: opts.setupChecks } : {}), onShutdown: opts.onShutdown, ci: () => ci, slack: {
+  const app = await buildApp({ ...(opts.modFirstWaitMs !== undefined ? { modFirstWaitMs: opts.modFirstWaitMs } : {}), ...(opts.promptLandMs !== undefined ? { promptLandMs: opts.promptLandMs } : {}), ...(opts.flagCheckMs !== undefined ? { flagCheckMs: opts.flagCheckMs } : {}), config, store, hub, pipeline, pending, ptys, pluginDir, teamHooks, live: liveExplains, registry, prefs, voice, voiceFront, gmail, mailWatches, mailOutbox, ide, ideBridge, namer, tickets, jira, environments, vpn, deploys, notes, boards, drafts, bot, inbox, ...(calendarApi ? { calendar: calendarApi } : {}), ...(opts.claudeSettingsFile ? { claudeSettingsFile: opts.claudeSettingsFile } : {}), ...(opts.setupChecks ? { setupChecks: opts.setupChecks } : {}), onShutdown: opts.onShutdown, ci: () => ci, slack: {
       slack,
       outbox,
       live,
@@ -976,6 +997,7 @@ export async function startServer(config: Config, opts: { tail?: boolean; listen
       worktrees.stop();
       ci?.stop();
       deploys.stop();
+      vpn.stop();
       bot?.stop();
       voiceFront?.stop();
       gmail?.stop();

@@ -142,7 +142,7 @@ describe('MCP tools', () => {
     expect(init.status).toBe(200);
     expect(init.json.result.serverInfo.name).toBe('cora');
     const list = await call(rpc('tools/list', {}, 2));
-    expect(list.json.result.tools.map((t: any) => t.name).sort()).toEqual(['deploys', 'environment', 'notes_add', 'notes_list', 'notes_read', 'notes_search', 'open_tab', 'slack_find', 'slack_inbox', 'slack_read', 'slack_search', 'slack_send', 'slack_watch', 'speak']);
+    expect(list.json.result.tools.map((t: any) => t.name).sort()).toEqual(['board_read', 'boards_list', 'deploys', 'environment', 'notes_add', 'notes_list', 'notes_read', 'notes_search', 'open_tab', 'slack_find', 'slack_inbox', 'slack_read', 'slack_search', 'slack_send', 'slack_watch', 'speak']);
   });
 
   it('open_tab: opens a web address for the user (and only web addresses)', async () => {

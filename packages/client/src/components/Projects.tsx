@@ -10,6 +10,7 @@ import './projects.css';
 import { useOnScreen } from '../lib/onScreen';
 import { FlagCount } from './SessionFlag';
 import { flaggedCount } from '../lib/sessionFlag';
+import { attnData } from './AttentionEdges';
 
 /**
  * Projects in the nav: a section above Working / Idle / Ended.
@@ -30,7 +31,9 @@ const newIn = (pid: string) => {
   useProjects.setState({ joining: pid });
   useBrain.getState().setModal('new-session');
 };
-export const stateColor = (s?: SessionInfo) => (!s ? 'var(--ink4)' : s.state === 'needs-you' ? 'var(--need)' : s.state === 'working' || s.state === 'thinking' ? 'var(--run, #3ddc97)' : s.state === 'idle' ? 'var(--ink3)' : 'var(--ink4)');
+/** A session's dot, in the rail's words: needs you red, working green, finished since you looked blue (fresh), idle grey. */
+export const stateColor = (s?: SessionInfo, fresh = false) =>
+  !s ? 'var(--ink4)' : s.state === 'needs-you' ? 'var(--need)' : s.state === 'working' || s.state === 'thinking' ? 'var(--work)' : s.state === 'idle' ? (fresh ? 'var(--run)' : 'var(--ink3)') : 'var(--ink4)';
 
 export function ProjectsSection({ entry, dragging, onDropped }: { entry(s: SessionInfo, project?: { id: string; members: string[] }): React.ReactNode; dragging: string | null; onDropped(): void }) {
   const allProjects = useProjects((p) => p.projects);
@@ -91,11 +94,15 @@ function ProjectRow({ p, folded, onFold, entry, dragging, onDropped, moving, set
   // a session you removed from the list is off it here too (it's still the project's: its page keeps it)
   const members = p.sessions.map((id) => sessions[id]).filter((s): s is SessionInfo => !!s && !isDismissed(s));
   const needs = members.filter((s) => s.state === 'needs-you').length;
+  const unseen = useBrain((s) => s.unseen);
+  const fresh = members.filter((s) => s.state === 'idle' && unseen[s.id]).length;
   const [over, setOver] = useState(false);
   return (
     <div className="pj" style={{ ['--pc' as any]: p.color }}>
       <button
         data-ping={`pj:${p.id}`}
+        // folded: what's in it that wants you counts for the rail's "above / below" chips (open, its rows do)
+        {...attnData(folded ? needs : 0, folded ? fresh : 0)}
         className={`pj-row${open ? ' on' : ''}${over ? ' over' : ''}${moving?.id === p.id ? ' dragging' : ''}${moving?.over?.id === p.id && moving.id !== p.id ? (moving.over.below ? ' drop-below' : ' drop-above') : ''}`}
         onClick={() => useBrain.getState().openProject(p.id)}
         onContextMenu={onMenu}
@@ -142,7 +149,7 @@ function ProjectRow({ p, folded, onFold, entry, dragging, onDropped, moving, set
         <span className="pj-nm">{p.name}</span>
         <span className="pj-dots">
           {members.slice(0, 6).map((s) => (
-            <i key={s.id} style={{ background: stateColor(s) }} />
+            <i key={s.id} style={{ background: stateColor(s, !!unseen[s.id]) }} />
           ))}
         </span>
         {needs ? <b className="pj-need">{needs}</b> : null}

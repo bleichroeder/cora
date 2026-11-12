@@ -18,6 +18,8 @@ export type DesktopBridge = {
   onLoginForm?(cb: (m: { from: number; url: string; form: boolean }) => void): () => void;
   /** the key in a page's login field: focused, left, or clicked (`r`: the field, in the page's pixels) */
   openJournal?(file?: string): void;
+  /** a file a transcript names: a picture in the viewer, text in Notepad, or shown in Explorer (nothing else opens) */
+  openFile?(path: string, how: 'viewer' | 'text' | 'folder'): Promise<{ ok?: true; error?: string }>;
   onOpField?(cb: (m: { from: number; k: 'focus' | 'blur' | 'open'; r?: { x: number; y: number; w: number; h: number }; unlocked: boolean; v?: boolean }) => void): () => void;
   /** save an explain as a file (Documents\\Cora\\Explains) and show it in Explorer */
   saveExplain?(title: string, ext: 'md' | 'html', content: string): Promise<{ path?: string; error?: string }>;

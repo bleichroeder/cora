@@ -20,6 +20,8 @@ import { MAX_REPLAY, type LaunchOptions, type BrainEvent, type HistoryItem, type
 import { mergeFetched, sessionEvents, useBrain } from './store';
 import { useCi } from './ci';
 import { useDeploys } from './deploys';
+import { useVpn } from './vpn';
+import { onBoardDraw, useBoards } from './boards';
 import { useNotes } from './notes';
 import { applySlack } from './slack';
 import { applySecurity } from './security';
@@ -98,6 +100,15 @@ function open() {
         break;
       case 'deploys':
         useDeploys.getState().apply(msg);
+        break;
+      case 'vpn':
+        useVpn.getState().apply(msg);
+        break;
+      case 'boards':
+        useBoards.getState().apply(msg);
+        break;
+      case 'board-draw':
+        void onBoardDraw(msg);
         break;
       case 'mailOutbox':
         useMailOutbox.getState().apply(msg);

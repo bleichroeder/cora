@@ -40,6 +40,9 @@ export class Hub {
   /** GitLab pipelines: what a newly connected client starts from */
   ciSnapshot?: () => CiMsg;
   deploysSnapshot?: () => DeploysMsg;
+  /** the VPN: profiles, the connected one, sessions' requests */
+  vpnSnapshot?: () => import('@cora/shared').VpnMsg;
+  boardsSnapshot?: () => import('@cora/shared').BoardsMsg;
   /** your repos' worktrees */
   worktreesSnapshot?: () => WorktreesMsg;
   videosSnapshot?: () => import('@cora/shared').VideosMsg;
@@ -173,6 +176,8 @@ export class Hub {
     this.send(sock, { t: 'snapshot', sessions, agents: this.store.listAgents().filter((a) => sessions.some((s) => s.id === a.sessionId)), pending: this.getPending(), terminals: this.getTerminals(), lastSeq: current, recent } as ServerMsg);
     if (this.ciSnapshot) this.send(sock, this.ciSnapshot());
     if (this.deploysSnapshot) this.send(sock, this.deploysSnapshot());
+    if (this.vpnSnapshot) this.send(sock, this.vpnSnapshot());
+    if (this.boardsSnapshot) this.send(sock, this.boardsSnapshot());
     if (this.worktreesSnapshot) this.send(sock, this.worktreesSnapshot());
     if (this.videosSnapshot) this.send(sock, this.videosSnapshot());
     if (this.secretsSnapshot) this.send(sock, this.secretsSnapshot());
@@ -236,6 +241,23 @@ export class Hub {
 
   publishDeploys(m: DeploysMsg): void {
     this.broadcast(m);
+  }
+
+  publishVpn(m: import('@cora/shared').VpnMsg): void {
+    this.broadcast(m);
+  }
+
+  publishBoards(m: import('@cora/shared').BoardsMsg): void {
+    this.broadcast(m);
+  }
+
+  /** A session's drawing for the Whiteboard: asked of one of your screens (the one in use), never a guest's. False: none open. */
+  askBoardDraw(m: import('@cora/shared').BoardDrawMsg): boolean {
+    const mine = [...this.socks].filter((s) => s.readyState === OPEN && !this.isGuest(s) && this.fed(s));
+    const s = mine.find((x) => this.seats.get(x) === this.activeSeat) ?? mine[0];
+    if (!s) return false;
+    this.send(s, m);
+    return true;
   }
 
   publishSlack(m: SlackMsg): void {

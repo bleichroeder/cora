@@ -68,11 +68,17 @@
 .rail .rt-sub { display: flex; align-items: center; gap: 8px; margin: 12px 0 8px; color: color-mix(in srgb, var(--cora) 70%, var(--ink4)); font: 600 9.5px var(--code); letter-spacing: .16em; text-transform: uppercase; }
 .rail .rt-sub::before, .rail .rt-sub::after { content: ''; flex: 1; height: 1px; background: var(--hair); }
 .rail .rt-sub.left::before { display: none; }
-.rail .rt-b.rt-cora { color: var(--cora); background: color-mix(in srgb, var(--cora) 10%, var(--raise)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cora) 38%, transparent); }
-.rail .rt-b.rt-cora.on { box-shadow: inset 0 0 0 1px var(--cora), 0 0 12px color-mix(in srgb, var(--cora) 25%, transparent); }
-.rail .rt-cora-ico { display: grid; place-items: center; width: 22px; height: 22px; justify-self: center; border-radius: 6px; color: var(--cora); background: color-mix(in srgb, var(--cora) 12%, var(--raise2)); }
-.rail .rt-pdot { width: 8px; height: 8px; border-radius: 50%; background: var(--cora); }
+/* each its own colour, from yours: the same lightness and (capped) chroma, its hue turned. Notes keeps yours. */
+.rail .rt-b.rt-cora { --cc: var(--cora); color: var(--cc); background: color-mix(in srgb, var(--cc) 10%, var(--raise)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cc) 38%, transparent); }
+.rail .rt-b.rt-cora:hover { background: color-mix(in srgb, var(--cc) 16%, var(--raise)); }
+.rail .rt-b.rt-cora.on { box-shadow: inset 0 0 0 1px var(--cc), 0 0 12px color-mix(in srgb, var(--cc) 25%, transparent); }
+.rail .rt-b.cc-library { --cc: oklch(from var(--cora) clamp(.68, l, .82) min(c, .15) calc(h - 45)); }
+.rail .rt-b.cc-browser { --cc: oklch(from var(--cora) clamp(.68, l, .82) min(c, .15) calc(h + 45)); }
+.rail .rt-b.cc-whiteboard { --cc: oklch(from var(--cora) clamp(.68, l, .82) min(c, .15) calc(h + 100)); }
+.rail .rt-b.cc-secrets { --cc: oklch(from var(--cora) clamp(.68, l, .82) min(c, .15) calc(h - 100)); }
 .rail .rt-b .rt-badge.cora { background: var(--cora); }
+/* yours above, Cora's below: a hairline between them */
+.rail .rt-sep { height: 1px; margin: 12px 0 10px; background: var(--hair); }
 .rail .rt-card + .rt-card { margin-top: 0; }
 
 /* the drawer's header for a built-in tool */

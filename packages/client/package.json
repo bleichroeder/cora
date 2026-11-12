@@ -1,6 +1,6 @@
 {
   "name": "@cora/client",
-  "version": "0.1.25",
+  "version": "0.1.26",
   "license": "MIT",
   "private": true,
   "type": "module",
@@ -11,6 +11,8 @@
   },
   "dependencies": {
     "@cora/shared": "*",
+    "@excalidraw/excalidraw": "0.18.1",
+    "@excalidraw/mermaid-to-excalidraw": "2.2.2",
     "@fontsource-variable/figtree": "^5.3.0",
     "@fontsource-variable/jetbrains-mono": "^5.3.0",
     "@react-three/drei": "^10.0.0",

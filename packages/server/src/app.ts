@@ -8,14 +8,16 @@ import type { Memes } from './memes';
 import { SessionNames } from './sessionNames';
 import { dueReminders, flagFrom, remindText } from './sessionFlags';
 import { LIBRARY_KINDS, Library, type LibraryKind, type LibraryWhen } from './library';
-import { appendFileSync, createReadStream, existsSync, readFileSync, statSync } from 'node:fs';
+import { appendFileSync, closeSync, createReadStream, existsSync, openSync, readdirSync, readFileSync, readSync, statSync } from 'node:fs';
 import { writeFileAtomic } from './fsx';
 import { envLine, signature, type EnvLabel, type Environments } from './environments';
+import { drivesVpn, VPN_REFUSAL } from './vpn';
 import type { Deploys } from './deploys';
 import { NoteError, type Notes } from './notes';
+import { BoardError } from './boards';
 import type { Drafts } from './drafts';
 import type { CoraBot } from './slackBot';
-import { basename, dirname, isAbsolute, join, relative } from 'node:path';
+import { basename, dirname, isAbsolute, join, relative, resolve as resolvePath } from 'node:path';
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
 import cookie from '@fastify/cookie';
 import fastifyStatic from '@fastify/static';
@@ -95,7 +97,7 @@ import { HistoryIndex, askForSession } from './historySearch';
 import { ChromeData } from './chromeData';
 import { gitChanges, gitDiff, netChange, normPath, snapshots, turnBefore } from './changes';
 import { tailOutput, taskOutputFile } from './tasks';
-import { sendTyped, terminalInput, typedInput } from './input';
+import { carriesImage, enterWhenSettled, sendTyped, terminalInput, typedInput } from './input';
 import { TIME_EVERY_MS, nowLine } from './clock';
 import { choiceOpen } from './screen';
 import { listCommands } from './commands';
@@ -202,6 +204,10 @@ export type AppDeps = {
   jira?: JiraFeed;
   /** which environments (VPNs) are reachable */
   environments?: Environments;
+  /** the user's VPN (OpenVPN Connect): switched only from the dashboard; sessions ask */
+  vpn?: import('./vpn').Vpn;
+  /** the Whiteboard's boards */
+  boards?: import('./boards').Boards;
   /** what each environment runs; the dev bump */
   deploys?: Deploys;
   /** your notes */
@@ -251,7 +257,7 @@ const GUEST_AREA_GETS: Record<LiveArea, string[]> = {
 };
 /** What a guest's live stream carries of your private areas: only while you've opened that area; some never. */
 const GUEST_MSG_AREA: Record<string, LiveArea> = { inbox: 'inbox', jira: 'inbox', notes: 'notes', slack: 'messages', mailOutbox: 'messages', orchestrator: 'console' };
-export const GUEST_NEVER = new Set(['secrets', 'security', 'ui', 'elsewhere', 'live-asks', 'synced', 'projects', 'builder', 'rbrowse']);
+export const GUEST_NEVER = new Set(['secrets', 'security', 'ui', 'elsewhere', 'live-asks', 'synced', 'projects', 'builder', 'rbrowse', 'vpn', 'boards', 'board-draw']);
 /** Joining a public share: your name (for showing only), then Cora. */
 const JOIN_PAGE = (host: string) => `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Join ${host}'s Cora</title><style>:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;background:#0b0e14;color:#a4afbf;font:400 14px/1.5 system-ui,-apple-system,sans-serif}.box{width:min(380px,90vw);padding:28px;border-radius:16px;background:#11151d;box-shadow:inset 0 0 0 1px rgba(148,163,184,.14);text-align:center}.orb{width:44px;height:44px;margin:0 auto 14px;border-radius:50%;background:radial-gradient(circle at 38% 32%,#fbcfe8,#f472b6 48%,#831843);box-shadow:0 0 22px rgba(244,114,182,.45)}h1{margin:0 0 6px;color:#e6ebf2;font:600 17px system-ui,-apple-system,sans-serif}p{margin:0 0 18px;color:#6b7686;font-size:13px}.live{display:inline-flex;align-items:center;gap:6px;margin-bottom:12px;padding:2px 9px;border-radius:10px;background:rgba(255,107,107,.12);color:#fecaca;font:600 11px system-ui,sans-serif;letter-spacing:.04em}.live i{width:6px;height:6px;border-radius:50%;background:#ff6b6b;box-shadow:0 0 8px #ff6b6b}input{width:100%;height:44px;padding:0 14px;border:0;border-radius:10px;background:#0b0e14;box-shadow:inset 0 0 0 1px rgba(148,163,184,.2);color:#e6ebf2;font:500 15px system-ui,sans-serif;outline:none}input:focus{box-shadow:inset 0 0 0 1px rgba(244,114,182,.6)}input.bad{box-shadow:inset 0 0 0 1px #ff6b6b}button{margin-top:12px;width:100%;height:40px;border:0;border-radius:10px;background:rgba(244,114,182,.22);color:#e6ebf2;font:600 14px system-ui,sans-serif;cursor:pointer}button:disabled{opacity:.5}.err{min-height:20px;margin-top:10px;color:#ff6b6b;font-size:12.5px}</style></head><body><form class="box" id="f"><div class="orb"></div><div class="live"><i></i>LIVE</div><h1>Join ${host}'s Cora</h1><p>Watch ${host}'s sessions live. Your name shows to ${host}.</p><input id="n" maxlength="40" placeholder="Your name" autocomplete="name" autofocus><button id="b">Join</button><div class="err" id="e"></div></form>
 <script>
@@ -1096,6 +1102,14 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
     }
     return reply.send({ items: items.map(({ typedAt: _t, src: _s, ...x }) => x) });
   });
+  // A hosted session is about to run a command (its own settings' hook): one that drives the VPN or takes the network
+  // down is refused. Only the user switches the VPN: a switch cuts off what other sessions are doing on it.
+  app.post('/vpn-gate', async (req, reply) => {
+    if (!sameSecret(hookToken(req), config.hookToken)) return reply.code(401).send({ error: 'bad token' });
+    const command = (req.body as { tool_input?: { command?: unknown } } | null)?.tool_input?.command;
+    if (typeof command === 'string' && drivesVpn(command)) return reply.send({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: VPN_REFUSAL } });
+    return reply.send({});
+  });
   app.post('/edit-gate', async (req, reply) => {
     if (!sameSecret(hookToken(req), config.hookToken)) return reply.code(401).send({ error: 'bad token' });
     const body = (req.body ?? {}) as { session_id?: unknown; tool_input?: { file_path?: unknown; notebook_path?: unknown } };
@@ -1478,7 +1492,90 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
     });
     const r = d.debriefs!.make(sid, s.cwd, s.transcriptPath, script, span ? { from: span.from, covers: { changed: span.changed, missed: span.missed } } : {});
     return r.ok ? { ok: true, id: r.debrief.id, title: r.debrief.title, steps: r.debrief.steps.length, ...(span?.missed.length ? { missed: span.missed } : {}) } : r;
-  } } : undefined, d.projects ? mcpProjects(d.projects) : undefined, d.calendar, toolsListed, d.projects ? builderTools(d.projects, config.agentToken, { fileExists: (path) => isAbsolute(path) && existsSync(path) }) : undefined);
+  } } : undefined, d.projects ? mcpProjects(d.projects) : undefined, d.calendar, toolsListed, d.projects ? builderTools(d.projects, config.agentToken, { fileExists: (path) => isAbsolute(path) && existsSync(path) }) : undefined, d.vpn ? { available: () => d.vpn!.on, request: (sid, asked, why) => { const s = store.getSession(sid); return d.vpn!.request({ sessionId: sid, session: s ? nameOf(s) : 'a session', asked, why }); } } : undefined, d.boards ? { boards: d.boards, nameOf: (sid) => { const s = store.getSession(sid); return s ? nameOf(s) : 'a session'; } } : undefined);
+  // --- the Whiteboard: your boards (the app draws them in Excalidraw); a session's drawing comes back through here ---
+  const boardErr = (reply: FastifyReply, e: unknown) => reply.code(e instanceof BoardError ? 400 : 500).send({ error: (e as Error).message });
+  app.get('/api/boards', { preHandler: requireUi }, async (_req, reply) => (d.boards ? { list: d.boards.list() } : reply.code(501).send({ error: 'not supported' })));
+  app.get<{ Params: { id: string } }>('/api/boards/:id', { preHandler: requireUi }, async (req, reply) => {
+    if (!d.boards) return reply.code(501).send({ error: 'not supported' });
+    try {
+      return { board: d.boards.read(req.params.id) };
+    } catch (e) {
+      return boardErr(reply, e);
+    }
+  });
+  app.get<{ Params: { id: string } }>('/api/boards/:id/preview.png', { preHandler: requireUi }, async (req, reply) => {
+    try {
+      const png = d.boards?.preview(req.params.id);
+      return png ? reply.type('image/png').header('cache-control', 'no-store').send(png) : reply.code(404).send({ error: 'no picture yet' });
+    } catch (e) {
+      return boardErr(reply, e);
+    }
+  });
+  app.post<{ Body: { title?: unknown; link?: unknown } }>('/api/boards', { preHandler: requireAction }, async (req, reply) => {
+    if (!d.boards) return reply.code(501).send({ error: 'not supported' });
+    try {
+      const l = req.body?.link as { sessionId?: unknown; projectId?: unknown } | undefined;
+      const link = l ? { ...(typeof l.sessionId === 'string' ? { sessionId: l.sessionId } : {}), ...(typeof l.projectId === 'string' ? { projectId: l.projectId } : {}) } : undefined;
+      return { id: d.boards.create(typeof req.body?.title === 'string' ? req.body.title : '', link) };
+    } catch (e) {
+      return boardErr(reply, e);
+    }
+  });
+  app.put<{ Params: { id: string }; Body: { scene?: unknown } }>('/api/boards/:id', { preHandler: requireAction, bodyLimit: 60 * 1024 * 1024 }, async (req, reply) => {
+    if (!d.boards) return reply.code(501).send({ error: 'not supported' });
+    try {
+      return d.boards.save(req.params.id, (req.body?.scene ?? {}) as Parameters<NonNullable<typeof d.boards>['save']>[1]);
+    } catch (e) {
+      return boardErr(reply, e);
+    }
+  });
+  app.put<{ Params: { id: string }; Body: { png?: unknown } }>('/api/boards/:id/preview', { preHandler: requireAction, bodyLimit: 30 * 1024 * 1024 }, async (req, reply) => {
+    if (!d.boards || typeof req.body?.png !== 'string') return reply.code(400).send({ error: 'a png' });
+    try {
+      d.boards.savePreview(req.params.id, Buffer.from(req.body.png, 'base64'));
+      return { ok: true };
+    } catch (e) {
+      return boardErr(reply, e);
+    }
+  });
+  app.patch<{ Params: { id: string }; Body: { title?: unknown; pinned?: unknown; link?: unknown } }>('/api/boards/:id', { preHandler: requireAction }, async (req, reply) => {
+    if (!d.boards) return reply.code(501).send({ error: 'not supported' });
+    try {
+      const b = req.body ?? {};
+      if (typeof b.title === 'string') d.boards.rename(req.params.id, b.title);
+      if (typeof b.pinned === 'boolean') d.boards.pin(req.params.id, b.pinned);
+      if (b.link === null) d.boards.link(req.params.id, null);
+      else if (b.link && typeof b.link === 'object') {
+        const l = b.link as { sessionId?: unknown; projectId?: unknown };
+        d.boards.link(req.params.id, { ...(typeof l.sessionId === 'string' ? { sessionId: l.sessionId } : {}), ...(typeof l.projectId === 'string' ? { projectId: l.projectId } : {}) });
+      }
+      return { ok: true };
+    } catch (e) {
+      return boardErr(reply, e);
+    }
+  });
+  app.post<{ Params: { id: string } }>('/api/boards/:id/seen', { preHandler: requireAction }, async (req, reply) => {
+    try {
+      d.boards?.seen(req.params.id);
+      return { ok: true };
+    } catch (e) {
+      return boardErr(reply, e);
+    }
+  });
+  app.delete<{ Params: { id: string } }>('/api/boards/:id', { preHandler: requireAction }, async (req, reply) => {
+    try {
+      d.boards?.remove(req.params.id);
+      return { ok: true };
+    } catch (e) {
+      return boardErr(reply, e);
+    }
+  });
+  app.post<{ Params: { reqId: string }; Body: { elements?: unknown; files?: unknown; error?: unknown } }>('/api/boards/draw/:reqId', { preHandler: requireAction, bodyLimit: 60 * 1024 * 1024 }, async (req, reply) => {
+    if (!d.boards) return reply.code(501).send({ error: 'not supported' });
+    const r = d.boards.answerDraw(req.params.reqId, req.body ?? {});
+    return r.ok ? { ok: true } : reply.code(409).send({ error: r.error });
+  });
   // --- Cora Secrets: names and notes to the dashboard; a value only when you reveal one ---
   app.get('/api/secrets', { preHandler: requireUi }, async () => ({ list: d.vault?.list() ?? [] }));
   app.post<{ Body: { name?: unknown; value?: unknown; note?: unknown; scope?: unknown; kind?: unknown; user?: unknown } }>('/api/secrets', { preHandler: requireAction }, async (req, reply) => {
@@ -1553,6 +1650,28 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
     const b = req.body ?? {};
     const p = { ...(typeof b.label === 'string' ? { label: b.label as EnvLabel } : {}), ...(typeof b.name === 'string' ? { name: b.name } : {}), ...(typeof b.on === 'boolean' ? { on: b.on } : {}) };
     return d.environments.update(req.params.id, p) ? { environments: d.environments.list() } : reply.code(400).send({ error: 'bad change' });
+  });
+  // --- the VPN: what's connected; switching is the user's alone (requireAction), sessions only ask ---------------
+  app.get('/api/vpn', { preHandler: requireUi }, async () => ({ vpn: d.vpn?.state() ?? null }));
+  app.post<{ Body: { to?: unknown } }>('/api/vpn/switch', { preHandler: requireAction }, async (req, reply) => {
+    if (!d.vpn) return reply.code(501).send({ error: 'not supported' });
+    const to = req.body?.to;
+    if (to !== null && typeof to !== 'string') return reply.code(400).send({ error: 'to: a profile id, or null to disconnect' });
+    const r = d.vpn.switchTo(to);
+    return r.ok ? { vpn: d.vpn.state() } : reply.code(409).send({ error: r.error });
+  });
+  app.post<{ Params: { id: string }; Body: { switch?: unknown; profileId?: unknown } }>('/api/vpn/requests/:id', { preHandler: requireAction }, async (req, reply) => {
+    if (!d.vpn) return reply.code(501).send({ error: 'not supported' });
+    const b = req.body ?? {};
+    if (typeof b.switch !== 'boolean' || (b.profileId !== undefined && typeof b.profileId !== 'string')) return reply.code(400).send({ error: 'switch: true or false' });
+    const r = d.vpn.answer(req.params.id, { switch: b.switch, ...(typeof b.profileId === 'string' ? { profileId: b.profileId } : {}) });
+    return r.ok ? { vpn: d.vpn.state() } : reply.code(409).send({ error: r.error });
+  });
+  app.post<{ Body: { on?: unknown } }>('/api/vpn/settings', { preHandler: requireAction }, async (req, reply) => {
+    if (!d.vpn) return reply.code(501).send({ error: 'not supported' });
+    if (typeof req.body?.on !== 'boolean') return reply.code(400).send({ error: 'on: true or false' });
+    d.vpn.setOn(req.body.on);
+    return { vpn: d.vpn.state() };
   });
   app.post('/api/environments/check', { preHandler: requireAction }, async (_req, reply) => {
     if (!d.environments) return reply.code(501).send({ error: 'not supported' });
@@ -3147,7 +3266,10 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
     if (req.body?.submit) lastSent.set(t.terminalId, { text: String(req.body.text ?? ''), at: Date.now() });
     // Enter separately, a beat later, so Claude Code sees the text (or the whole paste) and then a submit; a big paste
     // takes it longer to read in
-    if (req.body?.submit) setTimeout(() => ptys.write(t.terminalId, '\r'), input.paste ? Math.min(3000, 150 + Math.round(input.data.length / 2000)) : 80);
+    const beat = input.paste ? Math.min(3000, 150 + Math.round(input.data.length / 2000)) : 80;
+    // carrying an image: Claude Code reads it in first, so Enter waits until its screen holds still (input.ts)
+    if (req.body?.submit && carriesImage(String(req.body.text ?? ''))) void enterWhenSettled({ screen: () => ptys.screenLines(t.terminalId) ?? [], enter: () => void ptys.write(t.terminalId, '\r'), first: Math.max(beat, 400), max: 4000 });
+    else if (req.body?.submit) setTimeout(() => ptys.write(t.terminalId, '\r'), beat);
     // your words to Cora (push-to-talk types them into its terminal): what it does now is something you asked
     if (req.body?.submit && d.orchestrator?.agentTerminal() === t.terminalId) d.orchestrator.noteUserInput();
     return { ok: true, paste: input.paste };
@@ -3233,6 +3355,67 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
       return { path: saveAttachment(config.dataDir, s.id, String(req.body?.name ?? 'file').slice(0, 200), data) };
     } catch (e) {
       return reply.code(400).send({ error: (e as Error).message });
+    }
+  });
+  // A file a session's transcript names (a picture in your prompt, a path in its reply): what it is, and a text file's
+  // first lines, to look at in the dashboard; a picture's bytes from /raw. Relative paths are the session's folder's.
+  // Yours only (neither is on a guest's list). Nothing here runs or opens a file: the desktop app opens (pictures in
+  // your viewer, text in your editor), never anything else.
+  const PEEK_IMAGE = /\.(png|jpe?g|gif|webp|bmp)$/i;
+  const PEEK_BYTES = 64 * 1024;
+  const PEEK_LINES = 400;
+  const fileOf = (sid: string, p: unknown): string | null => {
+    const s = store.getSession(sid);
+    if (!s || typeof p !== 'string' || !p.trim() || p.length > 2000) return null;
+    const q = p.trim().replace(/^~(?=[\\/])/, homedir());
+    return isAbsolute(q) ? resolvePath(q) : s.wd || s.cwd ? resolvePath(s.wd || s.cwd, q) : null;
+  };
+  app.get<{ Params: { id: string }; Querystring: { path?: string } }>('/api/sessions/:id/file', { preHandler: requireUi }, async (req, reply) => {
+    const full = fileOf(req.params.id, req.query.path);
+    if (!full) return reply.code(400).send({ error: 'which file?' });
+    let st: import('node:fs').Stats;
+    try {
+      st = statSync(full);
+    } catch {
+      return reply.code(404).send({ error: "It isn't there (moved, or deleted).", path: full });
+    }
+    if (st.isDirectory()) {
+      let entries: string[] = [];
+      try {
+        entries = readdirSync(full, { withFileTypes: true }).slice(0, 80).map((e) => (e.isDirectory() ? `${e.name}/` : e.name));
+      } catch {
+        /* not readable */
+      }
+      return { kind: 'dir', path: full, entries };
+    }
+    if (!st.isFile()) return reply.code(400).send({ error: 'not a file', path: full });
+    if (PEEK_IMAGE.test(full)) return { kind: 'image', path: full, size: st.size, at: st.mtimeMs };
+    const buf = Buffer.alloc(Math.min(st.size, PEEK_BYTES));
+    try {
+      const fd = openSync(full, 'r');
+      try {
+        readSync(fd, buf, 0, buf.length, 0);
+      } finally {
+        closeSync(fd);
+      }
+    } catch (e) {
+      return reply.code(403).send({ error: `Can't read it: ${(e as Error).message}`, path: full });
+    }
+    if (buf.includes(0)) return { kind: 'binary', path: full, size: st.size, at: st.mtimeMs };
+    const lines = buf.toString('utf8').split(/\r?\n/);
+    return { kind: 'text', path: full, size: st.size, at: st.mtimeMs, text: lines.slice(0, PEEK_LINES).join('\n'), truncated: st.size > buf.length || lines.length > PEEK_LINES };
+  });
+  app.get<{ Params: { id: string }; Querystring: { path?: string } }>('/api/sessions/:id/file/raw', { preHandler: requireUi }, async (req, reply) => {
+    const full = fileOf(req.params.id, req.query.path);
+    if (!full || !PEEK_IMAGE.test(full)) return reply.code(400).send({ error: 'a picture' });
+    try {
+      const st = statSync(full);
+      if (!st.isFile() || st.size > 25 * 1024 * 1024) return reply.code(400).send({ error: 'not a picture to show' });
+      const ext = full.split('.').pop()!.toLowerCase();
+      const type = ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : `image/${ext}`;
+      return reply.type(type).header('cache-control', 'private, max-age=300').send(createReadStream(full));
+    } catch {
+      return reply.code(404).send({ error: "It isn't there (moved, or deleted)." });
     }
   });
   // the shells a shell tab can be (PowerShell, Command Prompt, Git Bash, WSL distros…); ?fresh looks again

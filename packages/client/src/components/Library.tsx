@@ -181,24 +181,10 @@ export function LibraryPane({ visible }: { visible: boolean }) {
 const openLibrary = () => useTools.getState().toggle(LIBRARY_ID);
 /** The Library in Tools' icon row. */
 export function LibraryButton({ on }: { on: boolean }) {
-  return (
-    <button className={`rt-b rt-cora${on ? ' on' : ''}`} title="Library: everything your sessions made, in one place" onClick={openLibrary}>
-      <Icon name="LibraryBig" size={18} />
-    </button>
-  );
-}
-/** The Library as a named row. */
-export function LibraryRow({ on }: { on: boolean }) {
   const total = useLibrary((s) => s.answer?.total);
   return (
-    <button className={`rt-r${on ? ' on' : ''}`} title="Library: everything your sessions made, in one place" onClick={openLibrary}>
-      <span className="rt-cora-ico">
-        <Icon name="LibraryBig" size={14} />
-      </span>
-      <span className="rt-nm">
-        <b>Library</b>
-        <i>{total != null ? `${total} things sessions made` : 'Explains, debriefs, artifacts…'}</i>
-      </span>
+    <button className={`rt-b rt-cora cc-library${on ? ' on' : ''}`} title={`Library: everything your sessions made, in one place${total != null ? ` · ${total}` : ''}`} onClick={openLibrary}>
+      <Icon name="LibraryBig" size={18} />
     </button>
   );
 }

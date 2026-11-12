@@ -95,3 +95,31 @@ export function sendTyped(ptys: TypedTarget, terminalId: string, input: { chunks
   for (const [k, until] of lanes) if (until < now) lanes.delete(k);
   return enter;
 }
+
+/** A prompt carrying an image file's path (a screenshot or picture attached in the composer). */
+export const carriesImage = (text: string) => /\.(png|jpe?g|gif|webp|bmp)["']?\s*$/im.test(text);
+
+/**
+ * Enter, once Claude Code has taken the prompt in. A prompt carrying an image's path makes Claude Code stop and read
+ * the image in (it attaches it): an Enter on a fixed beat landed while it was still at it and was lost, leaving the
+ * prompt in its box until you pressed Enter in the terminal. So: wait at least `first`, then until its screen has
+ * held still for two looks in a row, at most `max`, then Enter.
+ */
+export async function enterWhenSettled(o: { screen(): string[]; enter(): void; first: number; max: number; every?: number; sleep?: (ms: number) => Promise<void> }): Promise<void> {
+  const sleep = o.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+  const every = o.every ?? 100;
+  await sleep(o.first);
+  let last: string | null = null;
+  let still = 0;
+  for (let waited = 0; waited < o.max; waited += every) {
+    const now = o.screen().join('\n');
+    if (now === last) {
+      if (++still >= 2) break;
+    } else {
+      still = 0;
+      last = now;
+    }
+    await sleep(every);
+  }
+  o.enter();
+}

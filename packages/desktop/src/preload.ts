@@ -60,6 +60,7 @@ contextBridge.exposeInMainWorld('coraDesktop', {
   restartApp: () => ipcRenderer.send('ab:restart'),
   // sessions' journals: their folder, in Explorer
   openJournal: (file?: string) => ipcRenderer.send('ab:open-journal', file == null ? undefined : String(file)),
+  openFile: (path: string, how: 'viewer' | 'text' | 'folder') => ipcRenderer.invoke('ab:open-file', { path: String(path), how }) as Promise<{ ok?: true; error?: string }>,
   // installed Cora: a new version downloaded (restartApp installs it)
   updateReady: () => ipcRenderer.invoke('ab:update-ready') as Promise<string | null>,
   // what this copy is: its version, installed or from source, its Electron and Chromium

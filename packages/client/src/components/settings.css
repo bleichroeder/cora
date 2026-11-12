@@ -171,6 +171,9 @@
 
 /* Settings > Environments: a status dot beside each one's name */
 .modal.settings .env-name { display: inline-flex; align-items: center; gap: 8px; }
+.modal.settings .set-c > .dim, .modal.settings .env-none { color: var(--ink4); font: 400 12px var(--ui); }
+.modal.settings .env-chip { padding: 2px 8px; border-radius: 6px; background: var(--nav); box-shadow: inset 0 0 0 1px var(--hair2); color: var(--ink2); font: 500 11px var(--code); }
+.modal.settings .env-err { display: block; margin-top: 4px; color: #ffb3b3; font: 500 11.5px var(--ui); }
 
 
 /* Tools › Notes templates: a template's text, then its buttons */

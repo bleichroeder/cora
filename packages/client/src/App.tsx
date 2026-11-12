@@ -72,6 +72,7 @@ import { useBoardDock } from './state/boardDock';
 import { JiraText } from './components/JiraChip';
 import { backgroundTasks } from './lib/background';
 import { PaletteHost } from './components/Palette';
+import { FilePeekHost } from './components/FilePeek';
 import { FlagPop } from './components/SessionFlag';
 import { CiHeader, useFollowed } from './components/CiStrip';
 import { DeployHeader, DeploysView } from './components/Deploys';
@@ -734,6 +735,7 @@ export function App() {
       <OpMenu />
       {guest ? null : <CoraFloat />}
       <PaletteHost />
+      <FilePeekHost />
       {/* a session flag's why and reminder: always here, over the nav's drawer too (never inside it, so a drawer closing can't take it) */}
       <FlagPop />
       <SessionSwitcher />

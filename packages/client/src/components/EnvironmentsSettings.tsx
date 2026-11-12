@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
-import type { Settings } from '@cora/shared';
+import type { Settings, VpnState } from '@cora/shared';
 import { ago } from '../lib/format';
 import { Choice, Group, Row, Section, Switch, Toggle } from './settingsUi';
 import { Icon } from './Icon';
+import { setVpnOn, useVpn } from '../state/vpn';
 
 type Label = 'dev' | 'staging' | 'prod' | 'local' | 'other';
 type Env = { id: string; name: string; label: Label; url: string; kubeconfig?: string; on: boolean; reachable: boolean | null; checkedAt?: number };
@@ -56,12 +57,14 @@ export function EnvironmentsSection({ server, save }: { server?: Settings | null
     setNow(Date.now());
     setBusy(false);
   };
+  const vpn = useVpn((v) => v.s);
+  const [vpnErr, setVpnErr] = useState<string | null>(null);
   const shown = (envs ?? []).filter((e) => e.label !== 'local');
   return (
     <Section
       id="environments"
       title="Environments"
-      intro="Which of your environments this PC can reach right now, found from your kubeconfigs and checked every 30 seconds. Every Claude session can ask (Cora's environment tool) and is told with its next prompt when it changes. Read-only: nothing can change your VPN."
+      intro="Which of your environments this PC can reach right now, found from your kubeconfigs and checked every 30 seconds. Every Claude session can ask (Cora's environment tool) and is told with its next prompt when it changes. Only you change the VPN: sessions can ask you to."
     >
       <Group label="Clusters">
         {envs == null ? (
@@ -97,7 +100,67 @@ export function EnvironmentsSection({ server, save }: { server?: Settings | null
           </button>
         </Row>
       </Group>
+      {/* called, not <VpnGroup />: Section finds its groups by type, so it must get the Group itself */}
+      {vpnGroup(vpn, vpnErr, setVpnErr)}
     </Section>
+  );
+}
+
+/**
+ * Your VPN, when OpenVPN Connect is on this PC: Cora's VPN control (the rail's) on or off. Only you switch it; a
+ * session can ask (a card on the control), and its commands can't drive OpenVPN.
+ */
+function vpnGroup(s: VpnState, err: string | null, setErr: (e: string | null) => void) {
+  if (!s.available) return null;
+  return (
+    <Group label="VPN">
+      <Toggle
+        label="Switch OpenVPN Connect from Cora"
+        hint={
+          <>
+            Your profiles at the bottom of the sessions list, one click to connect. Sessions can ask you for one; they never switch it themselves.
+            {err ? <span className="env-err">{err}</span> : null}
+          </>
+        }
+        checked={s.on}
+        onChange={async (on) => setErr(await setVpnOn(on))}
+      />
+      {s.on && !s.profiles.length ? (
+        <Row label="No profiles" hint="Import one in OpenVPN Connect and it shows here.">
+          <span className="env-none">—</span>
+        </Row>
+      ) : null}
+      {s.on
+        ? s.profiles.map((p) => {
+            const on = p.id === s.connected;
+            const envs = [...new Set(p.reaches.map((r) => (r.label === 'other' ? r.name : r.label)))];
+            return (
+              <Row
+                key={p.id}
+                label={
+                  <span className="env-name" title={p.host}>
+                    <span className={`dl-glyph ${on ? (s.phase === 'connected' ? 'ok' : 'run') : 'idle'}`} />
+                    {p.name}
+                  </span>
+                }
+                hint={`${on ? `Connected${s.connectedAt ? ` · since ${new Date(s.connectedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : ''}` : p.host}${p.password ? ' · asks for a password' : ''}`}
+              >
+                {envs.length ? (
+                  envs.map((e) => (
+                    <span key={e} className="env-chip">
+                      {e}
+                    </span>
+                  ))
+                ) : (
+                  <span className="env-none" title="Cora learns which environments a profile reaches while it is connected.">
+                    Reaches: not learned yet
+                  </span>
+                )}
+              </Row>
+            );
+          })
+        : null}
+    </Group>
   );
 }
 

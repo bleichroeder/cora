@@ -4,6 +4,8 @@ import { Icon } from './Icon';
 import { JiraChip } from './JiraChip';
 import { jiraLink, splitKeys } from '../lib/jira';
 import { jiraAvailable, jiraSite, useJira, useKnownKey } from '../state/jira';
+import { findFileRefs } from '../lib/filePaths';
+import { openPeek } from './FilePeek';
 
 /** Web addresses in plain text (tool output, commands), without trailing punctuation or closing brackets. */
 export const URL_RE = /\bhttps?:\/\/[^\s<>"'`]+[^\s<>"'`.,;:!?)\]}]/g;
@@ -15,14 +17,29 @@ export const firstUrl = (s: string): string | null => s.match(URL_RE)?.[0] ?? nu
  * Plain text with its web addresses clickable (they open in the session's browser; Ctrl+click in your browser).
  * With `jira`, ticket keys and Jira issue links become chips (see JiraChip).
  */
-export function Linkify({ text, jira = false, sessionId }: { text: string; jira?: boolean; sessionId?: string }) {
+export function Linkify({ text, jira = false, sessionId, files = false }: { text: string; jira?: boolean; sessionId?: string; /** file paths clickable too (a card with what's in it: FilePeek); needs sessionId */ files?: boolean }) {
   const known = useKnownKey();
   const site = useJira((st) => jiraSite(st));
   const chips = jira && jiraAvailable();
   const parts: React.ReactNode[] = [];
-  const plain = (s: string) => {
+  const words = (s: string) => {
     if (chips && known) for (const p of splitKeys(s, known)) parts.push(typeof p === 'string' ? p : <JiraChip jref={p} sessionId={sessionId} />);
     else parts.push(s);
+  };
+  const plain = (s: string) => {
+    const refs = files && sessionId ? findFileRefs(s) : [];
+    let at = 0;
+    for (const r of refs) {
+      if (r.index > at) words(s.slice(at, r.index));
+      const shown = s.slice(r.index, r.index + r.length);
+      parts.push(
+        <button className="path-link" title={`${r.path}: look at it`} onClick={(e) => (e.stopPropagation(), openPeek(sessionId!, { path: r.path, ...(r.line ? { line: r.line } : {}) }, e.currentTarget))}>
+          {shown}
+        </button>,
+      );
+      at = r.index + r.length;
+    }
+    if (at < s.length) words(s.slice(at));
   };
   let last = 0;
   for (const m of text.matchAll(URL_RE)) {
@@ -40,7 +57,7 @@ export function Linkify({ text, jira = false, sessionId }: { text: string; jira?
     );
     last = i + m[0].length;
   }
-  if (!last && !chips) return <>{text}</>;
+  if (!last && !chips && !(files && sessionId)) return <>{text}</>;
   if (last < text.length) plain(text.slice(last));
   if (parts.length === 1 && typeof parts[0] === 'string') return <>{text}</>;
   return <>{parts.map((p, i) => <Fragment key={i}>{p}</Fragment>)}</>;
