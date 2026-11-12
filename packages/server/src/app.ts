@@ -53,10 +53,11 @@ import type { PublicStatus, Remote } from './remote';
 import { LIVE_AREAS, type LiveArea, type LiveGuest, type LiveMode, type Shares } from './shares';
 import type { Door } from './door';
 import { RemoteBrowser } from './remoteBrowser';
+import { CdpBridge, cdpKey } from './cdpBridge';
 import type { Banners } from './banner';
 import { fileName, type Videos } from './videos';
 import type { VideoPlan } from '@cora/shared';
-import { spawnMarker, spawnedGone } from '@cora/shared';
+import { EVENT_ICON, spawnMarker, spawnedGone, trustQuestion } from '@cora/shared';
 import { nudgeAt, rereads, NUDGE_ADVICE } from '@cora/shared';
 import { ContextNudges } from './contextNudge';
 import type { Worktrees } from './worktrees';
@@ -68,6 +69,7 @@ import type { OrchestratorManager } from './orchestrator/manager';
 import type { OrchToolDeps } from './orchestrator/tools';
 import { answerTrust, deliverWhenReady } from './orchestrator/deliver';
 import { PromptLog } from './promptLanded';
+import { RECALL_WINDOW_MS, recallPrompt } from './recall';
 import { lateModWords, modDeadline, stuckModWords } from './modDeadline';
 /** How long a seat Cora started has for its mod to come and take what waits for it (else it's typed in). */
 const MOD_FIRST_WAIT_MS = 90_000;
@@ -1431,7 +1433,8 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
         if (!ok) return { ok: false, why: `The user didn't allow ${n} for this session (or wasn't there to say).` };
         vault.grant(sid, n);
       }
-      const secrets = Object.fromEntries(names.map((n) => [n, vault.value(n) ?? '']));
+      // each as its environment has it ($NAME, or a login's $NAME_USER and $NAME_PASS)
+      const secrets: Record<string, string> = Object.assign({}, ...names.map((n) => vault.env(n) ?? {}));
       const r = await runWithSecrets({ command, cwd: s.wd || s.cwd, secrets, timeoutMs: Math.min(300, Math.max(5, timeoutSec ?? 60)) * 1000 });
       vault.used(names, sid, nameOf(s));
       pending.note({ ts: Date.now(), sessionId: sid, agentId: 'main', kind: 'secret', tool: `secret_run ${names.join(',')}`, input: { command: mask(command, Object.values(secrets)) }, decision: r.timedOut ? 'timeout' : `exit ${r.code}`, edited: false, via: 'dashboard' });
@@ -1478,13 +1481,13 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
   } } : undefined, d.projects ? mcpProjects(d.projects) : undefined, d.calendar, toolsListed, d.projects ? builderTools(d.projects, config.agentToken, { fileExists: (path) => isAbsolute(path) && existsSync(path) }) : undefined);
   // --- Cora Secrets: names and notes to the dashboard; a value only when you reveal one ---
   app.get('/api/secrets', { preHandler: requireUi }, async () => ({ list: d.vault?.list() ?? [] }));
-  app.post<{ Body: { name?: unknown; value?: unknown; note?: unknown; scope?: unknown } }>('/api/secrets', { preHandler: requireAction }, async (req, reply) => {
+  app.post<{ Body: { name?: unknown; value?: unknown; note?: unknown; scope?: unknown; kind?: unknown; user?: unknown } }>('/api/secrets', { preHandler: requireAction }, async (req, reply) => {
     const b = req.body ?? {};
     if (!d.vault || typeof b.name !== 'string') return reply.code(400).send({ error: 'a name' });
     const sc = b.scope as { all?: unknown; folders?: unknown } | undefined;
     const scope = !sc ? undefined : Array.isArray(sc.folders) ? { folders: sc.folders.filter((f): f is string => typeof f === 'string' && f.trim().length > 1).map((f) => f.trim()).slice(0, 20) } : { all: true as const };
     try {
-      return d.vault.set({ name: b.name.trim(), ...(typeof b.value === 'string' ? { value: b.value } : {}), ...(typeof b.note === 'string' ? { note: b.note } : {}), ...(scope ? { scope } : {}) });
+      return d.vault.set({ name: b.name.trim(), ...(typeof b.value === 'string' ? { value: b.value } : {}), ...(typeof b.note === 'string' ? { note: b.note } : {}), ...(scope ? { scope } : {}), ...(b.kind === 'login' || b.kind === 'value' ? { kind: b.kind } : {}), ...(typeof b.user === 'string' ? { user: b.user } : {}) });
     } catch (e) {
       return reply.code(400).send({ error: (e as Error).message });
     }
@@ -1492,7 +1495,8 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
   app.delete<{ Params: { name: string } }>('/api/secrets/:name', { preHandler: requireAction }, async (req, reply) => (d.vault?.remove(req.params.name) ? { ok: true } : reply.code(404).send({ error: 'no such secret' })));
   app.post<{ Params: { name: string } }>('/api/secrets/:name/reveal', { preHandler: requireAction }, async (req, reply) => {
     const value = d.vault?.value(req.params.name);
-    return value == null ? reply.code(404).send({ error: 'no such secret' }) : { value };
+    const user = d.vault?.list().find((x) => x.name === req.params.name)?.user;
+    return value == null ? reply.code(404).send({ error: 'no such secret' }) : { value, ...(user ? { user } : {}) };
   });
   // --- worktrees: your repos', for Cora's board (asking keeps them fresh a while); remove one, make one ---
   app.get('/api/worktrees', { preHandler: requireUi }, async () => {
@@ -2754,6 +2758,7 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
   ideRelay();
   // --- a session's browser on your other devices ----------------------------------
   remoteBrowse();
+  agentBrowser();
   // --- projects ------------------------------------------------------------------
   let projectWakes: (pid: string, post: import('@cora/shared').Post) => void = () => {};
   /**
@@ -3138,6 +3143,8 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
     const lines = req.body?.force ? null : ptys.screenLines(t.terminalId);
     if (lines && choiceOpen(lines)) return reply.code(409).send({ error: 'Claude Code is showing a choice in the terminal: answer it there first', choice: true });
     ptys.write(t.terminalId, input.data);
+    // what went, for Esc to take back a moment later (recall)
+    if (req.body?.submit) lastSent.set(t.terminalId, { text: String(req.body.text ?? ''), at: Date.now() });
     // Enter separately, a beat later, so Claude Code sees the text (or the whole paste) and then a submit; a big paste
     // takes it longer to read in
     if (req.body?.submit) setTimeout(() => ptys.write(t.terminalId, '\r'), input.paste ? Math.min(3000, 150 + Math.round(input.data.length / 2000)) : 80);
@@ -3147,23 +3154,64 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
   });
   /**
    * Stop a hosted session's work from the composer: Esc (Claude Code's interrupt) or Ctrl+C, typed into its terminal.
-   * Only while it's working (or showing a prompt): at an idle prompt Esc twice opens Claude Code's rewind and Ctrl+C
-   * twice quits it. A second press within a moment is let go for the same reason.
+   * Only while it's working (or showing a prompt), or just after a prompt went from the composer (its state may not
+   * say working yet): at an idle prompt Esc twice opens Claude Code's rewind and Ctrl+C twice quits it. A second press
+   * within a moment is let go for the same reason.
+   *
+   * `recall`: Esc right after a prompt went takes it back. Claude Code cancels the turn and puts the prompt back in its
+   * (hidden) input box: it's cleared there (or the next prompt would be typed after it), `recalled` says so for the
+   * composer to put it back in its own box, and the transcript gets a marker (Claude Code writes none for it).
    */
   const lastStop = new Map<string, number>();
-  app.post<{ Params: { id: string }; Body: { key?: string } }>('/api/terminals/:id/interrupt', { preHandler: requireAction }, async (req, reply) => {
+  /** each terminal's last prompt from the composer, and when */
+  const lastSent = new Map<string, { text: string; at: number }>();
+  app.post<{ Params: { id: string }; Body: { key?: string; recall?: boolean } }>('/api/terminals/:id/interrupt', { preHandler: requireAction }, async (req, reply) => {
     const t = ptys?.list().find((x) => x.terminalId === req.params.id && x.alive);
     if (!t || !ptys) return reply.code(404).send({ error: 'no running terminal with that id' });
     if (t.mode === 'shell') return reply.code(400).send({ error: 'not a Claude terminal' });
     const key = req.body?.key === 'esc' ? '\x1b' : req.body?.key === 'ctrl-c' ? '\x03' : null;
     if (!key) return reply.code(400).send({ error: 'key must be esc or ctrl-c' });
     const state = t.sessionId ? store.getSession(t.sessionId)?.state : undefined;
-    if (state !== 'working' && state !== 'thinking' && state !== 'needs-you') return { sent: false, why: 'Nothing is running to stop.' };
     const now = Date.now();
+    const sent = lastSent.get(t.terminalId);
+    const justSent = !!sent && now - sent.at < RECALL_WINDOW_MS;
+    if (state !== 'working' && state !== 'thinking' && state !== 'needs-you' && !justSent) return { sent: false, why: 'Nothing is running to stop.' };
     if (now - (lastStop.get(t.terminalId) ?? 0) < STOP_GAP_MS) return { sent: false, why: 'Already stopping it.' };
     lastStop.set(t.terminalId, now);
     ptys.write(t.terminalId, key);
-    return { sent: true };
+    if (!(req.body?.key === 'esc' && req.body?.recall && justSent && sent)) return { sent: true };
+    lastSent.delete(t.terminalId);
+    const back = await recallPrompt({ screen: () => ptys.screenLines(t.terminalId), key: (data) => void ptys.write(t.terminalId, data) }, sent.text);
+    if (!back) return { sent: true };
+    if (t.sessionId) pipeline.ingestEvents([{ id: `recall:${t.terminalId}:${now}`, sessionId: t.sessionId, agentId: 'main', ts: Date.now(), kind: 'interrupt', icon: EVENT_ICON.interrupt, text: 'Cancelled: back in the composer', source: 'hook' }]);
+    return { sent: true, recalled: sent.text };
+  });
+  /**
+   * Claude Code's "trust this folder?" question, answered from the dashboard (the composer's card): yes, only for the
+   * terminal's own folder (keys picked from what's on screen, never typed words); no, Esc (Claude Code exits).
+   */
+  app.post<{ Params: { id: string }; Body: { trust?: boolean } }>('/api/terminals/:id/trust', { preHandler: requireAction }, async (req, reply) => {
+    const t = ptys?.list().find((x) => x.terminalId === req.params.id && x.alive);
+    if (!t || !ptys) return reply.code(404).send({ error: 'no running terminal with that id' });
+    if (t.mode === 'shell') return reply.code(400).send({ error: 'not a Claude terminal' });
+    const lines = ptys.screenLines(t.terminalId);
+    if (!lines || !trustQuestion(lines)) return reply.code(409).send({ error: "It isn't asking about its folder now." });
+    if (req.body?.trust !== true) {
+      ptys.write(t.terminalId, '\x1b');
+      return { ok: true, answered: 'no' };
+    }
+    const r = await answerTrust(
+      {
+        screen: () => ptys.screenLines(t.terminalId),
+        alive: () => ptys.list().some((x) => x.terminalId === t.terminalId && x.alive),
+        cwd: () => t.cwd,
+        key: (data) => void ptys.write(t.terminalId, data),
+      },
+      t.cwd,
+      15_000,
+      300,
+    );
+    return r === 'answered' ? { ok: true, answered: 'yes' } : reply.code(409).send({ error: r === 'stuck' ? "Answering it didn't take: answer it in the terminal." : `Not answered (${r}).` });
   });
   /** Type a prompt from Cora (or anyone but you at the keyboard) into a hosted terminal and submit it: typed as keys, so it arrives as a plain prompt (input.ts typedInput). */
   function typeInto(terminalId: string, text: string): void {
@@ -3654,6 +3702,27 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
    * here; the desktop app renders a watched one out of sight (with the PC browser's logins) and streams its picture.
    * For you alone (never a guest, never through the public door). The PC's own screen and browser don't change.
    */
+  /**
+   * A session's Playwright in Cora's browser: its Playwright MCP connects at /cdp/<session> (with that session's own
+   * key), and the desktop app plays the browser for it with the session's tabs (desktop/src/cdpRelay.ts).
+   */
+  function agentBrowser(): void {
+    const bridge = new CdpBridge();
+    app.get<{ Params: { sid: string }; Querystring: { k?: string } }>('/cdp/:sid', {
+      websocket: true,
+      preValidation: async (req, reply) => {
+        if (!/^[\w-]{8,80}$/.test(req.params.sid) || !sameSecret(String(req.query.k ?? ''), cdpKey(config.hookToken, req.params.sid))) return reply.code(401).send({ error: 'bad key' });
+      },
+    }, (socket, req) => bridge.attachClient(socket as never, req.params.sid));
+    // the desktop app's link (this PC only: Cora's local key)
+    app.get<{ Querystring: { key?: string } }>('/api/local/agent-browser', {
+      websocket: true,
+      preValidation: async (req, reply) => {
+        if (!sameSecret(req.query.key ?? hookToken(req), config.hookToken)) return reply.code(401).send({ error: 'bad token' });
+      },
+    }, (socket) => bridge.attachDesktop(socket as never));
+  }
+
   function remoteBrowse(): void {
     const rb = new RemoteBrowser();
     const snap = (): ServerMsg => ({ t: 'rbrowse', available: rb.available, tabs: rb.list() });

@@ -10,6 +10,8 @@ const ENDED_AFTER_MS = 30 * 60_000;
 /** A "thinking" agent with no activity this long is really waiting (e.g. `claude -p` never writes a turn end). */
 const IDLE_AFTER_MS = 10 * 60_000;
 const STALE_TOOL_MS = 30 * 60_000;
+/** Compacting this long and no compact boundary: it isn't any more (the boundary was missed, or it failed). */
+const COMPACTING_MAX_MS = 15 * 60_000;
 const key = (sid: string, aid: string) => `${sid}/${aid}`;
 
 /** Owns the agent tree and the session/agent state machines. */
@@ -123,6 +125,8 @@ export class Registry {
         break;
     }
     if (agentState) this.setAgentState(sid, e.agentId, agentState);
+    // compacting, and it's done (its boundary), or stopped, or over
+    if (e.agentId === 'main' && (e.kind === 'compact' || e.kind === 'interrupt' || e.kind === 'session_end') && this.store.getSession(sid)?.compacting) this.refreshSession(sid, { compacting: null });
     this.refreshSession(sid, { lastTs: e.ts, startedAt: e.ts, ...(turnAt ? { turnAt } : {}) });
   }
 
@@ -179,7 +183,7 @@ export class Registry {
     for (const [k, m] of this.inflight) if (k.startsWith(sessionId + '/')) m.clear();
     for (const a of this.store.listAgents(sessionId)) if (a.state !== 'done') this.setAgentState(sessionId, a.agentId, 'idle');
     this.ended.set(sessionId, ts);
-    this.refreshSession(sessionId, { lastTs: ts, exitReason: 'exited' });
+    this.refreshSession(sessionId, { lastTs: ts, exitReason: 'exited', compacting: null });
     this.o.ended?.(sessionId);
   }
 
@@ -221,6 +225,7 @@ export class Registry {
         }
         continue;
       }
+      if (s.compacting && now - s.compacting.since > COMPACTING_MAX_MS) this.refreshSession(s.id, { compacting: null });
       for (const [k, fl] of this.inflight) {
         if (!k.startsWith(s.id + '/')) continue;
         for (const [id, ts] of fl) if (now - ts > STALE_TOOL_MS) fl.delete(id);

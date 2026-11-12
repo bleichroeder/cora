@@ -120,6 +120,8 @@ export function createPipeline(store: Store, registry: Registry, hub: Hub, pendi
       if (r.agentStop && !r.agentStart && !store.getAgent(sid, r.agentStop.agentId)) return;
       if (r.agentStart) registry.agentStarted(sid, r.agentStart.agentId, r.agentStart.agentType, now);
       ingestEvents(r.events);
+      // compacting its context now (until the compact boundary comes from its transcript)
+      if (r.compacting) registry.updateSessionMeta(sid, { compacting: { since: now, trigger: r.compacting.trigger } });
       if (r.link) registry.linkChild(sid, r.link);
       if (r.agentStop) registry.agentStopped(sid, r.agentStop.agentId, now);
       if (r.turnEnded) {

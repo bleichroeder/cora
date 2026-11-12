@@ -10,6 +10,8 @@ export type HookResult = {
   link?: LinkMeta;
   turnEnded?: boolean;
   notification?: { type: string; message: string };
+  /** PreCompact: Claude Code starts compacting its context ('auto' or 'manual') */
+  compacting?: { trigger: string };
 };
 
 const SYSTEM_INJECTED = /^\s*<(task-notification|system-reminder|command-|local-command|bash-)/;
@@ -77,7 +79,7 @@ export function hookToEvents(event: string, p: any, now = Date.now()): HookResul
     case 'SessionEnd':
       return { events: [{ ...base, id: `session_end:${sessionId}`, kind: 'session_end', icon: EVENT_ICON.session_end, text: p.reason }], session };
     case 'PreCompact':
-      return { events: [], session };
+      return { events: [], session, compacting: { trigger: p.trigger === 'manual' ? 'manual' : 'auto' } };
     case 'Notification':
       return { events: [], session, notification: { type: String(p.notification_type ?? 'unknown'), message: String(p.message ?? '') } };
     default:

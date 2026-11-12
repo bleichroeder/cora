@@ -2,7 +2,7 @@
  * The built-in browser's tabs: each session has its own (a GitLab and a Jira tab per piece of work), all sharing one
  * set of logins. Pure state changes here; the store (state/web.ts) wires them up and keeps them across reloads.
  */
-export type WebTab = { id: string; sessionId: string; url: string; title: string; /** bumped for each navigation asked of the tab from outside */ nav: number; /** signed in as this profile, whatever its browser is on (a Gmail draft: your Gmail's profile) */ profile?: string; /** a session opened it behind the one you're on: "new" on its tab until you look at it */ fresh?: true };
+export type WebTab = { id: string; sessionId: string; url: string; title: string; /** bumped for each navigation asked of the tab from outside */ nav: number; /** signed in as this profile, whatever its browser is on (a Gmail draft: your Gmail's profile) */ profile?: string; /** a session opened it behind the one you're on: "new" on its tab until you look at it */ fresh?: true; /** the session's Playwright drives it (its page lives in AgentPages, never unmounted; not kept across reloads) */ agent?: true };
 export type SessionWeb = { tabs: string[]; active: string | null; shown: boolean };
 export type WebState = {
   tabs: Record<string, WebTab>;
@@ -26,7 +26,7 @@ const noHash = (u: string) => u.replace(/#.*$/, '');
 const sw = (st: WebState, sid: string): SessionWeb => st.sessions[sid] ?? { tabs: [], active: null, shown: false };
 
 /** A new tab in the session (after `after`, else after the active tab), shown and active unless `background`. */
-export function newTab(st: WebState, sid: string, url = '', o: { after?: string; background?: boolean; profile?: string } = {}): WebState {
+export function newTab(st: WebState, sid: string, url = '', o: { after?: string; background?: boolean; profile?: string; agent?: boolean } = {}): WebState {
   const s = sw(st, sid);
   const id = newId();
   const at = s.tabs.indexOf(o.after ?? s.active ?? '');
@@ -34,7 +34,7 @@ export function newTab(st: WebState, sid: string, url = '', o: { after?: string;
   tabs.splice(at < 0 ? tabs.length : at + 1, 0, id);
   return {
     ...st,
-    tabs: { ...st.tabs, [id]: { id, sessionId: sid, url, title: '', nav: 0, ...(o.profile ? { profile: o.profile } : {}), ...(o.background && s.active ? { fresh: true as const } : {}) } },
+    tabs: { ...st.tabs, [id]: { id, sessionId: sid, url, title: '', nav: 0, ...(o.profile ? { profile: o.profile } : {}), ...(o.background && s.active ? { fresh: true as const } : {}), ...(o.agent ? { agent: true as const } : {}) } },
     order: [...st.order, id],
     sessions: { ...st.sessions, [sid]: { tabs, active: o.background && s.active ? s.active : id, shown: true } },
   };
@@ -115,9 +115,18 @@ export function cycle(st: WebState, sid: string, dir: 1 | -1): WebState {
   return activate(st, s.tabs[(i + dir + s.tabs.length) % s.tabs.length]);
 }
 
+/** Each session's tab list without its Playwright tabs (they aren't kept: their Playwright went with the reload). */
+const dropAgents = (st: WebState): Record<string, SessionWeb> =>
+  Object.fromEntries(
+    Object.entries(st.sessions).map(([sid, s]) => {
+      const tabs = s.tabs.filter((id) => !st.tabs[id]?.agent);
+      return [sid, { ...s, tabs, active: s.active && tabs.includes(s.active) ? s.active : (tabs[0] ?? null) }];
+    }),
+  );
+
 /** Kept across reloads: tabs and their addresses (the pages themselves reload when you come back to them). */
 export function serialize(st: WebState): string {
-  return JSON.stringify({ v: 2, wide: st.wide, split: st.split, sessions: st.sessions, tabs: Object.values(st.tabs).map(({ id, sessionId, url, title, profile, fresh }) => ({ id, sessionId, url, title, ...(profile ? { profile } : {}), ...(fresh ? { fresh } : {}) })) });
+  return JSON.stringify({ v: 2, wide: st.wide, split: st.split, sessions: dropAgents(st), tabs: Object.values(st.tabs).filter((t) => !t.agent).map(({ id, sessionId, url, title, profile, fresh }) => ({ id, sessionId, url, title, ...(profile ? { profile } : {}), ...(fresh ? { fresh } : {}) })) });
 }
 
 export function deserialize(raw: string | null): WebState {

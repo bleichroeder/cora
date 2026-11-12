@@ -324,3 +324,29 @@ describe('background commands', () => {
     expect(e.task).toMatchObject({ status: 'failed', exit: 1 });
   });
 });
+
+describe('a `/` command Claude Code answers itself', () => {
+  // the two lines Claude Code 2.1.316 writes for /mcp (captured from a real session)
+  const named = (ms: number, name = '/mcp', args = '') => ({ type: 'system', subtype: 'local_command', uuid: `c${ms}`, timestamp: iso(ms), sessionId: SID, content: `<command-name>${name}</command-name>
+            <command-message>${name.slice(1)}</command-message>
+            <command-args>${args}</command-args>`, level: 'info' });
+  const said = (ms: number, text: string, run?: { command: string; args: string }) => ({ type: 'system', subtype: 'local_command', uuid: `o${ms}`, timestamp: iso(ms), sessionId: SID, content: `<local-command-stdout>${text}</local-command-stdout>`, level: 'info', ...(run ? { commandRun: run } : {}) });
+
+  it('is a command event: the command as run, and what it said', () => {
+    const ctx = newParseCtx();
+    expect(parseLine(named(0), ctx).events).toEqual([]);
+    const [e] = parseLine(said(1, 'MCP dialog dismissed', { command: 'mcp', args: '' }), ctx).events;
+    expect(e).toMatchObject({ kind: 'command', command: '/mcp', text: 'MCP dialog dismissed', agentId: 'main' });
+  });
+  it('named by the line before it when the output line says nothing of it (older versions), arguments and all', () => {
+    const ctx = newParseCtx();
+    parseLine(named(0, '/model', 'opus'), ctx);
+    expect(parseLine(said(1, 'Set model to opus'), ctx).events[0]).toMatchObject({ kind: 'command', command: '/model opus' });
+  });
+  it('colours stripped from what it said', () => {
+    const ctx = newParseCtx();
+    parseLine(named(0, '/context'), ctx);
+    const esc = String.fromCharCode(27);
+    expect(parseLine(said(1, `${esc}[1mContext Usage${esc}[22m 12k/200k`), ctx).events[0].text).toBe('Context Usage 12k/200k');
+  });
+});

@@ -374,6 +374,16 @@ export function ToolsSection({ server, save }: { server?: Settings | null; save?
               <option value="off">Just note it</option>
             </select>
           </Row>
+          <Row
+            label="A session's Playwright"
+            hint="When you use Playwright's MCP server, the sessions Cora hosts drive tabs of Cora's browser instead of opening a browser of their own: you see them work in the session's browser (a bot on the tab) and can step in. Signed in as a profile of their own (sign it in to a site from one of its tabs), or as the session's browser is. Takes effect for sessions started after the change."
+          >
+            <select value={server.browser?.playwright ?? 'agent'} onChange={(e) => void save({ browser: { playwright: e.target.value as 'agent' | 'session' | 'off' } })}>
+              <option value="agent">In Cora's browser, signed in as its own profile</option>
+              <option value="session">In Cora's browser, signed in as the session's browser</option>
+              <option value="off">In a browser of its own (as before)</option>
+            </select>
+          </Row>
         </Group>
       ) : null}
       <Group label="Notes templates">

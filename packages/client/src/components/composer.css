@@ -17,6 +17,7 @@
 .cmp-err { color: #fca5a5; display: flex; align-items: center; gap: 6px; white-space: normal; }
 .cmp-err span { flex: 1; }
 .cmp-hint.cmp-ask { display: flex; align-items: center; gap: 6px; color: #fbbf24; }
+.cmp-hint.cmp-note { display: flex; align-items: center; gap: 6px; color: var(--blue); }
 
 .cmp-chips { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 6px; }
 .cmp-chip { display: inline-flex; align-items: center; gap: 5px; max-width: 220px; padding: 2px 3px 2px 6px; border: 1px solid #1e293b; border-radius: 6px; background: #0b111c; color: #cbd5e1; font: 11px var(--mono); }
@@ -34,3 +35,14 @@
 .cmp-arg { flex: none; font: 11px var(--mono); color: #64748b; }
 .cmp-desc { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cmp-src { flex: none; font: 10px var(--mono); color: #475569; border: 1px solid #1e293b; border-radius: 4px; padding: 0 5px; }
+.cmp-do { flex: none; font: 10px var(--mono); color: var(--blue); }
+
+/* Claude Code asking whether to trust the folder (before it starts): in place of the composer */
+.cmp-trust .ct-row { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 12px; background: color-mix(in srgb, #fbbf24 8%, var(--raise, #11151d)); box-shadow: inset 0 0 0 1px color-mix(in srgb, #fbbf24 40%, transparent); color: #fbbf24; }
+.cmp-trust .ct-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; color: var(--ink2, #a4afbf); font-size: 12.5px; }
+.cmp-trust .ct-text b { color: var(--ink, #e6ebf2); font-weight: 600; font-size: 13px; }
+.cmp-trust .ct-dir { overflow: hidden; color: var(--ink, #e6ebf2); font: 500 11px var(--code, var(--mono)); text-overflow: ellipsis; white-space: nowrap; }
+.cmp-trust .ct-why { color: var(--ink3, #6b7686); font-size: 11.5px; }
+.cmp-trust .btn { flex: none; display: inline-flex; align-items: center; gap: 6px; }
+.cmp-trust .ct-yes { background: color-mix(in srgb, var(--work, #3ddc97) 18%, var(--raise, #11151d)); color: var(--ink, #e6ebf2); }
+.cmp-trust .ct-yes .lucide-loader-circle { animation: cmp-spin 0.9s linear infinite; }

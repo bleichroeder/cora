@@ -7,7 +7,9 @@ export type Item =
   | { kind: 'report'; key: string; e: BrainEvent }
   /** a background agent's narration or task, inside its folded row */
   | { kind: 'note'; key: string; e: BrainEvent }
-  | { kind: 'compact' | 'turn_end' | 'interrupt'; key: string; e: BrainEvent };
+  | { kind: 'compact' | 'turn_end' | 'interrupt'; key: string; e: BrainEvent }
+  /** a `/` command you ran that Claude Code answered itself (/mcp, /context…), with what it said */
+  | { kind: 'command'; key: string; e: BrainEvent };
 
 export type Step = {
   key: string;
@@ -24,7 +26,7 @@ export type Step = {
   fingerprint: IconRef[];
   /** a stretch of a background agent's work, folded into one row ("All" view only) */
   fold?: true;
-  /** a command you ran yourself (`!` in Claude Code): its one tool item, a step of its own */
+  /** a command you ran yourself (`!` in Claude Code, or a `/` command Claude Code answers itself): its one item, a step of its own */
   ran?: true;
 };
 
@@ -173,6 +175,12 @@ export function buildSteps(events: BrainEvent[], filter: 'all' | string, childBy
         break;
       case 'interrupt':
         stepFor(e).items.push({ kind: 'interrupt', key: e.id, e });
+        break;
+      case 'command':
+        // yours, like a prompt: a step of its own (what Claude does next starts a step after it)
+        if (e.agentId !== 'main') break;
+        open(e, { ran: true, items: [{ kind: 'command', key: e.id, e }], fingerprint: [e.icon] });
+        current.delete(e.agentId);
         break;
       default:
         break;

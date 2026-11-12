@@ -121,3 +121,17 @@ describe('reordering tabs', () => {
     void two;
   });
 });
+
+describe("a session's Playwright tabs", () => {
+  it('are marked as such, open like a tab the session opened, and are not kept across reloads (their Playwright went)', () => {
+    let st = newTab(EMPTY_WEB, 's1', 'https://mine.example');
+    const mine = st.sessions.s1.active!;
+    st = newTab(st, 's1', 'about:blank', { agent: true, profile: 'agent' });
+    const pw = st.sessions.s1.active!;
+    expect(st.tabs[pw]).toMatchObject({ agent: true, profile: 'agent', url: 'about:blank' });
+    expect(st.sessions.s1.tabs).toEqual([mine, pw]);
+    const back = deserialize(serialize(st));
+    expect(Object.keys(back.tabs)).toEqual([mine]);
+    expect(back.sessions.s1).toMatchObject({ tabs: [mine], active: mine });
+  });
+});

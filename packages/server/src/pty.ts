@@ -2,7 +2,7 @@ import { detectShells, pickShell, type Shell } from './shells';
 import { randomUUID } from 'node:crypto';
 import { existsSync, statSync } from 'node:fs';
 import { delimiter, join } from 'node:path';
-import { isSafeId, isShell, type ClaudeMode, type TerminalInfo, type TerminalMode } from '@cora/shared';
+import { isSafeId, isShell, trustQuestion, type ClaudeMode, type TerminalInfo, type TerminalMode } from '@cora/shared';
 import type { Audit } from './audit';
 import { headlessScreen, statusLine, type Screen } from './screen';
 import { LocalBackend, type PtyBackend } from './ptyhost/backend';
@@ -289,6 +289,7 @@ export class PtyManager {
     t.alive = false;
     t.exitCode = exitCode;
     t.status = null;
+    delete t.asksTrust;
     t.screen?.dispose();
     t.screen = null;
     for (const s of t.sinks) s.exit(exitCode);
@@ -363,15 +364,19 @@ export class PtyManager {
     this.statusTimer.unref?.();
   }
 
-  /** Read Claude Code's working indicator off each changed screen; publish when it changes. */
+  /** Read Claude Code's working indicator (and its "trust this folder?" question) off each changed screen; publish when either changes. */
   scanStatus(): void {
     let changed = false;
     for (const t of this.terms.values()) {
       if (!t.alive || !t.screen || !t.dirty) continue;
       t.dirty = false;
-      const s = statusLine(t.screen.lines());
-      if (s !== t.status) {
+      const lines = t.screen.lines();
+      const s = statusLine(lines);
+      const ask = !isShell(t) && trustQuestion(lines);
+      if (s !== t.status || ask !== !!t.asksTrust) {
         t.status = s;
+        if (ask) t.asksTrust = true;
+        else delete t.asksTrust;
         changed = true;
       }
     }

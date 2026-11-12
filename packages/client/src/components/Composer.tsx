@@ -4,8 +4,9 @@ import { useLive } from '../state/live';
 import { useBrain, sessionEvents } from '../state/store';
 import { attachFile, composerInbox, draftOf, loadCommands, previews, sendToSession, useComposer, interruptSession } from '../state/composer';
 import { buildPrompt, caretOnEdge, composerTall, filterCommands, keyAction, promptHistory, sizesItself, slashQuery, stepHistory, type Attachment, type SlashCommand, stopKey } from '../lib/composer';
-import { useShells } from '../state/shells';
+import { useShells, watchCommand } from '../state/shells';
 import { Icon } from './Icon';
+import { removeSession } from './SessionMenu';
 import { startListening, stopListening, useVoice } from '../lib/voice';
 import './composer.css';
 
@@ -19,13 +20,18 @@ const focusTerminal = () => (document.querySelector('.term-window:not(.hidden) .
  */
 /** a touch screen away from the desktop app (an iPad): the composer waits for a tap */
 const touchScreen = !desktop && typeof navigator !== 'undefined' && navigator.maxTouchPoints > 1;
+/** How long after sending Esc takes the prompt back (as the server allows) */
+const RECALL_MS = 10_000;
 
 export function Composer({ sessionId }: { sessionId: string }) {
   const live = useBrain((s) => s.terminals.some((t) => t.sessionId === sessionId && t.alive));
+  // Claude Code won't start until it's told whether to trust its folder: asked here, whatever the input mode
+  const trust = useBrain((s) => s.terminals.find((t) => t.sessionId === sessionId && t.alive && t.asksTrust && t.mode !== 'shell'));
   const on = useBrain((s) => s.prefs.inputMode === 'composer');
   // a guest: they prompt only in an interactive share (and only through the composer)
   const guestMode = useLive((s) => (s.role === 'guest' ? (s.live?.mode ?? 'view') : null));
   const host = useLive((s) => s.live?.host ?? 'They');
+  if (trust && !guestMode) return <TrustCard key={trust.terminalId} terminalId={trust.terminalId} sessionId={sessionId} folder={trust.cwd} />;
   if (guestMode === 'view' && live)
     return (
       <div className="live-watching">
@@ -44,7 +50,15 @@ function ComposerBox({ sessionId }: { sessionId: string }) {
   const commands = useComposer((s) => s.commands[sessionId]?.list);
   // Claude Code is asking something in its terminal (shown above): answer there first
   const asking = useShells((s) => !!s.asking[sessionId]);
+  // a `/` command you sent opened a screen of Claude Code's (shown above, with the keys)
+  const dialog = useShells((s) => s.dialog[sessionId]);
   const ta = useRef<HTMLTextAreaElement>(null);
+  // that screen closed: the keyboard comes back here
+  useEffect(() => {
+    const back = (e: Event) => (e as CustomEvent<string>).detail === sessionId && ta.current?.focus();
+    window.addEventListener('cora:composer-focus', back);
+    return () => window.removeEventListener('cora:composer-focus', back);
+  }, [sessionId]);
   // switched to this session: the keyboard goes here (unless you're typing somewhere else, say the palette)
   useEffect(() => {
     const el = document.activeElement;
@@ -60,6 +74,15 @@ function ComposerBox({ sessionId }: { sessionId: string }) {
   const [uploading, setUploading] = useState(0);
   const [error, setError] = useState<{ text: string; choice?: boolean; command?: string } | null>(null);
   const [drag, setDrag] = useState(false);
+  // a word under the box for a moment (a prompt taken back)
+  const [note, setNote] = useState<string | null>(null);
+  useEffect(() => {
+    if (!note) return;
+    const t = setTimeout(() => setNote(null), 5000);
+    return () => clearTimeout(t);
+  }, [note]);
+  // the last prompt sent from here, as it was in the box (Esc right after takes it back)
+  const lastSend = useRef<{ text: string; attachments: Attachment[]; at: number } | null>(null);
   // ↑/↓ history: where we are in it (null: your own text) and what you'd written before stepping in
   const hist = useRef<{ at: number | null; own: string; shown: string | null }>({ at: null, own: '', shown: null });
   // showing an earlier prompt (unchanged): the arrows keep stepping, even through one that starts with /
@@ -153,7 +176,11 @@ function ComposerBox({ sessionId }: { sessionId: string }) {
     setError(null);
     const r = await sendToSession(sessionId, prompt, force);
     setBusy(false);
-    if (r.ok) return;
+    if (r.ok) {
+      lastSend.current = command == null ? { ...before, at: Date.now() } : null;
+      if (prompt.startsWith('/')) watchCommand(sessionId, prompt);
+      return;
+    }
     const now = draftOf(sessionId);
     if (!now.text && !now.attachments.length) setDraft(before);
     setError({ text: r.error, choice: r.choice, command });
@@ -205,7 +232,19 @@ function ComposerBox({ sessionId }: { sessionId: string }) {
     const drafted = !!text || attachments.length > 0;
     if (stop) {
       e.preventDefault();
-      void interruptSession(sessionId, stop).then((r) => {
+      // Esc just after sending: take that prompt back (Claude Code cancels it; it comes back here to change)
+      const took = stop === 'esc' && lastSend.current && Date.now() - lastSend.current.at < RECALL_MS ? lastSend.current : null;
+      void interruptSession(sessionId, stop, !!took).then((r) => {
+        if (r.recalled && took) {
+          lastSend.current = null;
+          const now = draftOf(sessionId);
+          // written something meanwhile: the prompt goes back above it
+          setDraft(now.text.trim() || now.attachments.length ? { text: `${took.text}\n\n${now.text}`, attachments: [...took.attachments, ...now.attachments.filter((a) => !took.attachments.some((b) => b.path === a.path))] } : { text: took.text, attachments: took.attachments });
+          setError(null);
+          setNote('Cancelled. Your prompt is back here to change or send again.');
+          requestAnimationFrame(() => ta.current?.focus());
+          return;
+        }
         if (r.sent) return setError(null);
         // nothing running: Esc on an empty box goes to the terminal, as it always has (with a draft it stays put);
         // Ctrl+C says so
@@ -333,9 +372,65 @@ function ComposerBox({ sessionId }: { sessionId: string }) {
             </button>
           ) : null}
         </div>
+      ) : note ? (
+        <div className="cmp-hint cmp-note">
+          <Icon name="Undo2" size={12} /> {note}
+        </div>
+      ) : dialog ? (
+        <div className="cmp-hint cmp-ask">
+          <Icon name="ArrowUp" size={12} /> /{dialog} is open in the terminal above: use it there (Esc closes it)
+        </div>
       ) : asking ? (
         <div className="cmp-hint cmp-ask">
           <Icon name="ArrowUp" size={12} /> Claude Code is asking in the terminal above: answer it there (Esc takes you to it)
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * Claude Code's "do you trust this folder?" question, before it starts. In composer mode its terminal is hidden, so
+ * without this the session sat there looking started, never wrote a transcript, and couldn't be resumed. Trust answers
+ * yes (in its own folder only); Don't start answers no (Claude Code exits) and takes the session off the list.
+ */
+function TrustCard({ terminalId, sessionId, folder }: { terminalId: string; sessionId: string; folder: string }) {
+  const [busy, setBusy] = useState<'yes' | 'no' | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const answer = async (yes: boolean) => {
+    setBusy(yes ? 'yes' : 'no');
+    setError(null);
+    try {
+      const r = await fetch(`/api/terminals/${encodeURIComponent(terminalId)}/trust`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ trust: yes }) });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.error ?? `failed (${r.status})`);
+      // not started: nothing to keep (it never wrote a transcript), once it has exited
+      if (!yes) setTimeout(() => void removeSession(sessionId), 1500);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  };
+  return (
+    <div className="composer cmp-trust" role="alertdialog" aria-label="Trust this folder?">
+      <div className="ct-row">
+        <Icon name="ShieldQuestion" size={18} />
+        <div className="ct-text">
+          <b>Claude Code needs your OK to work in this folder</b>
+          <span className="ct-dir" title={folder}>{folder}</span>
+          <span className="ct-why">It reads, edits and runs files here. It won't start until you answer.</span>
+        </div>
+        <button className="btn ct-yes" disabled={!!busy} onClick={() => void answer(true)}>
+          <Icon name={busy === 'yes' ? 'LoaderCircle' : 'ShieldCheck'} size={14} /> Trust this folder
+        </button>
+        <button className="btn" disabled={!!busy} onClick={() => void answer(false)}>
+          Don't start
+        </button>
+      </div>
+      {error ? (
+        <div className="cmp-err">
+          <Icon name="TriangleAlert" size={12} /> <span>{error}</span>
         </div>
       ) : null}
     </div>
@@ -366,6 +461,8 @@ function CommandMenu({ items, sel, onPick, onHover }: { items: SlashCommand[]; s
           {c.hint ? <span className="cmp-arg">{c.hint}</span> : null}
           <span className="cmp-desc">{c.description}</span>
           {c.kind !== 'builtin' ? <span className="cmp-src">{c.source === 'user' || c.source === 'project' ? `${c.source} ${c.kind}` : c.source}</span> : null}
+          {/* what Enter does with it: one that takes arguments is written in for you to finish; the rest go at once */}
+          {i === sel ? <span className="cmp-do">{c.hint ? '↵ add arguments' : '↵ run'}</span> : null}
         </div>
       ))}
     </div>

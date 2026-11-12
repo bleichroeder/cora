@@ -36,7 +36,7 @@ export const MISS: Record<string, string> = { 'signed-out': 'sign in', 'not-foun
  * priority, assignee), click to open it in the session's browser. Signed out of Jira, it says so and the card offers
  * the sign-in.
  */
-export function JiraChip({ jref, sessionId, compact = false, bare = false }: { jref: JiraRef; sessionId?: string; /** a dot for the status (a narrow list) */ compact?: boolean; /** the key alone, tinted by its status (the session list) */ bare?: boolean }) {
+export function JiraChip({ jref, sessionId, compact = false, bare = false }: { jref: JiraRef; sessionId?: string; /** a dot for the status (a narrow list) */ compact?: boolean; /** the key alone, tinted by its status, and not a link (the session list) */ bare?: boolean }) {
   const r = useJiraIssue(jref.key, jref.site);
   const fallbackSite = useJira((st) => jiraSite(st));
   const site = jref.site ?? fallbackSite;
@@ -61,10 +61,17 @@ export function JiraChip({ jref, sessionId, compact = false, bare = false }: { j
     if (url) openInBrowser(url, sessionId, e.ctrlKey || e.metaKey || e.shiftKey);
   };
 
+  // the session list: just the key (a click there is a click on the session, not a trip to the browser)
+  if (bare)
+    return (
+      <span className={`jchip j-${state} bare`} title={r?.ok ? `${jref.key}: ${r.value.summary} (${r.value.status.name})` : jref.key}>
+        <span className="jk">{jref.key}</span>
+      </span>
+    );
   return (
     <span
       ref={el}
-      className={`jchip j-${state}${compact ? ' compact' : ''}${bare ? ' bare' : ''}`}
+      className={`jchip j-${state}${compact ? ' compact' : ''}`}
       role="link"
       tabIndex={0}
       onClick={open}
@@ -73,7 +80,7 @@ export function JiraChip({ jref, sessionId, compact = false, bare = false }: { j
       onMouseLeave={() => hover(false)}
     >
       <span className="jk">{jref.key}</span>
-      {bare ? null : compact ? <span className="jdot" /> : pill ? <span className="jst">{pill}</span> : null}
+      {compact ? <span className="jdot" /> : pill ? <span className="jst">{pill}</span> : null}
       {card && el.current ? createPortal(<JiraCard anchor={el.current} jkey={jref.key} r={r} site={site} sessionId={sessionId} onHover={hover} />, document.body) : null}
     </span>
   );

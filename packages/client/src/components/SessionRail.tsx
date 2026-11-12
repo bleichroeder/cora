@@ -77,15 +77,17 @@ function Entry({ s, onMenu, drag, setDrag, project }: { s: SessionInfo; onMenu(e
   const ended = s.state === 'ended';
   // its Claude Code still open in Cora (it said it ended, and hasn't quit yet): ending it comes before taking it off
   const hosted = useBrain((st) => st.terminals.some((t) => t.sessionId === s.id && t.alive));
+  // it hasn't started: Claude Code asks whether to trust its folder (answered in the composer's card)
+  const asksTrust = useBrain((st) => st.terminals.some((t) => t.sessionId === s.id && t.alive && !!t.asksTrust));
   const name = ticketLabel(s).text;
-  const st = s.state === 'needs-you' ? ' need' : s.state === 'working' || s.state === 'thinking' ? ' work' : s.state === 'idle' ? ' idle' : ' done';
+  const st = asksTrust || s.state === 'needs-you' ? ' need' : s.state === 'working' || s.state === 'thinking' ? ' work' : s.state === 'idle' ? ' idle' : ' done';
   // finished while you were elsewhere (until you open it), and being read aloud now
   const fresh = useBrain((b) => !!b.unseen[s.id]) && s.state === 'idle';
   const speaking = useVoice((v) => v.reading?.sessionId === s.id);
   // what it's up to, in a word (and for how long), only when something is happening
   const waitingSince = useBrain((b) => b.pending.find((p) => p.sessionId === s.id)?.createdAt);
   const now = useNow(10_000);
-  const state = rowState(s, { now, fresh, speaking, ...(waitingSince ? { waitingSince } : {}) });
+  const state = rowState(s, { now, fresh, speaking, asksTrust, ...(waitingSince ? { waitingSince } : {}) });
   const folder = folderLabel(s.cwd, s.wd);
   // resting on it a moment: its latest recap, beside the nav
   const [peek, setPeek] = useState(false);
@@ -99,7 +101,7 @@ function Entry({ s, onMenu, drag, setDrag, project }: { s: SessionInfo; onMenu(e
       <button
         ref={ref}
         data-ping={`ses:${s.id}`}
-        className={`ses${st}${fresh ? ' fresh' : ''}${speaking ? ' speaking' : ''}${focus === s.id ? ' on' : ''}${byCora || fromJira ? ' cora' : ''}${isDismissed(s) ? ' dismissed' : ''}${drag?.id === s.id ? ' dragging' : ''}${reached ? ' reached' : ''}${hint}`}
+        className={`ses${st}${fresh ? ' fresh' : ''}${speaking ? ' speaking' : ''}${focus === s.id ? ' on' : ''}${byCora || fromJira ? ' cora' : ''}${isDismissed(s) ? ' dismissed' : ''}${s.compacting && !ended ? ' compacting' : ''}${drag?.id === s.id ? ' dragging' : ''}${reached ? ' reached' : ''}${hint}`}
         style={{ ['--sc' as any]: sessionColor(s) }}
         onClick={() => (unpeek(), setFocus(s.id))}
         onContextMenu={(e) => (unpeek(), onMenu(e, s))}

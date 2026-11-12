@@ -34,6 +34,9 @@ export type DesktopBridge = {
   openExternal?(url: string): void;
   /** a page asked for a new tab (url) or pressed a tab shortcut (key: t, w, l, f, next, prev; k: the command palette); `from` is its web contents id */
   /** a page asking for a tab, a tab shortcut in it, or you using it (`used`: at most once a second) */
+  /** a session's Playwright tabs (desktop/src/agentBrowser.ts): which there are, and the desktop asking to open, close or show one */
+  agentTabs?(list: Array<{ tabId: string; sessionId: string; wcId: number; url: string; title: string; w: number; h: number; req?: string; opener?: string }>): void;
+  onAgentCmd?(cb: (m: { t: 'open'; req: string; sessionId: string; url: string } | { t: 'close' | 'activate'; tabId: string }) => void): () => void;
   onWebTab?(cb: (m: { from: number; url?: string; background?: boolean; key?: string; used?: true }) => void): () => void;
   /** a tool in its own window (same logins as the browser) */
   toolWindow?(url: string, title: string): void;

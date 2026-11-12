@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { secretNameProblem, type SecretInfo, type SecretScope } from '@cora/shared';
+import { secretNameProblem, secretVars, type SecretInfo, type SecretKind, type SecretScope } from '@cora/shared';
 import { removeSecret, revealSecret, saveSecret, useSecrets } from '../state/secrets';
 import { desktop } from '../lib/desktop';
 import { ago } from '../lib/format';
@@ -76,9 +76,12 @@ function SecretsBody() {
   );
 }
 
-/** Add a secret, or replace one's value (its name fixed). */
+/** Add a secret (a value, or a username and password), or replace one's value (its name fixed). */
 function SecretForm({ was, onDone }: { was?: SecretInfo; onDone(): void }) {
+  const [kind, setKind] = useState<SecretKind>(was?.kind ?? 'value');
+  const login = kind === 'login';
   const [name, setName] = useState(was?.name ?? '');
+  const [user, setUser] = useState(was?.user ?? '');
   const [value, setValue] = useState('');
   const [note, setNote] = useState(was?.note ?? '');
   const [some, setSome] = useState(!!was && !('all' in was.scope));
@@ -89,23 +92,39 @@ function SecretForm({ was, onDone }: { was?: SecretInfo; onDone(): void }) {
   const bad = name ? secretNameProblem(name) : null;
   const save = async () => {
     if (bad) return setErr(bad);
-    if (!was && !value.trim()) return setErr('Paste its value');
+    if (login && !user.trim()) return setErr('Its username');
+    // a new one, or one made a login now: its value (password) comes with it
+    if ((!was || (login && was.kind !== 'login')) && !value.trim()) return setErr(login ? 'Its password' : 'Paste its value');
     const scope: SecretScope = some ? { folders: folders(where) } : { all: true };
     if (some && !('all' in scope) && !scope.folders.length) return setErr('Which folders (one per line), or share it with all sessions');
-    const e = await saveSecret({ name, ...(value.trim() ? { value } : {}), note, scope });
+    const e = await saveSecret({ name, kind, ...(login ? { user: user.trim() } : {}), ...(value.trim() ? { value } : {}), note, scope });
     if (e) return setErr(e);
     onDone();
   };
   return (
     <div className="sc-form" onKeyDown={(e) => e.key === 'Escape' && onDone()}>
+      <div className="sc-scope">
+        <span>What it is</span>
+        <span className="sc-seg">
+          <button className={login ? '' : 'on'} onClick={() => (setErr(null), setKind('value'))}>Secret</button>
+          <button className={login ? 'on' : ''} onClick={() => (setErr(null), setKind('login'))}>Username + password</button>
+        </span>
+      </div>
       <label>
         <span>Name</span>
-        <input ref={was ? undefined : first} value={name} disabled={!!was} placeholder="GITHUB_PAT" spellCheck={false} onChange={(e) => (setErr(null), setName(e.target.value.toUpperCase().replace(/[^A-Z0-9_]/g, '_')))} />
+        <input ref={was ? undefined : first} value={name} disabled={!!was} placeholder={login ? 'SITE_LOGIN' : 'GITHUB_PAT'} spellCheck={false} onChange={(e) => (setErr(null), setName(e.target.value.toUpperCase().replace(/[^A-Z0-9_]/g, '_')))} />
       </label>
+      {login ? (
+        <label>
+          <span>Username</span>
+          <input value={user} placeholder="the account's username" spellCheck={false} autoComplete="off" onChange={(e) => (setErr(null), setUser(e.target.value))} />
+        </label>
+      ) : null}
       <label>
-        <span>{was ? 'New value' : 'Value'}</span>
-        <input ref={was ? first : undefined} type="password" value={value} placeholder={was ? 'Paste the new value' : 'Paste it here'} autoComplete="off" onChange={(e) => (setErr(null), setValue(e.target.value))} onKeyDown={(e) => e.key === 'Enter' && void save()} />
+        <span>{login ? (was?.kind === 'login' ? 'New password' : 'Password') : was ? 'New value' : 'Value'}</span>
+        <input ref={was ? first : undefined} type="password" value={value} placeholder={was ? (login && was.kind === 'login' ? 'Leave empty to keep it' : 'Paste the new value') : 'Paste it here'} autoComplete="new-password" onChange={(e) => (setErr(null), setValue(e.target.value))} onKeyDown={(e) => e.key === 'Enter' && void save()} />
       </label>
+      {name && !bad ? <div className="sc-uses">Commands get it as <code>{secretVars(name, kind)}</code></div> : null}
       <label>
         <span>What it's for</span>
         <input value={note} placeholder="a GitHub token for the CI bot (sessions see this)" onChange={(e) => setNote(e.target.value)} />
@@ -156,10 +175,12 @@ function SecretRow({ x }: { x: SecretInfo }) {
       <span className="sc-main">
         <span className="sc-l1">
           <code>{x.name}</code>
+          {x.kind === 'login' ? <span className="sc-chip quiet">username + password</span> : null}
           {x.expiresAt ? <span className={`sc-chip ${expired ? 'bad' : x.expiresAt - Date.now() < 3_600_000 ? 'warn' : ''}`}>{expired ? 'expired' : `expires in ${left(x.expiresAt)}`}</span> : null}
           <span className="sc-chip quiet">{'all' in x.scope ? 'all sessions' : x.scope.folders.map((f) => f.split(/[\\/]/).filter(Boolean).pop()).join(', ')}</span>
         </span>
         <span className="sc-l2">
+          {x.kind === 'login' && x.user ? <code className="sc-user" title="Its username ($NAME_USER)">{x.user}</code> : null}
           {shown != null ? <code className="sc-val">{shown}</code> : <span className="sc-dots">••••••••••••</span>}
           {x.note ? <span>{x.note}</span> : null}
           {x.lastUsed ? <span className="sc-used">used {ago(x.lastUsed.at)} ago by {x.lastUsed.session}</span> : <span className="sc-used">not used yet</span>}
@@ -174,10 +195,10 @@ function SecretRow({ x }: { x: SecretInfo }) {
           </>
         ) : (
           <>
-            <button title={shown != null ? 'Hide it' : 'Show it for a moment'} onClick={async () => setShown(shown != null ? null : await revealSecret(x.name))}>
+            <button title={shown != null ? 'Hide it' : x.kind === 'login' ? 'Show its password for a moment' : 'Show it for a moment'} onClick={async () => setShown(shown != null ? null : await revealSecret(x.name))}>
               <Icon name={shown != null ? 'EyeOff' : 'Eye'} size={13} />
             </button>
-            <button title="Copy it" onClick={() => void copy()}>
+            <button title={x.kind === 'login' ? 'Copy its password' : 'Copy it'} onClick={() => void copy()}>
               <Icon name={copied ? 'Check' : 'Copy'} size={13} />
             </button>
             <button title={expired ? 'Paste a fresh one' : 'Replace its value (or change its note and who may use it)'} className={expired ? 'hot' : ''} onClick={() => setEdit(true)}>

@@ -1,4 +1,4 @@
-import { FROM_CORA, JOURNAL_TAGS, parseSince, type JournalEntry, type JournalRefs, type JournalTag } from '@cora/shared';
+import { FROM_CORA, JOURNAL_TAGS, parseSince, secretVars, type JournalEntry, type JournalRefs, type JournalTag } from '@cora/shared';
 import type { Journal } from './journal';
 import type { CalendarApi } from './calendar';
 import { parseWhen } from './orchestrator/followUps';
@@ -540,14 +540,14 @@ function buildServer(settings: Settings, sessionId: string | null, s?: McpSlack,
       'secrets',
       {
         title: "The user's secrets you may use",
-        description: "Secrets the user keeps in Cora (tokens, keys) that you may use by name with secret_run: each one's name, what it's for, when it expires, and whether this session may use it. Never their values: you don't see those.",
+        description: "Secrets the user keeps in Cora (tokens, keys, usernames and passwords) that you may use by name with secret_run: each one's name (a command gets it as $NAME; a login as $NAME_USER and $NAME_PASS), what it's for, when it expires, and whether this session may use it. Never their values: you don't see those.",
         inputSchema: {},
       },
       async () => {
         const list = secrets.list(sessionId);
         if (!list.length) return { content: [{ type: 'text', text: 'The user keeps no secrets in Cora yet. If you need one, ask them to add it (Settings › Secrets) under a name, then use it with secret_run; never ask them to paste it here.' }] };
         const when = (t?: number | null) => (t ? (t < Date.now() ? ` · EXPIRED ${new Date(t).toLocaleString()}` : ` · expires ${new Date(t).toLocaleString()}`) : '');
-        return { content: [{ type: 'text', text: list.map((x) => `- ${x.name}${x.note ? `: ${x.note}` : ''}${when(x.expiresAt)}${x.mine ? (x.allowed ? '' : ' (the user OKs its first use here)') : ' (not shared with this folder)'}`).join('\n') }] };
+        return { content: [{ type: 'text', text: list.map((x) => `- ${x.name}${x.kind === 'login' ? ` (a username and password: ${secretVars(x.name, x.kind)})` : ''}${x.note ? `: ${x.note}` : ''}${when(x.expiresAt)}${x.mine ? (x.allowed ? '' : ' (the user OKs its first use here)') : ' (not shared with this folder)'}`).join('\n') }] };
       },
     );
     server.registerTool(
@@ -555,13 +555,13 @@ function buildServer(settings: Settings, sessionId: string | null, s?: McpSlack,
       {
         title: 'Run a command with secrets',
         description: [
-          "Run a shell command (bash) in your folder with some of the user's secrets in its environment, as $NAME (e.g. curl -H \"Authorization: Bearer $GITHUB_PAT\" …). You never see the values: any that appear in the output come back as ••••.",
+          "Run a shell command (bash) in your folder with some of the user's secrets in its environment, as $NAME (e.g. curl -H \"Authorization: Bearer $GITHUB_PAT\" …); a login (username and password) as $NAME_USER and $NAME_PASS (e.g. curl -u \"$SITE_LOGIN_USER:$SITE_LOGIN_PASS\" …). You never see the values: any that appear in the output come back as ••••.",
           "The first use of each secret in this session waits for the user's OK. Use it for commands that need a secret (API calls, CLIs, scripts); keep the rest in your own shell. Don't try to print or save a secret's value: it's masked, and it's the user's.",
           'Default timeout 60 s (up to 300). Output is capped at 30 KB.',
         ].join(' '),
         inputSchema: {
           command: z.string().min(1).max(20_000).describe('The bash command, using the secrets as $NAME'),
-          secrets: z.array(z.string().min(2).max(64)).min(1).max(10).describe('The secrets it needs, by name'),
+          secrets: z.array(z.string().min(2).max(64)).min(1).max(10).describe('The secrets it needs, by name (a login by its name, not $NAME_USER)'),
           timeoutSec: z.number().int().min(5).max(300).optional(),
         },
       },

@@ -10,7 +10,9 @@ export type EventKind =
   | 'prompt' | 'say' | 'think' | 'tool' | 'spawn' | 'report' | 'permission' | 'question'
   | 'elicitation' | 'compact' | 'turn_end' | 'session_start' | 'session_end' | 'interrupt'
   /** a background command finished (Claude Code's task-notification) */
-  | 'task';
+  | 'task'
+  /** a `/` command you ran that Claude Code answers itself (/mcp, /context, /cost…): `command`, and what it said in `text` */
+  | 'command';
 
 export type ToolInfo = {
   name: string;
@@ -54,6 +56,8 @@ export type BrainEvent = {
   /** kind 'prompt': you sent it while Claude was working, and it got it mid-turn (at this event's time) */
   midTurn?: boolean;
   durationMs?: number;
+  /** kind 'command': the command as you ran it (`/mcp`, `/model opus`) */
+  command?: string;
   /** kind 'task': how a background command ended */
   task?: { id: string; status: string; exit?: number; outputFile?: string };
   source: 'hook' | 'transcript';
@@ -76,6 +80,8 @@ export type SessionInfo = {
   cliVersion: string;
   transcriptPath: string;
   needsYou: number;
+  /** Claude Code is compacting its context now (its PreCompact hook came; the compact boundary ends it): since when, and whether it chose to (auto) or you asked (/compact) */
+  compacting?: { since: number; trigger: string } | null;
   model?: string;
   unknownLines?: number;
   totalLines?: number;
@@ -292,6 +298,11 @@ export const HOME_PARTITION = 'persist:web';
 export const partitionOf = (id: string) => `persist:web-${id.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
 export const isWebPartition = (p: string) => p === HOME_PARTITION || /^persist:web-[a-z0-9-]{1,40}$/.test(p);
 
+/** Where a session's Playwright browses: Cora's browser, in a profile of its own or the session's, or its own browser. */
+export type AgentBrowserMode = 'agent' | 'session' | 'off';
+/** The profile a session's Playwright signs in as (its own: nothing of yours until you sign it in). */
+export const AGENT_PROFILE = 'agent';
+
 export type Settings = {
   explains: { mode: ExplainMode; frequency: ExplainFrequency; reply: ExplainReply };
   retentionDays: number;
@@ -329,7 +340,7 @@ export type Settings = {
    * in, each with its own sign-ins (Cora's Browser switches between them); none: one profile with all of them.
    * `sessions`: the profile sessions' browsers use.
    */
-  browser: { chrome: boolean; profiles?: BrowserProfile[]; sessions?: string; /** the profile signed in to your Gmail: Gmail links (drafts) open signed in as it */ mail?: string; /** a session changed something on the web (a Jira comment, a merge request): load it in its browser in the background (`tab`, the default), and show it too (`show`), or neither (`off`) */ webChanges?: 'tab' | 'show' | 'off' };
+  browser: { chrome: boolean; profiles?: BrowserProfile[]; sessions?: string; /** the profile signed in to your Gmail: Gmail links (drafts) open signed in as it */ mail?: string; /** a session changed something on the web (a Jira comment, a merge request): load it in its browser in the background (`tab`, the default), and show it too (`show`), or neither (`off`) */ webChanges?: 'tab' | 'show' | 'off'; /** a session's Playwright (when you use Playwright's MCP server) drives tabs of Cora's browser: signed in as a profile of its own (`agent`, the default), as the session's browser is (`session`), or not at all: its own browser, as before (`off`) */ playwright?: AgentBrowserMode };
   /** 1Password in Cora's browser: fill logins, one-time codes, in Tools too */
   onepassword: import('./onepassword').OnePasswordSettings;
   /** setting Cora up: the features you skipped, and whether the first run was seen */
@@ -421,6 +432,8 @@ export type TerminalInfo = {
   broughtBack?: { project: string; resumed: number };
   /** a shell the Board's Terminal panel opened (it lives there, not among the session's terminal tabs) */
   place?: 'board';
+  /** Claude Code is asking whether to trust its folder (before it starts: nothing happens until it's answered) */
+  asksTrust?: true;
 };
 
 export type HistoryItem = {

@@ -14,6 +14,8 @@ export type ParseCtx = {
   cwd?: string;
   /** full model id from the "model" attachment, e.g. "claude-opus-5-5[1m]" (assistant lines omit the suffix) */
   modelId?: string;
+  /** a `/` command Claude Code answers itself, waiting for its output line (the line before it names it) */
+  command?: string;
 };
 
 export type LinkMeta = { toolUseId: string; childAgentId: string; prompt?: string; description?: string };
@@ -170,7 +172,18 @@ export function parseLine(obj: any, ctx: ParseCtx): ParseResult {
   if (type === 'system') {
     if (obj.subtype === 'compact_boundary') events.push({ ...base, id: obj.uuid, kind: 'compact', icon: EVENT_ICON.compact });
     else if (obj.subtype === 'turn_duration') events.push({ ...base, id: obj.uuid, kind: 'turn_end', icon: EVENT_ICON.turn_end, durationMs: obj.durationMs });
-    else if (obj.subtype === 'away_summary' && typeof obj.content === 'string' && recapText(obj.content)) meta.recap = { id: String(obj.uuid ?? `${sessionId}:${ts}`), text: recapText(obj.content), at: ts };
+    else if (obj.subtype === 'local_command' && typeof obj.content === 'string') {
+      // a `/` command Claude Code answers itself (/mcp, /context…): one line names it, the next is what it said
+      const name = tag(obj.content, 'command-name');
+      const out = /<local-command-std(?:out|err)>([\s\S]*?)(?:<\/local-command-std(?:out|err)>|$)/.exec(obj.content);
+      if (name) ctx.command = `${name.startsWith('/') ? name : `/${name}`} ${tag(obj.content, 'command-args') ?? ''}`.trim();
+      else if (out) {
+        const run = obj.commandRun?.command ? `/${obj.commandRun.command} ${obj.commandRun.args ?? ''}`.trim() : ctx.command;
+        const said = out[1].replace(/\u001b\[[0-9;?]*[A-Za-z]/g, '').trim();
+        if (run) events.push({ ...base, id: obj.uuid, kind: 'command', icon: EVENT_ICON.command, command: run, ...(said ? { text: said.slice(0, 4000) } : {}) });
+        ctx.command = undefined;
+      }
+    } else if (obj.subtype === 'away_summary' && typeof obj.content === 'string' && recapText(obj.content)) meta.recap = { id: String(obj.uuid ?? `${sessionId}:${ts}`), text: recapText(obj.content), at: ts };
     return { events, meta };
   }
 

@@ -29,7 +29,57 @@ type Webview = HTMLElement & {
   canGoForward(): boolean;
   reload(): void;
   stop(): void;
+  executeJavaScript(code: string): Promise<unknown>;
 };
+
+/**
+ * In a Tool's page, once it's loaded: remember the last field you typed in (an input, a text box, a rich editor), so
+ * opening the Tool again puts you back there.
+ */
+const TRACK_FIELD = `(() => {
+  if (window.__coraField) return;
+  window.__coraField = true;
+  document.addEventListener('focusin', (e) => {
+    const t = e.target;
+    if (t && (t.isContentEditable || t.tagName === 'TEXTAREA' || (t.tagName === 'INPUT' && !/^(button|checkbox|radio|submit|reset|file|range|color|hidden)$/i.test(t.type)))) window.__coraLastField = t;
+  }, true);
+})()`;
+
+/**
+ * Opening a Tool: the cursor goes where you'd type. Already in a field: left there. Else the field you last typed in
+ * (still on the page and visible), else the message box of a chat app Cora knows (Slack, Teams, Discord, Google
+ * Chat). Nothing else is guessed at: a dashboard's first text box isn't where you meant to type.
+ */
+const FOCUS_FIELD = `(() => {
+  const ok = (el) => !!el && el.isConnected && el.getClientRects().length > 0 && !el.disabled && !el.readOnly;
+  const typing = (el) => !!el && (el.isContentEditable || el.tagName === 'TEXTAREA' || el.tagName === 'INPUT');
+  const a = document.activeElement;
+  if (typing(a) && ok(a)) return 'kept';
+  const caret = (el) => {
+    el.focus();
+    if (el.isContentEditable) {
+      const r = document.createRange();
+      r.selectNodeContents(el);
+      r.collapse(false);
+      const s = window.getSelection();
+      s.removeAllRanges();
+      s.addRange(r);
+    }
+  };
+  if (ok(window.__coraLastField)) return caret(window.__coraLastField), 'last';
+  const chat = [
+    '[data-qa="message_input"] [contenteditable="true"]',
+    '.p-message_input [contenteditable="true"]',
+    '[data-tid="ckeditor"][contenteditable="true"]',
+    '[role="textbox"][data-slate-editor="true"]',
+    'div[contenteditable="true"][aria-label^="Message"]',
+  ];
+  for (const sel of chat) {
+    const el = [...document.querySelectorAll(sel)].find(ok);
+    if (el) return caret(el), 'chat';
+  }
+  return 'none';
+})()`;
 
 /** Which tool a page belongs to, by its web contents id (its new-tab links and shortcuts come through the app). */
 export const toolOfPage = new Map<number, string>();
@@ -447,6 +497,8 @@ function ToolPage({ t, visible }: { t: ToolDef; visible: boolean }) {
   const el = useRef<Webview>(null);
   const first = useRef(t.url);
   const ready = useRef(false);
+  // opened before its page had loaded: the cursor goes in once it has
+  const focusOnLoad = useRef(false);
   const go = useTools((s) => s.go[t.id]);
   // 0, not the ask it was opened with: a tool first opened at a page (an Inbox link) starts there, not at its home
   const seen = useRef(0);
@@ -469,6 +521,16 @@ function ToolPage({ t, visible }: { t: ToolDef; visible: boolean }) {
           ready.current = true;
           wcId = w.getWebContentsId();
           toolOfPage.set(wcId, t.id);
+          void w.executeJavaScript(TRACK_FIELD).catch(() => {});
+        },
+      ],
+      // opened before its page had loaded: the cursor goes in once it has
+      [
+        'did-stop-loading',
+        () => {
+          if (!focusOnLoad.current) return;
+          focusOnLoad.current = false;
+          setTimeout(() => focusField(w), 300);
         },
       ],
       ['page-title-updated', (e) => setUnread(t.id, unreadOf(e.title))],
@@ -490,6 +552,16 @@ function ToolPage({ t, visible }: { t: ToolDef; visible: boolean }) {
     };
   }, [t.id]);
 
+  // opened: the cursor goes in its page, where you'd type (once it has loaded)
+  useEffect(() => {
+    const w = el.current;
+    if (!visible || !w) return;
+    if (!ready.current) return void (focusOnLoad.current = true);
+    // (after the drawer has drawn it: a hidden webview can't take the keyboard)
+    const id = setTimeout(() => focusField(w), 60);
+    return () => clearTimeout(id);
+  }, [visible]);
+
   // asked to show a page (Slack at a conversation, say)
   useEffect(() => {
     if (!go || go.n === seen.current) return;
@@ -499,6 +571,13 @@ function ToolPage({ t, visible }: { t: ToolDef; visible: boolean }) {
   }, [go?.n]);
 
   return <webview ref={el as never} className={visible ? '' : 'off'} src={first.current} partition={WEB_PARTITION} {...({ allowpopups: 'true' } as object)} />;
+}
+
+/** The keyboard into a Tool's page, and its cursor where you'd type (FOCUS_FIELD). */
+function focusField(w: Webview): void {
+  if (w.classList.contains('off')) return;
+  w.focus();
+  void w.executeJavaScript(FOCUS_FIELD).catch(() => {});
 }
 
 /** Ctrl+F in a Tool's page (or in the drawer): find in that page. */

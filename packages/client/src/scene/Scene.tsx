@@ -367,6 +367,20 @@ export function Scene({ sessionId }: { sessionId: string }) {
   );
   useEffect(() => () => void (document.body.style.cursor = ''), []);
 
+  // compacting its context now (until its boundary comes): main squeezes and springs back, again and again, in Cora's
+  // colour (nothing else happens meanwhile, so it runs on a clock of its own)
+  const compacting = useBrain((s) => !!s.sessions[sessionId]?.compacting);
+  useEffect(() => {
+    if (!compacting || cursor) return;
+    const pulse = () => {
+      orbApi.get('main')?.squash();
+      fx.current?.ripple(mainPos, '#2dd4bf', 1.1, 2.6, 900);
+    };
+    pulse();
+    const id = setInterval(pulse, 1800);
+    return () => clearInterval(id);
+  }, [compacting, cursor, mainPos, orbApi]);
+
   // Fire one-shot effects for events first seen while they are still fresh. Everything is marked seen, so a
   // session opened later does not replay its history.
   useEffect(() => {

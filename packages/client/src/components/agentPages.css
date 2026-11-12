@@ -1,0 +1,12 @@
+/* A session's Playwright tab: its page, laid over its spot in the session's browser (else out of sight, still at work) */
+.agent-page { position: fixed; z-index: -2; left: 0; top: 0; width: 1280px; height: 800px; pointer-events: none; }
+.agent-page.on { z-index: 21; }
+/* over the parked ones, under the app: they're drawn (screenshots work), never seen */
+.agent-cover { position: fixed; inset: 0; z-index: -1; background: var(--bg); pointer-events: none; }
+.agent-page.on { pointer-events: auto; }
+.agent-page webview { position: absolute; inset: 0; width: 100%; height: 100%; background: #fff; }
+body.ui-dragging .agent-page webview { pointer-events: none; }
+/* its spot in the session's browser (the page covers it once laid over) */
+.agent-slot { position: absolute; inset: 0; background: #fff; }
+/* "Playwright drives this tab" on its tab */
+.web-tab .wt-agent { display: inline-grid; place-items: center; flex: none; color: var(--cora, #2dd4bf); }

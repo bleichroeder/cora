@@ -98,15 +98,16 @@ export async function sendToSession(sid: string, text: string, force = false): P
 
 /**
  * Stop what the session is doing, from the composer: Esc or Ctrl+C typed into its terminal. Only while it's working
- * (the server checks); `sent: false` with why when there's nothing to stop.
+ * or just after a prompt went (the server checks); `sent: false` with why when there's nothing to stop. `recall` (Esc
+ * just after sending): take that prompt back; `recalled` when it was (Claude Code put it back and it was cleared there).
  */
-export async function interruptSession(sid: string, key: 'esc' | 'ctrl-c'): Promise<{ sent: boolean; why: string }> {
+export async function interruptSession(sid: string, key: 'esc' | 'ctrl-c', recall = false): Promise<{ sent: boolean; why: string; recalled?: boolean }> {
   const t = liveTerminal(sid);
   if (!t) return { sent: false, why: "This session isn't running here" };
   try {
-    const r = await fetch(`/api/terminals/${encodeURIComponent(t.terminalId)}/interrupt`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ key }) });
+    const r = await fetch(`/api/terminals/${encodeURIComponent(t.terminalId)}/interrupt`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ key, ...(recall ? { recall: true } : {}) }) });
     const j = await r.json().catch(() => ({}));
-    return r.ok ? { sent: !!j.sent, why: j.why ?? '' } : { sent: false, why: j.error ?? `failed (${r.status})` };
+    return r.ok ? { sent: !!j.sent, why: j.why ?? '', ...(j.recalled ? { recalled: true } : {}) } : { sent: false, why: j.error ?? `failed (${r.status})` };
   } catch (e) {
     return { sent: false, why: (e as Error).message };
   }

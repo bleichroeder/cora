@@ -16,6 +16,8 @@ type ShellUi = {
   peek: Record<string, true>;
   /** sessions whose Claude Code is showing a choice (a permission prompt, a question, a picker) */
   asking: Record<string, true>;
+  /** sessions where a `/` command sent from the composer opened a screen of Claude Code's (/mcp, /config…): its name */
+  dialog: Record<string, string>;
   /** the shells a tab can be (PowerShell, Command Prompt, Git Bash, WSL distros), once asked for */
   kinds: ShellProfile[] | null;
   show(sessionId: string, tab: string): void;
@@ -24,6 +26,7 @@ type ShellUi = {
   markUnread(terminalId: string): void;
   setPeek(sessionId: string, on: boolean): void;
   setAsking(sessionId: string, on: boolean): void;
+  setDialog(sessionId: string, command: string | null): void;
 };
 
 const flag = (m: Record<string, true>, k: string, on: boolean): Record<string, true> | null => {
@@ -61,6 +64,7 @@ export const useShells = create<ShellUi>((set, get) => ({
   unread: {},
   peek: {},
   asking: {},
+  dialog: {},
   show: (sessionId, tab) => {
     const { [tab]: _seen, ...unread } = get().unread;
     set({ active: { ...get().active, [sessionId]: tab }, unread });
@@ -85,7 +89,25 @@ export const useShells = create<ShellUi>((set, get) => ({
     const asking = flag(get().asking, sessionId, on);
     if (asking) set({ asking });
   },
+  setDialog: (sessionId, command) => {
+    if ((get().dialog[sessionId] ?? null) === command) return;
+    const { [sessionId]: _was, ...rest } = get().dialog;
+    set({ dialog: command ? { ...rest, [sessionId]: command } : rest });
+  },
 }));
+
+/** How long after a `/` command is sent its screen may take to open (after that, it was one that opens none). */
+export const COMMAND_WATCH_MS = 5_000;
+/** Sessions a `/` command was just sent to from the composer, until when its screen may open (its terminal watches). */
+export const commandWatch = new Map<string, { command: string; until: number }>();
+/**
+ * A `/` command went from the composer: if it opens a screen of Claude Code's (/mcp, /config, /permissions…), the
+ * hidden terminal shows itself in full until it closes. Commands that only do something (/clear, a skill) open none.
+ */
+export function watchCommand(sessionId: string, prompt: string): void {
+  const m = /^\/([\w.:-]+)/.exec(prompt.trim());
+  if (m) commandWatch.set(sessionId, { command: m[1], until: Date.now() + COMMAND_WATCH_MS });
+}
 
 /** Each mounted shell's "is something running?" guess (from the line at its cursor), for closing it. */
 export const shellBusy = new Map<string, () => boolean>();
@@ -152,15 +174,18 @@ export function useTermView(sessionId: string) {
   const compactPref = useBrain((s) => s.prefs.compactTerminal);
   const peek = useShells((s) => !!s.peek[sessionId]);
   const asking = useShells((s) => !!s.asking[sessionId]);
+  const dialog = useShells((s) => !!s.dialog[sessionId]);
   const composer = hosted && mode === 'composer';
   return {
     composer,
     onShell,
     peek: composer && peek,
     asking,
+    /** a `/` command's screen is open (it shows in full) */
+    dialog: composer && dialog,
     /** Claude's terminal is on show when its tab is */
-    claudeShown: !composer || peek || asking,
+    claudeShown: !composer || peek || asking || dialog,
     /** ...as just its input area */
-    claudeCompact: composer ? !peek : compactPref,
+    claudeCompact: composer ? !(peek || dialog) : compactPref,
   };
 }

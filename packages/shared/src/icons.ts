@@ -60,6 +60,7 @@ export const EVENT_ICON = {
   session_end: ic('Square', 'mind'),
   interrupt: ic('OctagonX', 'mind'),
   task: ic('Timer', 'run'),
+  command: ic('SquareSlash', 'human'),
 } satisfies Record<string, IconRef>;
 
 export const EVENT_LABEL: Record<keyof typeof EVENT_ICON, string> = {
@@ -78,6 +79,7 @@ export const EVENT_LABEL: Record<keyof typeof EVENT_ICON, string> = {
   session_end: 'session ended',
   interrupt: 'interrupted',
   task: 'background task finished',
+  command: 'command you ran',
 };
 
 const SUB_ICONS: Array<[RegExp, string]> = [

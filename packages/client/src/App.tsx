@@ -2,6 +2,7 @@ import { startWake } from './lib/wake/controller';
 import { VideoPlayer } from './components/Videos';
 import { VideoMaker } from './components/VideoMaker';
 import { RemoteBrowserView } from './components/RemoteBrowser';
+import { AgentPages, noteOpener } from './components/AgentPages';
 import { useTablet, useTabletUi, useViewport, tabletScene } from './lib/tablet';
 import { TabletDrawer, TabletRail, TabletTabs } from './components/Tablet';
 import { ProjectSuggest } from './components/Projects';
@@ -588,7 +589,9 @@ export function App() {
         else if (key === 'f') openToolFind();
         return;
       }
-      if (url) w.newTab(t.sessionId, url, { after: t.id, background });
+      // a Playwright tab's page opening one: Playwright's too (signed in as it), so Playwright sees it
+      if (url && t.agent) noteOpener(w.openAgent(t.sessionId, url, { after: t.id, background, profile: t.profile }), t.id);
+      else if (url) w.newTab(t.sessionId, url, { after: t.id, background });
       else if (key === 't') w.newTab(t.sessionId);
       else if (key === 'w') w.closeTab(t.id);
       else if (key === 'next' || key === 'prev') w.cycle(t.sessionId, key === 'next' ? 1 : -1);
@@ -714,6 +717,8 @@ export function App() {
           ) : !ready ? null : (
             <EmptyMain />
           )}
+          {/* the sessions' Playwright tabs: their pages, kept at work whatever's on show */}
+          {guest || tablet ? null : <AgentPages />}
           {guest ? null : <ToolDrawer />}
           {guest ? null : <IdeHost />}
           {guest ? null : <SlackOutbox />}

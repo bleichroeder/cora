@@ -4,6 +4,8 @@ import { BOARD_TOOL, DEBRIEF_TOOL, DEFAULT_WORKTREES, SECRETS_TOOLS, DEFAULT_DEB
 import type { Config } from './config';
 import { attachmentsDir } from './attachments';
 import { writeFileAtomic } from './fsx';
+import { cdpEndpoint } from './cdpBridge';
+import { PLAYWRIGHT, findPlaywright, playwrightInCora } from './agentPlaywright';
 
 const WHEN: Record<Settings['explains']['frequency'], string> = {
   sparingly:
@@ -73,7 +75,7 @@ export function debriefNudge(d: DebriefSettings = DEFAULT_DEBRIEF): string {
 
 /** Worktrees: Cora moves a session into one of its own when it would edit a checkout another session is changing. */
 const SECRETS_NUDGE =
-  "The user keeps secrets (tokens, keys) in Cora: when a command needs one, use it by name with the `secret_run` tool (the `secrets` tool lists them); you never see the values. Never ask the user to paste a secret into this conversation; if one you need isn't there, ask them to add it in Cora (Settings › Secrets).";
+  "The user keeps secrets (tokens, keys, usernames and passwords) in Cora: when a command needs one, use it by name with the `secret_run` tool (the `secrets` tool lists them); you never see the values. Never ask the user to paste a secret into this conversation; if one you need isn't there, ask them to add it in Cora (Settings › Secrets).";
 
 const WORKTREE_NUDGE =
   "Cora keeps sessions working in the same repo out of each other's way: when it tells you to move into a worktree (a refused edit says so, with its path), call EnterWorktree with that path, then make the change there (the same file under the new folder) and carry on working there. Investigating (reading) never needs one.";
@@ -139,7 +141,7 @@ const MCP_KEEP_MS = 30 * 86400_000;
 /** A team's seat: its agent (`cora-team-<project>:<seat>`), its team's plugin folder, its prompt and settings files, its permission mode and name. */
 export type SeatLaunch = { agent: string; pluginDir: string; prompt: string; settings: string; permissionMode?: string; name: string };
 
-export function hostedArgs(config: Config, settings: Settings, sessionId?: string, native?: { pluginDir: string; name: string }, seat?: SeatLaunch): string[] {
+export function hostedArgs(config: Config, settings: Settings, sessionId?: string, native?: { pluginDir: string; name: string }, seat?: SeatLaunch, cwd?: string, findPw: typeof findPlaywright = findPlaywright): string[] {
   const dir = join(config.dataDir, 'hosted-mcp');
   mkdirSync(dir, { recursive: true });
   pruneOld(dir);
@@ -147,11 +149,14 @@ export function hostedArgs(config: Config, settings: Settings, sessionId?: strin
   const promptPath = join(config.dataDir, 'hosted-prompt.md');
   // alwaysLoad: MCP tools are otherwise deferred behind ToolSearch, and models rarely go looking for them.
   const headers = { [TOKEN_HEADER]: config.hookToken, ...(sessionId ? { [SESSION_HEADER]: sessionId } : {}) };
-  const mcp = { mcpServers: { [MCP_SERVER]: { type: 'http', url: `http://127.0.0.1:${config.port}/mcp`, headers, alwaysLoad: true } } };
+  const mcp: { mcpServers: Record<string, unknown> } = { mcpServers: { [MCP_SERVER]: { type: 'http', url: `http://127.0.0.1:${config.port}/mcp`, headers, alwaysLoad: true } } };
+  // you use Playwright: the session's drives Cora's browser (its own tabs there) instead of a browser of its own
+  const pw = sessionId && /^[\w-]{8,80}$/.test(sessionId) && (settings.browser?.playwright ?? 'agent') !== 'off' ? findPw(cwd) : null;
+  if (pw) mcp.mcpServers[PLAYWRIGHT] = playwrightInCora(pw, cdpEndpoint(config.port, config.hookToken, sessionId!));
   writeFileAtomic(mcpPath, JSON.stringify(mcp, null, 2), { mode: 0o600 });
   writeFileAtomic(promptPath, `${nudgeFor(settings.explains, settings.voice, settings.memes?.mode ?? 'off', settings.board?.pages ?? 'show', settings.journal?.on !== false, { ...DEFAULT_DEBRIEF, ...settings.debrief })}
 
-${OTHERS}${settings.orchestrator?.enabled ? `\n\n${CORA_NUDGE}` : ''}`);
+${OTHERS}${settings.orchestrator?.enabled ? `\n\n${CORA_NUDGE}` : ''}${(settings.browser?.playwright ?? 'agent') !== 'off' ? `\n\n${PLAYWRIGHT_NUDGE}` : ''}`);
   // opening a tab is harmless; so are the Slack tools (looking up and reading; a message is only sent once you
   // confirm it in Cora); speaking only when voice reads summaries (explains are written in the reply)
   // live explains (with HTML explains on): the tool, and editing in their folder (only there in Cora's folder) with no prompt
@@ -189,6 +194,9 @@ ${readFileSync(seat.prompt, 'utf8')}`);
   const seatAllowed = [allowed, ...SEAT_MESSAGING_TOOLS].join(',');
   return ['--ide', '--settings', seatSettings, '--agent', seat.agent, ...(seat.permissionMode && seat.permissionMode !== 'default' ? ['--permission-mode', seat.permissionMode] : []), ...own, '--plugin-dir', seat.pluginDir, '--add-dir', attachments, ...(live ? [explains] : []), '--mcp-config', mcpPath, '--allowedTools', seatAllowed, '--append-system-prompt-file', seatPrompt];
 }
+
+/** A session's Playwright drives tabs of Cora's browser (agentPlaywright.ts): what that means for it. */
+export const PLAYWRIGHT_NUDGE = `Playwright's browser tools (when you have them) drive tabs of Cora's own browser, in this session's browser the user may be watching and can use too. They share a browser profile's logins, so there's no isolated or incognito mode; never type a password into one (the user signs it in). Close the tabs you opened when you're done with them.`;
 
 /** With Cora's agent on: what her messages look like, and how a session talks to her. */
 export const CORA_NUDGE = `Cora (the user's assistant in Cora: she sees all their sessions, tickets, Slack and mail) sometimes writes to you: her messages start with "${FROM_CORA}". She acts for the user: do what she asks as you would for them. When she asks something, answer in your reply (she reads it); if she asked you to report back later, use \`tell_cora\` (reason reply_to_cora). When the user asks you to tell or ask Cora something, use \`tell_cora\` (reason user_asked). Never message her on your own.`;

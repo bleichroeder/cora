@@ -42,3 +42,33 @@ export function highlightedOption(lines: string[]): string | null {
   }
   return null;
 }
+
+/** The most lines an input box (a draft of several lines) spans between its two rules. */
+const BOX_MAX = 12;
+
+/**
+ * Claude Code's input box, if it's on screen: a line starting with ❯ or > right under a full-width rule, with the box's
+ * closing rule a few lines below. Any such box counts, not only the one under the second-to-last rule (a band of its
+ * own below the box, another pair of rules, once hid it). Rows are screen rows (top = the first rule's).
+ */
+export function inputBox(lines: string[]): { top: number; bottom: number } | null {
+  const rules: number[] = [];
+  lines.forEach((l, i) => RULE.test(l.trim()) && rules.push(i));
+  for (let k = 0; k + 1 < rules.length; k++) {
+    const [top, bottom] = [rules[k], rules[k + 1]];
+    if (bottom - top >= 2 && bottom - top <= BOX_MAX + 1 && /^\s*[❯>]/u.test(lines[top + 1] ?? '')) return { top, bottom };
+  }
+  return null;
+}
+
+/**
+ * What's written in Claude Code's input box (its draft), or null when no box is on screen: the box's lines without the
+ * prompt mark and the indent that continues it, one row a line (a draft wider than the screen wraps onto rows of its
+ * own, so compare it with its spacing ignored); empty is ''.
+ */
+export function inputBoxText(lines: string[]): string | null {
+  const box = inputBox(lines);
+  if (!box) return null;
+  const rows = lines.slice(box.top + 1, box.bottom).map((l, i) => (i === 0 ? l.replace(/^\s*[❯>]\s?/u, '') : l.replace(/^\s{0,2}/, '')).trimEnd());
+  return rows.join('\n').trim();
+}

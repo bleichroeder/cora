@@ -206,7 +206,7 @@ export async function startServer(config: Config, opts: { tail?: boolean; listen
     audit,
     spawn: opts.spawn,
     backend: opts.ptyBackend,
-    extraArgs: (sid, cwd, seat) => hostedArgs(config, prefs.get(), sid, pluginDir && sid ? { pluginDir, name: nativeName(cwd, sid) } : undefined, seat),
+    extraArgs: (sid, cwd, seat) => hostedArgs(config, prefs.get(), sid, pluginDir && sid ? { pluginDir, name: nativeName(cwd, sid) } : undefined, seat, cwd),
     onChange: (list) => {
       hub?.publishTerminals(list);
       orch?.changed();

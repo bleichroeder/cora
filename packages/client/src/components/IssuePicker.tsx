@@ -133,6 +133,13 @@ function PastedIssue({ i }: { i: { project: string; iid: number } }) {
 export function IssueChip({ s, header = false }: { s: Pick<SessionInfo, 'id' | 'issue'>; header?: boolean }) {
   const i = s.issue;
   if (!i) return null;
+  // the session list: just its number (a click there opens the session, not the browser)
+  if (!header)
+    return (
+      <span className="gl-chip" title={`${issueRef(i)}${i.title ? `: ${i.title}` : ''}`}>
+        #{i.iid}
+      </span>
+    );
   return (
     <span
       role="link"

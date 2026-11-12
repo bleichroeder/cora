@@ -2,6 +2,33 @@
 
 What changed in each release. Cora updates itself; each update's notes are on its release page too.
 
+## 0.1.25
+
+- **A session's Playwright works in Cora's browser.** When you use Playwright's MCP server, the sessions Cora hosts
+  drive tabs of Cora's own browser instead of opening a browser of their own. They're your server, as you set it up,
+  pointed at Cora: same tools, so your permissions still fit. Its tabs show in the session's browser with a bot on
+  them, and you can watch or step in. They keep working while you look at another session or the overview. Playwright
+  sees only that session's own tabs, never yours, another session's or Cora's window. They sign in as a profile of
+  their own by default; Settings › Cora's browser can make them use the session's browser's logins instead, or give
+  Playwright its own browser as before. Playwright's isolated mode isn't available there.
+- **`/` commands that open a screen of Claude Code's work from the composer.** `/mcp`, `/config`, `/permissions` and
+  the like bring the session's terminal up in full, with the keys, and the keyboard comes back to the composer when
+  the screen closes. The Claude tab hides it again whenever you like. The `/` menu says what Enter does (run, or add
+  arguments), and a command Claude Code answers itself (`/context`, `/cost`) shows in the transcript with what it said.
+- **Esc right after sending takes the prompt back.** Within a few seconds of sending, Esc stops it and puts it back in
+  the composer, attachments too, to change or send again. The transcript marks it cancelled. Before, the prompt went
+  back into the hidden terminal's input, and your next one was added on to it.
+- **A new session's "trust this folder?" is asked in Cora.** A card in the composer (Trust this folder, or Don't
+  start), and "trust folder?" on its row. Before, it waited unseen in the hidden terminal until the session timed out.
+- **Compacting shows while it happens.** A row under the transcript with how long it's taken, "compacting" on the
+  session's row, and its orb pulsing in the scene.
+- **Secrets can be a username and password.** Add one as Username + password and a command gets `$NAME_USER` and
+  `$NAME_PASS`, both hidden in what it prints. Secrets you already have stay as they are.
+- **Opening a Tool puts the cursor where you'd type**: the field you last used there, else a chat app's message box
+  (Slack, Teams, Discord, Google Chat).
+- **A ticket's key on a session's row is a label.** Clicking it opens the session, not the browser.
+- Electron 44.11.1.
+
 ## 0.1.24
 
 - **Library: everything your sessions made, in one place.** Tools › Cora › Library gathers explains, debriefs and

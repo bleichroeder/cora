@@ -277,3 +277,19 @@ describe('what goes with a session when it really ends', () => {
     expect(ended).toEqual(['s1', 's1']);
   });
 });
+
+describe('compacting (PreCompact until the compact boundary)', () => {
+  it('is cleared by the compact boundary, or after a quarter of an hour without one', () => {
+    const { store, reg } = setup();
+    reg.ingest(E({ id: 'p1', kind: 'prompt', text: 'go', ts: 1000 }));
+    reg.updateSessionMeta('s1', { compacting: { since: 1500, trigger: 'auto' } });
+    expect(store.getSession('s1')?.compacting).toEqual({ since: 1500, trigger: 'auto' });
+    reg.ingest(E({ id: 'c1', kind: 'compact', ts: 9000 }));
+    expect(store.getSession('s1')?.compacting).toBeNull();
+    reg.updateSessionMeta('s1', { compacting: { since: 10_000, trigger: 'manual' } });
+    reg.tick(10_000 + 14 * 60_000);
+    expect(store.getSession('s1')?.compacting).toMatchObject({ trigger: 'manual' });
+    reg.tick(10_000 + 16 * 60_000);
+    expect(store.getSession('s1')?.compacting).toBeNull();
+  });
+});

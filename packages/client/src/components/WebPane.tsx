@@ -9,6 +9,7 @@ import { hostOf, openOpMenu, useOp } from '../state/onepassword';
 import './onepassword.css';
 import type { WebTab } from '../lib/webTabs';
 import { desktop } from '../lib/desktop';
+import { useAgentPages } from '../state/agentPages';
 import { addRecent, loadRecent, saveRecent, toUrl, type Recent } from '../lib/web';
 import { Icon } from './Icon';
 import { FindBar } from './FindBar';
@@ -46,7 +47,7 @@ export const WEB_PARTITION = 'persist:web';
 export const tabOfPage = new Map<number, string>();
 const pages = new Map<string, Webview>();
 
-type TabState = { loading?: boolean; back?: boolean; fwd?: boolean; err?: string | null; icon?: string };
+export type TabState = { loading?: boolean; back?: boolean; fwd?: boolean; err?: string | null; icon?: string };
 
 /**
  * Ask a browser to open its find bar (Ctrl+F pressed inside a page reaches the app as an event). `group`: whose tabs
@@ -73,7 +74,8 @@ const host = (u: string) => {
 };
 
 /** One tab's page. Its element is created once and never moved (moving a webview reloads it); hidden, not removed. */
-function Page({ tab, visible, onState, onVisit }: { tab: WebTab; visible: boolean; onState(id: string, s: TabState): void; onVisit(r: Recent): void }) {
+/** `onReady`: its page is up (its web contents id): a Playwright tab tells the desktop app it can be driven. */
+export function Page({ tab, visible, onState, onVisit, onReady }: { tab: WebTab; visible: boolean; onState(id: string, s: TabState): void; onVisit(r: Recent): void; onReady?(wcId: number): void }) {
   const el = useRef<Webview>(null);
   const first = useRef(tab.url); // src is set once; later navigation goes through loadURL
   // its profile's sign-ins, fixed when it's made (a webview can't change them)
@@ -100,6 +102,7 @@ function Page({ tab, visible, onState, onVisit }: { tab: WebTab; visible: boolea
           ready.current = true;
           wcId = w.getWebContentsId();
           tabOfPage.set(wcId, tab.id);
+          onReady?.(wcId);
         },
       ],
       ['did-navigate', sync],
@@ -136,7 +139,8 @@ function Page({ tab, visible, onState, onVisit }: { tab: WebTab; visible: boolea
     else void w.loadURL(tab.url).catch(() => {});
   }, [tab.nav]);
 
-  return <webview ref={el as never} className={visible ? '' : 'off'} src={first.current} partition={partition.current} {...({ allowpopups: 'true' } as object)} />;
+  // a Playwright tab keeps working out of sight (no throttled timers or frames: screenshots, waits)
+  return <webview ref={el as never} className={visible ? '' : 'off'} src={first.current} partition={partition.current} {...({ allowpopups: 'true', ...(tab.agent ? { webpreferences: 'backgroundThrottling=false' } : {}) } as object)} />;
 }
 
 /**
@@ -173,7 +177,10 @@ function BrowserView({ group, shown, keys, buttons, intro }: { group: string; sh
     window.addEventListener('cora:web-find', open);
     return () => window.removeEventListener('cora:web-find', open);
   }, [group, keys]);
-  const st = (activeId && state[activeId]) || {};
+  // (a Playwright tab's page lives in AgentPages: its state comes from there)
+  const agentState = useAgentPages((a) => a.state);
+  const stateOf = (id: string): TabState => (web.tabs[id]?.agent ? agentState[id] : state[id]) ?? {};
+  const st = activeId ? stateOf(activeId) : {};
   const page = () => (activeId ? pages.get(activeId) : undefined);
 
   // a tab's page is created the first time it's on show (restored tabs load when you come back to them)
@@ -327,7 +334,7 @@ function BrowserView({ group, shown, keys, buttons, intro }: { group: string; sh
       <div className="web-tabs">
         {mine.map((id) => {
           const t = web.tabs[id];
-          const ts = state[id] ?? {};
+          const ts = stateOf(id);
           return (
             <div
               key={id}
@@ -344,6 +351,11 @@ function BrowserView({ group, shown, keys, buttons, intro }: { group: string; sh
               {ts.loading ? <span className="wt-spin" /> : ts.icon ? <img src={ts.icon} alt="" onError={(e) => (e.currentTarget.style.display = 'none')} /> : <Icon name="Globe" size={12} />}
               <span className="wt-t">{t.title || (t.url ? host(t.url) : 'New tab')}</span>
               {t.fresh ? <FreshChip sessionId={t.sessionId} /> : null}
+              {t.agent ? (
+                <span className="wt-agent" title="The session's Playwright drives this tab (you can use it too)">
+                  <Icon name="Bot" size={11} />
+                </span>
+              ) : null}
               <button
                 className="wt-x"
                 title="Close tab (Ctrl+W)"
@@ -438,11 +450,13 @@ function BrowserView({ group, shown, keys, buttons, intro }: { group: string; sh
       {finding && shown ? <FindBar press={finding} page={page() as never} onClose={() => setFinding(0)} /> : null}
       <div className="web-body">
         {web.order
-          .filter((id) => loaded && mounted.has(id) && web.tabs[id]?.url)
+          .filter((id) => loaded && mounted.has(id) && web.tabs[id]?.url && !web.tabs[id]?.agent)
           .map((id) => (
             // (a profile switched: each page made again, signed in as it)
             <Page key={`${id}@${partitionOfTab(web.tabs[id])}`} tab={web.tabs[id]} visible={shown && id === activeId} onState={onState} onVisit={onVisit} />
           ))}
+        {/* a Playwright tab: its page (AgentPages) is laid over this spot while it's on show */}
+        {active?.agent && shown ? <div className="agent-slot" data-agent-slot={active.id} /> : null}
         {active && !active.url ? (
           <div className="web-start">
             <div className="ws-h">New tab</div>

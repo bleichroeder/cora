@@ -47,20 +47,23 @@ export function LiveActivity({ sessionId }: { sessionId: string }) {
     .sort((a, b) => (a.agentId === 'main' ? -1 : b.agentId === 'main' ? 1 : a.startedAt - b.startedAt));
   const mainActive = active.some((a) => a.agentId === 'main');
 
-  const rows: Array<{ key: string; color: string; name: string; icon: string; tint?: string; text: string; live: boolean; glyph?: string; time?: string; wait?: boolean }> = [];
+  const rows: Array<{ key: string; color: string; name: string; icon: string; tint?: string; text: string; live: boolean; glyph?: string; time?: string; wait?: boolean; compacting?: boolean }> = [];
+  // compacting its context (it can take a minute or two, and nothing else moves meanwhile): said first, and loudly
+  const compacting = session.compacting;
+  if (compacting) rows.push({ key: 'compacting', color: 'var(--cora)', name: 'main', icon: 'Archive', tint: 'var(--cora)', text: compacting.trigger === 'manual' ? 'compacting the conversation (/compact)…' : 'compacting the conversation: its context was full…', live: true, time: dur(Math.max(0, now - compacting.since)), compacting: true });
   if (session.state === 'needs-you') {
     const p = pending.find((x) => x.sessionId === sessionId);
     const input = (p?.toolInput ?? {}) as { command?: unknown; file_path?: unknown };
     const what = p ? `${p.toolName}${typeof input.command === 'string' ? ` ${input.command}` : typeof input.file_path === 'string' ? ` ${input.file_path}` : ''}` : '';
     rows.push({ key: 'needs', color: 'var(--need)', name: 'main', icon: 'ShieldAlert', tint: 'var(--need)', text: what ? `waiting for you: ${what}` : 'waiting for your decision', live: false, wait: true, time: p ? dur(now - p.createdAt) : undefined });
   }
-  else if (status) {
+  else if (status && !compacting) {
     // Claude's spinner glyph (✢ ✳ ✶ ✻ ✽ · *) comes from fallback fonts of different heights: give it its own fixed box
     const m = status.match(/^(\S)\s+(.*)$/u);
     rows.push({ key: 'status', color: agentColor({ agentId: 'main', colorIdx: -1, sessionId }), name: 'main', icon: 'Sparkle', glyph: m?.[1], text: m ? m[2] : status, live: true });
   }
   for (const a of active) {
-    if (a.agentId === 'main' && (status || session.state === 'needs-you')) continue;
+    if (a.agentId === 'main' && (status || compacting || session.state === 'needs-you')) continue;
     const running = [...open.values()].filter((e) => e.agentId === a.agentId && now - e.ts < 30 * 60_000).pop();
     const since = lastTs.get(a.agentId) ?? a.startedAt;
     const name = a.agentId === 'main' ? 'main' : a.label;
@@ -77,7 +80,7 @@ export function LiveActivity({ sessionId }: { sessionId: string }) {
   return (
     <div className="activity">
       {shown.map((r, i) => (
-        <div key={r.key} className={`act-row${r.wait ? ' wait' : ''}${r.key === 'idle' ? ' idle' : ''}`}>
+        <div key={r.key} className={`act-row${r.wait ? ' wait' : ''}${r.compacting ? ' compacting' : ''}${r.key === 'idle' ? ' idle' : ''}`}>
           <span className={`act-dot${r.live ? ' live' : ''}`} style={{ ['--c' as any]: r.color }} />
           <b className="act-n">{r.name}</b>
           {r.glyph ? <span className="act-glyph">{r.glyph}</span> : <Icon name={r.icon} size={12} className="act-i" />}

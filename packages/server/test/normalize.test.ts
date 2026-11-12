@@ -81,3 +81,10 @@ describe('hookToEvents (real captured payloads)', () => {
     expect(hookToEvents('SomethingElse', { session_id: 's' })).toEqual({ events: [] });
   });
 });
+
+describe('PreCompact', () => {
+  it('says the session starts compacting, and whether you asked for it', () => {
+    expect(hookToEvents('PreCompact', { session_id: 'abc', hook_event_name: 'PreCompact', trigger: 'auto' }).compacting).toEqual({ trigger: 'auto' });
+    expect(hookToEvents('PreCompact', { session_id: 'abc', hook_event_name: 'PreCompact', trigger: 'manual', custom_instructions: '' }).compacting).toEqual({ trigger: 'manual' });
+  });
+});

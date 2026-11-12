@@ -100,6 +100,30 @@ contextBridge.exposeInMainWorld('coraDesktop', {
     return () => ipcRenderer.removeListener('ab:capture-shown', h);
   },
   setToolHosts: (hosts: string[]) => ipcRenderer.send('ab:tool-hosts', Array.isArray(hosts) ? hosts.slice(0, 50).map(String) : []),
+  // a session's Playwright tabs (agentBrowser.ts): the window says which there are; the app asks it to open, close, show one
+  agentTabs: (list: unknown[]) =>
+    ipcRenderer.send(
+      'ab:agent-tabs',
+      Array.isArray(list)
+        ? list.slice(0, 100).map((t) => {
+            const x = (t ?? {}) as Record<string, unknown>;
+            return { tabId: String(x.tabId), sessionId: String(x.sessionId), wcId: Number(x.wcId) || 0, url: String(x.url ?? '').slice(0, 2000), title: String(x.title ?? '').slice(0, 300), w: Number(x.w) || 0, h: Number(x.h) || 0, ...(x.req ? { req: String(x.req) } : {}), ...(x.opener ? { opener: String(x.opener) } : {}) };
+          })
+        : [],
+    ),
+  onAgentCmd: (cb: (m: { t: 'open'; req: string; sessionId: string; url: string } | { t: 'close' | 'activate'; tabId: string }) => void) => {
+    const open = (_e: unknown, m: { req: string; sessionId: string; url: string }) => cb({ t: 'open', req: String(m.req), sessionId: String(m.sessionId), url: String(m.url) });
+    const close = (_e: unknown, m: { tabId: string }) => cb({ t: 'close', tabId: String(m.tabId) });
+    const activate = (_e: unknown, m: { tabId: string }) => cb({ t: 'activate', tabId: String(m.tabId) });
+    ipcRenderer.on('ab:agent-open', open);
+    ipcRenderer.on('ab:agent-close', close);
+    ipcRenderer.on('ab:agent-activate', activate);
+    return () => {
+      ipcRenderer.removeListener('ab:agent-open', open);
+      ipcRenderer.removeListener('ab:agent-close', close);
+      ipcRenderer.removeListener('ab:agent-activate', activate);
+    };
+  },
   onWebTab: (cb: (m: unknown) => void) => {
     const h = (_e: unknown, m: unknown) => cb(m);
     ipcRenderer.on('ab:web-tab', h);

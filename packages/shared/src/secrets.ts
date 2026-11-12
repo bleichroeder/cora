@@ -3,12 +3,29 @@
  * sessions to use without ever seeing it. Cora runs their command with it and masks it in what comes back.
  */
 
+/**
+ * What a secret is: one value (a token, a key: $NAME), or a username and password for a login ($NAME_USER and
+ * $NAME_PASS, both hidden in what comes back).
+ */
+export type SecretKind = 'value' | 'login';
+
+/** The environment a command gets for a secret: its name and value, or a login's two. */
+export const secretEnv = (name: string, s: { kind?: SecretKind; value: string; user?: string }): Record<string, string> =>
+  s.kind === 'login' ? { [`${name}_USER`]: s.user ?? '', [`${name}_PASS`]: s.value } : { [name]: s.value };
+
+/** How a command uses it ($GITHUB_PAT, or $SITE_LOGIN_USER and $SITE_LOGIN_PASS). */
+export const secretVars = (name: string, kind?: SecretKind) => (kind === 'login' ? `$${name}_USER and $${name}_PASS` : `$${name}`);
+
 /** Which sessions may use a secret: all of them, or those working in these folders. */
 export type SecretScope = { all: true } | { folders: string[] };
 
 /** A secret as the dashboard and sessions know it: never its value. */
 export type SecretInfo = {
   name: string;
+  /** one value (left out: secrets made before there were kinds), or a username and password */
+  kind?: SecretKind;
+  /** a login's username (shown in Settings; a session gets it only in its command, as $NAME_USER) */
+  user?: string;
   /** what it's for (sessions see it, to pick the right one) */
   note: string;
   scope: SecretScope;

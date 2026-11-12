@@ -29,7 +29,8 @@ export function setupBrowser(win: BrowserWindow, base: string) {
     // a browser profile's own logins (persist:web-…), else the browser's: never the app's
     prefs.partition = isWebPartition(prefs.partition ?? '') ? prefs.partition : WEB_PARTITION;
     webSession(prefs.partition!);
-    if (!isWeb(params.src) || !win.webContents.getURL().startsWith(base)) e.preventDefault();
+    // (about:blank: a session's Playwright opening a tab before it goes anywhere)
+    if ((!isWeb(params.src) && params.src !== 'about:blank') || !win.webContents.getURL().startsWith(base)) e.preventDefault();
   });
   attachWebviews(win);
 }

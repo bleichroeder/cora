@@ -46,6 +46,12 @@
 .ses-word.n { color: var(--need); }
 .ses-word.d { color: var(--run); }
 .ses-word.s { color: var(--cora); }
+.ses-word.c { color: var(--cora); animation: ses-compact 1.4s ease-in-out infinite; }
+/* compacting: its tile squeezes and breathes in Cora's colour until it's done */
+.ses.compacting .ses-tile { animation: ses-tile-compact 1.4s ease-in-out infinite; box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--cora) 70%, transparent), 0 0 10px color-mix(in srgb, var(--cora) 45%, transparent); }
+@keyframes ses-compact { 50% { opacity: .45; } }
+@keyframes ses-tile-compact { 0%, 100% { transform: scale(1); } 45% { transform: scale(1.12, .8); } 65% { transform: scale(.94, 1.06); } }
+@media (prefers-reduced-motion: reduce) { .ses-word.c, .ses.compacting .ses-tile { animation: none; } }
 .ses:hover .ses-word { visibility: hidden; }
 .ses.dismissed:hover .ses-word { visibility: visible; }
 /* line 2: its ticket in a column of its own (keys line up), its folder, a slot for its pipeline: nothing slides */
@@ -84,7 +90,7 @@
 .ses-x:hover { color: #fca5a5; background: var(--raise2); }
 /* the ticket's key, tinted by its status (the hover card and the click stay) */
 .rail .jchip.bare { flex: none; gap: 0; padding: 0; border: 0; border-radius: 3px; background: none; font: 500 10px/14px var(--code); letter-spacing: .02em; color: var(--ink3); }
-.rail .jchip.bare:hover { color: var(--ink); background: none; text-decoration: underline; }
+.rail .jchip.bare, .rail .jchip.bare:hover { cursor: inherit; background: none; }
 .rail .ses-tk .gl-chip { padding: 0; border: 0; background: none; font: 400 10.5px/14px var(--code); color: var(--ink3); }
 .rail .ses-tk .jchip.bare { color: var(--ink3); }
 
@@ -160,9 +166,8 @@
 .rail .btn.ses-new { display: flex; width: 100%; height: 32px; align-items: center; justify-content: center; gap: 6px; padding: 0 8px; border: 0; border-radius: 8px; background: color-mix(in srgb, var(--work) 14%, var(--raise)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--work) 40%, transparent); color: #d9fbe9; font: 600 12.5px var(--ui); }
 .rail .btn.ses-new:hover { background: color-mix(in srgb, var(--work) 20%, var(--raise)); }
 
-/* a session about a GitLab issue: its #number beside the folder (as a ticket's key is), opening it */
-.rail .gl-chip { flex: none; color: color-mix(in srgb, #fc6d26 70%, var(--ink3)); font: 500 10px/14px var(--code); letter-spacing: .02em; cursor: pointer; }
-.rail .gl-chip:hover { color: var(--ink); text-decoration: underline; }
+/* a session about a GitLab issue: its #number beside the folder (as a ticket's key is) */
+.rail .gl-chip { flex: none; color: color-mix(in srgb, #fc6d26 70%, var(--ink3)); font: 500 10px/14px var(--code); letter-spacing: .02em; cursor: inherit; }
 /* in the session's header: GitLab's mark, the number and the issue's title */
 .gl-chip.head { display: inline-flex; align-items: center; gap: 6px; min-width: 0; max-width: 340px; height: 24px; padding: 0 9px; border-radius: 7px; background: var(--raise); box-shadow: inset 0 0 0 1px var(--hair); color: color-mix(in srgb, #fc6d26 80%, var(--ink2)); font: 500 11.5px var(--code); cursor: pointer; }
 .gl-chip.head:hover { box-shadow: inset 0 0 0 1px color-mix(in srgb, #fc6d26 45%, transparent); }

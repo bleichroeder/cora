@@ -59,6 +59,7 @@
 .journal .ran pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .journal .ran-cmd { margin-top: 5px !important; color: var(--ink); font: 500 12px/1.5 var(--code); }
 .journal .ran-cmd .ps { color: var(--ink4); user-select: none; }
+.journal .ran-said { margin-top: 4px !important; max-height: 220px; overflow-y: auto; color: var(--ink3); font: 400 11px/1.5 var(--code); }
 .journal .ran-o { max-height: 320px; overflow: auto; margin-top: 6px !important; padding-top: 6px; border-top: 1px solid var(--hair); color: var(--ink3); font: 400 10.5px/1.55 var(--code); }
 .journal .ran.fail .ran-o { color: color-mix(in srgb, var(--need) 70%, var(--ink3)); }
 .journal .ran-more { margin-top: 4px; padding: 0; border: 0; background: none; color: var(--ink3); font: 500 10.5px var(--code); cursor: pointer; }
@@ -379,3 +380,11 @@
 /* a note the session wrote on its progress (a thinking block with words, as the terminal shows it): quieter than a reply */
 .journal .think-note { margin: 2px 0; padding-left: 10px; border-left: 2px solid var(--hair2); }
 .journal .think-note .say, .journal .think-note p { color: var(--ink3); font-size: 12.5px; }
+
+/* compacting its context: a sweep of Cora's colour runs along the row until it's done */
+.activity .act-row.compacting { position: relative; margin: 0 -8px; padding: 0 8px; border-radius: 8px; color: var(--ink); background: linear-gradient(90deg, transparent 0%, color-mix(in srgb, var(--cora) 22%, transparent) 50%, transparent 100%) -100% 0 / 50% 100% no-repeat, color-mix(in srgb, var(--cora) 8%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cora) 35%, transparent); animation: act-compact 1.6s linear infinite; }
+.activity .act-row.compacting .act-i { color: var(--cora); animation: act-squash 1.6s ease-in-out infinite; }
+.activity .act-row.compacting .act-t { color: var(--ink); }
+@keyframes act-compact { to { background-position: 200% 0, 0 0; } }
+@keyframes act-squash { 0%, 100% { transform: scale(1); } 45% { transform: scale(1.25, .7); } 60% { transform: scale(.9, 1.1); } }
+@media (prefers-reduced-motion: reduce) { .activity .act-row.compacting, .activity .act-row.compacting .act-i { animation: none; } }

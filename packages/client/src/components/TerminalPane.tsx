@@ -5,10 +5,10 @@ import { create } from 'zustand';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
-import { choiceOpen, isShell, type TerminalInfo } from '@cora/shared';
+import { choiceOpen, inputBox, isShell, type TerminalInfo } from '@cora/shared';
 import { useBrain } from '../state/store';
 import { checkRunning, launchTerminal } from '../state/ws';
-import { closeShell, loadShellKinds, openShell, shellBusy, useShells, useTermView } from '../state/shells';
+import { closeShell, commandWatch, loadShellKinds, openShell, shellBusy, useShells, useTermView } from '../state/shells';
 import { activeTab, afterClose, atPrompt, commandAt, shellLabel } from '../lib/shellTabs';
 import { ago, sessionName, shortCwd } from '../lib/format';
 import { recentlyActive as activeLately, resumeStep } from '../lib/resumeHere';
@@ -97,11 +97,65 @@ export function LiveTerminal({ terminal, compact, shown = true, sized = false, o
     let raf = 0;
     let choice = false;
     let choiceOff = 0;
-    const layoutCompact = () => {
-      raf = 0;
+    const screen = () => {
       const b = term.buffer.active;
       const lines: string[] = [];
       for (let i = 0; i < term.rows; i++) lines.push(b.getLine(b.viewportY + i)?.translateToString(true) ?? '');
+      return lines;
+    };
+    // the screen as Claude Code last drew it (its bottom rows), wherever the view is scrolled to
+    const drawn = () => {
+      const b = term.buffer.active;
+      const lines: string[] = [];
+      for (let i = 0; i < term.rows; i++) lines.push(b.getLine(b.baseY + i)?.translateToString(true) ?? '');
+      return lines;
+    };
+    // A `/` command sent from the composer that opens a screen of Claude Code's (/mcp, /config…): its input box goes
+    // while the screen is up. Then the terminal shows itself in full, with the keys, until the box is back (each change
+    // looked at again a moment later: Claude Code redraws in pieces, and /clear wipes the screen for an instant).
+    const sid = terminal.sessionId;
+    let dialogCheck = 0;
+    // (the store's word: hiding the terminal by hand ends it too)
+    const isDialog = () => !!sid && !!useShells.getState().dialog[sid];
+    const watchDialog = () => {
+      const w = sid ? commandWatch.get(sid) : undefined;
+      const dialog = isDialog();
+      if (!sid || (!w && !dialog)) return;
+      const box = inputBox(drawn()) != null;
+      if (dialog === !box) {
+        // as it was: nothing to look at again (a command that opened nothing stops being watched after a while)
+        clearTimeout(dialogCheck);
+        dialogCheck = 0;
+        if (!dialog && w && Date.now() > w.until) commandWatch.delete(sid);
+        return;
+      }
+      if (dialogCheck) return;
+      dialogCheck = window.setTimeout(
+        () => {
+          dialogCheck = 0;
+          const boxNow = inputBox(drawn()) != null;
+          const dialog = isDialog();
+          const { setDialog } = useShells.getState();
+          if (!dialog && !boxNow) {
+            const still = commandWatch.get(sid);
+            if (!still || Date.now() > still.until) return;
+            setDialog(sid, still.command);
+            // the keys go to it (arrows, Enter, Esc), once it's on show
+            window.setTimeout(() => focus.current(), 60);
+          } else if (dialog && boxNow) {
+            commandWatch.delete(sid);
+            setDialog(sid, null);
+            // and back to the composer, if they were still in the terminal
+            if (document.activeElement?.classList.contains('xterm-helper-textarea') || document.activeElement === document.body) window.dispatchEvent(new CustomEvent('cora:composer-focus', { detail: sid }));
+          }
+        },
+        isDialog() ? 400 : 250,
+      );
+    };
+    const layoutCompact = () => {
+      raf = 0;
+      const lines = screen();
+      if (choiceRef.current) watchDialog();
       if (choiceRef.current) {
         const open = choiceOpen(lines);
         if (open) {
@@ -294,6 +348,8 @@ export function LiveTerminal({ terminal, compact, shown = true, sized = false, o
       if (raf) cancelAnimationFrame(raf);
       clearTimeout(choiceOff);
       if (choice) choiceRef.current?.(false);
+      clearTimeout(dialogCheck);
+      if (isDialog()) useShells.getState().setDialog(sid!, null);
       disposed = true;
       clearTimeout(retryTimer);
       clearTimeout(promptCheck);
@@ -437,6 +493,13 @@ export function TerminalPane({ sessionId }: { sessionId: string }) {
   const setPrefs = useBrain((s) => s.setPrefs);
   const view = useTermView(sessionId);
   const setPeek = (on: boolean) => useShells.getState().setPeek(sessionId, on);
+  // hide Claude's terminal (composer mode): a peek, or a `/` command's screen showing it, ends
+  const hide = () => {
+    commandWatch.delete(sessionId);
+    useShells.getState().setDialog(sessionId, null);
+    setPeek(false);
+  };
+  const open = view.peek || view.dialog;
   const onChoice = (open: boolean) => useShells.getState().setAsking(sessionId, open);
   // (the Board's Terminal panels have shells of their own: they stay there)
   const shells = useMemo(() => allShells.filter((t) => t.sessionId === sessionId && t.place !== 'board'), [allShells, sessionId]);
@@ -510,13 +573,13 @@ export function TerminalPane({ sessionId }: { sessionId: string }) {
         <div className="term-tabs">
           <div
             className={`term-tab${tab === 'claude' ? ' on' : ''}`}
-            title={view.composer ? (view.peek ? `Claude · ${name} · click to hide its terminal` : `Claude · ${name} · click to show its terminal`) : `Claude · ${name}`}
+            title={view.composer ? (open ? `Claude · ${name} · click to hide its terminal` : `Claude · ${name} · click to show its terminal`) : `Claude · ${name}`}
             // in composer mode, its tab picked again shows or hides its terminal
-            onClick={() => (tab === 'claude' && view.composer ? setPeek(!view.peek) : show('claude'))}
+            onClick={() => (tab === 'claude' && view.composer ? (open ? hide() : setPeek(true)) : show('claude'))}
           >
             <Icon name="SquareTerminal" size={12} />
             <span className="tt-t">Claude</span>
-            {view.composer && tab === 'claude' ? <Icon name={view.peek ? 'ChevronDown' : 'ChevronRight'} size={11} className="tt-peek" /> : null}
+            {view.composer && tab === 'claude' ? <Icon name={open ? 'ChevronDown' : 'ChevronRight'} size={11} className="tt-peek" /> : null}
             {needsYou && tab !== 'claude' ? <span className="tt-dot needs" /> : null}
           </div>
           {shells.map((t) => (
@@ -571,7 +634,7 @@ export function TerminalPane({ sessionId }: { sessionId: string }) {
               aria-checked={mode === 'composer'}
               className={mode === 'composer' ? 'on' : ''}
               title="Write prompts in the composer; Claude's terminal stays hidden and shows itself when Claude Code asks you something"
-              onClick={() => (setPrefs({ inputMode: 'composer' }), setPeek(false))}
+              onClick={() => (setPrefs({ inputMode: 'composer' }), hide())}
             >
               <Icon name="PenLine" size={12} />
               <span className="tm-l">Composer</span>

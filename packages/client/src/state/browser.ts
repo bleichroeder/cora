@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { HOME_PARTITION, type BrowserProfile, type Settings } from '@cora/shared';
+import { AGENT_PROFILE, HOME_PARTITION, partitionOf, type AgentBrowserMode, type BrowserProfile, type Settings } from '@cora/shared';
 import { useBrain } from './store';
 import { useTools } from './tools';
 import { useWeb } from './web';
@@ -16,8 +16,8 @@ export const BROWSER_ID = 'cora:browser';
 
 /** The browser's profiles and the sessions' one, from the server's settings (Settings › Tools keeps it current). */
 /** `loaded`: pages wait for it, so each is made with its profile's sign-ins (a webview can't change them later). */
-export const useBrowserSettings = create<{ profiles: BrowserProfile[]; sessions?: string; mail?: string; loaded: boolean }>(() => ({ profiles: [], loaded: false }));
-export const setBrowserSettings = (b: Settings['browser'] | undefined) => useBrowserSettings.setState({ profiles: b?.profiles ?? [], sessions: b?.sessions, mail: b?.mail, loaded: true });
+export const useBrowserSettings = create<{ profiles: BrowserProfile[]; sessions?: string; mail?: string; playwright?: AgentBrowserMode; loaded: boolean }>(() => ({ profiles: [], loaded: false }));
+export const setBrowserSettings = (b: Settings['browser'] | undefined) => useBrowserSettings.setState({ profiles: b?.profiles ?? [], sessions: b?.sessions, mail: b?.mail, playwright: b?.playwright, loaded: true });
 void fetch('/api/settings')
   .then((r) => (r.ok ? r.json() : null))
   .then((s: Settings | null) => setBrowserSettings(s?.browser))
@@ -73,7 +73,10 @@ export const sessionProfile = (sessionId: string): string => {
 /** Whose bookmarks and history a tab group shows: a Browser profile's, or for a session's tabs, its profile. */
 export const profileOfGroup = (g: string): string => (isBrowserGroup(g) ? (g === BROWSER_ID ? '' : g.slice(BROWSER_ID.length + 1)) : isPanelGroup(g) ? g.slice(g.lastIndexOf(':') + 1) : sessionProfile(g));
 /** A tab's sign-ins: its own profile's (a Gmail draft's), else its group's. */
-export const partitionOfTab = (t: { sessionId: string; profile?: string }): string => (t.profile && browserProfiles().some((p) => p.id === t.profile) ? partitionFor(t.profile) : partitionOfGroup(t.sessionId));
+export const partitionOfTab = (t: { sessionId: string; profile?: string }): string =>
+  t.profile === AGENT_PROFILE ? partitionOf(AGENT_PROFILE) : t.profile && browserProfiles().some((p) => p.id === t.profile) ? partitionFor(t.profile) : partitionOfGroup(t.sessionId);
+/** Who a session's Playwright tabs are signed in as: its own profile (`agent`), or the session's browser's (Settings). */
+export const agentProfileFor = (sessionId: string): string | undefined => (useBrowserSettings.getState().playwright === 'session' ? sessionProfile(sessionId) || undefined : AGENT_PROFILE);
 /** Your Gmail's profile, if it's one there is. */
 export const mailProfile = (): string | undefined => {
   const { mail, profiles } = useBrowserSettings.getState();

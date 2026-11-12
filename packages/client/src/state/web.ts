@@ -14,6 +14,8 @@ type Actions = {
   /** Open a link in the session's browser (its tab if already open there, else a new one). */
   open(sid: string, url: string, o?: { after?: string; background?: boolean; reload?: boolean; profile?: string }): void;
   newTab(sid: string, url?: string, o?: { after?: string; background?: boolean }): void;
+  /** A tab for the session's Playwright (signed in as `profile`): its id. */
+  openAgent(sid: string, url: string, o?: { profile?: string; after?: string; background?: boolean }): string;
   closeTab(id: string): void;
   /** a tab dragged to another place in its strip */
   moveTab(id: string, to: number): void;
@@ -37,6 +39,11 @@ export const useWeb = create<W.WebState & Actions>((set, get) => {
     ...load(),
     open: (sid, url, o) => apply((st) => W.openUrl(st, sid, url, o)),
     newTab: (sid, url, o) => apply((st) => W.newTab(st, sid, url, o)),
+    openAgent: (sid, url, o) => {
+      const next = W.newTab(get(), sid, url, { ...o, agent: true });
+      set(next);
+      return next.order[next.order.length - 1];
+    },
     closeTab: (id) => apply((st) => W.closeTab(st, id)),
     moveTab: (id, to) => apply((st) => W.moveTab(st, id, to)),
     activate: (id) => apply((st) => W.activate(st, id)),

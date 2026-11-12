@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { jwtExpiry, mask, secretNameProblem, type SecretInfo, type SecretScope } from '@cora/shared';
+import { jwtExpiry, mask, secretEnv, secretNameProblem, type SecretInfo, type SecretKind, type SecretScope } from '@cora/shared';
 import { readSecret, writeSecret } from './secrets';
 import { cleanEnv } from './pty';
 
@@ -37,33 +37,46 @@ export class Vault {
       .map(({ value: _v, ...info }) => info)
       .sort((a, b) => a.name.localeCompare(b.name));
   }
-  /** A value: for running a command, or for you to reveal. */
+  /** A value (a login's password): for running a command, or for you to reveal. */
   value(name: string): string | null {
     return this.load().find((s) => s.name === name)?.value ?? null;
   }
+  /** What a command's environment gets for it ($NAME, or a login's $NAME_USER and $NAME_PASS), or null. */
+  env(name: string): Record<string, string> | null {
+    const s = this.load().find((x) => x.name === name);
+    return s ? secretEnv(s.name, s) : null;
+  }
 
-  /** Add one, or change one (its value replaced only when a new one is given). */
-  set(o: { name: string; value?: string; note?: string; scope?: SecretScope }): SecretInfo {
+  /** Add one, or change one (its value replaced only when a new one is given; a login's username when one is). */
+  set(o: { name: string; value?: string; note?: string; scope?: SecretScope; kind?: SecretKind; user?: string }): SecretInfo {
     const bad = secretNameProblem(o.name);
     if (bad) throw new Error(bad);
     const list = this.load();
     const was = list.find((s) => s.name === o.name);
+    const kind: SecretKind = o.kind ?? was?.kind ?? 'value';
     const value = o.value?.trim();
-    if (!was && !value) throw new Error('a value');
-    if (value !== undefined && !value) throw new Error('a value');
+    const what = kind === 'login' ? 'a password' : 'a value';
+    if (!was && !value) throw new Error(what);
+    if (value !== undefined && !value) throw new Error(what);
+    // made a login now (it was a value): its password comes with it
+    if (kind === 'login' && (was?.kind ?? 'value') !== 'login' && !value) throw new Error('a password');
+    const user = kind === 'login' ? (o.user ?? was?.user ?? '').trim() : undefined;
+    if (kind === 'login' && !user) throw new Error('a username');
+    if (user && user.length > 200) throw new Error('a username of 200 characters at most');
     const t = this.now();
     const next: Stored = {
       name: o.name,
+      ...(kind === 'login' ? { kind, user } : {}),
       note: (o.note ?? was?.note ?? '').trim().slice(0, 300),
       scope: o.scope ?? was?.scope ?? { all: true },
       createdAt: was?.createdAt ?? t,
       updatedAt: t,
       value: value ?? was!.value,
-      expiresAt: value ? jwtExpiry(value) : (was?.expiresAt ?? null),
+      expiresAt: kind === 'login' ? null : value ? jwtExpiry(value) : (was?.expiresAt ?? null),
       lastUsed: was?.lastUsed ?? null,
     };
-    // a new value: sessions ask again before they use it
-    if (value && was) for (const g of [...this.grants]) if (g.endsWith(`|${o.name}`)) this.grants.delete(g);
+    // a new value (or username): sessions ask again before they use it
+    if ((value || (user && user !== was?.user)) && was) for (const g of [...this.grants]) if (g.endsWith(`|${o.name}`)) this.grants.delete(g);
     this.save([...list.filter((s) => s.name !== o.name), next]);
     const { value: _v, ...info } = next;
     return info;

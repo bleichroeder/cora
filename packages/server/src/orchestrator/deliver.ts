@@ -1,24 +1,11 @@
-import { choiceOpen, highlightedOption, trustQuestion } from '@cora/shared';
-
-const RULE = /^[─━]{8,}$/;
-/** The most lines an input box (a draft of several lines) spans between its two rules. */
-const BOX_MAX = 12;
+import { choiceOpen, highlightedOption, inputBox, trustQuestion } from '@cora/shared';
 
 /**
- * Is Claude Code ready for a prompt: its input box on screen (a line starting with ❯ or > right under a full-width
- * rule, with the box's closing rule a few lines below), and no choice open (a permission prompt, the "trust this
- * folder?" question)? Any such box counts, not only the one under the second-to-last rule: a band of its own below the
- * box (another pair of rules) once hid it, and a session that was up in seconds never got its first prompt.
+ * Is Claude Code ready for a prompt: its input box on screen (shared `inputBox`), and no choice open (a permission
+ * prompt, the "trust this folder?" question)?
  */
 export function promptReady(lines: string[]): boolean {
-  if (choiceOpen(lines)) return false;
-  const rules: number[] = [];
-  lines.forEach((l, i) => RULE.test(l.trim()) && rules.push(i));
-  for (let k = 0; k + 1 < rules.length; k++) {
-    const [top, bottom] = [rules[k], rules[k + 1]];
-    if (bottom - top >= 2 && bottom - top <= BOX_MAX + 1 && /^\s*[❯>]/u.test(lines[top + 1] ?? '')) return true;
-  }
-  return false;
+  return !choiceOpen(lines) && inputBox(lines) != null;
 }
 
 /** Two folders the same, however they're written (slashes, a trailing one, case: Windows paths). */

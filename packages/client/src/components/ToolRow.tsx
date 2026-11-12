@@ -109,6 +109,19 @@ export function SaidLine({ id, text, sessionId, failed = false }: { id: string; 
 /** How many lines of a command's output show before "all of it". */
 const RAN_LINES = 6;
 
+/** A `/` command you ran that Claude Code answered itself (/mcp, /context, /cost…): the command, then what it said. */
+export function CommandRow({ item }: { item: Extract<Item, { kind: 'command' }> }) {
+  return (
+    <div className="ran cmd-ran">
+      <div className="ran-h">
+        <span className="pl">you ran</span>
+      </div>
+      <pre className="ran-cmd">{item.e.command}</pre>
+      {item.e.text ? <pre className="ran-said">{maskSecrets(item.e.text).text}</pre> : null}
+    </div>
+  );
+}
+
 /**
  * A command you ran yourself (`!` in Claude Code): the command, how it went, and its output, the first lines of it
  * (open it for all of it, read again from the transcript when the preview was cut).

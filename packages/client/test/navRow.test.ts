@@ -53,3 +53,16 @@ describe('the session icons', () => {
     expect(SESSION_ICONS.filter((n) => !(n in icons))).toEqual([]);
   });
 });
+
+describe('rowState: a session that has not started', () => {
+  it("says it waits on you to trust its folder, before anything else", () => {
+    expect(rowState({ state: 'thinking', lastTs: 0 }, { now: 0, fresh: false, speaking: true, asksTrust: true })).toEqual({ word: 'trust folder?', cls: 'n' });
+  });
+});
+
+describe('rowState: compacting', () => {
+  it('says so, with how long it has taken, over working', () => {
+    expect(rowState({ state: 'working', lastTs: 0, compacting: { since: 0, trigger: 'auto' } }, { now: 75_000, fresh: false, speaking: false })).toEqual({ word: 'compacting', cls: 'c', time: '1m' });
+    expect(rowState({ state: 'ended', lastTs: 0, compacting: { since: 0, trigger: 'auto' } }, { now: 75_000, fresh: false, speaking: false })).toBeNull();
+  });
+});

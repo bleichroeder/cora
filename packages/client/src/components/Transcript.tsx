@@ -11,7 +11,7 @@ import { maskSecrets } from '../lib/mask';
 import { useComposer } from '../state/composer';
 import { agentColor, clock, dur } from '../lib/format';
 import { Icon, Tile } from './Icon';
-import { RanRow, SaidLine, ToolRow } from './ToolRow';
+import { CommandRow, RanRow, SaidLine, ToolRow } from './ToolRow';
 import { Markdown } from './Markdown';
 import { LiveActivity } from './LiveActivity';
 import { TaskPanel } from './TaskPanel';
@@ -134,7 +134,7 @@ function StepView({ step, sessionId, hosted, bare }: { step: Step; sessionId: st
   // a command you ran yourself: yours, like a prompt (no "main" head: Claude didn't do it)
   if (step.ran) {
     const it = step.items[0];
-    return <div className="step ran-step">{it?.kind === 'tool' ? <RanRow item={it} sessionId={sessionId} /> : null}</div>;
+    return <div className="step ran-step">{it?.kind === 'tool' ? <RanRow item={it} sessionId={sessionId} /> : it?.kind === 'command' ? <CommandRow item={it} /> : null}</div>;
   }
   return (
     <div className={`step${step.agentId === 'main' ? '' : ' sub'}${step.cont ? ' cont' : ''}`} style={{ ['--c' as any]: color }}>
@@ -216,7 +216,16 @@ function StepView({ step, sessionId, hosted, bare }: { step: Step; sessionId: st
             case 'interrupt':
               return (
                 <div key={it.key} className="divider interrupted">
-                  <Icon name="OctagonX" size={11} /> interrupted
+                  {/* taken back with Esc just after it went (Cora's marker: Claude Code writes none for it) */}
+                  {it.e.text?.startsWith('Cancelled') ? (
+                    <>
+                      <Icon name="Undo2" size={11} /> cancelled · back in the composer
+                    </>
+                  ) : (
+                    <>
+                      <Icon name="OctagonX" size={11} /> interrupted
+                    </>
+                  )}
                 </div>
               );
             case 'turn_end':
