@@ -1,4 +1,5 @@
-const RULE = /^[─━]{8,}$/;
+// (the box's top rule may carry a label near its end: the session's name, "──── cora-99c0 ─")
+const RULE = /^[─━]{8,}(?: \S.*? [─━]+)?$/;
 
 /**
  * Which rows of Claude Code's screen to show in compact terminal mode: its input area. Claude Code draws the

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { BrainEvent } from '@cora/shared';
 import { sessionNow } from '../src/lib/sessionNow';
+import { cardState, limitReset } from '../src/lib/cardState';
 import { pickVoice, voiceOf } from '../src/lib/sessionVoices';
 import { DEFAULT_VOICE } from '@cora/shared';
 import { ideFolder } from '../src/components/board/IdePanel';
@@ -83,5 +84,29 @@ describe('the IDE panel', () => {
   it('opens VS Code at the folder as its web address wants it', () => {
     expect(ideFolder(String.raw`C:\code\cora`)).toBe('/c:/code/cora');
     expect(ideFolder('/home/me/app')).toBe('/home/me/app');
+  });
+});
+
+describe("the session card's state word", () => {
+  const turn = { since: 100, until: null };
+  it('a limit that stopped it is "paused" (with when it resets), not idle', () => {
+    expect(cardState({ state: 'idle', limit: { text: "You've hit your usage limit · resets 4pm (America/New_York)", at: 5 } })).toMatchObject({ word: 'paused', cls: 'p', note: 'resets 4pm' });
+    expect(cardState({ state: 'idle', limit: { text: 'Weekly limit reached.', at: 5 } })).toMatchObject({ word: 'paused', note: 'on a limit' });
+    expect(limitReset('Spend limit reached. Resets at 3:00 PM.')).toBe('resets 3:00 PM');
+  });
+  it('compacting is said as itself, with how long it has been', () => {
+    expect(cardState({ state: 'thinking', compacting: { since: 40 }, turn })).toMatchObject({ word: 'compacting', cls: 't', since: 40 });
+  });
+  it("one clock while it works: the turn's, not the tool's; none once the turn is over", () => {
+    expect(cardState({ state: 'thinking', doing: true, turn })).toMatchObject({ word: 'working', cls: 'w', since: 100 });
+    expect(cardState({ state: 'thinking', turn })).toMatchObject({ word: 'thinking', since: 100 });
+    expect(cardState({ state: 'idle', turn: { since: 100, until: 200 } })).toMatchObject({ word: 'idle', since: null });
+  });
+  it('you come first: its question (since it asked), talking to it, it speaking', () => {
+    expect(cardState({ state: 'thinking', askedAt: 77, doing: true, turn, limit: { text: 'x', at: 1 } })).toMatchObject({ word: 'needs you', cls: 'n', since: 77 });
+    expect(cardState({ state: 'needs-you' })).toMatchObject({ word: 'needs you', since: null });
+    expect(cardState({ state: 'thinking', listening: true, askedAt: 77 }).word).toBe('listening');
+    expect(cardState({ state: 'idle', speaking: true }).word).toBe('speaking');
+    expect(cardState({ state: 'ended', limit: { text: 'x', at: 1 } }).word).toBe('ended');
   });
 });

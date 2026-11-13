@@ -1312,7 +1312,8 @@ export class OrchestratorManager {
   }
 }
 
-const RULE = /^[─━]{8,}$/;
+// (the box's top rule may carry a label near its end: the session's name, "──── cora-99c0 ─")
+const RULE = /^[─━]{8,}(?: \S.*? [─━]+)?$/;
 /** A question on Claude Code's screen: from the second-to-last full-width rule down (or the last rows), trimmed. */
 export function questionOf(lines: string[]): string[] {
   let end = lines.length - 1;

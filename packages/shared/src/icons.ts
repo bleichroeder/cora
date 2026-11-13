@@ -61,6 +61,7 @@ export const EVENT_ICON = {
   interrupt: ic('OctagonX', 'mind'),
   task: ic('Timer', 'run'),
   command: ic('SquareSlash', 'human'),
+  notice: ic('Info', 'mind'),
 } satisfies Record<string, IconRef>;
 
 export const EVENT_LABEL: Record<keyof typeof EVENT_ICON, string> = {
@@ -80,6 +81,7 @@ export const EVENT_LABEL: Record<keyof typeof EVENT_ICON, string> = {
   interrupt: 'interrupted',
   task: 'background task finished',
   command: 'command you ran',
+  notice: 'from Claude Code',
 };
 
 const SUB_ICONS: Array<[RegExp, string]> = [

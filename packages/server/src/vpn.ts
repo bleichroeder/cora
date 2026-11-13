@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { closeSync, existsSync, openSync, readFileSync, readSync, statSync } from 'node:fs';
 import { join } from 'node:path';
@@ -125,6 +125,8 @@ export type VpnDeps = {
   tell?(sessionId: string, text: string): void;
   /** a session asks: let the user know */
   onRequest?(r: VpnRequest, profile: string | null): void;
+  /** OpenVPN Connect's window (it shows itself for a shortcut): put away again after a switch from Cora */
+  window?: OvpnWindow;
   now?: () => number;
   /** how often its files are looked at; how long a request's call waits; how long a switch may take */
   pollMs?: number;
@@ -136,6 +138,46 @@ export type VpnDeps = {
 export function runDetached(exe: string, args: string[]): void {
   const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !/^(ELECTRON_|NODE_OPTIONS$|NODE_PATH$)/i.test(k)));
   spawn(exe, args, { detached: true, stdio: 'ignore', windowsHide: true, env }).unref();
+}
+
+/**
+ * OpenVPN Connect's window. A shortcut (how Cora switches) makes it show itself, minimizing only after (its "Shortcut
+ * Minimize" setting): a window popping up on every switch. Closing it only puts it in the tray (its close handler
+ * hides it and never quits, so the VPN stays up), and starting it with no arguments shows it again.
+ */
+export type OvpnWindow = {
+  /** whether it's on screen now */
+  visible(): Promise<boolean>;
+  /** close it to the tray whenever it shows, for a while (0: once, now) */
+  putAway(seconds: number): { stop(): void };
+  /** bring it back (it needs you: a sign-in) */
+  show(): void;
+};
+
+const ps = (script: string) => ['-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')];
+const PS_EXE = () => join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
+/** its process's main window, only while it's on screen (.NET's MainWindowHandle is 0 for a hidden window) */
+const PS_SHOWN = "Get-Process OpenVPNConnect -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 }";
+
+/** Windows: PowerShell looks for its window and sends it WM_CLOSE (what its own close button does). */
+export function ovpnWindow(exe: string): OvpnWindow {
+  return {
+    visible: () =>
+      new Promise((res) => {
+        execFile(PS_EXE(), ps(`if (${PS_SHOWN}) { 'yes' } else { 'no' }`), { windowsHide: true, timeout: 8000 }, (err, out) => res(!err && String(out).trim() === 'yes'));
+      }),
+    putAway: (seconds) => {
+      const script = [
+        "Add-Type -Name W -Namespace CoraOvpn -MemberDefinition '[DllImport(\"user32.dll\")] public static extern bool PostMessage(IntPtr h, uint m, IntPtr w, IntPtr l);'",
+        `$end = (Get-Date).AddSeconds(${Math.max(0, Math.round(seconds))})`,
+        `do { ${PS_SHOWN} | ForEach-Object { [void][CoraOvpn.W]::PostMessage($_.MainWindowHandle, 0x10, [IntPtr]::Zero, [IntPtr]::Zero) }; Start-Sleep -Milliseconds 250 } while ((Get-Date) -lt $end)`,
+      ].join('\n');
+      const p = spawn(PS_EXE(), ps(script), { windowsHide: true, stdio: 'ignore' });
+      p.on('error', () => {});
+      return { stop: () => void p.kill() };
+    },
+    show: () => runDetached(exe, []),
+  };
 }
 
 export const REQUEST_WAIT_MS = 10 * 60_000;
@@ -295,27 +337,57 @@ export class Vpn {
   private async doSwitch(exe: string, to: string | null): Promise<void> {
     const run = this.d.run ?? runDetached;
     const name = (id: string | null) => this.read.profiles.find((p) => p.id === id)?.name ?? 'it';
+    // its window shows itself for a shortcut: when it wasn't open before, it goes back to the tray. At once when
+    // nothing will be asked of you (a disconnect, a profile that signs in by itself); a profile that asks for its
+    // password, once it's connected; one waiting for you (a sign-in page) is brought back and left open
+    const win = this.d.window;
+    const wasOpen = win ? await win.visible().catch(() => true) : true;
+    // the watcher putting it away (held in an object: closures set it)
+    const away: { now: { stop(): void } | null } = { now: null };
+    let needsYou = false;
+    const putAway = (seconds: number) => {
+      if (!win || wasOpen || needsYou) return;
+      away.now?.stop();
+      away.now = win.putAway(seconds);
+    };
+    const asked = () => {
+      if (this.phase !== 'waiting' || needsYou) return;
+      needsYou = true;
+      away.now?.stop();
+      away.now = null;
+      win?.show();
+    };
+    // (a switch that doesn't happen leaves the window as it is: it may be saying why)
     this.refresh();
     if (this.read.connected && this.read.connected !== to) {
+      putAway(15);
       run(exe, ['--disconnect-shortcut']);
       if (!(await this.until(() => !this.read.connected, DISCONNECT_MS))) throw new Error(`OpenVPN Connect didn't disconnect ${name(this.read.connected)} (is it asking you something?)`);
     }
     if (to && !(this.read.connected === to && this.phase === 'connected')) {
+      const asksPassword = !!this.read.profiles.find((p) => p.id === to)?.password;
+      if (asksPassword) {
+        away.now?.stop();
+        away.now = null;
+      } else putAway(20);
       run(exe, [`--connect-shortcut=${to}`]);
       const ms = this.d.switchMs ?? SWITCH_MS;
-      if (!(await this.until(() => this.read.connected === to && this.phase === 'connected', ms)))
+      if (!(await this.until(() => this.read.connected === to && this.phase === 'connected', ms, asked)))
         throw new Error(this.phase === 'waiting' ? `${name(to)} is waiting for you in OpenVPN Connect` : this.phase === 'failed' ? `${name(to)} didn't connect: see OpenVPN Connect` : `${name(to)} hadn't connected after ${Math.round(ms / 1000)}s`);
     }
+    // done: back in the tray (once, now: its last showing, a password profile's included)
+    putAway(0);
     await this.d.recheck().catch(() => this.d.envs());
     this.learn();
   }
 
-  private async until(ok: () => boolean, ms: number): Promise<boolean> {
+  private async until(ok: () => boolean, ms: number, each?: () => void): Promise<boolean> {
     // real time (a switch's own wait), whatever clock stamps the state
     const end = Date.now() + ms;
     for (;;) {
       this.refresh();
       this.changed();
+      each?.();
       if (ok()) return true;
       if (Date.now() >= end) return false;
       await new Promise((r) => setTimeout(r, Math.min(1000, this.d.pollMs ?? 1000)));

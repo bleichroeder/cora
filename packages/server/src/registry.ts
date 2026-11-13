@@ -78,7 +78,11 @@ export class Registry {
     const fl = this.flight(sid, e.agentId);
     // from a turn that already ended (Claude Code's Stop hook comes first; its transcript, read a moment later, still
     // has the turn's last reply): it doesn't make the session busy again (it would "finish" twice)
-    const over = e.agentId === 'main' && e.kind !== 'turn_end' && e.ts <= (this.turnOver.get(sid) ?? -Infinity);
+    // Nor does something older than the last word from a main that's idle: Claude Code writes old lines again when it
+    // compacts (your last prompt, with its first time), and after a restart Cora no longer remembers when the turn ended
+    const sess = e.agentId === 'main' ? this.store.getSession(sid) : undefined;
+    const stale = !!sess && e.ts < sess.lastTs && this.store.getAgent(sid, 'main')?.state === 'idle';
+    const over = e.agentId === 'main' && e.kind !== 'turn_end' && (stale || e.ts <= (this.turnOver.get(sid) ?? -Infinity));
     switch (e.kind) {
       case 'tool':
         // a command you ran yourself (`!`): Claude isn't doing anything (it shows once it's over, both lines at once)
@@ -126,7 +130,10 @@ export class Registry {
     }
     if (agentState) this.setAgentState(sid, e.agentId, agentState);
     // compacting, and it's done (its boundary), or stopped, or over
-    if (e.agentId === 'main' && (e.kind === 'compact' || e.kind === 'interrupt' || e.kind === 'session_end') && this.store.getSession(sid)?.compacting) this.refreshSession(sid, { compacting: null });
+    // (compacting while idle writes no boundary: whatever main says or is told a moment after it began ends it too)
+    const comp = e.agentId === 'main' ? this.store.getSession(sid)?.compacting : null;
+    if (comp && (e.kind === 'compact' || e.kind === 'interrupt' || e.kind === 'session_end' || (e.kind === 'notice' && /compacted/i.test(e.notice?.text ?? '') && e.ts >= comp.since) || ((e.kind === 'notice' || e.kind === 'prompt' || e.kind === 'say' || e.kind === 'tool') && e.ts > comp.since + 2000)))
+      this.refreshSession(sid, { compacting: null });
     this.refreshSession(sid, { lastTs: e.ts, startedAt: e.ts, ...(turnAt ? { turnAt } : {}) });
   }
 

@@ -46,3 +46,30 @@
 .cmp-trust .btn { flex: none; display: inline-flex; align-items: center; gap: 6px; }
 .cmp-trust .ct-yes { background: color-mix(in srgb, var(--work, #3ddc97) 18%, var(--raise, #11151d)); color: var(--ink, #e6ebf2); }
 .cmp-trust .ct-yes .lucide-loader-circle { animation: cmp-spin 0.9s linear infinite; }
+
+/* Claude Code's mode (ModeChip, by the buttons) and a session a limit stopped (Paused, over the box) */
+.cmp-paused { display: flex; align-items: flex-start; gap: 8px; margin-bottom: 6px; padding: 8px 10px; border-radius: 9px; background: color-mix(in srgb, var(--need) 8%, var(--raise)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--need) 30%, transparent); color: var(--ink2); font: 400 12px/1.45 var(--ui); }
+.cmp-paused svg { flex: none; margin-top: 2px; color: var(--need); }
+.cmp-paused b { color: var(--ink); font-weight: 600; }
+.cmp-mode { flex: none; align-self: flex-end; margin-bottom: 4px; height: 20px; padding: 0 7px; border-radius: 6px; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--think) 35%, transparent); color: var(--think); font: 500 10px/20px var(--code); cursor: default; }
+.cmp-mode.m-bypassPermissions { color: var(--need); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--need) 35%, transparent); }
+
+/* the mode is a button now (a click steps it); the default is quiet */
+.cmp-mode { border: 0; background: none; cursor: pointer; }
+.cmp-mode:hover { background: var(--raise2); }
+.cmp-mode.m-default { color: var(--ink4); box-shadow: inset 0 0 0 1px var(--hair2); }
+.cmp-mode.bad { color: var(--need); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--need) 40%, transparent); }
+/* nothing to send while Claude works: the button stops it */
+.composer .cmp-send.cmp-stop { background: color-mix(in srgb, var(--need) 18%, var(--raise2)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--need) 45%, transparent); color: var(--need); }
+.composer .cmp-send.cmp-stop:hover { background: color-mix(in srgb, var(--need) 28%, var(--raise2)); color: #ffd0d0; }
+/* Claude Code's suggested next prompt, over the box: Tab takes it */
+.cmp-suggest { display: flex; align-items: baseline; gap: 8px; width: 100%; min-width: 0; margin-bottom: 6px; padding: 5px 10px; border: 0; border-radius: 8px; background: none; box-shadow: inset 0 0 0 1px var(--hair); color: var(--ink3); font: 400 12.5px/1.4 var(--ui); text-align: left; cursor: pointer; }
+.cmp-suggest:hover { background: var(--raise2); color: var(--ink); }
+.cmp-suggest kbd { flex: none; padding: 0 5px; border-radius: 4px; background: var(--raise2); color: var(--ink3); font: 500 10px/16px var(--code); }
+.cmp-suggest span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* stopping: the button turns while Claude winds down */
+.composer .cmp-send.cmp-stop.going { opacity: 1; }
+.composer .cmp-send.cmp-stop.going svg { animation: cmp-turn .9s linear infinite; }
+@keyframes cmp-turn { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .composer .cmp-send.cmp-stop.going svg { animation: none; } }

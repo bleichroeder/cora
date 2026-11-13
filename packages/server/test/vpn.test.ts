@@ -70,7 +70,7 @@ describe('VPN: only the user switches it', () => {
 });
 
 /** A fake OpenVPN Connect: its files, and what the shortcut switches do to them. */
-function fake(o: { connected?: string | null; connects?: boolean; waitMs?: number } = {}) {
+function fake(o: { connected?: string | null; connects?: boolean; waitMs?: number; windowOpen?: boolean; waits?: boolean } = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'cora-vpn-'));
   mkdirSync(join(dir, 'log'));
   const config = join(dir, 'config.json');
@@ -81,6 +81,7 @@ function fake(o: { connected?: string | null; connects?: boolean; waitMs?: numbe
   const ran: string[][] = [];
   let envs: EnvState[] = [];
   const told: Array<[string, string]> = [];
+  const win: string[] = [];
   const vpn = new Vpn({
     ovpn: { exe: 'ovpn.exe', config, log },
     run: (_exe, args) => {
@@ -89,6 +90,10 @@ function fake(o: { connected?: string | null; connects?: boolean; waitMs?: numbe
       if (args[0] === '--disconnect-shortcut') {
         writeFileSync(config, cfg(null, now));
         appendFileSync(log, '\nEVENT: DISCONNECTED');
+      } else if (o.waits) {
+        // a sign-in page: it waits for the user
+        writeFileSync(config, cfg(null, now, 'https://sso.example.com/login'));
+        appendFileSync(log, '\nEVENT: AUTH_PENDING');
       } else if (o.connects !== false) {
         const id = args[0].split('=')[1];
         writeFileSync(config, cfg(id, now));
@@ -99,12 +104,17 @@ function fake(o: { connected?: string | null; connects?: boolean; waitMs?: numbe
     recheck: async () => envs,
     onChange: () => {},
     tell: (sid, text) => told.push([sid, text]),
+    window: {
+      visible: async () => !!o.windowOpen,
+      putAway: (s) => (win.push(`away ${s}`), { stop: () => void win.push('stop') }),
+      show: () => void win.push('show'),
+    },
     now: () => now,
     pollMs: 5,
     waitMs: o.waitMs ?? 60,
     switchMs: 50,
   });
-  return { vpn, ran, told, setEnvs: (e: EnvState[]) => (envs = e), tick: (ms: number) => (now += ms), file: { config, log } };
+  return { vpn, ran, told, win, setEnvs: (e: EnvState[]) => (envs = e), tick: (ms: number) => (now += ms), file: { config, log } };
 }
 
 const settled = async (vpn: Vpn) => {
@@ -187,6 +197,36 @@ describe('VPN: a session asks, the user answers', () => {
     f.vpn.setOn(false);
     expect((await f.vpn.request({ sessionId: 's1', session: 'svc', asked: 'dev', why: 'x' })).kind).toBe('unavailable');
     expect(f.vpn.switchTo('3')).toEqual({ ok: false, error: "Cora's VPN control is off" });
+  });
+
+  it("OpenVPN Connect's window, which shows itself for a shortcut, goes back to the tray: at once when nothing is asked of you", async () => {
+    // from MGMT to Insight Development (signs in by itself): put away through the disconnect, the connect, and once at the end
+    const f = fake({ connected: '1' });
+    f.vpn.switchTo('3');
+    await settled(f.vpn);
+    expect(f.vpn.state().connected).toBe('3');
+    expect(f.win).toEqual(['away 15', 'stop', 'away 20', 'stop', 'away 0']);
+  });
+
+  it('a profile that asks for its password keeps the window while it connects, then puts it away', async () => {
+    const f = fake({ connected: '3' });
+    f.vpn.switchTo('1');
+    await settled(f.vpn);
+    expect(f.vpn.state().connected).toBe('1');
+    // the disconnect's watcher stops before MGMT's connect, so its password prompt stays
+    expect(f.win).toEqual(['away 15', 'stop', 'away 0']);
+  });
+
+  it("a window you had open stays open; one waiting for you (a sign-in) is brought back, and left", async () => {
+    const open = fake({ connected: '1', windowOpen: true });
+    open.vpn.switchTo('3');
+    await settled(open.vpn);
+    expect(open.win).toEqual([]);
+    const waits = fake({ connected: null, waits: true, waitMs: 5000 });
+    waits.vpn.switchTo('3');
+    await settled(waits.vpn);
+    expect(waits.vpn.state().error).toMatch(/waiting for you/);
+    expect(waits.win).toEqual(['away 20', 'stop', 'show']);
   });
 
   it("learns what a profile reaches, only from checks made after it connected", () => {

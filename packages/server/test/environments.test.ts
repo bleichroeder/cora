@@ -97,6 +97,20 @@ describe('environments', () => {
     expect(envLine(env.list())).toMatch(/^No environment is reachable right now/);
   });
 
+  it('has news only for a session that heard before, once per change', async () => {
+    let up = new Set(['rancher.acme-dev.aws.example.com']);
+    const env = new Environments({ kubeDir: kubeDir(), probe: async (u) => up.has(new URL(u).hostname) });
+    await env.check();
+    expect(env.news('s1')).toBeNull();
+    env.heard('s1');
+    expect(env.news('s1')).toBeNull();
+    up = new Set(['rancher.acme-staging.aws.example.com']);
+    await env.check();
+    expect(envLine(env.news('s1')!)).toMatch(/^Reachable now: staging/);
+    expect(env.news('s1')).toBeNull();
+    expect(env.news('s2')).toBeNull();
+  });
+
   it("keeps the user's label and name changes, and leaves out ones they turn off", async () => {
     const dir = kubeDir();
     const file = join(dir, '..', 'environments.json');
@@ -114,7 +128,7 @@ describe('environments', () => {
 });
 
 describe('sessions hear about the network', () => {
-  it('with their first prompt, then only when it changes; the dashboard can see and relabel them', { timeout: 30_000 }, async () => {
+  it('only once they asked (the environment tool), and then only when it changes; the dashboard can see and relabel them', { timeout: 30_000 }, async () => {
     const { startServer } = await import('../src/server');
     const { loadConfig } = await import('../src/config');
     let up = new Set(['rancher.acme-dev.aws.example.com']);
@@ -124,15 +138,28 @@ describe('sessions hear about the network', () => {
       const UI = { cookie: 'ab_session=uitok', origin: 'http://127.0.0.1:4317' };
       const prompt = (sid: string, n: number) => srv.app.inject({ method: 'POST', url: '/hook/UserPromptSubmit', headers: { 'x-cora-token': 'hooktok' }, payload: { session_id: sid, cwd: 'C:/work/x', prompt: 'hi', prompt_id: `${sid}-p${n}` } });
       await srv.app.inject({ method: 'POST', url: '/api/environments/check', headers: UI });
-      const first = await prompt('sess-env-1', 1);
-      expect(first.json().hookSpecificOutput.additionalContext).toMatch(/^From Cora: network: Reachable now: dev \(acme-dev\)\..*KUBECONFIG=.*acme-dev\.yaml/);
-      expect((await prompt('sess-env-1', 2)).statusCode).toBe(204);
+      const said = async (sid: string, n: number) => { const r = await prompt(sid, n); return r.statusCode === 204 ? '' : (r.json().hookSpecificOutput.additionalContext as string); };
+      // a session that never asked hears nothing of the network, first prompt or not
+      expect(await said('sess-env-1', 1)).not.toMatch(/network|Reachable/);
+      expect(await said('sess-quiet-1', 1)).not.toMatch(/network|Reachable/);
+      // it asks: the tool answers (no VPN here, so no VPN line)
+      const H = { 'x-cora-token': 'hooktok', accept: 'application/json, text/event-stream', 'content-type': 'application/json', 'x-cora-session': 'sess-env-1' };
+      const rpc = (method: string, params: object, id: number) => ({ jsonrpc: '2.0', id, method, params });
+      await srv.app.inject({ method: 'POST', url: '/mcp', headers: H, payload: rpc('initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 't', version: '1' } }, 1) });
+      const asked = JSON.parse((await srv.app.inject({ method: 'POST', url: '/mcp', headers: H, payload: rpc('tools/call', { name: 'environment', arguments: {} }, 2) })).body).result.content[0].text as string;
+      expect(asked).toMatch(/^Reachable now: dev \(acme-dev\)\..*KUBECONFIG=.*acme-dev\.yaml/s);
+      expect(asked).not.toMatch(/^VPN:/);
+      expect(await said('sess-env-1', 2)).not.toMatch(/network|Reachable/);
       // the team builder's own session (its folder is Cora's) hears nothing of it: it has no use for it
       const builder = await srv.app.inject({ method: 'POST', url: '/hook/UserPromptSubmit', headers: { 'x-cora-token': 'hooktok' }, payload: { session_id: 'sess-builder-1', cwd: join(dataDir, 'builder', 'p1'), prompt: 'hi', prompt_id: 'sess-builder-1-p1' } });
       expect(builder.statusCode).toBe(204);
       up = new Set(['rancher.acme-staging.aws.example.com']);
       await srv.app.inject({ method: 'POST', url: '/api/environments/check', headers: UI });
-      expect((await prompt('sess-env-1', 3)).json().hookSpecificOutput.additionalContext).toMatch(/the network changed: Reachable now: staging/);
+      expect(await said('sess-env-1', 3)).toMatch(/From Cora: the network changed since you last checked: Reachable now: staging.*KUBECONFIG=.*acme-staging\.yaml/);
+      // once
+      expect(await said('sess-env-1', 4)).not.toMatch(/network|Reachable/);
+      // the one that never asked still hears nothing
+      expect(await said('sess-quiet-1', 2)).not.toMatch(/network|Reachable/);
       const list = (await srv.app.inject({ method: 'GET', url: '/api/environments', headers: UI })).json().environments;
       expect(list.find((e: any) => e.label === 'staging').reachable).toBe(true);
       const r = await srv.app.inject({ method: 'POST', url: '/api/environments/rancher.acme-live.aws.example.com', headers: UI, payload: { name: 'Acme live' } });

@@ -31,6 +31,31 @@ describe('MCP tools', () => {
     expect(await listed(H)).not.toContain('live_explain');
   });
 
+  it('a dashboard: Cora writes the kit page, the session gets the data path and the blocks; a page already there is left', async () => {
+    const dataDir = mkdtempSync(join(tmpdir(), 'ab-mcp-'));
+    srv = await startServer(loadConfig({ dataDir, dbPath: ':memory:', hookToken: 'hooktok', uiToken: 'u' }), { tail: false, listen: false });
+    await call(rpc('initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 't', version: '1' } }));
+    const S = { ...H, 'x-cora-session': 'sess-dash-1' };
+    const r = await call(rpc('tools/call', { name: 'dashboard', arguments: { title: 'Release 2.4' } }, 2), S);
+    const text = r.json.result.content[0].text as string;
+    const dir = join(dataDir, 'explains', 'sess-dash-1', 'release-24');
+    expect(text).toContain(join(dir, 'data.json'));
+    expect(text).toMatch(/stats \{ items/);
+    expect(text).not.toMatch(/page\.html/);
+    const page = readFileSync(join(dir, 'page.html'), 'utf8');
+    expect(page).toContain('cora.onData(render)');
+    expect(page).toContain('echarts');
+    expect(page.length).toBeLessThan(2_000_000);
+    // the session took it over with its own page: asking again doesn't put the kit's back
+    writeFileSync(join(dir, 'page.html'), '<html><body>mine</body></html>');
+    const again = (await call(rpc('tools/call', { name: 'dashboard', arguments: { title: 'Release 2.4' } }, 3), S)).json.result.content[0].text as string;
+    expect(again).toMatch(/left as it is/);
+    expect(readFileSync(join(dir, 'page.html'), 'utf8')).toBe('<html><body>mine</body></html>');
+    const listed = async (headers: Record<string, string>) => ((await call(rpc('tools/list', {}, 4), headers)).json.result.tools as Array<{ name: string }>).map((t) => t.name);
+    expect(await listed(S)).toContain('dashboard');
+    expect(await listed(H)).not.toContain('dashboard');
+  });
+
   it("a session's tools from before an upgrade: its next prompt hears which it lacks (once); listing them again settles it", async () => {
     const dataDir = mkdtempSync(join(tmpdir(), 'ab-mcp-'));
     // listed by an older Cora: no live_explain then

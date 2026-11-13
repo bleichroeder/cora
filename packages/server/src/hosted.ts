@@ -1,6 +1,6 @@
 import { mkdirSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import { BOARD_TOOL, VPN_REQUEST_TOOL, DEBRIEF_TOOL, DEFAULT_WORKTREES, SECRETS_TOOLS, DEFAULT_DEBRIEF, type DebriefSettings, JOURNAL_TOOL, JOURNAL_SEARCH_TOOL, TELL_CORA_TOOL, FROM_CORA, type BoardPageMode, MEME_TOOL, type MemeMode, DEPLOYS_TOOL, ENV_TOOL, LIVE_EXPLAIN_TOOL, NOTES_TOOLS, BOARDS_TOOLS, MCP_SERVER, OPEN_TAB_TOOL, SEAT_MESSAGING_TOOLS, SPOTLIGHT_TOOL, SESSION_HEADER, SLACK_FIND_TOOL, SLACK_READ_TOOL, SLACK_SEND_TOOL, SPEAK_TOOL, TOKEN_HEADER, speaksSummaries, type Settings, type VoiceSettings, takesTags } from '@cora/shared';
+import { DASHBOARD_TOOL, BOARD_TOOL, VPN_REQUEST_TOOL, DEBRIEF_TOOL, DEFAULT_WORKTREES, SECRETS_TOOLS, DEFAULT_DEBRIEF, type DebriefSettings, JOURNAL_TOOL, JOURNAL_SEARCH_TOOL, TELL_CORA_TOOL, FROM_CORA, type BoardPageMode, MEME_TOOL, type MemeMode, DEPLOYS_TOOL, ENV_TOOL, LIVE_EXPLAIN_TOOL, NOTES_TOOLS, BOARDS_TOOLS, MCP_SERVER, OPEN_TAB_TOOL, SEAT_MESSAGING_TOOLS, SPOTLIGHT_TOOL, SESSION_HEADER, SLACK_FIND_TOOL, SLACK_READ_TOOL, SLACK_SEND_TOOL, SPEAK_TOOL, TOKEN_HEADER, speaksSummaries, type Settings, type VoiceSettings, takesTags } from '@cora/shared';
 import type { Config } from './config';
 import { attachmentsDir } from './attachments';
 import { writeFileAtomic } from './fsx';
@@ -50,7 +50,9 @@ const DESIGN = [
 
 /** When and how a session keeps a live explain. */
 const LIVE = [
-  'For work that runs for minutes with progress worth watching (tests, a build, a deploy, a migration, a long search), keep a live explain instead of reporting progress in text:',
+  'When work has several steps or results worth seeing at a glance (a plan being worked through, tests, a build, a deploy, a migration, an investigation, a comparison), keep a live dashboard without being asked:',
+  'call the dashboard tool once with a title and write only its data.json (blocks: stats, steps, tables, charts, a timeline; the tool lists them): Cora supplies the page. Rewrite the data at each real step and reshape it as the work changes (add a block when something new matters, drop one that is done).',
+  'For a visual those blocks cannot draw, write your own page instead (a live explain):',
   'call the live_explain tool once with a title, write page.html (the layout; it reads its data with cora.onData((data) => { … }), called at load and on every change),',
   'then rewrite data.json whole at each real step (not every second). Keep the page fixed and put what changes in the data. Leave a final state that reads well afterwards.',
   'Record when things start (ISO times) and let the page count elapsed time itself on a timer, so its clocks tick between your updates.',
@@ -163,7 +165,7 @@ ${OTHERS}${settings.orchestrator?.enabled ? `\n\n${CORA_NUDGE}` : ''}${(settings
   const explains = join(config.dataDir, 'explains');
   const live = settings.explains.mode === 'markdown+html';
   if (live) mkdirSync(explains, { recursive: true });
-  const allowed = [OPEN_TAB_TOOL, SPOTLIGHT_TOOL, ...((settings.board?.pages ?? 'show') !== 'off' ? [BOARD_TOOL] : []), ...(settings.journal?.on !== false ? [JOURNAL_TOOL, JOURNAL_SEARCH_TOOL] : []), ...(settings.orchestrator?.enabled ? [TELL_CORA_TOOL] : []), DEBRIEF_TOOL, ...SECRETS_TOOLS, 'EnterWorktree', ...((settings.memes?.mode ?? 'off') !== 'off' ? [MEME_TOOL] : []), ENV_TOOL, VPN_REQUEST_TOOL, DEPLOYS_TOOL, ...NOTES_TOOLS.map((t) => `mcp__${MCP_SERVER}__${t}`), ...BOARDS_TOOLS.map((t) => `mcp__${MCP_SERVER}__${t}`), SLACK_FIND_TOOL, SLACK_READ_TOOL, SLACK_SEND_TOOL, ...(speaksSummaries(settings.voice) ? [SPEAK_TOOL] : []), ...(live ? [LIVE_EXPLAIN_TOOL, `Edit(${ruleFor(explains)}/**)`] : [])].join(',');
+  const allowed = [OPEN_TAB_TOOL, SPOTLIGHT_TOOL, ...((settings.board?.pages ?? 'show') !== 'off' ? [BOARD_TOOL] : []), ...(settings.journal?.on !== false ? [JOURNAL_TOOL, JOURNAL_SEARCH_TOOL] : []), ...(settings.orchestrator?.enabled ? [TELL_CORA_TOOL] : []), DEBRIEF_TOOL, ...SECRETS_TOOLS, 'EnterWorktree', ...((settings.memes?.mode ?? 'off') !== 'off' ? [MEME_TOOL] : []), ENV_TOOL, VPN_REQUEST_TOOL, DEPLOYS_TOOL, ...NOTES_TOOLS.map((t) => `mcp__${MCP_SERVER}__${t}`), ...BOARDS_TOOLS.map((t) => `mcp__${MCP_SERVER}__${t}`), SLACK_FIND_TOOL, SLACK_READ_TOOL, SLACK_SEND_TOOL, ...(speaksSummaries(settings.voice) ? [SPEAK_TOOL] : []), ...(live ? [LIVE_EXPLAIN_TOOL, DASHBOARD_TOOL, `Edit(${ruleFor(explains)}/**)`] : [])].join(',');
   const attachments = attachmentsDir(config.dataDir);
   mkdirSync(attachments, { recursive: true });
   // --ide: connect to the IDE open on its folder (the IDE panel's VS Code, with Claude Code's extension) by itself

@@ -1,4 +1,5 @@
-const RULE = /^[─━]{8,}$/;
+// (the box's top rule may carry a label near its end: the session's name, "──── cora-99c0 ─")
+const RULE = /^[─━]{8,}(?: \S.*? [─━]+)?$/;
 // (a dialog may be drawn in a box: its side border comes first)
 const OPTION = /^[\s│┃|]*[❯›]\s*\d+\.\s+\S/u;
 // a dialog whose options have no numbers ("❯ No, exit" / "  Yes, I trust this folder"), told by its footer

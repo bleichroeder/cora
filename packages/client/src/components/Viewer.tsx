@@ -1,3 +1,4 @@
+import { onExplainMessage } from '../state/explainActions';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { BrainEvent } from '@cora/shared';
@@ -80,6 +81,8 @@ export function Viewer({ p }: { p: Explain }) {
   const liveData = useLiveData((s) => (key ? s[key] : undefined));
   const frame = useRef<HTMLIFrameElement>(null);
   const scroll = useRef(0);
+  // the page as shown (what a button's press is judged against)
+  const shownPage = useRef<string | null>(null);
   const dataNow = useRef<unknown>(undefined);
   dataNow.current = liveData;
   useEffect(() => {
@@ -90,7 +93,10 @@ export function Viewer({ p }: { p: Explain }) {
   }, [liveData, p.live]);
   useEffect(() => {
     const m = (e: MessageEvent) => {
-      if (e.source === frame.current?.contentWindow && e.data?.cora === 'scroll' && typeof e.data.y === 'number') scroll.current = e.data.y;
+      if (e.source !== frame.current?.contentWindow) return;
+      if (e.data?.cora === 'scroll' && typeof e.data.y === 'number') scroll.current = e.data.y;
+      // a button pressed in the page (a dashboard's): Cora decides what comes of it
+      else if (e.data?.cora === 'action' && shownPage.current) void onExplainMessage({ sessionId: p.sessionId, content: shownPage.current }, e.data, (m) => frame.current?.contentWindow?.postMessage(m, '*'));
     };
     window.addEventListener('message', m);
     return () => window.removeEventListener('message', m);
@@ -115,6 +121,7 @@ export function Viewer({ p }: { p: Explain }) {
   const [err, setErr] = useState<string | null>(null);
   // what the last button did, for a moment ("Copied", "Saved")
   const [done, setDone] = useState<{ what: 'copy' | 'save' | 'link'; text: string } | null>(null);
+  shownPage.current = content;
   const html = p.format === 'html' || (content != null && looksLikeHtmlDoc(content));
   useEffect(() => {
     if (!done) return;

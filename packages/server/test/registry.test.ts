@@ -278,6 +278,25 @@ describe('what goes with a session when it really ends', () => {
   });
 });
 
+describe('old lines written again (a compaction rewrites your last prompt)', () => {
+  it("don't make an idle session busy, even when Cora has restarted since its turn ended", () => {
+    const { store } = setup();
+    const first = setup();
+    first.reg.ingest(E({ id: 'p1', kind: 'prompt', text: 'go', ts: 1000 }));
+    first.reg.ingest(E({ id: 't1', kind: 'turn_end', ts: 5000 }));
+    expect(first.store.getSession('s1')?.state).toBe('idle');
+    // a registry that never saw the turn end (a restart), over the same store
+    const again = new Registry(first.store, () => {});
+    again.ingest(E({ id: 'c1', kind: 'compact', ts: 60_000 }));
+    again.ingest(E({ id: 'p1', kind: 'prompt', text: 'go', ts: 1000 }));
+    expect(first.store.getSession('s1')?.state).toBe('idle');
+    // a new prompt still starts a turn
+    again.ingest(E({ id: 'p2', kind: 'prompt', text: 'next', ts: 70_000 }));
+    expect(first.store.getSession('s1')?.state).not.toBe('idle');
+    void store;
+  });
+});
+
 describe('compacting (PreCompact until the compact boundary)', () => {
   it('is cleared by the compact boundary, or after a quarter of an hour without one', () => {
     const { store, reg } = setup();
@@ -290,6 +309,20 @@ describe('compacting (PreCompact until the compact boundary)', () => {
     reg.tick(10_000 + 14 * 60_000);
     expect(store.getSession('s1')?.compacting).toMatchObject({ trigger: 'manual' });
     reg.tick(10_000 + 16 * 60_000);
+    expect(store.getSession('s1')?.compacting).toBeNull();
+  });
+
+  it("compacting while idle writes no boundary: what Claude Code says after it (a notice, your next prompt) ends it", () => {
+    const { store, reg } = setup();
+    reg.ingest(E({ id: 'p1', kind: 'prompt', text: 'go', ts: 1000 }));
+    reg.updateSessionMeta('s1', { compacting: { since: 5000, trigger: 'auto' } });
+    // something from just before it began doesn't end it
+    reg.ingest(E({ id: 'n0', kind: 'notice', ts: 5200 }));
+    expect(store.getSession('s1')?.compacting).toMatchObject({ since: 5000 });
+    reg.ingest(E({ id: 'n1', kind: 'notice', ts: 40_000 }));
+    expect(store.getSession('s1')?.compacting).toBeNull();
+    reg.updateSessionMeta('s1', { compacting: { since: 50_000, trigger: 'auto' } });
+    reg.ingest(E({ id: 'p2', kind: 'prompt', text: 'next', ts: 90_000 }));
     expect(store.getSession('s1')?.compacting).toBeNull();
   });
 });

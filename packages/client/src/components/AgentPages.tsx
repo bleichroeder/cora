@@ -88,6 +88,15 @@ const PARKED = { w: 1280, h: 800 };
 /** Menus of a session's browser that open over its page: cut out of the page laid over it, so they show. */
 const OVER_PAGE = '.web-sugg, .wm-menu, .web-prof-menu, .web-find';
 
+/**
+ * The level that puts a Playwright page just over the pane showing its spot: one above the pane's own (a widened
+ * browser is at 29, the usual one at 20); a pane with no level of its own (a Board panel's browser) gets the usual 21.
+ */
+export function aboveOf(pane: Element | null): string {
+  const z = pane ? parseInt(getComputedStyle(pane).zIndex, 10) : NaN;
+  return String(Number.isFinite(z) ? Math.max(21, z + 1) : 21);
+}
+
 /** One Playwright tab's page, laid over its spot in a session's browser when that shows it, else parked behind the app. */
 function Holder({ tab }: { tab: WebTab }) {
   const box = useRef<HTMLDivElement>(null);
@@ -110,10 +119,12 @@ function Holder({ tab }: { tab: WebTab }) {
       const menus = pane ? [...pane.querySelectorAll<HTMLElement>(OVER_PAGE)].map((m) => m.getBoundingClientRect()).filter((m) => m.right > x.l && m.left < x.l + x.w && m.bottom > x.t && m.top < x.t + x.h) : [];
       if (menus.length) clip = `path(evenodd, '${[`M0 0H${x.w}V${x.h}H0Z`, ...menus.map((m) => `M${m.left - x.l} ${m.top - x.t}H${m.right - x.l}V${m.bottom - x.t}H${m.left - x.l}Z`)].join(' ')}')`;
       const still = !!pane?.classList.contains('dragging');
-      const key = `${on}|${x.l}|${x.t}|${x.w}|${x.h}|${clip}|${still}`;
+      // just above the pane its spot is in, whatever that pane's level (the browser widened is above most of the app)
+      const z = on ? aboveOf(pane) : '-2';
+      const key = `${on}|${x.l}|${x.t}|${x.w}|${x.h}|${clip}|${still}|${z}`;
       if (key === last) return;
       last = key;
-      Object.assign(el.style, { left: `${x.l}px`, top: `${x.t}px`, width: `${x.w}px`, height: `${x.h}px`, clipPath: clip, pointerEvents: on && !still ? '' : 'none', zIndex: on ? '' : '-2' });
+      Object.assign(el.style, { left: `${x.l}px`, top: `${x.t}px`, width: `${x.w}px`, height: `${x.h}px`, clipPath: clip, pointerEvents: on && !still ? '' : 'none', zIndex: z });
       el.classList.toggle('on', on);
       const was = useAgentPages.getState().size[tab.id];
       const w = Math.round(x.w), h = Math.round(x.h);

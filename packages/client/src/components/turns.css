@@ -1,0 +1,123 @@
+/* The transcript as turns (TurnView.tsx): your prompt pinned while you read its turn, the work as one line, the answer
+   first, and the terminal's notices as rows. Tokens: docs/design-language.md. */
+
+.journal .turn { padding: 2px 0 6px; }
+.journal .turn + .turn, .journal [data-index] + [data-index] .turn { border-top: 1px solid var(--hair); }
+
+/* your prompt, at the head of its turn */
+.journal .t-prompt { padding: 10px 0 6px; }
+.journal .t-pin { display: flex; align-items: flex-start; gap: 10px; padding: 9px 11px; border-radius: 10px; background: var(--raise); box-shadow: inset 0 0 0 1px var(--hair); }
+.journal .t-who { flex: none; margin-top: 2px; color: var(--ink4); font: 600 9.5px/1.5 var(--code); letter-spacing: .14em; text-transform: uppercase; }
+.journal .t-txt { flex: 1; min-width: 0; max-height: 240px; overflow-y: auto; color: var(--ink); font: 400 13px/1.5 var(--ui); white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; }
+.journal .t-ts { flex: none; margin-top: 3px; color: var(--ink4); font: 500 10px var(--code); font-variant-numeric: tabular-nums; }
+.journal .t-prompt.wake .t-pin { background: color-mix(in srgb, var(--run) 7%, var(--raise)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--run) 25%, transparent); }
+.journal .t-prompt.wake .t-who { color: var(--run); }
+
+/* the work: one line; open, its steps grouped by kind */
+.journal .t-work-h { display: flex; align-items: center; gap: 8px; width: calc(100% + 16px); height: 30px; margin: 2px -8px 0; padding: 0 8px; border: 0; border-radius: 8px; background: none; color: var(--ink3); font: 500 11px var(--code); text-align: left; cursor: pointer; }
+.journal .t-work-h:hover { background: var(--raise); color: var(--ink2); }
+.journal .t-chev { flex: none; color: var(--ink4); transition: transform .15s; }
+.journal .t-work.open .t-chev { transform: rotate(90deg); }
+.journal .t-sum { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.journal .t-sum b { color: var(--ink2); font-weight: 600; }
+.journal .turn.live .t-sum b { color: var(--work); }
+.journal .t-steps { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1px; margin: 2px 0 6px 6px; padding-left: 12px; border-left: 1px solid var(--hair2); }
+.journal .t-grp-h, .journal .t-agent-h { display: flex; align-items: center; gap: 8px; width: calc(100% + 12px); min-height: 28px; margin: 0 -6px; padding: 0 6px; border: 0; border-radius: 7px; background: none; color: var(--ink2); font: 500 12px var(--ui); text-align: left; cursor: pointer; }
+.journal .t-grp-h:hover, .journal .t-agent-h:hover { background: var(--raise); }
+.journal .t-g-l { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.journal .t-g-l em { font-style: normal; color: var(--ink4); font: 400 10.5px var(--code); }
+.journal .t-g-r { flex: none; color: var(--ink4); font: 500 10px var(--code); }
+.journal .t-g-r.bad { color: var(--need); }
+.journal .t-grp-items { padding: 2px 0 6px 4px; }
+.journal .t-note { margin: 2px 0 4px; padding-left: 10px; border-left: 2px solid var(--hair2); }
+.journal .t-note .md, .journal .t-note p { margin: 0; color: var(--ink3); font: 400 12.5px/1.55 var(--ui); }
+.journal .t-mid { display: flex; flex-direction: column; gap: 2px; margin: 4px 0; padding: 7px 10px; border-radius: 8px; background: var(--raise); box-shadow: inset 0 0 0 1px var(--hair); color: var(--ink); font: 400 12.5px/1.5 var(--ui); }
+.journal .t-agent-h > i { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--c); }
+.journal .t-agent-h b { flex: none; font-weight: 600; }
+.journal .t-agent-b { margin: 2px 0 6px; padding-left: 12px; border-left: 2px solid color-mix(in srgb, var(--c) 45%, transparent); }
+
+/* words wrap, whatever is in them (a long path, a URL, a hash); code blocks and tables scroll in their own box */
+.journal .turn, .journal .t-answer, .journal .t-note, .journal .t-mid, .journal .t-ev-t, .journal .t-steps { min-width: 0; overflow-wrap: anywhere; word-break: break-word; }
+.journal .t-mid { white-space: pre-wrap; }
+.journal .t-answer .md pre, .journal .t-note .md pre { max-width: 100%; overflow-x: auto; overflow-wrap: normal; word-break: normal; }
+.journal .t-answer .md table, .journal .t-note .md table { max-width: 100%; }
+
+/* the answer: in full, the reason you read the turn */
+.journal .t-answer-wrap { margin: 6px 0 2px; }
+.journal .t-answer { position: relative; color: var(--ink); font: 400 13.5px/1.62 var(--ui); }
+.journal .t-answer .md p { margin: 0 0 9px; }
+.journal .t-answer code { padding: 1px 5px; border-radius: 5px; background: var(--raise2); color: #d6e2f0; font: 500 11.5px var(--code); }
+.journal .t-answer.clamped { max-height: 340px; overflow: hidden; -webkit-mask-image: linear-gradient(#000 75%, transparent); mask-image: linear-gradient(#000 75%, transparent); }
+.journal .t-a-tools { position: absolute; top: -4px; right: 0; display: flex; gap: 2px; opacity: 0; transition: opacity .12s; }
+.journal .t-answer:hover .t-a-tools { opacity: 1; }
+.journal .t-more { margin: 2px 0 4px; padding: 0; border: 0; background: none; color: var(--ink3); font: 500 10.5px var(--code); cursor: pointer; }
+.journal .t-more:hover { color: var(--ink); }
+
+/* what it left behind */
+.journal .t-outcome { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 2px; }
+.journal .t-chip { display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 9px; border: 0; border-radius: 7px; background: var(--raise); box-shadow: inset 0 0 0 1px var(--hair2); color: var(--ink2); font: 500 11px var(--ui); cursor: pointer; }
+.journal .t-chip:hover { background: var(--raise2); color: var(--ink); }
+.journal .t-chip > i { width: 6px; height: 6px; border-radius: 50%; }
+.journal .t-chip .plus { color: var(--work); font: 500 10.5px var(--code); }
+.journal .t-chip .minus { color: var(--need); font: 500 10.5px var(--code); }
+.journal .t-end { display: flex; align-items: center; gap: 8px; margin: 8px 0 2px; color: var(--ink4); font: 500 10px var(--code); }
+.journal .t-end::before, .journal .t-end::after { content: ''; flex: 1; height: 1px; background: var(--hair); }
+.journal .t-end.bad { color: var(--need); }
+
+/* the terminal's notices */
+.journal .t-ev { display: flex; align-items: flex-start; gap: 9px; margin: 6px 0; padding: 8px 10px; border-radius: 9px; background: var(--raise); box-shadow: inset 0 0 0 1px var(--hair); color: var(--ink2); font: 400 12px/1.45 var(--ui); }
+.journal .t-ev-i { flex: none; display: grid; place-items: center; width: 18px; height: 18px; margin-top: 1px; border-radius: 5px; }
+.journal .t-ev-t { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.journal .t-ev-t b { color: var(--ink); font-weight: 600; }
+.journal .t-ev.err { background: color-mix(in srgb, var(--need) 7%, var(--raise)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--need) 28%, transparent); }
+.journal .t-ev.err .t-ev-i { background: color-mix(in srgb, var(--need) 18%, transparent); color: var(--need); }
+.journal .t-ev.warn .t-ev-i, .journal .t-ev.info .t-ev-i { background: color-mix(in srgb, var(--run) 16%, transparent); color: var(--run); }
+
+/* live state in one box (LiveBlock.tsx): what it's doing now, tasks, background commands, what's queued, a command
+   you're running; each a band of the box, over the composer */
+.journal .live-block { flex: none; display: flex; flex-direction: column; margin: 0 10px 8px; border-radius: 12px; background: var(--raise); box-shadow: inset 0 0 0 1px var(--hair2); overflow: hidden; }
+.journal .live-block > * + * { border-top: 1px solid var(--hair); }
+.journal .live-block .activity { border-top: 0; background: none; padding: 6px 12px; }
+.journal .live-block .activity + * { border-top: 1px solid var(--hair); }
+.journal .live-block .tasks { border-bottom: 0; background: none; }
+.journal .live-block .tasks-h { height: 30px; padding: 0 12px; }
+.journal .live-block .queued, .journal .live-block .ran-now { margin: 0; border-radius: 0; box-shadow: none; }
+.journal .live-block .queued { background: color-mix(in srgb, var(--think) 5%, transparent); }
+.journal .lb-rows { display: flex; flex-direction: column; }
+.journal .lb-row { display: flex; align-items: center; gap: 9px; min-height: 28px; padding: 0 12px; color: var(--ink2); font: 400 11.5px var(--ui); }
+.journal .lb-row + .lb-row { border-top: 1px solid var(--hair); }
+.journal .lb-k { flex: none; display: inline-flex; align-items: center; gap: 5px; width: 92px; color: var(--ink4); font: 600 9.5px var(--code); letter-spacing: .12em; text-transform: uppercase; }
+.journal .lb-v { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.journal .lb-r { flex: none; color: var(--ink4); font: 500 10px var(--code); font-variant-numeric: tabular-nums; }
+
+/* nothing in a turn is wider than the column */
+.journal .t-steps > *, .journal .t-grp-items, .journal .t-agent-b { min-width: 0; max-width: 100%; }
+.journal .t-note .md { white-space: normal; }
+
+/* nothing live to say: no empty box */
+.journal .live-block:empty { display: none; }
+/* a notice outside a turn (an agent's tab, a search) */
+.journal .step .t-ev { margin: 6px 0; }
+
+@media (prefers-reduced-motion: reduce) { .journal .t-chev { transition: none; } }
+
+/* Claude Code's recap: the live block's first band (it used to float over what's under it) */
+.journal .live-block .recap-bar { position: static; border-radius: 0; background: color-mix(in srgb, var(--cora) 5%, transparent); box-shadow: inset 2px 0 0 color-mix(in srgb, var(--cora) 55%, transparent); animation: none; }
+
+/* The live block is the top of the column's bottom band (right.css: the status line, the terminal's bar and the
+   composer as one band, its corners curving up into the column's sides), not a box of its own: the band's colour edge
+   to edge, the band's corners on the block (they were the status line's, and stuck up into the recap above it). */
+.journal .live-block { position: relative; margin: 0; border-radius: 0; overflow: visible; background: var(--band); box-shadow: none; border-top: 1px solid var(--hair2); }
+.journal .live-block .activity { border-top: 0; }
+.journal .live-block .activity::before, .journal .live-block .activity::after { display: none; }
+.journal .live-block::before, .journal .live-block::after { content: ''; position: absolute; bottom: 100%; width: 16px; height: 16px; margin-bottom: 1px; pointer-events: none; }
+.journal .live-block::before { left: 0; background: radial-gradient(circle at 100% 0%, transparent 15px, var(--hair2) 15.5px, var(--hair2) 16px, var(--band) 16.5px); }
+.journal .live-block::after { right: 0; background: radial-gradient(circle at 0% 0%, transparent 15px, var(--hair2) 15.5px, var(--hair2) 16px, var(--band) 16.5px); }
+.journal .live-block .recap-bar { background: none; }
+/* the corners sit on the band's top line, not above it: no line running under them */
+.journal .live-block::before, .journal .live-block::after { margin-bottom: 0; }
+
+/* queued messages: take them back into the box */
+.journal .queued .q-note { display: flex; align-items: center; gap: 10px; }
+.journal .queued .q-back { margin-left: auto; padding: 0; border: 0; background: none; color: var(--ink3); font: 500 10.5px var(--code); cursor: pointer; }
+.journal .queued .q-back:hover:not(:disabled) { color: var(--ink); text-decoration: underline; }

@@ -16,6 +16,8 @@ export type ParseCtx = {
   modelId?: string;
   /** a `/` command Claude Code answers itself, waiting for its output line (the line before it names it) */
   command?: string;
+  /** merge requests already said (Claude Code writes its link again and again: each is a notice once) */
+  links?: Set<string>;
 };
 
 export type LinkMeta = { toolUseId: string; childAgentId: string; prompt?: string; description?: string };
@@ -36,6 +38,10 @@ export type ParseMeta = {
   command?: { id: string; text: string; ts: number };
   /** Claude Code's recap of the session (`away_summary`): where it stands, what's next */
   recap?: { id: string; text: string; at: number };
+  /** Claude Code's permission mode ('default', 'plan', 'auto'…), as it wrote it */
+  permissionMode?: string;
+  /** a limit stopped it (what it said, when); null: it's replying again */
+  limit?: { text: string; at: number } | null;
 };
 
 export type ParseResult = { events: NewEvent[]; meta: ParseMeta };
@@ -51,8 +57,8 @@ export const newParseCtx = (): ParseCtx => ({
 
 /** Line types Claude Code writes that carry nothing we visualize. */
 const IGNORED = new Set([
-  'attachment', 'last-prompt', 'mode', 'permission-mode', 'atis-latch', 'file-history-snapshot',
-  'file-history-delta', 'frame-link', 'pr-link', 'relocated', 'worktree-state', 'artifact-autoreact-ledger',
+  'attachment', 'last-prompt', 'mode', 'atis-latch', 'file-history-snapshot',
+  'file-history-delta', 'frame-link', 'relocated', 'worktree-state', 'artifact-autoreact-ledger',
   'cost-state', 'artifact-comment-monitor', 'summary', 'custom-title', 'tag', 'agent-name', 'fork-context-ref',
   // Claude Code's own bookkeeping of its API calls and the tools it offered
   'api-request', 'api-request-blob', 'api-request-shape', 'tools-used', 'agent-setting',
@@ -121,6 +127,16 @@ function userText(content: unknown): string | undefined {
   return undefined;
 }
 
+/** A notice from a line that carries no message (an attachment, a merge request link): its session and time, or nothing. */
+function noticeEvent(obj: any, ctx: ParseCtx, notice: NonNullable<NewEvent['notice']>): NewEvent | null {
+  const sessionId: string = obj.sessionId ?? obj.session_id;
+  const ts = Date.parse(obj.timestamp);
+  if (!sessionId || Number.isNaN(ts)) return null;
+  const agentId: string = obj.agentId ?? 'main';
+  void ctx;
+  return { sessionId, agentId, ts, source: 'transcript', id: String(obj.uuid ?? `notice:${notice.type}:${sessionId}:${ts}`), kind: 'notice', icon: EVENT_ICON.notice, notice };
+}
+
 export function parseLine(obj: any, ctx: ParseCtx): ParseResult {
   const meta: ParseMeta = {};
   const events: NewEvent[] = [];
@@ -131,12 +147,34 @@ export function parseLine(obj: any, ctx: ParseCtx): ParseResult {
     if (obj.aiTitle) meta.title = String(obj.aiTitle);
     return { events, meta };
   }
+  if (type === 'permission-mode') {
+    if (typeof obj.permissionMode === 'string' && obj.permissionMode) meta.permissionMode = obj.permissionMode;
+    return { events, meta };
+  }
   if (type === 'attachment') {
-    const id = obj.attachment?.type === 'model' ? obj.attachment.identity?.modelId : undefined;
+    const at = obj.attachment ?? {};
+    const id = at.type === 'model' ? at.identity?.modelId : undefined;
     if (typeof id === 'string' && id) {
       ctx.modelId = id;
       meta.model = id;
     }
+    // what the terminal said that the conversation doesn't: Cora's hook couldn't get through, plan mode left
+    if (at.type === 'hook_non_blocking_error' && /127\.0\.0\.1|ECONNREFUSED/.test(String(at.stderr ?? ''))) {
+      const n = noticeEvent(obj, ctx, { type: 'missed', text: `Claude Code couldn't reach Cora (${at.hookEvent ?? 'a hook'}): some of this turn may be missing here` });
+      if (n) events.push(n);
+    } else if (at.type === 'plan_mode_exit') {
+      const n = noticeEvent(obj, ctx, { type: 'mode', text: 'Left plan mode: Claude can change files now' });
+      if (n) events.push(n);
+    }
+    return { events, meta };
+  }
+  if (type === 'pr-link' && obj.prUrl) {
+    const url = String(obj.prUrl);
+    const said = (ctx.links ??= new Set());
+    if (said.has(url)) return { events, meta };
+    said.add(url);
+    const n = noticeEvent(obj, ctx, { type: 'link', text: `Merge request !${obj.prNumber}${obj.prRepository ? ` · ${obj.prRepository}` : ''}`, url });
+    if (n) events.push({ ...n, id: `notice:link:${n.sessionId}:${url}` });
     return { events, meta };
   }
   if (IGNORED.has(type)) return { events, meta };
@@ -184,6 +222,11 @@ export function parseLine(obj: any, ctx: ParseCtx): ParseResult {
         ctx.command = undefined;
       }
     } else if (obj.subtype === 'away_summary' && typeof obj.content === 'string' && recapText(obj.content)) meta.recap = { id: String(obj.uuid ?? `${sessionId}:${ts}`), text: recapText(obj.content), at: ts };
+    else if (obj.subtype === 'scheduled_task_fire' && typeof obj.content === 'string') {
+      const prompt = typeof obj.prompt === 'string' ? obj.prompt.trim() : '';
+      events.push({ ...base, id: obj.uuid, kind: 'notice', icon: EVENT_ICON.notice, notice: { type: 'wakeup', text: `${obj.content}${prompt ? `: ${prompt.slice(0, 200)}` : ''}` } });
+    } else if (obj.subtype === 'informational' && typeof obj.content === 'string' && obj.content.trim())
+      events.push({ ...base, id: obj.uuid, kind: 'notice', icon: EVENT_ICON.notice, notice: { type: 'info', text: obj.content.trim().slice(0, 400) } });
     return { events, meta };
   }
 
@@ -204,6 +247,17 @@ export function parseLine(obj: any, ctx: ParseCtx): ParseResult {
         ...(u.output_tokens_details?.thinking_tokens != null ? { thinking: u.output_tokens_details.thinking_tokens } : {}),
       };
     }
+    // an API error or a limit Claude Code wrote as if Claude said it: a notice; a limit stops the session
+    if (obj.isApiErrorMessage) {
+      const said = (Array.isArray(msg.content) ? msg.content : []).map((b: any) => (b?.type === 'text' ? String(b.text ?? '') : '')).join(' ').trim();
+      if (said) {
+        const limit = /\blimit\b/i.test(said) && /spend|usage|weekly|reset/i.test(said);
+        events.push({ ...base, id: obj.uuid, kind: 'notice', icon: EVENT_ICON.notice, notice: { type: limit ? 'limit' : 'error', text: said.slice(0, 600) } });
+        if (limit && agentId === 'main') meta.limit = { text: said.slice(0, 600), at: ts };
+      }
+      return { events, meta };
+    }
+    if (agentId === 'main' && (Array.isArray(msg.content) ? msg.content : []).some((b: any) => b?.type === 'text' || b?.type === 'tool_use')) meta.limit = null;
     let explainNo = 0;
     for (const block of Array.isArray(msg.content) ? msg.content : []) {
       if (block?.type === 'thinking' || block?.type === 'redacted_thinking') {
@@ -281,7 +335,7 @@ export function parseLine(obj: any, ctx: ParseCtx): ParseResult {
       const s = summarizeTool('Bash', input, undefined, undefined, ctx.cwd);
       events.push({ ...base, id: `tool:${id}:start`, kind: 'tool', phase: 'start', toolUseId: id, icon: iconFor('Bash', input), tool: { name: 'Bash', input, summary: s.summary, resource: s.resource, byYou: true } });
       // typed while Claude worked, it was queued; Claude Code runs it with no line saying it left the queue: it has now
-      const q = [input.command, input.command.trim()].map((c) => `queued:${hashText(c)}`).find((x) => ctx.queued.includes(x));
+      const q = [input.command, input.command.trim()].map((c) => queuedId(ctx, c)).find((x) => x);
       if (q) {
         ctx.queued = ctx.queued.filter((x) => x !== q);
         events.push({ ...base, id: q, kind: 'prompt', icon: EVENT_ICON.prompt, text: input.command.trim(), queue: 'delivered' });
@@ -358,6 +412,12 @@ export function parseLine(obj: any, ctx: ParseCtx): ParseResult {
  * Messages that arrive while the agent is mid-turn are recorded as queue operations. Two matter here:
  * a subagent hand-back (its final report) and the task-notification saying a background subagent finished.
  */
+/** The oldest message still queued with these words (its id), if there is one. */
+const queuedId = (ctx: ParseCtx, content: string): string | undefined => {
+  const h = `queued:${hashText(content)}`;
+  return ctx.queued.find((q) => q === h || q.startsWith(`${h}:`));
+};
+
 function parseQueueOp(obj: any, ctx: ParseCtx): ParseResult {
   const meta: ParseMeta = {};
   const events: NewEvent[] = [];
@@ -373,16 +433,20 @@ function parseQueueOp(obj: any, ctx: ParseCtx): ParseResult {
   }
   if (typeof content !== 'string') return { events, meta };
   // a message you sent while Claude was working: queued until Claude takes it ("remove"), or you take it back into the
-  // input ("popAll"); taken mid-turn, it shows there, where Claude got it (Claude Code gives it the turn's prompt id:
-  // it isn't a turn of its own)
+  // input ("popAll"); taken mid-turn, it shows there, where Claude got it (it isn't a turn of its own: the prompt its
+  // hook brought is put by: pipeline.ts)
   if (!content.startsWith('<') && !SYSTEM_INJECTED.test(content) && ['enqueue', 'remove', 'popAll'].includes(obj.operation)) {
-    const id = `queued:${hashText(content)}`;
     const base = { sessionId, agentId: 'main', source: 'transcript' as const, kind: 'prompt' as const, icon: EVENT_ICON.prompt, text: content };
     if (obj.operation === 'enqueue') {
+      // its own id each time it's queued: the same words sent again ("yes", "continue") are another message, not the
+      // earlier one come back (merged into it, it kept the old time and never showed as waiting)
+      const id = `queued:${hashText(content)}:${ts}`;
       events.push({ ...base, id, ts, queue: 'waiting' });
       ctx.queued.push(id);
       return { events, meta };
     }
+    // (one queued before this change, or before Cora knew of it: the id it had then)
+    const id = queuedId(ctx, content) ?? `queued:${hashText(content)}`;
     ctx.queued = ctx.queued.filter((q) => q !== id);
     events.push({ ...base, id, ts, queue: 'delivered' });
     if (obj.operation === 'remove' && obj.reason === 'absorbed_mid_turn') events.push({ ...base, id: `prompt:mid:${hashText(content)}:${ts}`, ts, midTurn: true });

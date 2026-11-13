@@ -5,6 +5,7 @@ import { decide } from '../state/ws';
 import { useCi } from '../state/ci';
 import { sessionColor, sessionName, prettyModel } from '../lib/format';
 import { sessionNow } from '../lib/sessionNow';
+import { cardState } from '../lib/cardState';
 import { useSessionVoices, useVoiceList, voiceOf, voicePool, type Voice } from '../lib/sessionVoices';
 import { speak, startListening, stopListening, useVoice } from '../lib/voice';
 import { wantsTo } from '../lib/asks';
@@ -83,8 +84,8 @@ export function SessionCard({ sessionId }: { sessionId: string }) {
   const ask = pending[0];
   const color = sessionColor(s);
   const orbState: CoraState = listening ? 'listening' : ask || s.state === 'needs-you' ? 'needs-you' : s.state === 'thinking' ? 'thinking' : s.state === 'ended' ? 'off' : 'idle';
-  const stateWord = listening ? 'listening' : reading ? 'speaking' : ask || s.state === 'needs-you' ? 'needs you' : s.state === 'ended' ? 'ended' : now.doing ? 'working' : s.state === 'thinking' ? 'thinking' : 'idle';
-  const stateCls = listening || reading ? 's' : stateWord === 'needs you' ? 'n' : stateWord === 'working' ? 'w' : stateWord === 'thinking' ? 't' : 'i';
+  // its state in a word, with one clock: a limit that stopped it and a compaction are said as themselves
+  const st = cardState({ listening, speaking: !!reading, ...(ask ? { askedAt: ask.createdAt } : {}), state: s.state, limit: s.limit, compacting: s.compacting, doing: !!now.doing, turn: now.turn });
   const t = Date.now();
   const line = ask
     ? { text: `${shortToolName(ask.toolName)} ${wantsTo(ask.toolName)}`, time: `waiting ${clock(t - ask.createdAt)}` }
@@ -112,7 +113,8 @@ export function SessionCard({ sessionId }: { sessionId: string }) {
   // (its canvas the card's width: Cora reaching it, or it reaching Cora, the arm goes to the card's edge)
   const orb = (size: number) => <CoraOrb state={orbState} size={size} agent={sessionId} color={color} speaking={!!reading} onHold={talk} glow={glow} reach="session" wide={size > 40 ? cardW : undefined} />;
 
-  // around its orb, what it is: where (branch, ticket, pipeline) on the left, how (context, model, its turn) on the right
+  // around its orb, what it is: where (branch, ticket, pipeline) on the left, how (context, model, its last turn) on the
+  // right. Each keeps its side in every session (a side with nothing is left empty), so the eye finds it in one place
   const pipeWord = pipe ? (PIPE[pipe.status] ?? pipe.status) : null;
   const left = ([
     branch ? { k: 'branch', v: branch } : null,
@@ -134,14 +136,8 @@ export function SessionCard({ sessionId }: { sessionId: string }) {
         }
       : null,
     pm ? { k: 'model', v: pm.name } : null,
-    now.turn ? { k: now.turn.until ? 'last turn' : 'turn', v: clock((now.turn.until ?? t) - now.turn.since), title: `Since your prompt at ${at(now.turn.since)}` } : null,
+    now.turn?.until ? { k: 'last turn', v: clock(now.turn.until - now.turn.since), title: `From your prompt at ${at(now.turn.since)}` } : null,
   ] as (Cell | null)[]).filter((c): c is Cell => !!c);
-  // one side empty and the other with a few: share them, so the orb stays in the middle of something
-  if (!left.length !== !right.length && left.length + right.length > 1) {
-    const all = [...left, ...right];
-    left.splice(0, left.length, ...all.slice(0, Math.ceil(all.length / 2)));
-    right.splice(0, right.length, ...all.slice(Math.ceil(all.length / 2)));
-  }
   // under it, how far it has come: what it changed, and for how long it's been going
   const ch = now.changed;
   const webLink = webLast ? webChangeLink(webLast) : null;
@@ -226,9 +222,9 @@ export function SessionCard({ sessionId }: { sessionId: string }) {
       <b className="sc-name" title={sessionName(s)}>
         {sessionName(s)}
       </b>
-      <span className={`sc-st ${stateCls}`}>
-        {stateWord}
-        {line.time && (now.doing || ask) ? <em>{ask ? clock(t - ask.createdAt) : line.time}</em> : null}
+      <span className={`sc-st ${st.cls}`} title={now.doing ? `${now.doing.label} (${clock(t - now.doing.since)})` : (s.limit?.text ?? undefined)}>
+        {st.word}
+        {st.since != null ? <em>{clock(t - st.since)}</em> : st.note ? <em>{st.note}</em> : null}
       </span>
       {/* waiting on you: what it wants, and your answer (the rest of its words are in the transcript below) */}
       {ask ? (

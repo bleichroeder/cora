@@ -28,6 +28,8 @@ export const MCP_SERVER = 'cora';
 export const PRESENT_TOOL = 'mcp__cora__present';
 /** A session's live explain (a page and a data file it keeps current). */
 export const LIVE_EXPLAIN_TOOL = 'mcp__cora__live_explain';
+/** A live dashboard from data alone (the kit's page is Cora's): */
+export const DASHBOARD_TOOL = 'mcp__cora__dashboard';
 export const LEGACY_PRESENT_TOOL = 'mcp__agent-brain__present';
 export const PRESENT_TOOLS = [PRESENT_TOOL, LEGACY_PRESENT_TOOL] as const;
 export const isPresentTool = (name?: string | null) => name === PRESENT_TOOL || name === LEGACY_PRESENT_TOOL;

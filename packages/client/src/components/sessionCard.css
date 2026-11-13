@@ -11,7 +11,7 @@
 .scard .sc-cells.r { align-items: flex-start; text-align: left; }
 .scard .sc-cell { display: flex; flex-direction: column; gap: 1px; max-width: 100%; min-width: 0; }
 .scard .sc-cells.l .sc-cell { align-items: flex-end; }
-.scard .sc-cell small { color: var(--ink4); font: 600 8.5px var(--code); letter-spacing: .2em; text-transform: uppercase; }
+.scard .sc-cell small { color: color-mix(in srgb, var(--ink3) 55%, var(--ink4)); font: 600 9px var(--code); letter-spacing: .18em; text-transform: uppercase; }
 .scard .sc-cell .v { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; overflow: hidden; color: var(--ink2); font: 500 12px var(--ui); text-overflow: ellipsis; white-space: nowrap; }
 .scard .sc-dot { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--ink4); }
 .scard .sc-dot.ok { background: var(--work); }
@@ -28,6 +28,9 @@
 .scard .sc-st.w { color: var(--work); }
 .scard .sc-st.t { color: var(--think); }
 .scard .sc-st.n { color: var(--need); }
+/* paused on a limit: not yours to answer, not at work */
+.scard .sc-st.p { color: var(--think); }
+.scard .sc-st.p em, .scard .sc-st.i em { text-transform: none; letter-spacing: .02em; }
 .scard .sc-st.s { color: color-mix(in srgb, var(--sc) 70%, #fff); }
 /* under the hairline: how far it has come, in a row */
 .scard .sc-cells.f { flex-direction: row; justify-content: center; gap: 22px; width: 100%; max-width: 520px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--hair); }

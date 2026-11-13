@@ -2,6 +2,43 @@
 
 What changed in each release. Cora updates itself; each update's notes are on its release page too.
 
+## 0.1.27
+
+- **The transcript reads as turns.** Each prompt is a turn: your words, the work as one line you can open ("Worked ·
+  read 12 · ran 3 · 1 failed"), and Claude's answer first, where you look. What Claude Code's own terminal says and
+  Cora used to drop now shows as rows: errors, a usage limit, a scheduled wakeup, a missed hook, leaving plan mode, a
+  merge request's link (once, however often it's written).
+- **What's live is in one place**, above the composer: what the session is doing now, its tasks, background commands
+  still running, messages you've queued, a command you're running, and Claude Code's latest recap.
+- **The composer knows what Claude is doing.** While it works the send button is a stop button, and says "Stopping…"
+  until it has. The box says what sending will do (queue for its next step, wait for a limit, answer the question
+  above). Claude Code's suggested next prompt shows over the box and Tab takes it. Its permission mode is a chip by
+  the buttons: click to step it. A message you queued can be taken back into the box, to change or drop.
+- **Live dashboards from data.** A session can keep a dashboard of its work by writing only a small data file: big
+  numbers, steps, tables, charts, a timeline. Cora supplies the page and redraws it as the file changes, so the
+  dashboard follows the work: a block appears when it starts to matter and goes when it's done. Sessions are told to
+  keep one for multi-step work without being asked. A session can still write a page of its own for anything else.
+- **Dashboard buttons.** A dashboard can offer the next steps as buttons ("Retry the failed tests", a link to a merge
+  request): a click sends that prompt to the session as your message, or opens the link. One marked risky takes two
+  clicks. A page a session wrote itself asks in Cora first, and someone watching your Cora can't press them.
+- **A session hears at once when its dashboard's data is wrong** (not JSON, too big, a block the page can't draw),
+  with what and where. Before, the page silently kept the last good data.
+- **The session's card says more, more steadily.** A session a limit stopped reads "paused" with when it resets, and
+  one compacting reads "compacting", where both read idle or working. One clock, the turn's, beside the state. Each
+  figure keeps its side of the orb in every session.
+- **A Journal tab**, beside Transcript, Explains and Changes: the session's journal as cards, newest first, each with
+  its kind (a decision, a finding, something done), its time and what it points at. The tabs are centred under the
+  card, and the transcript's filter bar shows only when there are agents to choose between or a search going.
+- **A session hears about your network only once it asks**, then when it changes, instead of with every prompt; its
+  environment tool names the VPN that's connected.
+- Fixed: an idle session showing as working or compacting after Claude Code compacted it while idle; a message sent
+  while Claude worked showing twice; one queued with the same words as an earlier message never showing as waiting;
+  Claude Code's input box not being found in a named session (taking back, the mode chip and the suggestion all read
+  it); long words, paths and links running off the transcript instead of wrapping.
+- Fixed: a session's Playwright page going white when the browser was widened; Playwright reaching a file it wrote (a
+  `file://` preview, a screenshot in its scratchpad), which Playwright MCP now blocks unless told otherwise; OpenVPN
+  Connect's window staying up after a switch from Cora.
+
 ## 0.1.26
 
 - **Whiteboard.** A new Cora tool: sketch on a board in the Tools drawer (Excalidraw, in Cora's colours), and Send a

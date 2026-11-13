@@ -155,7 +155,7 @@ type State = {
   modal: 'new-session' | 'history' | 'settings' | null;
   viewer: Explain | null;
   viewerWide: boolean;
-  rightTab: 'transcript' | 'explains' | 'changes';
+  rightTab: 'transcript' | 'explains' | 'changes' | 'journal';
   diff: DiffTarget | null;
   diffWide: boolean;
   prefs: UiPrefs;
@@ -169,7 +169,7 @@ type State = {
   setBang(sid: string | null): void;
   setViewer(p: Explain | null): void;
   setViewerWide(v: boolean): void;
-  setRightTab(t: 'transcript' | 'explains' | 'changes'): void;
+  setRightTab(t: 'transcript' | 'explains' | 'changes' | 'journal'): void;
   setDiff(d: DiffTarget | null): void;
   setDiffWide(v: boolean): void;
   /** the UI preferences as this browser now has them (another screen of yours changed them) */

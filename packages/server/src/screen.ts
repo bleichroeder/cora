@@ -1,7 +1,8 @@
 import { createRequire } from 'node:module';
+import { inputBox } from '@cora/shared';
 
 /** An off-screen terminal mirroring a hosted PTY, so the server can read what Claude Code shows. */
-export type Screen = { write(d: string): void; resize(cols: number, rows: number): void; lines(): string[]; dispose(): void };
+export type Screen = { write(d: string): void; resize(cols: number, rows: number): void; lines(): string[]; /** the dimmed text in Claude Code's input box, when that's all there is in it (its suggested next prompt) */ dimInput?(): string | null; dispose(): void };
 
 /**
  * Scrollback must not be 0: with no scrollback xterm can line-feed or resize onto a buffer line that doesn't exist
@@ -44,6 +45,33 @@ export function headlessScreen(cols: number, rows: number): Screen {
         return [];
       }
     },
+    dimInput: () => {
+      try {
+        const b = t.buffer.active;
+        const lines: string[] = [];
+        for (let i = 0; i < t.rows; i++) lines.push(b.getLine(b.viewportY + i)?.translateToString(true) ?? '');
+        const box = inputBox(lines);
+        if (!box) return null;
+        const out: string[] = [];
+        for (let r = box.top + 1; r < box.bottom; r++) {
+          const line = b.getLine(b.viewportY + r);
+          if (!line) return null;
+          let row = '';
+          // after the prompt mark (the first row): every character must be dimmed
+          const from = r === box.top + 1 ? Math.max(0, lines[r].search(/[❯>]/u)) + 1 : 0;
+          for (let x = from; x < line.length; x++) {
+            const c = line.getCell(x);
+            const ch = c?.getChars() ?? '';
+            if (ch.trim() && !c!.isDim()) return null;
+            row += ch || ' ';
+          }
+          out.push(row.trim());
+        }
+        return out.join(' ').replace(/\s+/g, ' ').trim() || null;
+      } catch {
+        return null;
+      }
+    },
     dispose: () => {
       live.delete(self);
       t.dispose();
@@ -73,6 +101,32 @@ export function statusLine(lines: string[]): string | null {
     if (SPINNER.test(lines[i]) && !lines[i].includes('⏵⏵')) return lines[i].replace(/\s+/g, ' ').trim().slice(0, 160);
   }
   return null;
+}
+
+/**
+ * Claude Code's suggested next prompt, from the dimmed text in its input box: not its placeholder examples ('Try
+ * "fix the lint errors"'), and without the key hint it may end with.
+ */
+export function suggestionFrom(dim: string | null): string | null {
+  if (!dim) return null;
+  const s = dim.replace(/\s*[(\[]?(?:tab|enter|↵|→)[^)\]]{0,24}(?:accept|use|send)[)\]]?\s*$/iu, '').trim();
+  if (!s || s.length < 3 || /^try\s+["“]/i.test(s) || /^(?:press|type)\b.*\bfor\b/i.test(s)) return null;
+  return s.slice(0, 400);
+}
+
+/**
+ * Claude Code's permission mode, as the bar under its input box says it ("⏵⏵ auto mode on", "⏸ plan mode on",
+ * "⏵⏵ accept edits on"; nothing said: the default). Null when its input box isn't on screen (a dialog, a menu): not known.
+ */
+export function claudeMode(lines: string[]): string | null {
+  const box = inputBox(lines);
+  if (!box) return null;
+  const under = lines.slice(box.bottom + 1).join(' ').toLowerCase();
+  if (under.includes('plan mode on')) return 'plan';
+  if (under.includes('auto mode on')) return 'auto';
+  if (under.includes('accept edits on')) return 'acceptEdits';
+  if (under.includes('bypass permissions on')) return 'bypassPermissions';
+  return 'default';
 }
 
 export { choiceOpen } from '@cora/shared';

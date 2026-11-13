@@ -320,6 +320,7 @@ function useEntries(): PEntry[] {
       else if (!isDismissed(cur)) cmd('remove', `Remove “${sessionName(cur)}” from the list`, 'EyeOff', () => void removeSession(cur.id).then((err) => err && oops("Couldn't take it off the list", err)), { keywords: 'dismiss hide ended' });
       cmd('tab:transcript', 'Show the transcript', 'ScrollText', () => st().setRightTab('transcript'));
       cmd('tab:explains', 'Show this session’s explains', 'Presentation', () => st().setRightTab('explains'), { keywords: 'documents tab' });
+      cmd('tab:journal', 'Show this session’s journal', 'BookOpen', () => st().setRightTab('journal'), { keywords: 'decisions done history notes tab' });
       cmd('tab:changes', 'Show the changes', 'FileDiff', () => st().setRightTab('changes'), { keywords: 'diff files edits tab' });
       cmd('secret:add', 'Stash a secret', 'KeyRound', () => (wantAdd(), useTools.getState().show(SECRETS_ID)), { keywords: 'token key jwt pat password credential vault secrets' });
       if (cur.flag) cmd('unflag', `Clear the flag on “${sessionName(cur)}”`, 'BookmarkX', async () => (await unflagSession(cur.id)) ?? undefined, { keywords: 'come back to this bookmark flag reminder remove' });

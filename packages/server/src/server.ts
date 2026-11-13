@@ -22,7 +22,7 @@ import { Synced } from './synced';
 import { Projects } from './projects';
 import { Door } from './door';
 import { Environments, envLine } from './environments';
-import { Vpn, findOpenVpnConnect } from './vpn';
+import { Vpn, findOpenVpnConnect, ovpnWindow } from './vpn';
 import { homedir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import type { FastifyInstance } from 'fastify';
@@ -658,8 +658,11 @@ export async function startServer(config: Config, opts: { tail?: boolean; listen
   });
   hub.deploysSnapshot = () => deploys.snapshot();
   // the user's VPN (OpenVPN Connect): what's connected, switched only from the dashboard; sessions ask (vpn_request)
+  const ovpn = config.dbPath === ':memory:' ? null : findOpenVpnConnect();
   const vpn = new Vpn({
-    ovpn: config.dbPath === ':memory:' ? null : findOpenVpnConnect(),
+    ovpn,
+    // its window pops up for each switch: back to the tray afterwards (when it wasn't open)
+    ...(ovpn ? { window: ovpnWindow(ovpn.exe) } : {}),
     envs: () => environments.list(),
     recheck: async () => {
       environments.refresh();

@@ -12,7 +12,12 @@ export type EventKind =
   /** a background command finished (Claude Code's task-notification) */
   | 'task'
   /** a `/` command you ran that Claude Code answers itself (/mcp, /context, /cost…): `command`, and what it said in `text` */
-  | 'command';
+  | 'command'
+  /** something Claude Code's terminal recorded that isn't a message: an API error or a limit, a scheduled wakeup, a notice, a merge request link, a hook that couldn't reach Cora, plan mode left */
+  | 'notice';
+
+/** What kind of notice (kind 'notice'). */
+export type NoticeType = 'error' | 'limit' | 'wakeup' | 'info' | 'link' | 'missed' | 'mode';
 
 export type ToolInfo = {
   name: string;
@@ -60,6 +65,8 @@ export type BrainEvent = {
   command?: string;
   /** kind 'task': how a background command ended */
   task?: { id: string; status: string; exit?: number; outputFile?: string };
+  /** kind 'notice': what it is, its words, and a link when it has one */
+  notice?: { type: NoticeType; text: string; url?: string };
   source: 'hook' | 'transcript';
 };
 
@@ -82,6 +89,10 @@ export type SessionInfo = {
   needsYou: number;
   /** Claude Code is compacting its context now (its PreCompact hook came; the compact boundary ends it): since when, and whether it chose to (auto) or you asked (/compact) */
   compacting?: { since: number; trigger: string } | null;
+  /** Claude Code's permission mode, from its transcript ('default', 'plan', 'auto', 'acceptEdits', 'bypassPermissions') */
+  permissionMode?: string | null;
+  /** Claude Code stopped it on a limit (a spend or usage limit): what it said, and when; its next real reply clears it */
+  limit?: { text: string; at: number } | null;
   model?: string;
   unknownLines?: number;
   totalLines?: number;
@@ -434,6 +445,10 @@ export type TerminalInfo = {
   place?: 'board';
   /** Claude Code is asking whether to trust its folder (before it starts: nothing happens until it's answered) */
   asksTrust?: true;
+  /** the prompt Claude Code suggests next (the dimmed text in its empty input box), while it shows one */
+  suggestion?: string;
+  /** Claude Code's permission mode as its status bar says it now ('default', 'plan', 'auto', 'acceptEdits', 'bypassPermissions') */
+  claudeMode?: string;
 };
 
 export type HistoryItem = {

@@ -240,6 +240,26 @@ export class Environments {
     this.timer = null;
   }
 
+  /**
+   * What each session last heard about the network. Only a session that asked (the environment, deploys or
+   * vpn_request tools) hears of it again, when it changes: the rest never use it, and it would only cost them context.
+   */
+  private heardBy = new Map<string, string>();
+  heard(sessionId: string): void {
+    this.heardBy.set(sessionId, signature(this.list()));
+  }
+  /** For a session that asked before: what's reachable now, once, when that changed since it last heard. */
+  news(sessionId: string): EnvState[] | null {
+    const was = this.heardBy.get(sessionId);
+    if (was == null) return null;
+    const states = this.list().filter((s) => s.on);
+    if (!states.length || states.every((s) => s.reachable == null)) return null;
+    const sig = signature(states);
+    if (sig === was) return null;
+    this.heardBy.set(sessionId, sig);
+    return states;
+  }
+
   /** Labels to keep as the user's own, where they haven't set one (an older Cora's guesses, kept once). */
   keepLabels(label: (e: Environment) => EnvLabel | null): void {
     for (const e of this.envs) {

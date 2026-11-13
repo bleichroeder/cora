@@ -10,7 +10,7 @@ import { dueReminders, flagFrom, remindText } from './sessionFlags';
 import { LIBRARY_KINDS, Library, type LibraryKind, type LibraryWhen } from './library';
 import { appendFileSync, closeSync, createReadStream, existsSync, openSync, readdirSync, readFileSync, readSync, statSync } from 'node:fs';
 import { writeFileAtomic } from './fsx';
-import { envLine, signature, type EnvLabel, type Environments } from './environments';
+import { envLine, type EnvLabel, type Environments } from './environments';
 import { drivesVpn, VPN_REFUSAL } from './vpn';
 import type { Deploys } from './deploys';
 import { NoteError, type Notes } from './notes';
@@ -71,7 +71,7 @@ import type { OrchestratorManager } from './orchestrator/manager';
 import type { OrchToolDeps } from './orchestrator/tools';
 import { answerTrust, deliverWhenReady } from './orchestrator/deliver';
 import { PromptLog } from './promptLanded';
-import { RECALL_WINDOW_MS, recallPrompt } from './recall';
+import { RECALL_WINDOW_MS, recallPrompt, takeBackQueued } from './recall';
 import { lateModWords, modDeadline, stuckModWords } from './modDeadline';
 /** How long a seat Cora started has for its mod to come and take what waits for it (else it's typed in). */
 const MOD_FIRST_WAIT_MS = 90_000;
@@ -83,6 +83,10 @@ export const modPreview = (text: string) => {
   return t.length > 32 ? `${t.slice(0, 31)}…` : t;
 };
 import { sharePrompt } from './liveExplains';
+import { DASHBOARD_KIT_PAGE } from './dashboardKitPage';
+import { createHash as kitHasher } from 'node:crypto';
+
+const KIT_HASH = kitHasher('sha256').update(DASHBOARD_KIT_PAGE).digest('hex');
 import { OTHERS_REFUSAL, nameOf } from './orchestrator/tools';
 import { repoOf } from './orchestrator/mandate';
 import { Prefs } from './prefs';
@@ -100,6 +104,7 @@ import { tailOutput, taskOutputFile } from './tasks';
 import { carriesImage, enterWhenSettled, sendTyped, terminalInput, typedInput } from './input';
 import { TIME_EVERY_MS, nowLine } from './clock';
 import { choiceOpen } from './screen';
+import { inputBoxText } from '@cora/shared';
 import { listCommands } from './commands';
 import { MAX_ATTACHMENT, saveAttachment } from './attachments';
 import type { CiWatcher } from './ci';
@@ -390,8 +395,6 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
    * once per session and ticket, as context for that prompt. Never holds the prompt up more than two seconds.
    */
   const toldSlack = new Set<string>();
-  // what each session last heard about the network: it hears again (one line) when that changes
-  const toldEnv = new Map<string, string>();
   /** When each session was last told the time. */
   const toldTime = new Map<string, number>();
   /**
@@ -407,19 +410,18 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
     if (sid) toldTime.set(sid, now);
     return nowLine(new Date(now));
   }
+  /**
+   * The network, on a prompt: only for a session that asked about it before (its tools), and only when it changed
+   * since. A session that never asked hears nothing: the environment tool answers when it needs to know.
+   */
   function envForPrompt(body: any): string | null {
     const sid = typeof body?.session_id === 'string' ? body.session_id : '';
-    const env = d.environments;
-    if (!env || !sid || isBuilder(sid, body?.cwd)) return null;
-    const states = env.list().filter((s) => s.on);
-    if (!states.length || states.every((s) => s.reachable == null)) return null;
-    const sig = signature(states);
-    if (toldEnv.get(sid) === sig) return null;
-    const first = !toldEnv.has(sid);
-    toldEnv.set(sid, sig);
+    if (!sid || isBuilder(sid, body?.cwd)) return null;
+    const states = d.environments?.news(sid);
+    if (!states) return null;
     const up = states.filter((s) => s.reachable && s.kubeconfig);
     const kube = up.length ? ` For kubectl: ${up.map((s) => `${s.label}: KUBECONFIG=${s.kubeconfig}`).join('; ')}.` : '';
-    return `From Cora: ${first ? 'network' : 'the network changed'}: ${envLine(states)}${kube} (Cora checks this every 30 s; the environment tool has details. Only the user changes the VPN.)`;
+    return `From Cora: the network changed since you last checked: ${envLine(states)}${kube} (Only the user changes the VPN.)`;
   }
 
   async function slackForPrompt(body: any): Promise<string | null> {
@@ -1202,6 +1204,11 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
     if (event === 'SessionEnd') sweepSpawned();
     // a session ran git: its repo's worktrees again, shortly
     if (event === 'PostToolUse' && body.tool_name === 'Bash' && typeof body.cwd === 'string' && /\bgit\b/.test(String(body.tool_input?.command ?? ''))) d.worktrees?.poke(body.cwd);
+    // it wrote a live explain's data: told at once when the page can't use it (it fails silently otherwise)
+    if (event === 'PostToolUse' && /^(Write|Edit|MultiEdit)$/.test(String(body.tool_name ?? '')) && d.live) {
+      const note = d.live.dataProblem(String(body.tool_input?.file_path ?? ''), DASHBOARD_KIT_PAGE);
+      if (note) return reply.code(200).send({ hookSpecificOutput: { hookEventName: 'PostToolUse', additionalContext: note } });
+    }
     if (event === 'UserPromptSubmit') {
       const parts = [toolsForPrompt(body), envForPrompt(body), projectForPrompt(body), notesForPrompt(body), await slackForPrompt(body).catch(() => null), timeForPrompt(body)].filter(Boolean);
       if (parts.length) return reply.code(200).send({ hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext: parts.join('\n\n') } });
@@ -1492,7 +1499,7 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
     });
     const r = d.debriefs!.make(sid, s.cwd, s.transcriptPath, script, span ? { from: span.from, covers: { changed: span.changed, missed: span.missed } } : {});
     return r.ok ? { ok: true, id: r.debrief.id, title: r.debrief.title, steps: r.debrief.steps.length, ...(span?.missed.length ? { missed: span.missed } : {}) } : r;
-  } } : undefined, d.projects ? mcpProjects(d.projects) : undefined, d.calendar, toolsListed, d.projects ? builderTools(d.projects, config.agentToken, { fileExists: (path) => isAbsolute(path) && existsSync(path) }) : undefined, d.vpn ? { available: () => d.vpn!.on, request: (sid, asked, why) => { const s = store.getSession(sid); return d.vpn!.request({ sessionId: sid, session: s ? nameOf(s) : 'a session', asked, why }); } } : undefined, d.boards ? { boards: d.boards, nameOf: (sid) => { const s = store.getSession(sid); return s ? nameOf(s) : 'a session'; } } : undefined);
+  } } : undefined, d.projects ? mcpProjects(d.projects) : undefined, d.calendar, toolsListed, d.projects ? builderTools(d.projects, config.agentToken, { fileExists: (path) => isAbsolute(path) && existsSync(path) }) : undefined, d.vpn ? { available: () => d.vpn!.on, connected: () => { const v = d.vpn!.state(); const p = v.connected ? v.profiles.find((x) => x.id === v.connected) : undefined; return p ? { name: p.name, ...(v.connectedAt ? { since: v.connectedAt } : {}) } : null; }, request: (sid, asked, why) => { const s = store.getSession(sid); return d.vpn!.request({ sessionId: sid, session: s ? nameOf(s) : 'a session', asked, why }); } } : undefined, d.boards ? { boards: d.boards, nameOf: (sid) => { const s = store.getSession(sid); return s ? nameOf(s) : 'a session'; } } : undefined);
   // --- the Whiteboard: your boards (the app draws them in Excalidraw); a session's drawing comes back through here ---
   const boardErr = (reply: FastifyReply, e: unknown) => reply.code(e instanceof BoardError ? 400 : 500).send({ error: (e as Error).message });
   app.get('/api/boards', { preHandler: requireUi }, async (_req, reply) => (d.boards ? { list: d.boards.list() } : reply.code(501).send({ error: 'not supported' })));
@@ -3308,6 +3315,33 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
     if (t.sessionId) pipeline.ingestEvents([{ id: `recall:${t.terminalId}:${now}`, sessionId: t.sessionId, agentId: 'main', ts: Date.now(), kind: 'interrupt', icon: EVENT_ICON.interrupt, text: 'Cancelled: back in the composer', source: 'hook' }]);
     return { sent: true, recalled: sent.text };
   });
+  /** Claude Code's permission mode, stepped to the next (Shift+Tab in its terminal: default, accept edits, plan, auto…). */
+  app.post<{ Params: { id: string } }>('/api/terminals/:id/mode', { preHandler: requireAction }, async (req, reply) => {
+    const t = ptys?.list().find((x) => x.terminalId === req.params.id && x.alive);
+    if (!t || !ptys) return reply.code(404).send({ error: 'no running terminal with that id' });
+    if (t.mode === 'shell') return reply.code(400).send({ error: 'not a Claude terminal' });
+    const lines = ptys.screenLines(t.terminalId);
+    if (!lines || choiceOpen(lines) || inputBoxText(lines) == null) return reply.code(409).send({ error: "Claude Code isn't at its input box now (it's asking something, or a screen of its own is open)." });
+    ptys.write(t.terminalId, '\x1b[Z');
+    return { ok: true };
+  });
+  /** Messages you queued while Claude worked, taken back out of its queue (into the composer's box again). */
+  app.post<{ Params: { id: string }; Body: { texts?: unknown } }>('/api/terminals/:id/unqueue', { preHandler: requireAction }, async (req, reply) => {
+    const t = ptys?.list().find((x) => x.terminalId === req.params.id && x.alive);
+    if (!t || !ptys) return reply.code(404).send({ error: 'no running terminal with that id' });
+    if (t.mode === 'shell') return reply.code(400).send({ error: 'not a Claude terminal' });
+    const texts = Array.isArray(req.body?.texts) ? req.body!.texts.filter((x): x is string => typeof x === 'string' && !!x.trim()).slice(0, 20) : [];
+    if (!texts.length) return reply.code(400).send({ error: 'nothing to take back' });
+    const lines = ptys.screenLines(t.terminalId);
+    if (!lines || choiceOpen(lines)) return reply.code(409).send({ error: 'Claude Code is asking something in its terminal: answer it there first.' });
+    if (inputBoxText(lines) == null) return reply.code(409).send({ error: "Claude Code's input box isn't on screen right now: try again in a moment." });
+    // something written in its box that isn't its own dimmed hint: said, so it can be told apart from "already taken"
+    const held = inputBoxText(lines);
+    if (held && !ptys.screenDim(t.terminalId)) return reply.code(409).send({ error: `Claude Code's input box isn't empty (it holds "${held.replace(/\s+/g, ' ').slice(0, 60)}"): nothing was taken back.` });
+    const back = await takeBackQueued({ screen: () => ptys.screenLines(t.terminalId), key: (data) => void ptys.write(t.terminalId, data), dim: () => ptys.screenDim(t.terminalId) }, texts);
+    if (back == null) return reply.code(409).send({ error: 'Nothing came back: Claude had already taken it.' });
+    return { text: back };
+  });
   /**
    * Claude Code's "trust this folder?" question, answered from the dashboard (the composer's card): yes, only for the
    * terminal's own folder (keys picked from what's on screen, never typed words); no, Esc (Claude Code exits).
@@ -3471,6 +3505,9 @@ export async function buildApp(d: AppDeps): Promise<FastifyInstance> {
       });
   // sessions' journals: where they're kept (Documents\Cora\Journal)
   app.get('/api/journal', { preHandler: requireUi }, async () => ({ dir: config.journalDir ?? journalDir() }));
+  // the dashboard kit's page, by its hash: the dashboard trusts a click in a page that is Cora's own (a session's own
+  // page could post "clicks" by script: its buttons ask first)
+  app.get('/api/dashboard-kit', { preHandler: requireUi }, async () => ({ hash: KIT_HASH }));
   // one session's journal (the Board's Journal panel)
   app.get<{ Params: { id: string } }>('/api/journal/:id', { preHandler: requireUi }, async (req) => {
     const j = d.journal?.read?.(req.params.id) ?? null;

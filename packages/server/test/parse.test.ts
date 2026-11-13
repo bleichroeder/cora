@@ -350,3 +350,56 @@ describe('a `/` command Claude Code answers itself', () => {
     expect(parseLine(said(1, `${esc}[1mContext Usage${esc}[22m 12k/200k`), ctx).events[0].text).toBe('Context Usage 12k/200k');
   });
 });
+
+describe("what Claude Code's terminal records that isn't a message (notices)", () => {
+  const api = (text: string, ms: number) => asst(`e${ms}`, `em${ms}`, { type: 'text', text }, ms, { isApiErrorMessage: true, message: { id: `em${ms}`, model: '<synthetic>', role: 'assistant', content: [{ type: 'text', text }] } });
+  it('an API error is a notice, not something Claude said', () => {
+    const r = parseLine(api('API Error: Connection lost mid-response. The response above may be incomplete.', 0), newParseCtx());
+    expect(r.events.map((e) => e.kind)).toEqual(['notice']);
+    expect(r.events[0].notice).toEqual({ type: 'error', text: 'API Error: Connection lost mid-response. The response above may be incomplete.' });
+    expect(r.meta.limit).toBeUndefined();
+  });
+  it('a spend or usage limit is a notice and stops the session (until its next real reply)', () => {
+    const ctx = newParseCtx();
+    const r = parseLine(api("You've hit your individual spend limit · your weekly limit resets 11pm (America/New_York)", 0), ctx);
+    expect(r.events[0].notice?.type).toBe('limit');
+    expect(r.meta.limit).toEqual({ text: "You've hit your individual spend limit · your weekly limit resets 11pm (America/New_York)", at: T0 });
+    expect(parseLine(asst('a1', 'm1', { type: 'text', text: 'back' }, 10), ctx).meta.limit).toBeNull();
+  });
+  it('a scheduled wakeup, a notice, a merge request link, plan mode left: each a notice', () => {
+    const ctx = newParseCtx();
+    const sys = (subtype: string, extra: object, ms: number) => parseLine({ type: 'system', subtype, uuid: `s${ms}`, timestamp: iso(ms), sessionId: SID, ...extra }, ctx).events[0];
+    expect(sys('scheduled_task_fire', { content: 'Running scheduled task (Nov 10 11:21am)', prompt: 'Scheduled ingestion pass' }, 0)).toMatchObject({ kind: 'notice', notice: { type: 'wakeup', text: 'Running scheduled task (Nov 10 11:21am): Scheduled ingestion pass' } });
+    expect(sys('informational', { content: 'Compacted while idle, before the prompt cache expired' }, 1)).toMatchObject({ kind: 'notice', notice: { type: 'info', text: 'Compacted while idle, before the prompt cache expired' } });
+    const pr = parseLine({ type: 'pr-link', prNumber: 8, prUrl: 'https://gitlab.com/acme/ops/-/merge_requests/8', prRepository: 'acme/ops', timestamp: iso(2), sessionId: SID }, ctx).events[0];
+    expect(pr).toMatchObject({ kind: 'notice', notice: { type: 'link', text: 'Merge request !8 · acme/ops', url: 'https://gitlab.com/acme/ops/-/merge_requests/8' } });
+    // Claude Code writes the same link over and over: said once
+    expect(parseLine({ type: 'pr-link', prNumber: 8, prUrl: 'https://gitlab.com/acme/ops/-/merge_requests/8', prRepository: 'acme/ops', timestamp: iso(9), sessionId: SID }, ctx).events).toEqual([]);
+    const plan = parseLine({ type: 'attachment', uuid: 'p1', timestamp: iso(3), sessionId: SID, attachment: { type: 'plan_mode_exit', planFilePath: 'x.md' } }, ctx).events[0];
+    expect(plan).toMatchObject({ kind: 'notice', notice: { type: 'mode' } });
+  });
+  it("a hook that couldn't reach Cora: some of the turn may be missing (another hook's failure isn't Cora's)", () => {
+    const ctx = newParseCtx();
+    const hook = (stderr: string, ms: number) => parseLine({ type: 'attachment', uuid: `h${ms}`, timestamp: iso(ms), sessionId: SID, attachment: { type: 'hook_non_blocking_error', hookEvent: 'UserPromptSubmit', stderr } }, ctx).events;
+    expect(hook('connect ECONNREFUSED 127.0.0.1:4317', 0)[0]).toMatchObject({ kind: 'notice', notice: { type: 'missed' } });
+    expect(hook('lint.sh: exit 2', 1)).toEqual([]);
+  });
+  it("Claude Code's permission mode is the session's", () => {
+    expect(parseLine({ type: 'permission-mode', permissionMode: 'plan', sessionId: SID }, newParseCtx()).meta.permissionMode).toBe('plan');
+  });
+});
+
+describe('the same words queued twice', () => {
+  it('are two messages: the second is waiting on its own, whatever became of the first', () => {
+    const ctx = newParseCtx();
+    const op = (operation: string, ms: number, extra: object = {}) => parseLine({ type: 'queue-operation', operation, content: 'test', timestamp: iso(ms), sessionId: SID, ...extra }, ctx).events;
+    const first = op('enqueue', 0)[0];
+    expect(first).toMatchObject({ kind: 'prompt', queue: 'waiting', text: 'test' });
+    expect(op('remove', 10)[0]).toMatchObject({ id: first.id, queue: 'delivered' });
+    const second = op('enqueue', 5000)[0];
+    expect(second).toMatchObject({ queue: 'waiting', ts: T0 + 5000 });
+    expect(second.id).not.toBe(first.id);
+    // taken back into the input (popAll): that one, not the first
+    expect(op('popAll', 6000)[0]).toMatchObject({ id: second.id, queue: 'delivered' });
+  });
+});

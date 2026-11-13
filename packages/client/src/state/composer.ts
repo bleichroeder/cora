@@ -114,6 +114,35 @@ export async function interruptSession(sid: string, key: 'esc' | 'ctrl-c', recal
 }
 
 /** The `/` menu's commands for a session: Claude Code's own plus skills and commands (fetched, kept a minute). */
+/** Claude Code's permission mode, to the next one (its Shift+Tab). */
+export async function stepMode(sid: string): Promise<string | null> {
+  const t = liveTerminal(sid);
+  if (!t) return "This session isn't running here";
+  try {
+    const r = await fetch(`/api/terminals/${encodeURIComponent(t.terminalId)}/mode`, { method: 'POST' });
+    return r.ok ? null : ((await r.json().catch(() => ({}))) as { error?: string }).error ?? `failed (${r.status})`;
+  } catch (e) {
+    return (e as Error).message;
+  }
+}
+
+/** Messages you queued while Claude worked, back into the composer's box (out of Claude Code's queue). */
+export async function takeBackQueued(sid: string, texts: string[]): Promise<{ ok: true } | { ok: false; error: string }> {
+  const t = liveTerminal(sid);
+  if (!t) return { ok: false, error: "This session isn't running here" };
+  try {
+    const r = await fetch(`/api/terminals/${encodeURIComponent(t.terminalId)}/unqueue`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ texts }) });
+    const j = (await r.json().catch(() => ({}))) as { text?: string; error?: string };
+    if (!r.ok || !j.text) return { ok: false, error: j.error ?? `failed (${r.status})` };
+    const cur = draftOf(sid);
+    useComposer.getState().setDraft(sid, { text: cur.text.trim() ? `${j.text}\n\n${cur.text}` : j.text });
+    window.dispatchEvent(new CustomEvent('cora:composer-focus', { detail: sid }));
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: (e as Error).message };
+  }
+}
+
 export async function loadCommands(sid: string): Promise<void> {
   const have = useComposer.getState().commands[sid];
   if (have && Date.now() - have.at < 60_000) return;

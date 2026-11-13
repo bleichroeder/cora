@@ -4,7 +4,7 @@ import { existsSync, statSync } from 'node:fs';
 import { delimiter, join } from 'node:path';
 import { isSafeId, isShell, trustQuestion, type ClaudeMode, type TerminalInfo, type TerminalMode } from '@cora/shared';
 import type { Audit } from './audit';
-import { headlessScreen, statusLine, type Screen } from './screen';
+import { claudeMode, headlessScreen, statusLine, suggestionFrom, type Screen } from './screen';
 import { LocalBackend, type PtyBackend } from './ptyhost/backend';
 import type { SpawnFn } from './ptyhost/spawn';
 import type { SeatLaunch } from './hosted';
@@ -148,6 +148,12 @@ export class PtyManager {
   screenLines(terminalId: string): string[] | null {
     const t = this.terms.get(terminalId);
     return t?.alive && t.screen ? t.screen.lines() : null;
+  }
+
+  /** The text in Claude Code's input box when all of it is dimmed (its own hint or suggestion), else null. */
+  screenDim(terminalId: string): string | null {
+    const t = this.terms.get(terminalId);
+    return t?.alive && t.screen ? (t.screen.dimInput?.() ?? null) : null;
   }
 
   /** Live terminals, shells included (they end, or keep running, with the rest when Cora quits). */
@@ -373,6 +379,15 @@ export class PtyManager {
       const lines = t.screen.lines();
       const s = statusLine(lines);
       const ask = !isShell(t) && trustQuestion(lines);
+      // Claude Code's own state, for the composer: the prompt it suggests next, and its permission mode
+      const sug = isShell(t) ? null : suggestionFrom(t.screen.dimInput?.() ?? null);
+      const mode = isShell(t) ? null : claudeMode(lines);
+      if (sug !== (t.suggestion ?? null) || (mode && mode !== t.claudeMode)) {
+        if (sug) t.suggestion = sug;
+        else delete t.suggestion;
+        if (mode) t.claudeMode = mode;
+        changed = true;
+      }
       if (s !== t.status || ask !== !!t.asksTrust) {
         t.status = s;
         if (ask) t.asksTrust = true;

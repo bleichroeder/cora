@@ -9,7 +9,9 @@ export type Item =
   | { kind: 'note'; key: string; e: BrainEvent }
   | { kind: 'compact' | 'turn_end' | 'interrupt'; key: string; e: BrainEvent }
   /** a `/` command you ran that Claude Code answered itself (/mcp, /context…), with what it said */
-  | { kind: 'command'; key: string; e: BrainEvent };
+  | { kind: 'command'; key: string; e: BrainEvent }
+  /** something Claude Code's terminal recorded (an error, a limit, a notice, a link): a row of its own */
+  | { kind: 'notice'; key: string; e: BrainEvent };
 
 export type Step = {
   key: string;
@@ -28,6 +30,8 @@ export type Step = {
   fold?: true;
   /** a command you ran yourself (`!` in Claude Code, or a `/` command Claude Code answers itself): its one item, a step of its own */
   ran?: true;
+  /** a scheduled wakeup started it (what Claude Code said): it opens a step, like a prompt */
+  wake?: string;
 };
 
 const MAX_FP = 14;
@@ -55,6 +59,9 @@ export function buildSteps(events: BrainEvent[], filter: 'all' | string, childBy
   const current = new Map<string, Step>();
   const toolItems = new Map<string, Extract<Item, { kind: 'tool' }>>();
   const sorted = [...events].sort(byTime);
+  // messages still waiting in Claude's queue: the prompt each one's hook brought (as you sent it) isn't a turn yet
+  const waiting = events.filter((e) => e.kind === 'prompt' && e.queue === 'waiting');
+  const waits = (e: BrainEvent) => e.source === 'hook' && waiting.some((w) => Math.abs(w.ts - e.ts) <= 5000 && (w.text ?? '').trim() === (e.text ?? '').trim());
   const spawnOf = new Map([...childBySpawn].map(([toolUseId, child]) => [child, toolUseId]));
   const spawnEnded = new Set<string>();
   const background = new Set<string>();
@@ -133,7 +140,7 @@ export function buildSteps(events: BrainEvent[], filter: 'all' | string, childBy
       case 'prompt':
         // a message you sent while it worked: waiting, it's pinned below the transcript (not here); taken, its own
         // prompt (midTurn) shows where Claude got it
-        if (e.queue) break;
+        if (e.queue || waits(e)) break;
         open(e, { prompt: e.text, ...(e.midTurn ? { mid: true } : {}) });
         break;
       case 'tool': {
@@ -176,6 +183,11 @@ export function buildSteps(events: BrainEvent[], filter: 'all' | string, childBy
       case 'interrupt':
         stepFor(e).items.push({ kind: 'interrupt', key: e.id, e });
         break;
+      case 'notice':
+        if (e.agentId !== 'main') break;
+        if (e.notice?.type === 'wakeup') open(e, { wake: e.notice.text });
+        else stepFor(e).items.push({ kind: 'notice', key: e.id, e });
+        break;
       case 'command':
         // yours, like a prompt: a step of its own (what Claude does next starts a step after it)
         if (e.agentId !== 'main') break;
@@ -186,5 +198,5 @@ export function buildSteps(events: BrainEvent[], filter: 'all' | string, childBy
         break;
     }
   }
-  return steps.filter((s) => s.text || s.prompt || s.items.length);
+  return steps.filter((s) => s.text || s.prompt || s.wake || s.items.length);
 }

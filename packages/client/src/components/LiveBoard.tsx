@@ -1,3 +1,4 @@
+import { onExplainMessage } from '../state/explainActions';
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { sessionName } from '../lib/format';
 import { projectOfBoard, useProjects } from '../state/projects';
@@ -1309,6 +1310,14 @@ function ExplainFrame({ x, content }: { x: Explain; content: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [content, x.live],
   );
+  // a button pressed in the page (a dashboard's): Cora decides what comes of it (state/explainActions)
+  useEffect(() => {
+    const m = (e: MessageEvent) => {
+      if (e.source === frame.current?.contentWindow && e.data?.cora === 'action') void onExplainMessage({ sessionId: x.sessionId, content }, e.data, (r) => frame.current?.contentWindow?.postMessage(r, '*'));
+    };
+    window.addEventListener('message', m);
+    return () => window.removeEventListener('message', m);
+  }, [x.sessionId, content]);
   // allow-scripts WITHOUT allow-same-origin: an opaque origin with no access to the dashboard, its cookie or its APIs
   return <iframe ref={frame} className="lb-frame" title={x.title} sandbox="allow-scripts" srcDoc={page} />;
 }

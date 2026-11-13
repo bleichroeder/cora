@@ -32,9 +32,10 @@ import { BootScreen } from './components/BootScreen';
 import { SessionSwitcher } from './components/SessionSwitcher';
 import { LockSetup } from './components/LockSettings';
 import { SessionCard } from './components/SessionCard';
+import { ExplainAskHost } from './components/ExplainAsk';
+import { JournalTab } from './components/JournalTab';
 import { ThawCard, loadThaw } from './components/Thaw';
 import { lockNow } from './state/lock';
-import { RecapBar } from './components/Recap';
 import { IssueChip } from './components/IssuePicker';
 import { loadSetup, useSetup } from './state/setup';
 import { isShell, setupFirstRun, NUDGE_ADVICE } from '@cora/shared';
@@ -158,16 +159,13 @@ function RightColumn({ sessionId }: { sessionId: string }) {
           Changes{counts.files ? <span className="rt-n">{counts.files}</span> : null}
           {newDebrief && tab !== 'changes' ? <i className="rt-new" title="A new debrief, at the top of Changes" /> : null}
         </button>
+        {/* its journal: what was done and decided, short (the Board's Journal panel shows the same file, as written) */}
+        <button data-ping="tab:journal" className={`rtab${tab === 'journal' ? ' on' : ''}`} onClick={() => setTab('journal')}>Journal</button>
       </div>
       {/* the transcript (or explains, changes), with Claude Code's latest recap resting on its lower edge, just above
           the terminal and composer */}
       <div className="rc-pane">
-        {tab === 'explains' ? <ExplainsList sessionId={sessionId} /> : tab === 'changes' ? <ChangesPane sessionId={sessionId} /> : <Transcript sessionId={sessionId} />}
-        {tab === 'explains' || tab === 'changes' ? null : (
-          <Boundary quiet name="recap">
-            <RecapBar sessionId={sessionId} />
-          </Boundary>
-        )}
+        {tab === 'explains' ? <ExplainsList sessionId={sessionId} /> : tab === 'changes' ? <ChangesPane sessionId={sessionId} /> : tab === 'journal' ? <JournalTab sessionId={sessionId} /> : <Transcript sessionId={sessionId} />}
       </div>
       {auto ? null : (
         <DragHandle
@@ -735,6 +733,7 @@ export function App() {
       <OpMenu />
       {guest ? null : <CoraFloat />}
       <PaletteHost />
+      <ExplainAskHost />
       <FilePeekHost />
       {/* a session flag's why and reminder: always here, over the nav's drawer too (never inside it, so a drawer closing can't take it) */}
       <FlagPop />

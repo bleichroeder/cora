@@ -1,7 +1,8 @@
 import { createHash } from 'node:crypto';
 import { watch, type FSWatcher } from 'node:fs';
 import { lstatSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
-import { join, relative, sep } from 'node:path';
+import { join, relative, resolve, sep } from 'node:path';
+import { dataProblem } from './dashboardCheck';
 import { explainSlug, shareFileName } from '@cora/shared';
 
 /**
@@ -12,6 +13,8 @@ import { explainSlug, shareFileName } from '@cora/shared';
  * show something from elsewhere on the PC), and only up to a size.
  */
 
+/** in the head of every kit page: how an earlier one is told from a session's own page */
+export const KIT_MARK = '<meta name="generator" content="cora-dashboard-kit">';
 export const PAGE = 'page.html';
 export const DATA = 'data.json';
 const META = 'meta.json';
@@ -66,6 +69,37 @@ export class LiveExplains {
     mkdirSync(dir, { recursive: true });
     writeFileSync(join(dir, META), JSON.stringify({ title: name, sessionId, at: Date.now() }));
     return { slug, dir, page: join(dir, PAGE), data: join(dir, DATA) };
+  }
+
+  /**
+   * A kit dashboard: an explain's folder with Cora's own page in it (the session writes only the data). A page already
+   * there that is the session's own (it took the dashboard over) is left as it is; an earlier kit page (it says so in
+   * its head) is brought up to this one.
+   */
+  startKit(sessionId: string, title: string, page: string): { slug: string; dir: string; page: string; data: string; wrote: boolean } {
+    const f = this.start(sessionId, title);
+    const there = this.read(sessionId, f.slug, PAGE, PAGE_MAX);
+    if (there?.trim() && (there === page || !there.includes(KIT_MARK))) return { ...f, wrote: false };
+    writeFileSync(f.page, page);
+    return { ...f, wrote: true };
+  }
+
+  /**
+   * What's wrong with the data file a session just wrote (`file`: the path it gave its Write or Edit), to tell it; null
+   * when it's fine, or the file isn't an explain's data. A kit dashboard's (its page is `kitPage`) has its blocks
+   * checked too.
+   */
+  dataProblem(file: string, kitPage: string): string | null {
+    if (!file) return null;
+    const parts = relative(this.o.root, resolve(file)).split(sep);
+    if (parts.length !== 3 || parts[0] === '..' || parts[2] !== DATA) return null;
+    const [sid, slug] = parts;
+    if (!SID.test(sid) || !/^[\w-]{1,60}$/.test(slug)) return null;
+    // (read to a little past the most, so "too big" is said rather than nothing)
+    const text = this.read(sid, slug, DATA, DATA_MAX * 4);
+    if (text == null) return null;
+    const page = this.read(sid, slug, PAGE, PAGE_MAX);
+    return dataProblem(text, { kit: page != null && page === kitPage, max: DATA_MAX });
   }
 
   /** Write the copy of an explain its session publishes when you share it; returns where. */

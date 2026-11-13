@@ -49,5 +49,10 @@ export function playwrightInCora(yours: McpStdio, endpoint: string): McpStdio {
     }
     args.push(a[i]);
   }
-  return { type: 'stdio', command: yours.command, args: [...args, '--cdp-endpoint', endpoint], ...(yours.env ? { env: yours.env } : {}) };
+  // files: the session reaches them anyway (its shell), so its Playwright may too: a file:// page (a preview it wrote),
+  // a screenshot saved to its scratchpad. Playwright MCP blocks both by default since 0.0.8x. An environment variable,
+  // not the flag, so a version without it still starts; yours wins if you set it.
+  return { type: 'stdio', command: yours.command, args: [...args, '--cdp-endpoint', endpoint], env: { [FILE_ACCESS]: 'true', ...yours.env } };
 }
+
+export const FILE_ACCESS = 'PLAYWRIGHT_MCP_ALLOW_UNRESTRICTED_FILE_ACCESS';

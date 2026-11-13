@@ -2,8 +2,8 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { desktop } from '../lib/desktop';
 import { useLive } from '../state/live';
 import { useBrain, sessionEvents } from '../state/store';
-import { attachFile, composerInbox, draftOf, loadCommands, previews, sendToSession, useComposer, interruptSession } from '../state/composer';
-import { buildPrompt, caretOnEdge, composerTall, filterCommands, keyAction, promptHistory, sizesItself, slashQuery, stepHistory, type Attachment, type SlashCommand, stopKey } from '../lib/composer';
+import { attachFile, composerInbox, draftOf, loadCommands, previews, sendToSession, stepMode, useComposer, interruptSession } from '../state/composer';
+import { buildPrompt, caretOnEdge, filterCommands, keyAction, promptHistory, sizesItself, slashQuery, stepHistory, type Attachment, type SlashCommand, stopKey } from '../lib/composer';
 import { useShells, watchCommand } from '../state/shells';
 import { Icon } from './Icon';
 import { removeSession } from './SessionMenu';
@@ -66,6 +66,19 @@ function ComposerBox({ sessionId }: { sessionId: string }) {
     // (not on a touch screen: focusing calls up its keyboard bar, which takes over the screen; you tap to type)
     if (!typing && !touchScreen) requestAnimationFrame(() => ta.current?.focus());
   }, []);
+  // Claude is at work (what you send queues for its next step; the button stops it), or a limit stopped it
+  const working = useBrain((s) => ['working', 'thinking'].includes(s.sessions[sessionId]?.state ?? ''));
+  const paused = useBrain((s) => !!s.sessions[sessionId]?.limit);
+  // the prompt Claude Code suggests next (the dimmed text in its own input box), while it's idle and shows one
+  const suggestion = useBrain((s) => s.terminals.find((t) => t.sessionId === sessionId && t.alive && t.mode !== 'shell')?.suggestion ?? null);
+  // you pressed stop: said until Claude has stopped (or a few seconds, if it carries on)
+  const [stopping, setStopping] = useState(false);
+  useEffect(() => {
+    if (!stopping) return;
+    if (!working) return setStopping(false);
+    const t = setTimeout(() => setStopping(false), 6000);
+    return () => clearTimeout(t);
+  }, [stopping, working]);
   const [focused, setFocused] = useState(false);
   const [caret, setCaret] = useState(0);
   const [sel, setSel] = useState(0);
@@ -97,36 +110,16 @@ function ComposerBox({ sessionId }: { sessionId: string }) {
   }, [query != null, sessionId]);
   useEffect(() => setSel(0), [query]);
 
-  // grows with its text up to a third of the window, then scrolls. Past three lines the text takes the whole width
-  // (the buttons drop to a row under it); back to one line, they come back beside it. The gap between the two keeps
-  // the change of width from flipping it back and forth.
-  const [tall, setTall] = useState(false);
-  // The box sizes itself to its text (CSS field-sizing) and its size is watched after layout: nothing measures it on
-  // every keystroke (setting its height and reading it back forced the whole page's layout each time, so holding
-  // Delete was slow). Where it can't size itself (an older browser), it's measured as before.
+  // The box grows with its text up to a third of the window, then scrolls: it sizes itself (CSS field-sizing), so
+  // nothing measures it on every keystroke. Where it can't (an older browser), it's measured.
   const selfSized = useMemo(sizesItself, []);
-  const empty = useRef(!text);
-  empty.current = !text;
-  useEffect(() => {
-    const el = ta.current;
-    if (!selfSized || !el || typeof ResizeObserver === 'undefined') return;
-    const line = parseFloat(getComputedStyle(el).lineHeight) || 20;
-    const ro = new ResizeObserver(([e]) => setTall((t) => composerTall(e.contentRect.height, line, t, empty.current)));
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [selfSized]);
-  useEffect(() => {
-    if (selfSized && !text) setTall(false);
-  }, [selfSized, !text]); // eslint-disable-line react-hooks/exhaustive-deps
   useLayoutEffect(() => {
     const el = ta.current;
     if (selfSized || !el) return;
     el.style.height = 'auto';
     const h = el.scrollHeight;
-    const line = parseFloat(getComputedStyle(el).lineHeight) || 20;
-    setTall((t) => composerTall(h, line, t, !text));
     el.style.height = `${Math.min(h + 2, Math.max(120, window.innerHeight * 0.33))}px`;
-  }, [text, tall, selfSized]);
+  }, [text, selfSized]);
 
   // push-to-talk puts its words here for review
   useEffect(() => {
@@ -164,10 +157,19 @@ function ComposerBox({ sessionId }: { sessionId: string }) {
     });
   };
 
+  // Enter again before the last send was through: sent as soon as it is
+  const again = useRef(false);
+  useEffect(() => {
+    if (busy || !again.current) return;
+    again.current = false;
+    void send();
+  }, [busy]); // eslint-disable-line react-hooks/exhaustive-deps
+
   /** Send what's in the box (or `command`, picked from the menu). */
   const send = async (force = false, command?: string) => {
     const prompt = command ?? buildPrompt(text, attachments);
-    if (!prompt.trim() || busy || uploading) return;
+    if (!prompt.trim() || uploading) return;
+    if (busy) return void (again.current = true);
     // the box empties at once, so you can start on the next prompt; a failed send puts it back (if still empty)
     const before = { text, attachments };
     setDraft(command == null ? { text: '', attachments: [] } : { text: '' });
@@ -210,6 +212,8 @@ function ComposerBox({ sessionId }: { sessionId: string }) {
     }
   };
 
+  const showSuggestion = !!suggestion && !text && !attachments.length && !working && !asking && !dialog;
+
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     const el = e.currentTarget;
     if (menuOpen) {
@@ -245,7 +249,7 @@ function ComposerBox({ sessionId }: { sessionId: string }) {
           requestAnimationFrame(() => ta.current?.focus());
           return;
         }
-        if (r.sent) return setError(null);
+        if (r.sent) return (setStopping(true), setError(null));
         // nothing running: Esc on an empty box goes to the terminal, as it always has (with a draft it stays put);
         // Ctrl+C says so
         if (stop === 'esc') {
@@ -255,6 +259,10 @@ function ComposerBox({ sessionId }: { sessionId: string }) {
         } else setError({ text: r.why });
       });
       return;
+    }
+    if (e.key === 'Tab' && !e.shiftKey && !e.ctrlKey && !e.altKey && showSuggestion) {
+      e.preventDefault();
+      return edit(suggestion!);
     }
     const act = keyAction({ ...e, isComposing: e.nativeEvent.isComposing }, enterMode);
     if (act === 'send') {
@@ -282,7 +290,24 @@ function ComposerBox({ sessionId }: { sessionId: string }) {
     }
   };
 
-  const canSend = !busy && !uploading && !!buildPrompt(text, attachments).trim();
+  const canSend = !uploading && !!buildPrompt(text, attachments).trim();
+  // nothing to send and Claude at work: the button stops it
+  const canStop = working && !canSend && !busy;
+  const stop = () => {
+    setStopping(true);
+    void interruptSession(sessionId, 'esc').then((r) => r.sent || (setStopping(false), setError({ text: r.why })));
+  };
+  const placeholder = drag
+    ? 'Drop to attach'
+    : stopping
+      ? 'Stopping Claude…'
+      : paused
+      ? 'Paused on a limit: what you send waits for it'
+      : asking
+        ? 'Claude Code is asking in the terminal above…'
+        : working
+          ? 'Claude is working: what you send queues for its next step'
+          : 'Message Claude…  / for commands · paste or drop files';
   const hintSend = enterMode === 'enter' ? 'Enter sends · Shift+Enter new line' : 'Ctrl+Enter sends · Enter new line';
   return (
     <div
@@ -302,6 +327,7 @@ function ComposerBox({ sessionId }: { sessionId: string }) {
         ta.current?.focus();
       }}
     >
+      <Paused sessionId={sessionId} />
       {menuOpen ? <CommandMenu items={items} sel={Math.min(sel, items.length - 1)} onPick={(c) => pick(c, true)} onHover={setSel} /> : null}
       {attachments.length || uploading ? (
         <div className="cmp-chips">
@@ -317,13 +343,19 @@ function ComposerBox({ sessionId }: { sessionId: string }) {
           {uploading ? <span className="cmp-chip busy">adding {uploading} file{uploading > 1 ? 's' : ''}…</span> : null}
         </div>
       ) : null}
-      <div className={`cmp-row${tall ? ' cmp-tall' : ''}`}>
+      {showSuggestion ? (
+        <button className="cmp-suggest" title="Claude Code's suggested next prompt: Tab (or click) puts it in the box to change or send" onClick={() => (edit(suggestion!), ta.current?.focus())}>
+          <kbd>Tab</kbd>
+          <span>{suggestion}</span>
+        </button>
+      ) : null}
+      <div className="cmp-row">
         <textarea
           ref={ta}
           rows={1}
           value={text}
           spellCheck
-          placeholder={drag ? 'Drop to attach' : 'Message Claude…  / for commands · paste or drop files'}
+          placeholder={placeholder}
           onChange={(e) => {
             setDraft({ text: e.target.value });
             setCaret(e.target.selectionStart);
@@ -342,6 +374,7 @@ function ComposerBox({ sessionId }: { sessionId: string }) {
             }
           }}
         />
+        <ModeChip sessionId={sessionId} />
         <label className="cmp-btn" title="Attach files">
           <Icon name="Paperclip" size={14} />
           <input
@@ -359,9 +392,15 @@ function ComposerBox({ sessionId }: { sessionId: string }) {
             <Icon name={listening ? 'MicOff' : 'Mic'} size={14} />
           </button>
         ) : null}
-        <button className="cmp-btn cmp-send" disabled={!canSend} title={hintSend} onClick={() => void send()}>
-          <Icon name={busy ? 'LoaderCircle' : 'ArrowUp'} size={15} />
-        </button>
+        {canStop ? (
+          <button className={`cmp-btn cmp-send cmp-stop${stopping ? ' going' : ''}`} disabled={stopping} title={stopping ? 'Stopping…' : 'Stop Claude (Esc)'} onClick={stop}>
+            <Icon name={stopping ? 'LoaderCircle' : 'Square'} size={stopping ? 14 : 12} />
+          </button>
+        ) : (
+          <button className="cmp-btn cmp-send" disabled={!canSend} title={working ? `Queue it for Claude's next step · ${hintSend}` : hintSend} onClick={() => void send()}>
+            <Icon name={busy ? 'LoaderCircle' : 'ArrowUp'} size={15} />
+          </button>
+        )}
       </div>
       {error ? (
         <div className="cmp-err">
@@ -465,6 +504,47 @@ function CommandMenu({ items, sel, onPick, onHover }: { items: SlashCommand[]; s
           {i === sel ? <span className="cmp-do">{c.hint ? '↵ add arguments' : '↵ run'}</span> : null}
         </div>
       ))}
+    </div>
+  );
+}
+
+const MODE: Record<string, { label: string; title: string }> = {
+  default: { label: 'asks', title: 'Claude asks before it edits files or runs commands' },
+  plan: { label: 'plan', title: "Claude reads and plans; it won't change files until you approve the plan" },
+  auto: { label: 'auto', title: 'Claude decides what needs your OK on its own' },
+  acceptEdits: { label: 'edits on', title: 'Claude edits files without asking' },
+  bypassPermissions: { label: 'no checks', title: 'Claude runs everything without asking' },
+};
+
+/** Claude Code's permission mode, by the composer's buttons: a click steps it to the next (its Shift+Tab). */
+function ModeChip({ sessionId }: { sessionId: string }) {
+  // what its status bar says now; before that's been read, what its transcript last said
+  const mode = useBrain((s) => s.terminals.find((t) => t.sessionId === sessionId && t.alive && t.mode !== 'shell')?.claudeMode ?? s.sessions[sessionId]?.permissionMode ?? null);
+  const [err, setErr] = useState<string | null>(null);
+  useEffect(() => {
+    if (!err) return;
+    const t = setTimeout(() => setErr(null), 4000);
+    return () => clearTimeout(t);
+  }, [err]);
+  const m = mode ? MODE[mode] : undefined;
+  if (!m) return null;
+  return (
+    <button className={`cmp-mode m-${mode}${err ? ' bad' : ''}`} title={err ?? `${m.title}. Click for the next mode.`} onClick={() => void stepMode(sessionId).then(setErr)}>
+      {m.label}
+    </button>
+  );
+}
+
+/** A session a limit stopped: said where you write, over the box. */
+function Paused({ sessionId }: { sessionId: string }) {
+  const limit = useBrain((s) => s.sessions[sessionId]?.limit ?? null);
+  if (!limit) return null;
+  return (
+    <div className="cmp-paused" role="status">
+      <Icon name="OctagonPause" size={13} />
+      <span>
+        <b>Paused: Claude Code stopped on a limit.</b> {limit.text}
+      </span>
     </div>
   );
 }

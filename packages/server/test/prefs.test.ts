@@ -96,12 +96,13 @@ describe('settings', () => {
     expect(readFileSync(off[off.indexOf('--append-system-prompt-file') + 1], 'utf8')).not.toMatch(/cora:explain/);
     const args = hostedArgs(cfg, DEFAULT_SETTINGS);
     // with HTML explains on: live explains too, and editing in their folder (only there in Cora's) with no prompt
-    expect(args[args.indexOf('--allowedTools') + 1]).toBe(`mcp__cora__open_tab,mcp__cora__spotlight,mcp__cora__board,mcp__cora__journal,mcp__cora__journal_search,mcp__cora__debrief,mcp__cora__secrets,mcp__cora__secret_run,EnterWorktree,mcp__cora__environment,mcp__cora__vpn_request,mcp__cora__deploys,mcp__cora__notes_list,mcp__cora__notes_search,mcp__cora__notes_read,mcp__cora__notes_add,mcp__cora__boards_list,mcp__cora__board_read,mcp__cora__board_draw,mcp__cora__board_erase,mcp__cora__slack_find,mcp__cora__slack_read,mcp__cora__slack_send,mcp__cora__live_explain,Edit(${ruleFor(join(cfg.dataDir, 'explains'))}/**)`);
+    expect(args[args.indexOf('--allowedTools') + 1]).toBe(`mcp__cora__open_tab,mcp__cora__spotlight,mcp__cora__board,mcp__cora__journal,mcp__cora__journal_search,mcp__cora__debrief,mcp__cora__secrets,mcp__cora__secret_run,EnterWorktree,mcp__cora__environment,mcp__cora__vpn_request,mcp__cora__deploys,mcp__cora__notes_list,mcp__cora__notes_search,mcp__cora__notes_read,mcp__cora__notes_add,mcp__cora__boards_list,mcp__cora__board_read,mcp__cora__board_draw,mcp__cora__board_erase,mcp__cora__slack_find,mcp__cora__slack_read,mcp__cora__slack_send,mcp__cora__live_explain,mcp__cora__dashboard,Edit(${ruleFor(join(cfg.dataDir, 'explains'))}/**)`);
     expect(args.slice(args.indexOf('--add-dir') + 1, args.indexOf('--add-dir') + 3)).toEqual([join(cfg.dataDir, 'attachments'), join(cfg.dataDir, 'explains')]);
     expect(off.slice(off.indexOf('--add-dir') + 1, off.indexOf('--add-dir') + 3)).toEqual([join(cfg.dataDir, 'attachments'), '--mcp-config']);
     const guide = readFileSync(args[args.indexOf('--append-system-prompt-file') + 1], 'utf8');
     expect(guide).toMatch(/--bg \(the page\), --panel and --panel2 \(cards\), --ink/);
     expect(guide).toMatch(/call the live_explain tool once/);
+    expect(guide).toMatch(/call the dashboard tool once with a title and write only its data\.json/);
     expect(nudgeFor({ ...DEFAULT_SETTINGS.explains, mode: 'markdown' })).not.toMatch(/live_explain|--panel/);
     expect(readFileSync(args[args.indexOf('--append-system-prompt-file') + 1], 'utf8')).toMatch(/<!-- cora:explain title=/);
     expect(JSON.parse(readFileSync(args[args.indexOf('--mcp-config') + 1], 'utf8')).mcpServers.cora.alwaysLoad).toBe(true);

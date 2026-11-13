@@ -1,0 +1,17 @@
+/* A page that isn't Cora's own asks to act: a small card over the app, in Cora's own look (never the system's box). */
+.xask-scrim { position: fixed; inset: 0; z-index: 400; display: grid; place-items: center; background: rgba(5, 8, 13, .55); backdrop-filter: blur(2px); animation: xask-in .14s ease-out; }
+.xask { width: min(460px, calc(100vw - 48px)); padding: 16px 18px 14px; border-radius: 14px; background: var(--raise2); box-shadow: inset 0 0 0 1px var(--hair2), 0 24px 60px rgba(0, 0, 0, .55); font-family: var(--ui); animation: xask-up .18s cubic-bezier(.2, .7, .2, 1); }
+.xask-h { display: flex; align-items: center; gap: 8px; color: var(--ink); font: 600 13.5px var(--ui); }
+.xask-h svg { flex: none; color: var(--cora); }
+.xask p { margin: 8px 0 8px; color: var(--ink3); font: 400 12px/1.5 var(--ui); }
+.xask pre { max-height: 180px; margin: 0; overflow: auto; padding: 10px 12px; border-radius: 9px; background: var(--nav); box-shadow: inset 0 0 0 1px var(--hair); color: var(--ink); font: 400 12px/1.55 var(--code); white-space: pre-wrap; overflow-wrap: anywhere; }
+.xask-f { display: flex; justify-content: flex-end; gap: 6px; margin-top: 14px; }
+.xask-f button { height: 28px; padding: 0 14px; border: 0; border-radius: 8px; font: 600 12px var(--ui); cursor: pointer; }
+.xask-f .no { background: none; color: var(--ink3); }
+.xask-f .no:hover { background: var(--raise); color: var(--ink); }
+.xask-f .yes { background: color-mix(in srgb, var(--cora) 20%, var(--raise)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cora) 50%, transparent); color: var(--ink); }
+.xask-f .yes:hover { background: color-mix(in srgb, var(--cora) 30%, var(--raise)); }
+.xask-f .yes:focus-visible { outline: 2px solid color-mix(in srgb, var(--cora) 60%, transparent); outline-offset: 2px; }
+@keyframes xask-in { from { opacity: 0; } }
+@keyframes xask-up { from { opacity: 0; transform: translateY(6px) scale(.985); } }
+@media (prefers-reduced-motion: reduce) { .xask-scrim, .xask { animation: none; } }

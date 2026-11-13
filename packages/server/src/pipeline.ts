@@ -29,6 +29,19 @@ export type PipelineOptions = {
   onRecap?: (sessionId: string, r: { text: string; at: number }) => void;
 };
 
+/** How near a queued message's hook prompt is to its queueing (the hook comes first, by a few milliseconds). */
+const TWIN_MS = 5000;
+
+/**
+ * A queued message's other self: Claude Code fires its UserPromptSubmit hook as you send it, with a prompt id of its
+ * own, so it comes in as a prompt (a turn's) too. Found by its words and its time: the hook's prompt within a few
+ * seconds of the queueing.
+ */
+export function hookTwin(events: BrainEvent[], text: string, queuedAt: number): BrainEvent | undefined {
+  const t = text.trim();
+  return events.findLast((e) => e.kind === 'prompt' && e.agentId === 'main' && e.source === 'hook' && !e.queue && !e.midTurn && Math.abs(e.ts - queuedAt) <= TWIN_MS && (e.text ?? '').trim() === t);
+}
+
 /** Wires parsers → store → registry → hub. */
 export function createPipeline(store: Store, registry: Registry, hub: Hub, pending?: PendingManager, opts: PipelineOptions = {}): Pipeline {
   const ctxs = new Map<string, ParseCtx>();
@@ -71,6 +84,9 @@ export function createPipeline(store: Store, registry: Registry, hub: Hub, pendi
           if (r.meta.cwd) meta.cwd = r.meta.cwd;
           if (r.meta.cliVersion) meta.cliVersion = r.meta.cliVersion;
           if (r.meta.model) meta.model = r.meta.model;
+          if (r.meta.permissionMode) meta.permissionMode = r.meta.permissionMode;
+          // a limit stopped it; its next real reply says it's going again (only a change is news)
+          if (r.meta.limit !== undefined && (r.meta.limit || store.getSession(info.sessionId)?.limit)) meta.limit = r.meta.limit;
           meta.transcriptPath = file;
         }
         if (r.meta.recap && info.agentId === 'main') {
@@ -80,6 +96,17 @@ export function createPipeline(store: Store, registry: Registry, hub: Hub, pendi
         }
         if (Object.keys(meta).length) registry.updateSessionMeta(info.sessionId, meta);
         ingestEvents(r.events);
+        // a message you queued that Claude took mid-turn, or that you took back: it never was a turn's prompt, so the
+        // prompt its hook brought isn't one either (it showed twice: as a turn, and where Claude got it). One that
+        // waits for the next turn (a dequeue) is that turn's prompt: left as it is.
+        if (info.agentId === 'main' && obj?.type === 'queue-operation' && (obj.operation === 'popAll' || (obj.operation === 'remove' && obj.reason === 'absorbed_mid_turn'))) {
+          for (const q of r.events) {
+            const at = Number(/^queued:[^:]+:(\d+)$/.exec(q.id)?.[1]);
+            if (!at || !q.text) continue;
+            const twin = hookTwin(store.eventsForSession(info.sessionId, { before: at + TWIN_MS + 1, limit: 80 }), q.text, at);
+            if (twin) ingestEvents([{ id: twin.id, sessionId: twin.sessionId, agentId: twin.agentId, ts: twin.ts, kind: 'prompt', icon: twin.icon, source: 'transcript', queue: 'delivered' }]);
+          }
+        }
         if (r.meta.command && info.agentId === 'main') opts.onCommand?.(info.sessionId, r.meta.command);
         if (r.meta.link) registry.linkChild(info.sessionId, r.meta.link);
         if (r.meta.agentDone && store.getAgent(info.sessionId, r.meta.agentDone.agentId)) {

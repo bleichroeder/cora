@@ -1,0 +1,282 @@
+{
+ "title": "Release 2.4 to staging",
+ "status": {
+  "text": "Rolling out",
+  "state": "run"
+ },
+ "started": "2026-11-13T21:40:00Z",
+ "summary": "Deploying **indexer** and **api** to staging. Two of four checks have passed; `indexer` is at 3 of 5 replicas.",
+ "blocks": [
+  {
+   "type": "stats",
+   "items": [
+    {
+     "label": "tests passed",
+     "value": 1316,
+     "sub": "of 1320",
+     "state": "ok",
+     "trend": [
+      1200,
+      1250,
+      1290,
+      1300,
+      1316
+     ]
+    },
+    {
+     "label": "failed",
+     "value": 4,
+     "state": "bad",
+     "sub": "all flaky under load"
+    },
+    {
+     "label": "replicas ready",
+     "value": "3",
+     "unit": "/ 5",
+     "state": "run"
+    },
+    {
+     "label": "p95 latency",
+     "value": 212,
+     "unit": "ms",
+     "trend": [
+      260,
+      240,
+      250,
+      230,
+      212
+     ]
+    }
+   ]
+  },
+  {
+   "id": "steps",
+   "type": "steps",
+   "title": "Rollout",
+   "span": 2,
+   "items": [
+    {
+     "label": "Build images",
+     "state": "ok",
+     "started": "2026-11-13T21:40:00Z",
+     "ended": "2026-11-13T21:43:10Z"
+    },
+    {
+     "label": "Run the suite",
+     "state": "ok",
+     "started": "2026-11-13T21:43:10Z",
+     "ended": "2026-11-13T21:44:09Z",
+     "note": "4 flaky, passed alone"
+    },
+    {
+     "label": "Roll **indexer**",
+     "state": "run",
+     "started": "2026-11-13T21:44:09Z",
+     "note": "3 of 5 ready"
+    },
+    {
+     "label": "Roll api",
+     "state": "todo"
+    },
+    {
+     "label": "Smoke test",
+     "state": "todo"
+    },
+    {
+     "label": "Old migration",
+     "state": "skip"
+    }
+   ],
+   "actions": [
+    {
+     "label": "Retry the failed tests",
+     "prompt": "Retry the 4 failed tests on their own and update the dashboard.",
+     "main": true
+    },
+    {
+     "label": "Pause the rollout",
+     "prompt": "Pause the indexer rollout.",
+     "confirm": true,
+     "state": "bad"
+    },
+    {
+     "label": "Pipeline",
+     "url": "https://gitlab.example/pipelines/1"
+    }
+   ]
+  },
+  {
+   "type": "chart",
+   "title": "Latency",
+   "hint": "p95, ms",
+   "span": 2,
+   "kind": "area",
+   "labels": [
+    "21:40",
+    "21:41",
+    "21:42",
+    "21:43",
+    "21:44",
+    "21:45"
+   ],
+   "series": [
+    {
+     "name": "indexer",
+     "values": [
+      260,
+      240,
+      250,
+      230,
+      212,
+      205
+     ]
+    },
+    {
+     "name": "api",
+     "values": [
+      180,
+      182,
+      175,
+      190,
+      170,
+      168
+     ]
+    }
+   ]
+  },
+  {
+   "type": "table",
+   "title": "Services",
+   "span": 2,
+   "columns": [
+    "service",
+    "tag",
+    {
+     "key": "ready",
+     "label": "ready"
+    },
+    {
+     "key": "restarts",
+     "label": "restarts"
+    }
+   ],
+   "rows": [
+    {
+     "service": "indexer",
+     "tag": "`2.4.0`",
+     "ready": "3/5",
+     "restarts": 0,
+     "state": "run"
+    },
+    {
+     "service": "api",
+     "tag": "2.3.9",
+     "ready": "4/4",
+     "restarts": 0,
+     "state": "ok"
+    },
+    {
+     "service": "worker",
+     "tag": "2.3.9",
+     "ready": "1/2",
+     "restarts": 3,
+     "state": "bad"
+    }
+   ]
+  },
+  {
+   "type": "timeline",
+   "title": "Events",
+   "span": 2,
+   "items": [
+    {
+     "at": "2026-11-13T21:40:00Z",
+     "text": "Build started"
+    },
+    {
+     "at": "2026-11-13T21:43:10Z",
+     "text": "Images pushed",
+     "state": "ok"
+    },
+    {
+     "at": "2026-11-13T21:44:30Z",
+     "text": "`worker` restarted 3 times",
+     "state": "bad"
+    }
+   ]
+  },
+  {
+   "type": "note",
+   "state": "warn",
+   "text": "**worker** is restarting. Not part of this release, but worth a look."
+  },
+  {
+   "type": "meters",
+   "title": "Budget",
+   "span": 2,
+   "items": [
+    {
+     "label": "Context",
+     "value": 15,
+     "max": 100,
+     "text": "15%"
+    },
+    {
+     "label": "Error budget",
+     "value": 82,
+     "max": 100,
+     "state": "warn",
+     "text": "82% used"
+    }
+   ]
+  },
+  {
+   "type": "chart",
+   "title": "Tests by package",
+   "span": 2,
+   "kind": "bar",
+   "labels": [
+    "server",
+    "client",
+    "shared",
+    "desktop"
+   ],
+   "series": [
+    {
+     "name": "passed",
+     "values": [
+      1316,
+      412,
+      88,
+      40
+     ],
+     "state": "ok"
+    },
+    {
+     "name": "failed",
+     "values": [
+      4,
+      0,
+      0,
+      1
+     ],
+     "state": "bad"
+    }
+   ]
+  },
+  {
+   "type": "log",
+   "title": "Last output",
+   "span": 2,
+   "lines": [
+    "deployment.apps/indexer image updated",
+    "Waiting for rollout: 3 of 5 updated replicas are available..."
+   ]
+  },
+  {
+   "type": "gauge",
+   "title": "Something new",
+   "span": 2
+  }
+ ]
+}

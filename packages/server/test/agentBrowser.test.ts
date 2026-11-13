@@ -29,7 +29,12 @@ describe("a session's Playwright in Cora's browser", () => {
 
   it('runs yours, pointed at Cora\'s browser: its own browser\'s options dropped', () => {
     const s = playwrightInCora({ command: 'cmd', args: ['/c', 'npx', '-y', '@playwright/mcp@latest', '--isolated', '--browser', 'msedge', '--user-data-dir=C:\\x', '--caps', 'vision'], env: { A: '1' } }, 'ws://127.0.0.1:4317/cdp/s1?k=K');
-    expect(s).toEqual({ type: 'stdio', command: 'cmd', args: ['/c', 'npx', '-y', '@playwright/mcp@latest', '--caps', 'vision', '--cdp-endpoint', 'ws://127.0.0.1:4317/cdp/s1?k=K'], env: { A: '1' } });
+    expect(s).toEqual({ type: 'stdio', command: 'cmd', args: ['/c', 'npx', '-y', '@playwright/mcp@latest', '--caps', 'vision', '--cdp-endpoint', 'ws://127.0.0.1:4317/cdp/s1?k=K'], env: { PLAYWRIGHT_MCP_ALLOW_UNRESTRICTED_FILE_ACCESS: 'true', A: '1' } });
+  });
+
+  it("lets it reach files (a file:// preview, a screenshot to the scratchpad) unless you said otherwise", () => {
+    expect(playwrightInCora({ command: 'npx', args: [] }, 'ws://x').env).toEqual({ PLAYWRIGHT_MCP_ALLOW_UNRESTRICTED_FILE_ACCESS: 'true' });
+    expect(playwrightInCora({ command: 'npx', args: [], env: { PLAYWRIGHT_MCP_ALLOW_UNRESTRICTED_FILE_ACCESS: 'false' } }, 'ws://x').env).toEqual({ PLAYWRIGHT_MCP_ALLOW_UNRESTRICTED_FILE_ACCESS: 'false' });
   });
 
   it("each session connects with its own key; the session's MCP config gets it unless it's off or you don't use Playwright", () => {
@@ -39,7 +44,7 @@ describe("a session's Playwright in Cora's browser", () => {
     const mcpOf = (args: string[]) => JSON.parse(readFileSync(args[args.indexOf('--mcp-config') + 1], 'utf8')).mcpServers;
     const pw = () => ({ command: 'npx', args: ['@playwright/mcp@latest'] });
     const on = mcpOf(hostedArgs(cfg, DEFAULT_SETTINGS, 'sess-0001', undefined, undefined, 'C:\\w', pw));
-    expect(on.playwright).toEqual({ type: 'stdio', command: 'npx', args: ['@playwright/mcp@latest', '--cdp-endpoint', cdpEndpoint(cfg.port, 't', 'sess-0001')] });
+    expect(on.playwright).toEqual({ type: 'stdio', command: 'npx', args: ['@playwright/mcp@latest', '--cdp-endpoint', cdpEndpoint(cfg.port, 't', 'sess-0001')], env: { PLAYWRIGHT_MCP_ALLOW_UNRESTRICTED_FILE_ACCESS: 'true' } });
     expect(on.cora).toBeTruthy();
     expect(mcpOf(hostedArgs(cfg, { ...DEFAULT_SETTINGS, browser: { ...DEFAULT_SETTINGS.browser, playwright: 'off' } }, 'sess-0002', undefined, undefined, 'C:\\w', pw)).playwright).toBeUndefined();
     expect(mcpOf(hostedArgs(cfg, DEFAULT_SETTINGS, 'sess-0003', undefined, undefined, 'C:\\w', () => null)).playwright).toBeUndefined();

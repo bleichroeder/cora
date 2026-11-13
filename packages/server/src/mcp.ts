@@ -1,3 +1,4 @@
+import { DASHBOARD_KIT_PAGE } from './dashboardKitPage';
 import { FROM_CORA, JOURNAL_TAGS, parseSince, secretVars, type JournalEntry, type JournalRefs, type JournalTag } from '@cora/shared';
 import type { Journal } from './journal';
 import type { CalendarApi } from './calendar';
@@ -22,6 +23,20 @@ import { OTHERS_REFUSAL, registerOrchestratorTools, type OrchToolDeps } from './
 import { GmailError, mailLine, type Gmail } from './gmail';
 import { WatchError, verdicts, watchLine, type MailWatches } from './mailWatches';
 import { UNTRUSTED_MAIL, UNTRUSTED_SLACK, quoteOthers } from './untrusted';
+
+/** What a session is told it can put in a kit dashboard's data.json (kept short: it's read on every first call). */
+export const KIT_REFERENCE = [
+  'Shape: { "title", "status": { "text", "state" }, "started": ISO time (the page ticks a clock from it), "ended"?, "summary": a sentence or two, "blocks": [ … ] }.',
+  'A state is run, ok, warn, bad, todo or skip: the only way to colour anything. Words take **bold** and `code`.',
+  'Every block: "type", and optionally "id" (keep it the same between writes so the block updates in place), "title", "hint", "span" (1 to 4 of four columns).',
+  'Blocks: stats { items: [{ label, value, unit?, sub?, state?, trend?: number[] }] };',
+  'steps { items: [{ label, state, note?, started?, ended? }] };',
+  'table { columns: [string | { key, label }], rows: [object with state? | array] };',
+  'chart { kind: "line" | "area" | "bar", labels: string[], series: [{ name, values: number[], state? }], unit?, stacked?, zero?, height? };',
+  'timeline { items: [{ at, text, state? }] }; note { text, state? }; meters { items: [{ label, value, max?, text?, state? }] }; kv { items: [[key, value]] }; log { lines: string[] }.',
+  'Buttons: any block may carry "actions": [{ label, prompt | url, confirm?, main?, state? }] (or a block of type actions { items }): a click sends that prompt to you as the user\'s next message, or opens the link. Offer the next steps you would otherwise ask about ("Retry the failed tests", "Merge it"); set confirm only on what cannot be undone (a deploy to prod, a delete, a force push): that button takes two clicks. Never a button for something the user has not been told about.',
+  'Lead with a stats block of the few numbers that matter, then what is in progress. Put start times in the data, never elapsed seconds.',
+].join(' ');
 
 /** Gmail for the tools: the mail, the email watches, and a session's name (who set a watch). */
 export type McpGmail = { gmail: Gmail; watches?: MailWatches; /** emails sessions asked to send, waiting for the user */ outbox?: MailOutbox; nameOf(sessionId: string): string };
@@ -52,10 +67,10 @@ const OTHERS_LOCKED = new Set(['open_tab', 'notes_add', 'gmail_watch', 'gmail_un
 /** The VPN, as a session's tools need it: asking the user to switch (never switching). */
 /** The Whiteboard, as the MCP server needs it. */
 export type McpBoards = { boards: Boards; nameOf(sessionId: string): string };
-export type McpVpn = { available(): boolean; request(sessionId: string, asked: string, why: string): Promise<import('./vpn').VpnOutcome> };
+export type McpVpn = { available(): boolean; /** the profile connected now (its name, since when) */ connected(): { name: string; since?: number } | null; request(sessionId: string, asked: string, why: string): Promise<import('./vpn').VpnOutcome> };
 
 /** Live explains, as the MCP server needs them. */
-export type McpLive = { start(sessionId: string, title: string): { slug: string; dir: string; page: string; data: string } };
+export type McpLive = { start(sessionId: string, title: string): { slug: string; dir: string; page: string; data: string }; startKit(sessionId: string, title: string, page: string): { data: string; wrote: boolean } };
 
 /** Cora Secrets, as a session's tools need them: what it may use, and running a command with them. */
 export type McpSecrets = {
@@ -713,6 +728,31 @@ function buildServer(settings: Settings, sessionId: string | null, s?: McpSlack,
         }
       },
     );
+  // A dashboard from data alone: the page is Cora's kit (dashboardKitPage.ts), the session writes blocks in data.json.
+  // The cheap way to a live explain; live_explain (its own page) stays for anything the kit can't draw.
+  if (live && sessionId && settings.explains.mode === 'markdown+html' && !asCora(sessionId))
+    server.registerTool(
+      'dashboard',
+      {
+        title: 'Start a live dashboard',
+        description: [
+          'Make a live dashboard of the work you are doing, without writing a page: Cora supplies the page, you write only a small data.json listing blocks, and the user watches it in Cora (its Spotlight shows it).',
+          'Use it whenever work has several steps or results worth seeing at a glance (a plan being worked through, tests, a build, a deploy, a migration, an investigation with findings, a comparison), without being asked: it costs a few lines.',
+          'Rewrite data.json whole at each real step. Reshape it as the work changes: add a block when something new matters (a failures table once tests fail), drop one that is done; the open page redraws in place.',
+          'Returns the path of data.json and the blocks you can use. Calling it again with the same title gives the same file.',
+          'For a visual the blocks cannot draw, write your own page with live_explain instead (or write your own page.html into this dashboard\'s folder: it replaces the kit\'s).',
+        ].join(' '),
+        inputSchema: { title: z.string().min(1).max(120).describe('What it shows, e.g. "Release 2.4" or "Flaky test hunt"') },
+      },
+      async ({ title }) => {
+        try {
+          const f = live.startKit(sessionId, title, DASHBOARD_KIT_PAGE);
+          return { content: [{ type: 'text', text: `Dashboard "${title}" is ready${f.wrote ? '' : ' (its page was already there: left as it is)'}. Write its data to ${f.data} (valid JSON, under 256 KB, the whole file each time; writing there needs no permission). ${KIT_REFERENCE}` }] };
+        } catch (e) {
+          return { isError: true, content: [{ type: 'text', text: (e as Error).message }] };
+        }
+      },
+    );
   // Which environments (the user's VPNs) are reachable now: Cora checks; nothing here can change the network.
   server.registerTool(
     'environment',
@@ -729,8 +769,12 @@ function buildServer(settings: Settings, sessionId: string | null, s?: McpSlack,
       const states = (await env.current()).filter((x) => x.on);
       if (!states.length) return fail('No environments are set up in Cora (it finds them from ~/.kube kubeconfig files).');
       const ago = (t?: number) => (t ? `${Math.max(0, Math.round((Date.now() - t) / 1000))}s ago` : 'not yet');
+      // it asked: it hears again (on a prompt) when this changes
+      if (sessionId) env.heard(sessionId);
       const lines = states.map((x) => `- ${x.label} (${x.name}): ${x.reachable ? 'REACHABLE' : x.reachable === false ? 'not reachable' : 'unknown'}, checked ${ago(x.checkedAt)}${x.kubeconfig ? `; KUBECONFIG=${x.kubeconfig}${x.context ? ` (context ${x.context})` : ''}` : ''}`);
-      return { content: [{ type: 'text' as const, text: `${envLine(states)}\n${lines.join('\n')}\nOnly the user can switch the VPN${vpn?.available() ? ' (ask with vpn_request)' : ''}.` }] };
+      const on = vpn?.available() ? vpn.connected() : undefined;
+      const vpnLine = on === undefined ? '' : on ? `VPN: ${on.name} is connected${on.since ? ` (since ${new Date(on.since).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })})` : ''}.\n` : 'VPN: none connected.\n';
+      return { content: [{ type: 'text' as const, text: `${vpnLine}${envLine(states)}\n${lines.join('\n')}\nOnly the user can switch the VPN${vpn?.available() ? ' (ask with vpn_request)' : ''}. You hear again when this changes.` }] };
     },
   );
   // Ask the user to switch the VPN: a card with their Switch and Not now. Only the user switches it (a switch cuts off
@@ -752,6 +796,7 @@ function buildServer(settings: Settings, sessionId: string | null, s?: McpSlack,
       },
       async ({ to, why }) => {
         const o = await vpn.request(sessionId, to, why);
+        env?.heard(sessionId);
         return { ...(o.kind === 'unavailable' ? { isError: true } : {}), content: [{ type: 'text' as const, text: o.text }] };
       },
     );
@@ -773,6 +818,7 @@ function buildServer(settings: Settings, sessionId: string | null, s?: McpSlack,
     },
     async ({ project, service }) => {
       if (!deploys) return fail("Cora isn't reading deployments here.");
+      if (sessionId) env?.heard(sessionId);
       const st = deploys.state();
       const own = sessionId ? deploys.projectOf(sessionId) : undefined;
       const p = project === 'all' ? undefined : (project ?? (service ? undefined : own));
