@@ -2,6 +2,25 @@
 
 What changed in each release. Cora updates itself; each update's notes are on its release page too.
 
+## 0.1.28
+
+- **Cora's browser signs in to pages that ask with an HTTP sign-in** (Basic auth and the like, a proxy's too). Before,
+  no form came up and the page just said you weren't authorised. Now Cora asks: the site, a username and a password.
+  Tick "Keep for this site until Cora closes" and it's given again without asking (kept in memory only, never
+  written anywhere); one that's refused is asked again. It warns when the password would cross the network readable.
+- **A site whose certificate isn't trusted asks, instead of failing.** A dev server's self-signed certificate, or one
+  from an authority this PC doesn't know: Cora says what's wrong with it, who issued it and whether the site is on
+  this PC, and you choose. Continuing holds for that site with that certificate until Cora closes; a different
+  certificate for the same site asks again, and a revoked one is never offered.
+- **Downloads.** A file a page downloads goes to your Downloads folder, with no dialog. A button by the address bar
+  lists them: progress, cancel, show in folder, copy its path, or give its path to the session. Cora never opens a
+  downloaded file itself.
+- **A page's errors, handed to the session.** When the page you're on logs errors or a request of its fails, a red
+  count shows by the address bar. A click puts them all in the session's composer, with the page's address and where
+  each came from, to send as it is or with your own words.
+- **DevTools.** F12 or Ctrl+Shift+I in a page (or the button by the address bar) opens its DevTools in a window of
+  their own.
+
 ## 0.1.27
 
 - **The transcript reads as turns.** Each prompt is a turn: your words, the work as one line you can open ("Worked ·

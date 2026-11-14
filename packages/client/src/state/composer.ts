@@ -126,6 +126,13 @@ export async function stepMode(sid: string): Promise<string | null> {
   }
 }
 
+/** Words added to a session's draft (after what's there, on lines of their own), and the composer brought to you. */
+export function addToDraft(sid: string, text: string): void {
+  const cur = draftOf(sid);
+  useComposer.getState().setDraft(sid, { text: cur.text.trim() ? `${cur.text.replace(/\s+$/, '')}\n\n${text}` : text });
+  window.dispatchEvent(new CustomEvent('cora:composer-focus', { detail: sid }));
+}
+
 /** Messages you queued while Claude worked, back into the composer's box (out of Claude Code's queue). */
 export async function takeBackQueued(sid: string, texts: string[]): Promise<{ ok: true } | { ok: false; error: string }> {
   const t = liveTerminal(sid);

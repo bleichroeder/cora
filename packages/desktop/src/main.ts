@@ -22,6 +22,11 @@ import { startUpdates } from './updates';
 import { saveExplain } from './explainFile';
 import { forgetLogins, setupOnePassword } from './opFill';
 import { setupLockdown } from './lockdown';
+import { HttpAuth, type AuthAsk } from './httpAuth';
+import { CertTrust, type CertAsk } from './certTrust';
+import { setupDownloads } from './downloadsMain';
+import { toggleDevTools } from './browser';
+import { webContents as allWebContents } from 'electron';
 
 const PORT = Number(process.env.CORA_PORT ?? process.env.AGENT_BRAIN_PORT ?? 4317);
 const DATA = dataHome();
@@ -157,6 +162,7 @@ function createWindow() {
     webPreferences: { preload: join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true, webviewTag: true, autoplayPolicy: 'no-user-gesture-required', backgroundThrottling: false, devTools: DEVTOOLS },
   });
   setupBrowser(win, BASE);
+  setupDownloads(win);
   setupOnePassword(win, BASE);
   setupJira(win);
   // watching Jira for you: once per run (a window made again doesn't start another)
@@ -470,6 +476,34 @@ async function bootServer(noHost: boolean) {
   }
 }
 
+/** Certificates not trusted, waiting on you (cards in the dashboard); nobody answering in five minutes: refused. */
+const certAsks = new Map<string, CertAsk>();
+const certTrust = new CertTrust({
+  ask: (a) => {
+    certAsks.set(a.id, a);
+    setTimeout(() => certAsks.delete(a.id) && certTrust.answer(a.id, false), 5 * 60_000).unref?.();
+    if (win && !win.isDestroyed()) {
+      win.webContents.send('ab:cert-ask', a);
+      if (!win.isFocused()) win.flashFrame(true);
+    } else certTrust.answer(a.id, false);
+  },
+});
+
+/** HTTP sign-ins waiting on you (shown as cards in the dashboard), by id; a question nobody answers in five minutes is a no. */
+const authAsks = new Map<string, AuthAsk>();
+const AUTH_WAIT_MS = 5 * 60_000;
+const httpAuth = new HttpAuth({
+  ask: (a) => {
+    authAsks.set(a.id, a);
+    setTimeout(() => authAsks.delete(a.id) && httpAuth.answer(a.id, null), AUTH_WAIT_MS).unref?.();
+    if (win && !win.isDestroyed()) {
+      win.webContents.send('ab:http-auth', a);
+      // (not brought to the front: a session's own tab may be what asked; the taskbar says so)
+      if (!win.isFocused()) win.flashFrame(true);
+    } else httpAuth.answer(a.id, null);
+  },
+});
+
 function fromOurWindow(e: Electron.IpcMainEvent) {
   return win && e.sender === win.webContents;
 }
@@ -524,6 +558,27 @@ function wireIpc() {
       return { ok: true };
     }
     return { error: 'open how?' };
+  });
+  // certificates not trusted: the questions still open, and your answers
+  ipcMain.handle('ab:cert-open', (e) => (win && e.sender === win.webContents ? [...certAsks.values()] : []));
+  ipcMain.on('ab:cert-answer', (e, m: { id?: unknown; ok?: unknown } | null) => {
+    if (!fromOurWindow(e) || !m || typeof m.id !== 'string') return;
+    certAsks.delete(m.id);
+    certTrust.answer(m.id, m.ok === true);
+  });
+  // a page's DevTools, from the browser's toolbar (only a page in Cora's browser: never the dashboard's own)
+  ipcMain.on('ab:devtools', (e, id: unknown) => {
+    if (!fromOurWindow(e) || typeof id !== 'number') return;
+    const wc = allWebContents.fromId(id);
+    if (wc && wc.getType() === 'webview' && wc.hostWebContents === win?.webContents) toggleDevTools(wc);
+  });
+  // HTTP sign-ins: the questions still open (the dashboard reloaded), and its answers
+  ipcMain.handle('ab:http-auth-open', (e) => (win && e.sender === win.webContents ? [...authAsks.values()] : []));
+  ipcMain.on('ab:http-auth-answer', (e, m: { id?: unknown; username?: unknown; password?: unknown; keep?: unknown } | null) => {
+    if (!fromOurWindow(e) || !m || typeof m.id !== 'string') return;
+    authAsks.delete(m.id);
+    const creds = typeof m.username === 'string' && typeof m.password === 'string' && m.username.length <= 256 && m.password.length <= 1024 ? { username: m.username, password: m.password } : null;
+    httpAuth.answer(m.id, creds, m.keep === true);
   });
   ipcMain.on('ab:restart', (e) => {
     if (fromOurWindow(e)) restartKeeping();
@@ -636,6 +691,34 @@ if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
   app.on('second-instance', show);
+  // a page whose certificate Chromium doesn't trust (a dev server's own, an internal authority's): Electron refuses and
+  // asks nobody; Cora asks, in the dashboard (certTrust.ts has the rules). Cora's own window never: only pages.
+  app.on('certificate-error', (event, wc, url, error, certificate, callback) => {
+    if (!win || win.isDestroyed() || wc === win.webContents) return;
+    event.preventDefault();
+    certTrust.problem({ url, error, fingerprint: certificate.fingerprint, subject: certificate.subjectName, issuer: certificate.issuerName, validFrom: certificate.validStart * 1000, validTo: certificate.validExpiry * 1000 }, (ok) => {
+      try {
+        callback(ok);
+      } catch {
+        /* the page went away while you were asked */
+      }
+    });
+  });
+  // a page in Cora's browser wants an HTTP sign-in (Basic and the like, or a proxy's): Electron asks nobody by itself
+  // and the page gets its 401, so Cora asks, in the dashboard (httpAuth.ts has the rules). No window to ask in: none.
+  app.on('login', (event, _wc, details, info, callback) => {
+    event.preventDefault();
+    const done = (c: { username: string; password: string } | null) => {
+      try {
+        if (c) callback(c.username, c.password);
+        else callback();
+      } catch {
+        /* the page went away while you were asked */
+      }
+    };
+    if (!win || win.isDestroyed()) return done(null);
+    httpAuth.challenge({ host: info.host, port: info.port, realm: info.realm ?? '', proxy: info.isProxy, scheme: info.scheme ?? '', url: details.url }, done);
+  });
   app.whenReady().then(async () => {
     lockSessions();
     app.setAppUserModelId(APP_ID);

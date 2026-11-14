@@ -1,0 +1,41 @@
+/* The browser's extras by its address bar: downloads (a list under its button), the page's console errors (a count),
+   and the card for a certificate that isn't trusted. */
+.bx-wrap { position: relative; display: inline-flex; }
+.ib.bx-going { color: var(--cora); }
+.ib.bx-going svg { animation: bx-bob 1.1s ease-in-out infinite; }
+@keyframes bx-bob { 50% { transform: translateY(2px); } }
+.bx-pop { position: absolute; top: calc(100% + 6px); right: 0; z-index: 40; width: 300px; max-height: 360px; overflow-y: auto; padding: 6px; border-radius: 11px; background: var(--raise2); box-shadow: inset 0 0 0 1px var(--hair2), 0 16px 40px rgba(0, 0, 0, .5); font-family: var(--ui); }
+.bx-h { display: flex; align-items: center; justify-content: space-between; padding: 4px 8px 6px; }
+.bx-h b { color: var(--ink3); font: 600 9.5px var(--code); letter-spacing: .18em; text-transform: uppercase; }
+.bx-link { padding: 0; border: 0; background: none; color: var(--ink3); font: 500 11px var(--ui); cursor: pointer; }
+.bx-link:hover { color: var(--ink); }
+.bx-dl { padding: 8px; border-radius: 8px; }
+.bx-dl + .bx-dl { margin-top: 2px; }
+.bx-dl:hover { background: var(--raise); }
+.bx-dl .n { overflow: hidden; color: var(--ink); font: 500 12.5px var(--ui); text-overflow: ellipsis; white-space: nowrap; }
+.bx-dl .m { margin-top: 1px; color: var(--ink4); font: 400 10.5px var(--code); }
+.bx-dl.s-failed .m { color: var(--need); }
+.bx-dl .bar { height: 3px; margin-top: 6px; overflow: hidden; border-radius: 2px; background: var(--hair2); }
+.bx-dl .bar i { display: block; height: 100%; border-radius: 2px; background: var(--cora); transition: width .3s; }
+.bx-dl .acts { display: flex; flex-wrap: wrap; gap: 4px 10px; margin-top: 6px; }
+.bx-dl .acts:empty { display: none; }
+.bx-dl .acts button { padding: 0; border: 0; background: none; color: var(--ink3); font: 500 11px var(--ui); cursor: pointer; }
+.bx-dl .acts button:hover { color: var(--ink); text-decoration: underline dotted; text-underline-offset: 3px; }
+.bx-dl .acts button.main { color: color-mix(in srgb, var(--cora) 70%, var(--ink)); }
+/* the page's console errors: a count in red, that goes green once handed over */
+.ib.bx-probs { width: auto; gap: 4px; padding: 0 7px; color: var(--need); }
+.ib.bx-probs span { font: 600 10.5px var(--code); }
+.ib.bx-probs.done { color: var(--work); }
+/* a certificate that isn't trusted */
+.bx-cert { width: min(440px, calc(100vw - 48px)); }
+.bx-cert .xask-h svg { color: var(--think); }
+.bx-cert .xask-h .more { margin-left: auto; color: var(--ink4); font: 400 10.5px var(--code); }
+.bx-cert .site { color: var(--ink); font: 600 12px var(--code); }
+.bx-note { margin: 2px 0 10px; padding: 8px 10px; border-radius: 8px; background: var(--raise); color: var(--ink2); font: 400 11.5px/1.5 var(--ui); }
+.bx-note.warn { background: color-mix(in srgb, var(--need) 9%, transparent); color: color-mix(in srgb, var(--need) 50%, var(--ink)); }
+.bx-cert dl { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 12px; margin: 0; font: 400 11.5px/1.45 var(--ui); }
+.bx-cert dt { color: var(--ink4); }
+.bx-cert dd { margin: 0; overflow: hidden; color: var(--ink2); text-overflow: ellipsis; }
+.bx-cert dd.fp { font: 400 10.5px var(--code); overflow-wrap: anywhere; }
+/* (the safe answer is the lit one: continuing is the quiet button) */
+@media (prefers-reduced-motion: reduce) { .ib.bx-going svg { animation: none; } }

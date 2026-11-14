@@ -63,6 +63,34 @@ contextBridge.exposeInMainWorld('coraDesktop', {
   openFile: (path: string, how: 'viewer' | 'text' | 'folder') => ipcRenderer.invoke('ab:open-file', { path: String(path), how }) as Promise<{ ok?: true; error?: string }>,
   // installed Cora: a new version downloaded (restartApp installs it)
   updateReady: () => ipcRenderer.invoke('ab:update-ready') as Promise<string | null>,
+  // a page whose certificate isn't trusted: the questions, and your answer (continue or not)
+  onCertAsk: (cb: (ask: unknown) => void) => {
+    const h = (_e: unknown, a: unknown) => cb(a);
+    ipcRenderer.on('ab:cert-ask', h);
+    return () => ipcRenderer.removeListener('ab:cert-ask', h);
+  },
+  certOpen: () => ipcRenderer.invoke('ab:cert-open') as Promise<unknown[]>,
+  certAnswer: (id: string, ok: boolean) => ipcRenderer.send('ab:cert-answer', { id, ok }),
+  // downloads from pages: hear each one as it goes, the list so far, and act on one (show in folder, cancel, clear)
+  onDownload: (cb: (d: unknown) => void) => {
+    const h = (_e: unknown, d: unknown) => cb(d);
+    const c = () => cb(null);
+    ipcRenderer.on('ab:download', h);
+    ipcRenderer.on('ab:downloads-cleared', c);
+    return () => (ipcRenderer.removeListener('ab:download', h), ipcRenderer.removeListener('ab:downloads-cleared', c));
+  },
+  downloads: () => ipcRenderer.invoke('ab:downloads') as Promise<unknown[]>,
+  downloadAct: (act: 'show' | 'cancel' | 'clear', id?: string) => ipcRenderer.send('ab:download-act', { act, id }),
+  // a page's DevTools (its web contents id), in a window of their own
+  devTools: (id: number) => ipcRenderer.send('ab:devtools', id),
+  // a page in Cora's browser wants an HTTP sign-in: the questions (never a password), and your answer back
+  onHttpAuth: (cb: (ask: unknown) => void) => {
+    const h = (_e: unknown, a: unknown) => cb(a);
+    ipcRenderer.on('ab:http-auth', h);
+    return () => ipcRenderer.removeListener('ab:http-auth', h);
+  },
+  httpAuthOpen: () => ipcRenderer.invoke('ab:http-auth-open') as Promise<unknown[]>,
+  httpAuthAnswer: (m: { id: string; username?: string; password?: string; keep?: boolean }) => ipcRenderer.send('ab:http-auth-answer', m),
   // what this copy is: its version, installed or from source, its Electron and Chromium
   // a small picture of part of this window (CSS pixels): a JPEG data URL, or null
   snap: (r: { x: number; y: number; width: number; height: number }) => ipcRenderer.invoke('ab:snap', r) as Promise<string | null>,

@@ -33,6 +33,8 @@ import { SessionSwitcher } from './components/SessionSwitcher';
 import { LockSetup } from './components/LockSettings';
 import { SessionCard } from './components/SessionCard';
 import { ExplainAskHost } from './components/ExplainAsk';
+import { HttpAuthHost } from './components/HttpAuth';
+import { CertAskHost } from './components/BrowserExtras';
 import { JournalTab } from './components/JournalTab';
 import { ThawCard, loadThaw } from './components/Thaw';
 import { lockNow } from './state/lock';
@@ -734,6 +736,8 @@ export function App() {
       {guest ? null : <CoraFloat />}
       <PaletteHost />
       <ExplainAskHost />
+      <HttpAuthHost />
+      <CertAskHost />
       <FilePeekHost />
       {/* a session flag's why and reminder: always here, over the nav's drawer too (never inside it, so a drawer closing can't take it) */}
       <FlagPop />

@@ -51,6 +51,20 @@ export type DesktopBridge = {
   /** quick capture's window (Ctrl+Alt+N): hide it; hear when it's shown again */
   hideCapture?(): void;
   onCaptureShown?(cb: () => void): () => void;
+  /** a page whose certificate isn't trusted: hear the questions, the ones still open, answer one */
+  onCertAsk?(cb: (ask: CertAsk) => void): () => void;
+  certOpen?(): Promise<CertAsk[]>;
+  certAnswer?(id: string, ok: boolean): void;
+  /** downloads from pages (null: the finished ones were cleared), the list so far, and an act on one */
+  onDownload?(cb: (d: PageDownload | null) => void): () => void;
+  downloads?(): Promise<PageDownload[]>;
+  downloadAct?(act: 'show' | 'cancel' | 'clear', id?: string): void;
+  /** a page's DevTools (its web contents id) */
+  devTools?(id: number): void;
+  /** a page in Cora's browser wants an HTTP sign-in: hear the questions, get the ones still open, answer one (no username: cancelled) */
+  onHttpAuth?(cb: (ask: HttpAuthAsk) => void): () => void;
+  httpAuthOpen?(): Promise<HttpAuthAsk[]>;
+  httpAuthAnswer?(m: { id: string; username?: string; password?: string; keep?: boolean }): void;
   /** restart the app (sessions keep running): installs a waiting update */
   restartApp?(): void;
   /** installed Cora: the new version downloaded and waiting for a restart (null: none) */
@@ -81,3 +95,11 @@ export const desktop: DesktopBridge | undefined = (globalThis as { coraDesktop?:
 
 /** True when the user is looking at this window (so a notification would be noise). */
 export const attentive = () => typeof document !== 'undefined' && !document.hidden && document.hasFocus();
+
+/** An HTTP sign-in a page is waiting on (desktop/src/httpAuth.ts): who asks; never a password. */
+export type HttpAuthAsk = { id: string; host: string; port: number; realm: string; proxy: boolean; scheme: string; url: string; failed: boolean; plain: boolean };
+
+/** A certificate a page met that isn't trusted (desktop/src/certTrust.ts). */
+export type CertAsk = { id: string; host: string; url: string; error: string; why: string; local: boolean; fingerprint: string; subject: string; issuer: string; validFrom: number; validTo: number };
+/** A download from a page (desktop/src/downloads.ts). */
+export type PageDownload = { id: string; name: string; url: string; path: string; state: 'going' | 'done' | 'failed' | 'cancelled'; received: number; total: number; startedAt: number; from?: number };

@@ -1,3 +1,5 @@
+import { addProblem, isErrorLevel, type PageProblem } from '../lib/pageProblems';
+import { DevToolsButton, DownloadsButton, ProblemsButton } from './BrowserExtras';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { create } from 'zustand';
 import { useWeb } from '../state/web';
@@ -47,7 +49,7 @@ export const WEB_PARTITION = 'persist:web';
 export const tabOfPage = new Map<number, string>();
 const pages = new Map<string, Webview>();
 
-export type TabState = { loading?: boolean; back?: boolean; fwd?: boolean; err?: string | null; icon?: string };
+export type TabState = { loading?: boolean; back?: boolean; fwd?: boolean; err?: string | null; icon?: string; /** what its console says went wrong, on the page it's on */ problems?: PageProblem[] };
 
 /**
  * Ask a browser to open its find bar (Ctrl+F pressed inside a page reaches the app as an event). `group`: whose tabs
@@ -88,6 +90,7 @@ export function Page({ tab, visible, onState, onVisit, onReady }: { tab: WebTab;
     if (!w) return;
     pages.set(tab.id, w);
     let wcId = 0;
+    let probs: PageProblem[] = [];
     const { update } = useWeb.getState();
     const hist = () => ({ back: w.canGoBack(), fwd: w.canGoForward() });
     const sync = () => {
@@ -105,7 +108,9 @@ export function Page({ tab, visible, onState, onVisit, onReady }: { tab: WebTab;
           onReady?.(wcId);
         },
       ],
-      ['did-navigate', sync],
+      // (a new page: its problems start again)
+      ['did-navigate', () => (sync(), (probs = []), onState(tab.id, { problems: probs }))],
+      ['console-message', (e) => isErrorLevel(e.level) && onState(tab.id, { problems: (probs = addProblem(probs, { kind: 'error', text: String(e.message ?? ''), ...(e.sourceId ? { source: String(e.sourceId) } : {}), ...(e.line || e.lineNumber ? { line: Number(e.line ?? e.lineNumber) } : {}) })) })],
       ['did-navigate-in-page', (e) => e.isMainFrame && sync()],
       ['page-title-updated', (e) => update(tab.id, { title: e.title })],
       ['page-favicon-updated', (e) => e.favicons?.[0] && onState(tab.id, { icon: e.favicons[0] })],
@@ -118,7 +123,15 @@ export function Page({ tab, visible, onState, onVisit, onReady }: { tab: WebTab;
           if (/^https?:/i.test(u)) onVisit({ url: u, title: w.getTitle() || host(u) });
         },
       ],
-      ['did-fail-load', (e) => e.isMainFrame && e.errorCode !== -3 && onState(tab.id, { err: `${e.errorDescription || 'failed to load'} (${e.errorCode})` })],
+      [
+        'did-fail-load',
+        (e) => {
+          if (e.errorCode === -3) return;
+          if (e.isMainFrame) onState(tab.id, { err: `${e.errorDescription || 'failed to load'} (${e.errorCode})` });
+          // (something the page asked for that didn't come)
+          else if (e.validatedURL) onState(tab.id, { problems: (probs = addProblem(probs, { kind: 'load', text: `${e.validatedURL} (${e.errorDescription || e.errorCode})` })) });
+        },
+      ],
     ];
     for (const [k, f] of on) w.addEventListener(k, f);
     return () => {
@@ -148,7 +161,8 @@ export function Page({ tab, visible, onState, onVisit, onReady }: { tab: WebTab;
  * page, the pages and a new tab's start page. The session pane and the Browser tool both show one. `buttons`: the
  * host's own, at the end of the address bar row. `keys`: its shortcuts are live (it's the browser in front).
  */
-function BrowserView({ group, shown, keys, buttons, intro }: { group: string; shown: boolean; keys: boolean; buttons?: React.ReactNode; intro: string }) {
+/** `sessionId`: the session these tabs belong to, when they do (what's wrong on a page, a downloaded file, can be handed to it). */
+function BrowserView({ group, shown, keys, buttons, intro, sessionId }: { group: string; shown: boolean; keys: boolean; buttons?: React.ReactNode; intro: string; sessionId?: string }) {
   const web = useWeb();
   // whose bookmarks and history: the group's profile (followed as Settings change)
   const loaded = useBrowserSettings((b) => b.loaded);
@@ -440,6 +454,10 @@ function BrowserView({ group, shown, keys, buttons, intro }: { group: string; sh
             <Icon name="Bookmark" size={13} />
           </button>
         ) : null}
+        {/* what the page's console says went wrong (for the session), downloads, the page's DevTools */}
+        {active?.url ? <ProblemsButton problems={st.problems ?? []} page={{ url: active.url, title: active.title }} sessionId={sessionId} /> : null}
+        <DownloadsButton sessionId={sessionId} />
+        {active?.url ? <DevToolsButton wcId={activeWc} /> : null}
         <button className="ib" disabled={!active?.url} onClick={() => active?.url && desktop?.openExternal?.(active.url)} title="Open in your browser">
           <Icon name="ExternalLink" size={13} />
         </button>
@@ -677,6 +695,7 @@ export function WebPane({ view, sessionId }: { view: React.RefObject<HTMLDivElem
         />
       ) : null}
       <BrowserView
+        sessionId={sessionId}
         group={sessionId}
         shown={shown}
         keys={!behind && !panelIn}
@@ -768,6 +787,7 @@ export function PanelBrowser({ sessionId }: { sessionId: string }) {
       onBlurCapture={(e) => !e.currentTarget.contains(e.relatedTarget as Node | null) && setInside(false)}
     >
       <BrowserView
+        sessionId={sessionId}
         group={group}
         shown={active}
         keys={inside}

@@ -5,6 +5,7 @@ import { windowFind } from './findBar';
 import { chromeUserAgent } from './userAgent';
 import { chromeIdentity, chromeSession } from './chromeIdentity';
 import { usedPings } from './pageUse';
+import { startDownload } from './downloadsMain';
 
 /** The built-in browser's logins and cookies: saved across restarts, kept apart from the dashboard's. */
 export const WEB_PARTITION = 'persist:web';
@@ -55,6 +56,8 @@ export function webSession(partition: string): Electron.Session {
   ses.setDisplayMediaRequestHandler((req, cb) => void pickScreen(req.securityOrigin, cb));
   keepLogins(ses);
   enableSpellcheck(ses);
+  // a download: into your Downloads folder, the dashboard told as it goes (no dialog per file)
+  ses.on('will-download', (_e, item, wc) => startDownload(item, wc));
   return ses;
 }
 
@@ -113,6 +116,11 @@ function attachWebviews(win: BrowserWindow) {
     wc.on('before-input-event', (e, i) => {
       // Esc: a find bar open over this page closes (the page gets the key as well)
       if (i.type === 'keyDown' && i.key === 'Escape' && !i.control && !i.alt && !i.meta && !i.shift) return void win.webContents.send('ab:web-tab', { from: wc.id, key: 'esc' });
+      // F12 or Ctrl+Shift+I: the page's DevTools, in a window of their own (again closes them)
+      if (i.type === 'keyDown' && !i.alt && !i.meta && ((i.key === 'F12' && !i.control && !i.shift) || (i.control && i.shift && i.key.toLowerCase() === 'i'))) {
+        e.preventDefault();
+        return void toggleDevTools(wc);
+      }
       if (i.type !== 'keyDown' || !i.control || i.alt || i.meta) return;
       const k = i.key.toLowerCase();
       // Ctrl+\: fill from 1Password (its own shortcut)
@@ -130,6 +138,13 @@ function attachWebviews(win: BrowserWindow) {
       if (/^mailto:/i.test(url)) void shell.openExternal(url);
     });
   });
+}
+
+/** A page's DevTools, in a window of their own (docked, they'd take the page's own narrow column). */
+export function toggleDevTools(wc: WebContents) {
+  if (wc.isDestroyed()) return;
+  if (wc.isDevToolsOpened()) wc.closeDevTools();
+  else wc.openDevTools({ mode: 'detach' });
 }
 
 const MOUSE_BACK_FORWARD = `addEventListener('mouseup', (e) => {
